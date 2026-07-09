@@ -117,7 +117,11 @@ const hexSeed = () => resolveSecret(unlockedSecret);
 // theme lives on <html>, survives #app re-renders. Mode 'system' (default) follows the
 // OS preference — the OS flips it on its own schedule (e.g. dark after sunset), and the
 // media-query listener re-applies it live.
-const themeMode = () => store.get('fw_theme') || 'system';
+// fw_theme_mode is the NEW key: the legacy fw_theme (written by the old header toggle on
+// every click) would silently pin an explicit theme and break System on devices that ever
+// used the toggle — drop it.
+store.del('fw_theme');
+const themeMode = () => store.get('fw_theme_mode') || 'system';
 const resolveTheme = m => m === 'system' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : m;
 const applyTheme = m => { document.documentElement.dataset.theme = resolveTheme(m); const sel = $('#themeSel'); if (sel) sel.value = m; };
 matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { if (themeMode() === 'system') applyTheme('system'); });
@@ -347,7 +351,7 @@ const render = {
        <div id="secForm"></div>
        <p class="warn">${vault ? '🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.' : '⚠ Secret is stored unencrypted — set a passphrase to secure it. Dev/regtest only.'}</p>`;
     $('#saveCfg').onclick = saveSettings;
-    $('#themeSel').onchange = () => { const t = $('#themeSel').value; store.set('fw_theme', t); applyTheme(t); };   // applies immediately
+    $('#themeSel').onchange = () => { const t = $('#themeSel').value; store.set('fw_theme_mode', t); applyTheme(t); };   // applies immediately
     // Switching network swaps in that network's default bridge (user can still override).
     $('#netSel').onchange = () => { $('#br').value = DEFAULT_BRIDGE[$('#netSel').value] || ''; };
     $('#genBtn').onclick = () => {
