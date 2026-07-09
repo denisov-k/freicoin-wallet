@@ -400,6 +400,12 @@ function saveSettings() {
   unlockedSecret = sec; recvIndex = 0; store.set('fw_recv', 0); cache = null; liveState = null;
   if (getVault()) store.set('fw_vault', JSON.stringify(encryptSecret(sec, unlockedPass)));  // re-encrypt
   else store.set('fw_seed', sec);
+  // Reset the UI to the new source's reality — the old network/wallet's numbers must not
+  // linger on screen while the new one syncs (nor its download counters in the popover).
+  $('#balance').innerHTML = ''; $('#activity').innerHTML = ''; actLastHtml = '';
+  const av = $('#avail'); if (av) av.textContent = 'available…';
+  status.progress = {}; status.rx = 0; status.rxAt = 0; status.mbps = 0; status.utxos = null; status.tip = null;
+  setStatus('sync', 'connecting…');
   toast('saved'); show('balance');
 }
 
