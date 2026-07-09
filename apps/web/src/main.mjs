@@ -2,18 +2,15 @@ import { Buffer } from 'buffer';
 globalThis.Buffer = Buffer;
 
 import QRCode from 'qrcode';
-import * as api from './api.mjs';
 import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress, walletScripts } from './wallet.mjs';
 import { encryptSecret, decryptSecret } from './vault.mjs';
 import { createLightSource } from './light.mjs';
 
-// Data source: variant-C backend (default) or variant-B neutrino light client.
+// Data source: the variant-B neutrino light client (no trusted backend).
 const GENESIS = { regtest: '67756db06265141574ff8e7c3f97ebd57c443791e0ca27ee8b03758d6056edb8' };
 const DEFAULT_BRIDGE = import.meta.env?.VITE_BRIDGE || 'ws://127.0.0.1:3040';
 let lightSrc = null;
-const mode = () => store.get('fw_mode') || 'backend';
 function ds() {
-  if (mode() !== 'light') return api;
   if (!lightSrc) lightSrc = createLightSource({ url: store.get('fw_bridge') || DEFAULT_BRIDGE, net: 'regtest', genesis: GENESIS.regtest, scripts: walletScripts(hexSeed()) });
   return lightSrc;
 }
@@ -103,7 +100,7 @@ const render = {
        <button id="refresh" class="ghost">↻ Refresh</button>`;
       $('#refresh').onclick = render.balance; };
     try { paint(await getState(true)); }
-    catch (e) { $('#balance').innerHTML = `<div class="err">backend unreachable — ${e.message}</div><button id="refresh" class="ghost">↻ Retry</button>`; $('#refresh').onclick = render.balance; return; }
+    catch (e) { $('#balance').innerHTML = `<div class="err">sync failed — ${e.message}</div><button id="refresh" class="ghost">↻ Retry</button>`; $('#refresh').onclick = render.balance; return; }
     clearInterval(pollTimer); pollTimer = setInterval(async () => { try { paint(await getState(true)); } catch {} }, 6000);
   },
   async receive() {
@@ -151,13 +148,7 @@ const render = {
     const vault = getVault(), s = secret();
     const kind = /\s/.test((s || '').trim()) ? 'recovery phrase' : 'hex seed';
     $('#settings').innerHTML =
-      `<label>Data source
-         <select id="mode">
-           <option value="backend"${mode() === 'backend' ? ' selected' : ''}>Backend (variant C)</option>
-           <option value="light"${mode() === 'light' ? ' selected' : ''}>Light client (neutrino, no backend)</option>
-         </select></label>
-       <label>Backend URL<input id="be" value="${store.get('fw_backend') || (import.meta.env?.VITE_BACKEND || 'http://127.0.0.1:3030')}"></label>
-       <label>Bridge URL (light client)<input id="br" value="${store.get('fw_bridge') || DEFAULT_BRIDGE}"></label>
+      `<label>Bridge URL (neutrino P2P relay)<input id="br" value="${store.get('fw_bridge') || DEFAULT_BRIDGE}"></label>
        <label>Wallet secret (${kind})<textarea id="sd" rows="2">${s}</textarea></label>
        <div class="row"><button id="saveCfg">Save</button><button id="genBtn" class="ghost">Generate 12 words</button><button id="copySeed" class="ghost">Copy</button></div>
        <div class="row">${vault
@@ -197,8 +188,7 @@ function lock() { unlockedSecret = null; unlockedPass = null; clearInterval(poll
 function saveSettings() {
   const sec = $('#sd').value.trim();
   try { resolveSecret(sec); } catch (e) { return toast(e.message, 'err'); }
-  store.set('fw_backend', $('#be').value.trim());
-  store.set('fw_mode', $('#mode').value); store.set('fw_bridge', $('#br').value.trim());
+  store.set('fw_bridge', $('#br').value.trim());
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
   unlockedSecret = sec; recvIndex = 0; store.set('fw_recv', 0); cache = null;
   if (getVault()) store.set('fw_vault', JSON.stringify(encryptSecret(sec, unlockedPass)));  // re-encrypt
