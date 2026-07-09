@@ -6,8 +6,8 @@
   --bg:#f6f7f9; --card:#ffffff; --fg:#1a1d24; --sub:#6b727e; --accent:#1e88e5;
   --accent-fg:#ffffff; --ok:#2e7d32; --err:#d32f2f; --warn:#b26a00; --line:#e2e5ea;
 }
-* { box-sizing:border-box; } body { margin:0; font:15px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--fg); transition:background .2s,color .2s; }
-#app { max-width:460px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; }
+* { box-sizing:border-box; } body { margin:0; min-height:100vh; font:15px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--fg); transition:background .2s,color .2s; }
+#app { max-width:460px; margin:0 auto; display:flex; flex-direction:column; }
 header { display:flex; align-items:center; justify-content:space-between; padding:18px 20px; border-bottom:1px solid var(--line); }
 header h1 { font-size:18px; margin:0; } .hbtns { display:flex; align-items:center; gap:10px; }
 .pill { font-size:12px; color:var(--sub); border:1px solid var(--line); border-radius:99px; padding:2px 10px; }

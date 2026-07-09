@@ -36,7 +36,12 @@ const applyTheme = t => { document.documentElement.dataset.theme = t; $('#themeB
 applyTheme(store.get('fw_theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
 $('#themeBtn').onclick = () => { const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; store.set('fw_theme', t); applyTheme(t); };
 
-const toast = (t, type = 'ok') => { const el = $('#toast'); el.textContent = t; el.className = 'show ' + type; clearTimeout(toastTimer); if (t) toastTimer = setTimeout(() => el.className = '', 2800); };
+const toast = (t, type = 'ok') => {
+  const el = $('#toast'); clearTimeout(toastTimer);
+  if (!t) { el.className = ''; el.textContent = ''; return; }   // empty -> fully hidden (no oval)
+  el.textContent = t; el.className = 'show ' + type;
+  toastTimer = setTimeout(() => el.className = '', 2800);
+};
 
 const show = tab => {
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
