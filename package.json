@@ -1,0 +1,11 @@
+{
+  "name": "freicoin-wallet",
+  "version": "0.0.1",
+  "description": "Wallet core + app for Freicoin (demurrage cryptocurrency)",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "test": "node core/test/run-all.mjs"
+  }
+}

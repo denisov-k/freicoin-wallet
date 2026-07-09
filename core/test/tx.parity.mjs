@@ -1,0 +1,14 @@
+import { readFileSync } from 'fs';
+import { parseTx, serializeTx } from '../tx.mjs';
+const ref = JSON.parse(readFileSync('./reftx.json','utf8'));
+let ok=0, fail=0;
+const c=(n,cond,d)=>{ if(cond)ok++; else{fail++;console.log('FAIL',n,d);} };
+const p = parseTx(ref.raw);
+c('version', p.version===ref.version, `${p.version} vs ${ref.version}`);
+c('locktime', p.nLockTime===ref.locktime, `${p.nLockTime} vs ${ref.locktime}`);
+c('lockheight', p.lockHeight===ref.lockheight, `${p.lockHeight} vs ${ref.lockheight}`);
+c('nvin', p.nvin===ref.nvin, `${p.nvin}`); c('nvout', p.nvout===ref.nvout, `${p.nvout}`);
+c('hasWitness', p.hasWitness===ref.hasWitness, `${p.hasWitness}`);
+c('round-trip serialize', serializeTx(p)===ref.raw, 'reserialized != raw');
+console.log(`tx parity: ${ok}/${ok+fail} match`);
+process.exit(fail?1:0);
