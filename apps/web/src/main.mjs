@@ -2,16 +2,19 @@ import { Buffer } from 'buffer';
 globalThis.Buffer = Buffer;
 
 import QRCode from 'qrcode';
-import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress, walletScripts } from './wallet.mjs';
+import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress, walletScripts, configureNetwork } from './wallet.mjs';
 import { encryptSecret, decryptSecret } from './vault.mjs';
 import { createLightSource } from './light.mjs';
+import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE } from './netparams.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
-const GENESIS = { regtest: '67756db06265141574ff8e7c3f97ebd57c443791e0ca27ee8b03758d6056edb8' };
-const DEFAULT_BRIDGE = import.meta.env?.VITE_BRIDGE || 'ws://127.0.0.1:3040';
+const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
+const curBridge = () => store.get('fw_bridge') || DEFAULT_BRIDGE[curNet()];
 let lightSrc = null;
 function ds() {
-  if (!lightSrc) lightSrc = createLightSource({ url: store.get('fw_bridge') || DEFAULT_BRIDGE, net: 'regtest', genesis: GENESIS.regtest, scripts: walletScripts(hexSeed()) });
+  const net = curNet();
+  configureNetwork(net);
+  if (!lightSrc) lightSrc = createLightSource({ url: curBridge(), net, genesis: NETWORKS[net].genesis, scripts: walletScripts(hexSeed()) });
   return lightSrc;
 }
 
@@ -148,7 +151,8 @@ const render = {
     const vault = getVault(), s = secret();
     const kind = /\s/.test((s || '').trim()) ? 'recovery phrase' : 'hex seed';
     $('#settings').innerHTML =
-      `<label>Bridge URL (neutrino P2P relay)<input id="br" value="${store.get('fw_bridge') || DEFAULT_BRIDGE}"></label>
+      `<label>Network<select id="netSel">${Object.entries(NETWORKS).map(([k, v]) => `<option value="${k}"${k === curNet() ? ' selected' : ''}>${v.label}</option>`).join('')}</select></label>
+       <label>Bridge URL (neutrino P2P relay)<input id="br" value="${curBridge()}"></label>
        <label>Wallet secret (${kind})<textarea id="sd" rows="2">${s}</textarea></label>
        <div class="row"><button id="saveCfg">Save</button><button id="genBtn" class="ghost">Generate 12 words</button><button id="copySeed" class="ghost">Copy</button></div>
        <div class="row">${vault
@@ -157,6 +161,8 @@ const render = {
        <div id="secForm"></div>
        <p class="warn">${vault ? '🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.' : '⚠ Secret is stored unencrypted — set a passphrase to secure it. Dev/regtest only.'}</p>`;
     $('#saveCfg').onclick = saveSettings;
+    // Switching network swaps in that network's default bridge (user can still override).
+    $('#netSel').onchange = () => { $('#br').value = DEFAULT_BRIDGE[$('#netSel').value] || ''; };
     $('#genBtn').onclick = () => { $('#sd').value = generateMnemonic(); toast('new phrase — back it up, then Save'); };
     $('#copySeed').onclick = e => copy($('#sd').value, e.target);
     if (vault) { $('#lockBtn').onclick = lock; $('#chgBtn').onclick = () => passForm('Change passphrase', pw => secure(secret(), pw, true)); }
@@ -188,7 +194,10 @@ function lock() { unlockedSecret = null; unlockedPass = null; clearInterval(poll
 function saveSettings() {
   const sec = $('#sd').value.trim();
   try { resolveSecret(sec); } catch (e) { return toast(e.message, 'err'); }
-  store.set('fw_bridge', $('#br').value.trim());
+  const net = NETWORKS[$('#netSel').value] ? $('#netSel').value : DEFAULT_NET;
+  store.set('fw_net', net); configureNetwork(net);
+  const br = $('#br').value.trim();
+  if (br && br !== DEFAULT_BRIDGE[net]) store.set('fw_bridge', br); else store.del('fw_bridge');   // keep the net default unless overridden
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
   unlockedSecret = sec; recvIndex = 0; store.set('fw_recv', 0); cache = null;
   if (getVault()) store.set('fw_vault', JSON.stringify(encryptSecret(sec, unlockedPass)));  // re-encrypt
@@ -232,5 +241,6 @@ async function doBroadcast() {
 }
 
 // boot
+configureNetwork(curNet());   // set NET/ACCOUNT before any address derivation
 if (getVault()) renderLock();
 else { unlockedSecret = store.get('fw_seed') || '000102030405060708090a0b0c0d0e0f'; renderApp(); }

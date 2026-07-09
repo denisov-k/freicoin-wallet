@@ -7,10 +7,17 @@ import { segwitV0Sighash, SIGHASH_ALL } from '../../../core/sighash.mjs';
 import { selectCoins } from '../../../core/coinselect.mjs';
 import { serializeTx } from '../../../core/tx.mjs';
 import { encodeWitness, decodeWitness } from '../../../core/address.mjs';
+import { NETWORKS, DEFAULT_NET } from './netparams.mjs';
 
-// regtest account (coin type 1). Mainnet would be m/84'/0'/0' with 'main' HRP.
-export const ACCOUNT = "m/84'/1'/0'";
-export const NET = 'regtest';
+// The wallet targets one network at a time. NET / ACCOUNT (BIP84 m/84'/coinType'/0')
+// follow the selected network; configureNetwork() switches them.
+let NET = DEFAULT_NET;
+let ACCOUNT = `m/84'/${NETWORKS[NET].coinType}'/0'`;
+export function configureNetwork(net) {
+  if (!NETWORKS[net]) throw new Error('unknown network ' + net);
+  NET = net; ACCOUNT = `m/84'/${NETWORKS[net].coinType}'/0'`;
+}
+export const currentNet = () => NET;
 const toKria = frc => BigInt(Math.round(frc * 1e8));
 
 /** A fresh 12-word BIP39 mnemonic. */
@@ -44,7 +51,7 @@ export function walletScripts(seed, gap = 20) {
 export function isValidAddress(addr, net = NET) {
   try {
     const { hrp } = decodeWitness((addr || '').trim());
-    return hrp === ({ regtest: 'fcrt', test: 'tf', main: 'fc' }[net]);
+    return hrp === NETWORKS[net]?.hrp;
   } catch { return false; }
 }
 
