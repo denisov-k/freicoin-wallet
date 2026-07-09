@@ -1,0 +1,70 @@
+// p2p.mjs — Freicoin P2P wire protocol (message framing + version handshake).
+// Transport-agnostic: the caller supplies bytes in (createDecoder) and sends
+// bytes out (encodeMessage). Works over a Node TCP socket or a browser WebSocket
+// (via a WS↔TCP bridge, since browsers can't open raw TCP).
+import { Buffer } from 'buffer';
+import { sha256d } from '../../../../core/crypto.mjs';
+
+export const MAGIC = {
+  main: [0x2c, 0xfe, 0x7e, 0x6d], test: [0x5e, 0xd6, 0x7c, 0xf3],
+  regtest: [0xed, 0x99, 0x9c, 0xf6], signet: [0x0a, 0x03, 0xcf, 0x40],
+};
+
+/** Frame a message: magic(4) ++ command(12) ++ len(4 LE) ++ checksum(4) ++ payload. */
+export function encodeMessage(net, command, payload = Buffer.alloc(0)) {
+  payload = Buffer.from(payload);
+  const cmd = Buffer.alloc(12); cmd.write(command, 'ascii');
+  const len = Buffer.alloc(4); len.writeUInt32LE(payload.length);
+  const chk = Buffer.from(sha256d(payload)).subarray(0, 4);
+  return Buffer.concat([Buffer.from(MAGIC[net]), cmd, len, chk, payload]);
+}
+
+/** Streaming decoder: push a chunk, get back an array of {command, payload, ok}. */
+export function createDecoder(net) {
+  const magic = Buffer.from(MAGIC[net]);
+  let buf = Buffer.alloc(0);
+  return chunk => {
+    buf = Buffer.concat([buf, Buffer.from(chunk)]);
+    const out = [];
+    while (buf.length >= 24) {
+      if (!buf.subarray(0, 4).equals(magic)) { buf = buf.subarray(1); continue; }  // resync
+      const len = buf.readUInt32LE(16);
+      if (buf.length < 24 + len) break;
+      const command = buf.subarray(4, 16).toString('ascii').replace(/\0+$/, '');
+      const payload = buf.subarray(24, 24 + len);
+      const ok = Buffer.from(sha256d(payload)).subarray(0, 4).equals(buf.subarray(20, 24));
+      out.push({ command, payload, ok });
+      buf = buf.subarray(24 + len);
+    }
+    return out;
+  };
+}
+
+const randNonce = () => { const b = Buffer.alloc(8); globalThis.crypto.getRandomValues(b); return b; };
+
+/** Build a `version` payload. */
+export function buildVersion({ protoVer = 70016, services = 0n, height = 0, ua = '/freicoin-wallet:0.1/' } = {}) {
+  const parts = [];
+  const push = b => parts.push(b);
+  const u32le = v => { const x = Buffer.alloc(4); x.writeInt32LE(v); push(x); };
+  const u64le = v => { const x = Buffer.alloc(8); x.writeBigUInt64LE(BigInt(v)); push(x); };
+  const i64le = v => { const x = Buffer.alloc(8); x.writeBigInt64LE(BigInt(v)); push(x); };
+  const netaddr = () => { u64le(0n); push(Buffer.alloc(16)); const p = Buffer.alloc(2); p.writeUInt16BE(0); push(p); };
+  u32le(protoVer); u64le(services); i64le(Math.floor(Date.now() / 1000));
+  netaddr(); netaddr(); push(randNonce());
+  const uab = Buffer.from(ua, 'ascii'); push(Buffer.from([uab.length])); push(uab);
+  u32le(height); push(Buffer.from([0]));   // relay = false
+  return Buffer.concat(parts);
+}
+
+/** Parse a peer `version` payload into a summary. */
+export function parseVersion(p) {
+  p = Buffer.from(p);
+  const version = p.readInt32LE(0);
+  const services = p.readBigUInt64LE(4);
+  let o = 4 + 8 + 8 + 26 + 26 + 8;             // skip services,ts,addr_recv,addr_from,nonce
+  const uaLen = p[o]; o += 1;
+  const ua = p.subarray(o, o + uaLen).toString('ascii'); o += uaLen;
+  const startHeight = p.readInt32LE(o);
+  return { version, services, ua, startHeight };
+}
