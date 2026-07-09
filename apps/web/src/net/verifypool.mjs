@@ -27,10 +27,10 @@ export async function makePool(k) {
     workers = await Promise.all(Array.from({ length: k }, spawn));
     if (workers.some(w => !w)) throw new Error('unavailable');
   } catch { return null; }
-  let seq = 0;
+  let seq = 0, rr = 0;
   const waits = new Map();
   for (const w of workers) w.on(m => { const p = waits.get(m.id); if (p) { waits.delete(m.id); p(m); } });
-  const call = (w, net, raws) => new Promise(res => { const id = ++seq; waits.set(id, res); w.post({ id, net, raws }); });
+  const call = (w, payload) => new Promise(res => { const id = ++seq; waits.set(id, res); w.post({ id, ...payload }); });
   return {
     size: k,
     /** Verify a batch of raw aux-pow headers across all workers. Throws on any failure. */
@@ -39,9 +39,15 @@ export async function makePool(k) {
       const per = Math.ceil(raws.length / workers.length);
       const parts = [];
       for (let i = 0; i < raws.length; i += per) parts.push(raws.slice(i, i + per));
-      const rs = await Promise.all(parts.map((p, i) => call(workers[i % workers.length], net, p)));
+      const rs = await Promise.all(parts.map((p, i) => call(workers[i % workers.length], { net, raws: p })));
       const bad = rs.find(r => !r.ok);
       if (bad) throw new Error('aux-pow invalid (parallel verify)');
+    },
+    /** Match one filter batch against the wallet scripts on the next worker (round-robin).
+     *  Concurrent calls overlap — matching runs off the client thread, in parallel. */
+    async matchBatch(filters, scripts) {
+      const r = await call(workers[rr++ % workers.length], { kind: 'match', filters, scripts });
+      return r.matched;
     },
     close() { for (const w of workers) { try { w.kill(); } catch {} } },
   };

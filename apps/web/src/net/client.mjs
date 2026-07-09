@@ -299,13 +299,26 @@ export class Neutrino {
     });
   }
 
-  /** BIP158 filters for heights [from..to]; return the block hashes matching `scripts`. */
+  /** BIP158 filters for heights [from..to]; return the block hashes matching `scripts`.
+   *  With a worker pool, GCS matching is shipped out in per-batch jobs — it's pure CPU
+   *  and would otherwise starve on the client thread while a download streams in. */
   async matchFilters(scripts, from = 1, to = this.chain.length - 1) {
-    const matched = [];
+    if (!this._pool) {
+      const matched = [];
+      await this._cfilterStream(from, to, cf => {
+        if (filterMatchesAny(cf.filter, cf.blockHash, scripts)) matched.push(cf.blockHash);
+      });
+      return matched;
+    }
+    const jobs = [];
+    let buf = [];
+    const ship = () => { if (buf.length) { jobs.push(this._pool.matchBatch(buf, scripts)); buf = []; } };
     await this._cfilterStream(from, to, cf => {
-      if (filterMatchesAny(cf.filter, cf.blockHash, scripts)) matched.push(cf.blockHash);
+      buf.push({ h: cf.blockHash, f: Buffer.from(cf.filter) });   // copy — cf.filter is a view into the stream buffer
+      if (buf.length >= CFILTERS_BATCH) ship();
     });
-    return matched;
+    ship();
+    return (await Promise.all(jobs)).flat();
   }
 
   /** BIP157 filter hashes for heights [from..tip] — the compact commitment a peer vouches
@@ -399,7 +412,7 @@ export class Neutrino {
     // window caps throughput on high-RTT links). Shares the chain by reference; falls back
     // to the main connection if it can't open.
     if (this._dl === undefined) {
-      try { const dl = new Neutrino({ url: this.url, net: this.net, genesis: this.genesis }); dl.chain = this.chain; await dl.connect(); this._dl = dl; }
+      try { const dl = new Neutrino({ url: this.url, net: this.net, genesis: this.genesis }); dl.chain = this.chain; dl._pool = this._pool; await dl.connect(); this._dl = dl; }
       catch { this._dl = null; }
     } else if (this._dl) { try { await this._dl.ensureConnected(); } catch {} }
     const fetcher = (this._dl && this._dl._ready) ? this._dl : this;

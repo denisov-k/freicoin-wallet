@@ -6,6 +6,7 @@
 import { Buffer } from 'buffer';
 globalThis.Buffer = Buffer;
 import { parseAuxPow, checkAuxPoW } from './auxpow.mjs';
+import { filterMatchesAny } from './bip158.mjs';
 
 export function verifyRaws(net, raws) {
   for (let i = 0; i < raws.length; i++) {
@@ -19,7 +20,17 @@ export function verifyRaws(net, raws) {
   return { ok: true };
 }
 
-const handler = (msg, post) => { const r = verifyRaws(msg.net, msg.raws); post({ id: msg.id, ...r }); };
+/** GCS filter matching for a batch — pure CPU, so it parallelizes the same way. */
+export function matchBatch(filters, scripts) {
+  const matched = [];
+  for (const { h, f } of filters) if (filterMatchesAny(Buffer.from(f), h, scripts)) matched.push(h);
+  return matched;
+}
+
+const handler = (msg, post) => {
+  if (msg.kind === 'match') { post({ id: msg.id, matched: matchBatch(msg.filters, msg.scripts) }); return; }
+  const r = verifyRaws(msg.net, msg.raws); post({ id: msg.id, ...r });
+};
 
 if (typeof self !== 'undefined' && typeof window === 'undefined') {
   // browser (nested) worker
