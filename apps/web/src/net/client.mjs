@@ -19,8 +19,9 @@ const CFILTERS_BATCH = 1000;    // node's MAX_GETCFILTERS_SIZE — larger reques
 const CFHEADERS_BATCH = 2000;   // node's MAX_GETCFHEADERS_SIZE
 
 export class Neutrino {
-  constructor({ url, net = 'regtest', genesis }) {
-    this.url = url; this.net = net; this.genesis = genesis;
+  constructor({ url, net = 'regtest', genesis, snapshotUrl = null }) {
+    this.url = url; this.net = net; this.genesis = genesis; this.snapshotUrl = snapshotUrl;
+    this._rx = 0;                        // bytes received (this connection + snapshot)
     this._handlers = {};                 // command -> callback (single-shot phases)
     // persistent, incremental state (kept across syncWallet calls / restorable)
     this.chain = new HeaderChain(genesis);   // compact columnar chain (hashAt/timeAt/heightOf)
@@ -135,6 +136,7 @@ export class Neutrino {
         this._inflight.clear();
       };
       ws.onmessage = ev => {
+        this._rx += ev.data.byteLength || 0;
         for (const m of decode(Buffer.from(ev.data))) {
           if (m.command === 'version') { try { this.peerHeight = parseVersion(m.payload).startHeight; } catch {} this._send('verack'); }
           else if (m.command === 'verack') { this._ready = true; resolve(); }
@@ -190,6 +192,55 @@ export class Neutrino {
    *  verification), so the network round-trip overlaps the CPU-heavy verify — on a
    *  high-RTT link (mobile) the sequential request→verify→request loop was RTT-bound.
    *  Returns the chain array. */
+  /** Link + push a parsed headers batch: native PoW inline (the hash is already computed),
+   *  aux-pow proofs QUEUED for the parallel verify pool. Shared by the P2P sync and the
+   *  snapshot bootstrap — both are untrusted inputs and get identical verification. */
+  async _processBatch(hs) {
+    // The first header connects at the last block we share (fork point on reorg).
+    const forkH = this.chain.heightOf(hs[0].prevHash);
+    if (forkH === undefined) throw new Error('headers do not connect (deep reorg?)');
+    if (forkH < this.chain.length - 1) {
+      await this.drainVerify();                                // settle pending proofs before rolling back
+      this._reorgTo(forkH);
+    }
+    const auxRaws = [];
+    for (const h of hs) {
+      if (h.prevHash !== this.chain.tipHash()) throw new Error('header chain break');
+      if (h.hasAux) auxRaws.push(h.raw);
+      else if (!checkNativePoW(h)) throw new Error('header PoW invalid');
+      this.chain.push(h.hash, h.time);       // raw bytes/prevHash not kept — the columnar chain stores hash+time only
+    }
+    const endH = this.chain.length - 1;
+    if (auxRaws.length) this._queueVerify(auxRaws, endH);
+    else if (!this._pendingVerify.length && !this._verifying) this.verifiedHeight = endH;
+    this.onProgress?.({ phase: 'headers', height: endH, target: Math.max(this.peerHeight, endH), rx: this._rx + (this._dl?._rx || 0) });
+  }
+
+  /** Bootstrap the header chain from a static HTTP snapshot (a dump of standard P2P
+   *  `headers` messages). MUCH cheaper for the server than P2P serialization+relay, and
+   *  needs no trust: every header goes through the same linkage+PoW verification. Any
+   *  failure falls back to plain P2P (the chain stays consistent — errors throw before
+   *  a bad header is pushed). */
+  async _bootstrapSnapshot() {
+    if (!this.snapshotUrl || this.chain.length > 1 || this._snapshotBroken || typeof fetch !== 'function') return;
+    try {
+      const resp = await fetch(this.snapshotUrl);
+      if (!resp.ok || !resp.body) return;
+      const decode = createDecoder(this.net);
+      const reader = resp.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        this._rx += value.byteLength;
+        for (const m of decode(Buffer.from(value))) {
+          if (m.command !== 'headers' || !m.ok) continue;
+          const hs = parseHeaders(m.payload);
+          if (hs.length) await this._processBatch(hs);
+        }
+      }
+    } catch { this._snapshotBroken = true; }   // fall back to P2P; don't retry a bad snapshot
+  }
+
   async syncHeaders() {
     const request = locator => { const p = this._await('headers'); this._send('getheaders', buildGetHeaders(PROTO, locator)); return p; };
     let inFlight = request(this._locator());
@@ -200,27 +251,7 @@ export class Neutrino {
       // every hash, so the locator head is known. If this batch fails PoW we throw anyway;
       // the speculative request costs nothing (its response is simply never awaited).
       inFlight = request([hs[hs.length - 1].hash, ...this._locator()]);
-      // The first header connects at the last block we share with the peer (fork point).
-      const forkH = this.chain.heightOf(hs[0].prevHash);
-      if (forkH === undefined) throw new Error('headers do not connect (deep reorg?)');
-      if (forkH < this.chain.length - 1) {
-        await this.drainVerify();                                // settle pending proofs before rolling back
-        this._reorgTo(forkH);
-      }
-      // Link + push every header now; native PoW checks inline (cheap — the hash is already
-      // computed), aux-pow proofs are QUEUED and verified in parallel by the worker pool
-      // while the next batches download. verifiedHeight trails until the queue drains.
-      const auxRaws = [];
-      for (const h of hs) {
-        if (h.prevHash !== this.chain.tipHash()) throw new Error('header chain break');
-        if (h.hasAux) auxRaws.push(h.raw);
-        else if (!checkNativePoW(h)) throw new Error('header PoW invalid');
-        this.chain.push(h.hash, h.time);       // raw bytes/prevHash not kept — the columnar chain stores hash+time only
-      }
-      const endH = this.chain.length - 1;
-      if (auxRaws.length) this._queueVerify(auxRaws, endH);
-      else if (!this._pendingVerify.length && !this._verifying) this.verifiedHeight = endH;
-      this.onProgress?.({ phase: 'headers', height: endH, target: Math.max(this.peerHeight, endH) });
+      await this._processBatch(hs);
     }
     return this.chain;
   }
@@ -378,7 +409,8 @@ export class Neutrino {
     // of strictly after them — and the balance found so far streams out via onPartial
     // as the sweep advances.
     let headersDone = false, headersErr = null;
-    const headersP = this.syncHeaders().then(() => { headersDone = true; }, e => { headersDone = true; headersErr = e; });
+    const headersP = this._bootstrapSnapshot().then(() => this.syncHeaders())
+      .then(() => { headersDone = true; }, e => { headersDone = true; headersErr = e; });
     const follower = (async () => {
       for (;;) {
         if (headersErr) break;
@@ -404,7 +436,8 @@ export class Neutrino {
     // Provisional: the scan is done but some PoW proofs are still verifying — surface the
     // balance now, clearly marked; the final (verified) result follows when the queue drains.
     if (onProvisional && (this._verifying || this._pendingVerify.length)) onProvisional(this._result());
-    await this.drainVerify();              // throws + resets state if any proof is bad
+    try { await this.drainVerify(); }      // throws + resets state if any proof is bad
+    catch (e) { this._snapshotBroken = true; throw e; }
     this.scannedOnce = true;
     return this._result();
   }

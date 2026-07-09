@@ -11,6 +11,14 @@ export const NETWORKS = {
 export const DEFAULT_NET = 'regtest';
 
 // Default bridge (WS↔TCP relay) per network — overridable in Settings / via VITE_BRIDGE.
+// Static header-snapshot per network (verified client-side — the channel needs no trust);
+// null = bootstrap from P2P only.
+export const DEFAULT_SNAPSHOT = {
+  main:    import.meta.env?.VITE_SNAP_MAIN || null,
+  test:    null,
+  regtest: null,
+};
+
 export const DEFAULT_BRIDGE = {
   main:    import.meta.env?.VITE_BRIDGE_MAIN || 'ws://127.0.0.1:3041',
   test:    import.meta.env?.VITE_BRIDGE_TEST || 'ws://127.0.0.1:3042',

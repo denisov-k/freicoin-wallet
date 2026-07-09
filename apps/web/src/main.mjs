@@ -4,7 +4,7 @@ globalThis.Buffer = Buffer;
 import QRCode from 'qrcode';
 import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress, walletScripts, configureNetwork } from './wallet.mjs';
 import { encryptSecret, decryptSecret } from './vault.mjs';
-import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE } from './netparams.mjs';
+import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT } from './netparams.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
@@ -33,6 +33,7 @@ function renderStatusPop() {
     `<div class="rrow"><span>Network</span><b>${NETWORKS[curNet()].label}</b></div>
      <div class="rrow"><span>Status</span><b>${label}</b></div>
      ${status.tip != null ? `<div class="rrow"><span>Tip</span><b>${(+status.tip).toLocaleString()}</b></div>` : ''}
+     ${status.state !== 'ok' && status.rx ? `<div class="rrow"><span>Downloaded</span><b>${(status.rx / 1e6).toFixed(1)} MB${status.mbps ? ' · ' + status.mbps.toFixed(1) + ' MB/s' : ''}</b></div>` : ''}
      ${status.state !== 'ok' ? phases || (status.detail ? `<div class="sub">${status.detail}</div>` : '') : ''}`;
 }
 
@@ -59,7 +60,13 @@ function ds() {
     worker = new Worker(new URL('./worker.mjs', import.meta.url), { type: 'module' });
     worker.onmessage = e => {
       const m = e.data;
-      if (m.type === 'progress') { status.progress[m.p.phase] = m.p; setStatus('sync'); return; }
+      if (m.type === 'progress') {
+        status.progress[m.p.phase] = m.p;
+        if (m.p.rx) { const now = Date.now();
+          if (status.rxAt && now > status.rxAt) status.mbps = ((m.p.rx - status.rx) / 1e6) / ((now - status.rxAt) / 1000) * 0.5 + (status.mbps || 0) * 0.5;
+          status.rx = m.p.rx; status.rxAt = now; }
+        setStatus('sync'); return;
+      }
       if (m.type === 'provisional') {
         liveState = m.c;
         try { paintBalance(m.c); } catch {}
@@ -76,6 +83,7 @@ function ds() {
     wcall('init', {
       url: curBridge(), net, genesis: NETWORKS[net].genesis, scripts,
       birthHeight: effectiveBirth(walletFp(scripts)),
+      snapshotUrl: DEFAULT_SNAPSHOT[net] || null,
     }).catch(() => {});
     lightSrc = {
       health: () => wcall('health'), balance: () => wcall('balance'), utxos: () => wcall('utxos'),

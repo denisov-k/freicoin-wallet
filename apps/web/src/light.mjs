@@ -13,7 +13,7 @@ const kriaToFrc = k => Number(k) / 1e8;
 // same wallet (a different secret ⇒ different scripts ⇒ discard the persisted UTXO set).
 export const scriptsKey = scripts => { let h = 5381 >>> 0; const s = scripts.join(''); for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0; return scripts.length + ':' + h.toString(16); };
 
-export function createLightSource({ url, net, genesis, scripts, birthHeight = 0, onProgress = null, onProvisional = null }) {
+export function createLightSource({ url, net, genesis, scripts, birthHeight = 0, onProgress = null, onProvisional = null, snapshotUrl = null }) {
   let n = null, cache = null;
   const store = new IdbStore(net, genesis);   // IndexedDB — holds a full mainnet header chain
   // NOTE: birthHeight is NOT part of the fingerprint — it is auto-learned from the scan
@@ -39,7 +39,7 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
   // Create the client + restore persisted state. NO network — connect happens in sync().
   async function initClient() {
     if (n) return;
-    n = urls.length > 1 ? new NeutrinoPool({ urls, net, genesis }) : new Neutrino({ url: urls[0], net, genesis });
+    n = urls.length > 1 ? new NeutrinoPool({ urls, net, genesis }) : new Neutrino({ url: urls[0], net, genesis, snapshotUrl });
     let resumed = false;
     try { if (await store.open()) resumed = await store.loadInto(n, skey); } catch {}   // resume persisted chain if same wallet
     // Fresh start: skip filters/scan below the wallet's birth height (headers still sync
