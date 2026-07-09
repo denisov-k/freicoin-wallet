@@ -35,6 +35,7 @@ function renderStatusPop() {
     `<div class="rrow"><span>Network</span><b>${NETWORKS[curNet()].label}</b></div>
      <div class="rrow"><span>Status</span><b>${label}</b></div>
      ${status.tip != null ? `<div class="rrow"><span>Tip</span><b>${(+status.tip).toLocaleString()}</b></div>` : ''}
+     ${status.utxos != null ? `<div class="rrow"><span>UTXO</span><b>${status.utxos}</b></div>` : ''}
      ${status.state !== 'ok' && status.rx ? `<div class="rrow"><span>Downloaded</span><b>${(status.rx / 1e6).toFixed(1)} MB${status.mbps ? ' · ' + status.mbps.toFixed(1) + ' MB/s' : ''}</b></div>` : ''}
      ${status.state !== 'ok' ? phases || (status.detail ? `<div class="sub">${status.detail}</div>` : '') : ''}`;
 }
@@ -241,10 +242,11 @@ function paintBalance(s) {
   }
   const pend = s.pending?.length ? s.pending.reduce((a, p) => a + p.amount, 0) : 0;
   const state = s.stale === 'partial' ? `found so far · scanned to ${(+s.tipHeight).toLocaleString()}`
-    : s.stale === 'provisional' ? `not yet verified · tip ${(+s.tipHeight).toLocaleString()}`
-    : s.stale ? `last known state · tip ${(+s.tipHeight).toLocaleString()}` : `present value · tip ${(+s.tipHeight).toLocaleString()}`;
+    : s.stale === 'provisional' ? 'not yet verified'
+    : s.stale ? 'last known state' : 'present value';
+  status.utxos = s.utxos.length;           // detail lives in the status popover
   $('#balBig').innerHTML = `${fmt(s.balance)} <small>FRC</small>`;
-  $('#balSub').textContent = `${state} · ${s.utxos.length} UTXO`;
+  $('#balSub').textContent = state;
   $('#balPend').textContent = pend ? `⏳ ${pend > 0 ? '+' : ''}${fmt(pend)} FRC pending (${s.pending.length} tx)` : '';
 }
 
