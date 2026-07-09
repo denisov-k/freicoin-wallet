@@ -84,11 +84,7 @@ export function serializeTx(tx) {
 
 // --- txid: double-SHA256 of the no-witness serialization, displayed byte-reversed.
 // Freicoin's txid commits to lock_height (it is part of the basic serialization).
-import { createHash } from 'crypto';
-function sha256d(bytes) {
-  const a = createHash('sha256').update(bytes).digest();
-  return createHash('sha256').update(a).digest();
-}
+import { sha256d } from './crypto.mjs';
 export function txid(tx) {
   const noWit = serializeTx({ ...tx, hasWitness: false });
   const bytes = Buffer.from(noWit, 'hex');

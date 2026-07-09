@@ -7,7 +7,7 @@
 //   3. the sighash-type word is (hashtype & ~SIGHASH_NO_LOCK_HEIGHT) so the
 //      0x100 NO_LOCK_HEIGHT flag never enters the preimage      <-- Freicoin
 // Reference: test/functional/test_framework/script.py SegwitV0SignatureMsg.
-import { createHash } from 'crypto';
+import { sha256 } from './crypto.mjs';
 
 export const SIGHASH_ALL = 1;
 export const SIGHASH_NONE = 2;
@@ -15,7 +15,6 @@ export const SIGHASH_SINGLE = 3;
 export const SIGHASH_ANYONECANPAY = 0x80;
 export const SIGHASH_NO_LOCK_HEIGHT = 0x100; // Freicoin-specific
 
-const sha256 = b => createHash('sha256').update(Buffer.from(b)).digest();
 export const hash256 = b => sha256(sha256(b));
 
 const hexToBytes = h => (h.match(/../g) ?? []).map(x => parseInt(x, 16));

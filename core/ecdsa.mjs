@@ -1,7 +1,7 @@
 // ecdsa.mjs — secp256k1 ECDSA sign (RFC6979) + verify + DER, matching Freicoin's
 // test_framework/key.py byte-for-byte. Pure BigInt (portable; the RN app would
 // swap in a native secp256k1, but this proves the signing flow end to end).
-import { createHmac } from 'crypto';
+import { hmacSha256 } from './crypto.mjs';
 
 const P = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2fn;
 export const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n; // ORDER (curve order)
@@ -30,7 +30,7 @@ const G = { x: Gx, y: Gy };
 
 const bytesToBig = b => BigInt('0x' + Buffer.from(b).toString('hex') || '0x0');
 const bigTo32 = x => Buffer.from(x.toString(16).padStart(64, '0'), 'hex');
-const hmac = (key, msg) => createHmac('sha256', key).update(msg).digest();
+const hmac = (key, msg) => hmacSha256(key, msg);
 
 // RFC6979 nonce, matching key.py rfc6979_nonce(secret32 || msg32) exactly.
 function rfc6979Nonce(secret32, msg32) {

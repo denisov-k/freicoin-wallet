@@ -2,6 +2,8 @@
 // Freicoin params: bech32 HRP fc/tf/fcrt; base58 prefixes identical to Bitcoin.
 // Witness v0 = MAST program (20-byte short / 32-byte long), NO taproot (no v1/bech32m).
 
+import { sha256 } from './crypto.mjs';
+
 export const NETWORKS = {
   main:    { hrp: "fc",   p2pkh: 0x00, p2sh: 0x05, wif: 0x80 },
   test:    { hrp: "tf",   p2pkh: 0x6f, p2sh: 0xc4, wif: 0xef },
@@ -68,10 +70,6 @@ export function decodeWitness(addr) {
 
 // ---- base58check ----
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-async function sha256(bytes) {
-  const { createHash } = await import("crypto");
-  return new Uint8Array(createHash("sha256").update(bytes).digest());
-}
 function b58encode(bytes) {
   let n = 0n; for (const b of bytes) n = n * 256n + BigInt(b);
   let s = ""; while (n > 0n) { s = B58[Number(n % 58n)] + s; n /= 58n; }

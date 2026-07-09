@@ -4,7 +4,7 @@
 // SLIP44 coin types 0 (mainnet) / 1 (test/regtest), so the canonical BIP32 test
 // vectors apply directly. The one Freicoin-ism appears only at the address layer
 // (bech32m for witness v0, HRP fc/tf/fcrt) — handled by address.mjs.
-import { createHash, createHmac } from 'crypto';
+import { sha256, ripemd160, hmacSha512 } from './crypto.mjs';
 import { N, pubkeyCompressed } from './ecdsa.mjs';
 
 const VERSIONS = {
@@ -13,9 +13,8 @@ const VERSIONS = {
 };
 const HARDENED = 0x80000000;
 
-const sha256 = b => createHash('sha256').update(b).digest();
-const hash160 = b => createHash('ripemd160').update(sha256(b)).digest();
-const hmac512 = (key, msg) => createHmac('sha512', key).update(msg).digest();
+const hash160 = b => ripemd160(sha256(b));
+const hmac512 = (key, msg) => hmacSha512(key, msg);
 const hexToBuf = h => Buffer.from(h, 'hex');
 const big = buf => BigInt('0x' + buf.toString('hex'));
 const ser32 = n => Buffer.from([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]);
@@ -89,5 +88,5 @@ export function wpkProgramHex(node) {
   const pk = pubkey(node);                                   // 33-byte compressed
   const p2pk = Buffer.concat([Buffer.from([0x21]), pk, Buffer.from([0xac])]); // push pk + OP_CHECKSIG
   const longid = hash256d(Buffer.concat([Buffer.from([0x00]), p2pk]));        // HASH256(ver||p2pk)
-  return createHash('ripemd160').update(longid).digest().toString('hex');     // 20-byte short hash
+  return ripemd160(longid).toString('hex');                                    // 20-byte short hash
 }
