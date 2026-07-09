@@ -7,6 +7,7 @@ nav { display:flex; gap:4px; padding:10px 16px; border-bottom:1px solid var(--li
 nav button { flex:1; background:none; border:0; color:var(--sub); padding:8px; border-radius:8px; cursor:pointer; font-size:14px; }
 nav button.active { background:var(--card); color:var(--fg); }
 main { flex:1; padding:24px 20px; } section { display:flex; flex-direction:column; gap:14px; }
+[hidden] { display:none !important; }
 .big { font-size:40px; font-weight:600; } .big small { font-size:16px; color:var(--sub); }
 .sub { color:var(--sub); font-size:13px; } .label,.loading { color:var(--sub); font-size:13px; }
 .addr { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; word-break:break-all; font-family:ui-monospace,monospace; font-size:13px; }
