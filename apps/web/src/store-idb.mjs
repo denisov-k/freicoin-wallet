@@ -86,11 +86,14 @@ export class IdbStore {
       os.delete(IDBKeyRange.lowerBound(lastChunk, true));   // drop stale chunks past the tip (reorg shrink)
       await txDone(t); this.persistedTip = tip;
     }
+    // The wallet record must stay consistent with the persisted (verified-only) chain:
+    // the scan follower may have swept past verifiedHeight — clamp scannedHeight and drop
+    // anything above the persisted tip (a resumed sync re-scans and re-finds it).
     const t = this.db.transaction('wallet', 'readwrite');
     t.objectStore('wallet').put({
-      k: 'state', scriptsKey, scannedHeight: o.scannedHeight, scannedOnce: o.scannedOnce,
-      utxos: [...o.utxos.values()].map(u => ({ ...u, value: u.value.toString() })),
-      history: o.history.map(e => ({ ...e, amount: e.amount.toString() })),
+      k: 'state', scriptsKey, scannedHeight: Math.min(o.scannedHeight, tip), scannedOnce: o.scannedOnce,
+      utxos: [...o.utxos.values()].filter(u => u.refheight <= tip).map(u => ({ ...u, value: u.value.toString() })),
+      history: o.history.filter(e => e.height <= tip).map(e => ({ ...e, amount: e.amount.toString() })),
     });
     await txDone(t);
   }
