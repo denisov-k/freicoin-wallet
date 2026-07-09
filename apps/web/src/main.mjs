@@ -34,8 +34,6 @@ function renderStatusPop() {
   pop.innerHTML =
     `<div class="rrow"><span>Network</span><b>${NETWORKS[curNet()].label}</b></div>
      <div class="rrow"><span>Status</span><b>${label}</b></div>
-     ${status.tip != null ? `<div class="rrow"><span>Tip</span><b>${(+status.tip).toLocaleString()}</b></div>` : ''}
-     ${status.utxos != null ? `<div class="rrow"><span>UTXO</span><b>${status.utxos}</b></div>` : ''}
      ${status.state !== 'ok' && status.rx ? `<div class="rrow"><span>Downloaded</span><b>${(status.rx / 1e6).toFixed(1)} MB${status.mbps ? ' · ' + status.mbps.toFixed(1) + ' MB/s' : ''}</b></div>` : ''}
      ${status.state !== 'ok' ? phases || (status.detail ? `<div class="sub">${status.detail}</div>` : '') : ''}`;
 }
