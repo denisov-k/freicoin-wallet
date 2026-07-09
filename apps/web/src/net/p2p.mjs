@@ -159,6 +159,23 @@ export function buildGetCFilters(startHeight, stopHashHex, filterType = 0) {
   const b = Buffer.alloc(5); b[0] = filterType; b.writeUInt32LE(startHeight, 1);
   return Buffer.concat([b, Buffer.from(stopHashHex, 'hex').reverse()]);
 }
+/** getcfheaders payload (BIP157): filter_type(1) + start_height(4 LE) + stop_hash(32). */
+export function buildGetCFHeaders(startHeight, stopHashHex, filterType = 0) {
+  const b = Buffer.alloc(5); b[0] = filterType; b.writeUInt32LE(startHeight, 1);
+  return Buffer.concat([b, Buffer.from(stopHashHex, 'hex').reverse()]);
+}
+/** Parse a `cfheaders` message: filter_type(1) + stop_hash(32) + prev_filter_header(32) +
+ *  varint(count) + count × filter_hash(32). Returns display-hex {prevHeader, filterHashes[]}.
+ *  filter_hash = double-SHA256 of the serialized BIP158 filter (one per block in range). */
+export function parseCFHeaders(payload) {
+  payload = Buffer.from(payload);
+  const prevHeader = Buffer.from(payload.subarray(33, 65)).reverse().toString('hex');
+  let [count, o] = readVarint(payload, 65);
+  const filterHashes = [];
+  for (let i = 0; i < count; i++) { filterHashes.push(Buffer.from(payload.subarray(o, o + 32)).reverse().toString('hex')); o += 32; }
+  return { prevHeader, filterHashes };
+}
+
 /** Parse a `cfilter` message: filter_type(1) + block_hash(32) + filter(varint+bytes). */
 export function parseCFilter(payload) {
   payload = Buffer.from(payload);

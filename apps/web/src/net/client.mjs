@@ -3,12 +3,13 @@
 // same data a wallet needs — balance, UTXOs, history — with no trusted backend.
 import { Buffer } from 'buffer';
 import { encodeMessage, createDecoder, buildVersion, buildGetHeaders, parseHeaders, checkNativePoW,
-         buildGetCFilters, parseCFilter, buildGetData, MSG_WITNESS_BLOCK } from './p2p.mjs';
+         buildGetCFilters, parseCFilter, buildGetCFHeaders, parseCFHeaders, buildGetData, MSG_WITNESS_BLOCK } from './p2p.mjs';
 import { filterMatchesAny } from './bip158.mjs';
 import { parseAuxPow, checkAuxPoW } from './auxpow.mjs';
 import { blockHash, parseBlock } from './scan.mjs';
 import { txid as txidOf } from '../../../../core/tx.mjs';
 import { timeAdjustValue } from '../../../../core/demurrage.mjs';
+import { sha256d } from '../../../../core/crypto.mjs';
 
 const PROTO = 70016;
 
@@ -113,6 +114,64 @@ export class Neutrino {
     });
   }
 
+  /** BIP157 filter hashes for heights [from..tip] (one getcfheaders round-trip).
+   *  Returns display-hex filter_hash per block — the compact commitment a peer vouches
+   *  for; comparing these across peers detects a peer serving a tampered/omitting filter. */
+  async getCFHeaders(from = 1) {
+    const tip = this.chain.length - 1;
+    if (tip < from) return [];
+    return new Promise(res => {
+      this.on('cfheaders', m => res(parseCFHeaders(m.payload).filterHashes));
+      this._send('getcfheaders', buildGetCFHeaders(from, this.chain[tip].hash));
+    });
+  }
+
+  /** Full filters for [from..tip], each with its own double-SHA256 (to check against the
+   *  cross-peer agreed hash) and whether it matches `scripts`. Keyed by height. */
+  async filtersWithHashes(scripts, from = 1) {
+    const tip = this.chain.length - 1;
+    const want = tip - from + 1;
+    if (want <= 0) return [];
+    const out = [];
+    let seen = 0;
+    return new Promise(res => {
+      this.on('cfilter', m => {
+        const cf = parseCFilter(m.payload); seen++;
+        out.push({
+          height: this.heightOf[cf.blockHash], blockHash: cf.blockHash,
+          filterHash: Buffer.from(sha256d(cf.filter)).reverse().toString('hex'),
+          matched: filterMatchesAny(cf.filter, cf.blockHash, scripts),
+        });
+        if (seen === want) res(out);
+      });
+      this._send('getcfilters', buildGetCFilters(from, this.chain[tip].hash));
+    });
+  }
+
+  /** Fetch the given blocks (display hashes), scan them into the persistent UTXO set /
+   *  history in height order, and advance scannedHeight to the tip. The blocks passed are
+   *  those the wallet must inspect (filter-matched and/or disputed by peer disagreement). */
+  async _applyBlocks(scripts, matchedHashes) {
+    const tip = this.chain.length - 1;
+    const blocks = await this.fetchBlocks(matchedHashes);
+    blocks.sort((a, b) => this.heightOf[a.hash] - this.heightOf[b.hash]);   // scan in height order
+    const mine = new Set(scripts);
+    const utxos = this.utxos, history = this.history;
+    const rev = h => Buffer.from(h, 'hex').reverse().toString('hex');
+    for (const { hash, bytes } of blocks) {
+      const height = this.heightOf[hash]; const time = this.chain[height].time;
+      parseBlock(bytes).forEach((tx, txIndex) => {
+        const id = txidOf(tx);
+        let recv = 0n, sent = 0n;
+        for (const vin of tx.vin) { const k = rev(vin.prevout.txid) + ':' + vin.prevout.vout; const u = utxos.get(k); if (u) { sent += u.value; utxos.delete(k); } }
+        tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) { recv += o.value; utxos.set(id + ':' + i, { txid: id, vout: i, value: o.value, refheight: height, script: o.scriptPubKey, coinbase: txIndex === 0 }); } });
+        if (recv > sent) history.push({ txid: id, category: txIndex === 0 ? 'generate' : 'receive', amount: recv - sent, height, time });
+        else if (sent > recv) history.push({ txid: id, category: 'send', amount: recv - sent, height, time });
+      });
+    }
+    this.scannedHeight = tip;
+  }
+
   /** Download the given blocks (display hashes). Returns [{hash, bytes}]. */
   async fetchBlocks(hashes) {
     if (!hashes.length) return [];
@@ -136,25 +195,8 @@ export class Neutrino {
     await this.syncHeaders();
     const tip = this.chain.length - 1;
     if (tip > this.scannedHeight) {
-      const from = this.scannedHeight + 1;
-      const matched = await this.matchFilters(scripts, from);
-      const blocks = await this.fetchBlocks(matched);
-      blocks.sort((a, b) => this.heightOf[a.hash] - this.heightOf[b.hash]);   // scan in height order
-      const mine = new Set(scripts);
-      const utxos = this.utxos, history = this.history;
-      const rev = h => Buffer.from(h, 'hex').reverse().toString('hex');
-      for (const { hash, bytes } of blocks) {
-        const height = this.heightOf[hash]; const time = this.chain[height].time;
-        parseBlock(bytes).forEach((tx, txIndex) => {
-          const id = txidOf(tx);
-          let recv = 0n, sent = 0n;
-          for (const vin of tx.vin) { const k = rev(vin.prevout.txid) + ':' + vin.prevout.vout; const u = utxos.get(k); if (u) { sent += u.value; utxos.delete(k); } }
-          tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) { recv += o.value; utxos.set(id + ':' + i, { txid: id, vout: i, value: o.value, refheight: height, script: o.scriptPubKey, coinbase: txIndex === 0 }); } });
-          if (recv > sent) history.push({ txid: id, category: txIndex === 0 ? 'generate' : 'receive', amount: recv - sent, height, time });
-          else if (sent > recv) history.push({ txid: id, category: 'send', amount: recv - sent, height, time });
-        });
-      }
-      this.scannedHeight = tip;
+      const matched = await this.matchFilters(scripts, this.scannedHeight + 1);
+      await this._applyBlocks(scripts, matched);
     }
     let balance = 0n; for (const u of this.utxos.values()) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
     return { tipHeight: tip, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse() };
@@ -185,4 +227,82 @@ export class Neutrino {
   broadcast(rawHex) { this._send('tx', Buffer.from(rawHex, 'hex')); return null; }
 
   close() { try { this.ws.close(); } catch {} }
+}
+
+/**
+ * Multi-peer neutrino: cross-checks BIP157 filter commitments across several independent
+ * peers so no single peer can hide funds by serving a tampered filter. The primary peer
+ * owns the incremental wallet state (chain, UTXOs); the others are consulted only for
+ * filter agreement. For each new block the wallet inspects it directly (downloads + scans)
+ * when EITHER its filter matches our scripts OR the peers disagree on that block's filter
+ * hash — the block is committed to by the PoW-verified header, so a disagreement is
+ * resolved authoritatively by the block itself. Guarantee: as long as ≥1 peer is honest,
+ * an omitted payment forces a disagreement and is caught. A block can never be forged
+ * (header PoW), so the worst a bad peer can do is trigger an extra block download.
+ */
+export class NeutrinoPool {
+  constructor({ urls, net = 'regtest', genesis }) {
+    this.net = net; this.genesis = genesis;
+    this.peers = urls.map(url => new Neutrino({ url, net, genesis }));
+    this.primary = this.peers[0];
+    this.lastAgreement = null;
+  }
+
+  async connect() {
+    const rs = await Promise.allSettled(this.peers.map(p => p.connect()));
+    // Keep only peers that connected; the primary must be among them.
+    this.peers = this.peers.filter((_, i) => rs[i].status === 'fulfilled');
+    if (!this.peers.length) throw new Error('no peer connected');
+    if (!this.peers.includes(this.primary)) this.primary = this.peers[0];
+  }
+
+  async syncWallet(scripts) {
+    const primary = this.primary;
+    // 1. Sync headers on every peer independently (each verifies linkage + PoW).
+    const hs = await Promise.allSettled(this.peers.map(p => p.syncHeaders()));
+    const alive = this.peers.filter((_, i) => hs[i].status === 'fulfilled');
+    const tip = primary.chain.length - 1;
+
+    if (tip > primary.scannedHeight) {
+      const from = primary.scannedHeight + 1;
+      // 2. Only peers that agree with the primary on the tip header can vouch for filters.
+      const agreeing = alive.filter(p => p.chain.length - 1 >= tip && p.chain[tip].hash === primary.chain[tip].hash);
+      // 3. Filter-hash commitments from every agreeing peer (one getcfheaders each).
+      const cf = await Promise.all(agreeing.map(p => p.getCFHeaders(from)));
+      const n = tip - from + 1;
+      const disputed = new Set();            // heights where peers disagree on the filter hash
+      const agreed = [];                     // consensus filter hash per height (majority)
+      for (let i = 0; i < n; i++) {
+        const votes = cf.map(a => a[i]).filter(Boolean);
+        const tally = {}; for (const v of votes) tally[v] = (tally[v] || 0) + 1;
+        const [best] = Object.entries(tally).sort((a, b) => b[1] - a[1])[0] || [null];
+        agreed[i] = best;
+        if (votes.length && votes.some(v => v !== votes[0])) disputed.add(from + i);
+      }
+      // 4. Primary's actual filters: which match our scripts, and are they consistent with
+      //    the cross-peer consensus? A filter whose hash ≠ the agreed hash is not trusted.
+      const fh = await primary.filtersWithHashes(scripts, from);
+      const fetch = new Set();
+      for (const f of fh) {
+        const consensus = agreed[f.height - from];
+        if (f.matched) fetch.add(f.height);
+        else if (consensus && f.filterHash !== consensus) fetch.add(f.height);   // primary served an off-consensus filter
+      }
+      for (const h of disputed) fetch.add(h);
+      // 5. Download + scan exactly those blocks (authoritative), advance scannedHeight.
+      const hashes = [...fetch].sort((a, b) => a - b).map(h => primary.chain[h].hash);
+      await primary._applyBlocks(scripts, hashes);
+      this.lastAgreement = { peers: this.peers.length, agreeing: agreeing.length, disputed: disputed.size, forced: fetch.size };
+    } else {
+      this.lastAgreement = { peers: this.peers.length, agreeing: alive.length, disputed: 0, forced: 0 };
+    }
+
+    let balance = 0n; for (const u of primary.utxos.values()) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
+    return { tipHeight: tip, balance, utxos: [...primary.utxos.values()], history: [...primary.history].reverse(), agreement: this.lastAgreement };
+  }
+
+  broadcast(rawHex) { for (const p of this.peers) p.broadcast(rawHex); return null; }
+  exportState() { return this.primary.exportState(); }
+  importState(s) { return this.primary.importState(s); }
+  close() { for (const p of this.peers) p.close(); }
 }

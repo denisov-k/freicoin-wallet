@@ -2,7 +2,7 @@
 // exposing the same shape as the variant-C backend (api.mjs) so the UI can use
 // either. No trusted backend: balance/UTXOs/history are computed client-side from
 // verified headers, BIP157/158 filters and the blocks they flag.
-import { Neutrino } from './net/client.mjs';
+import { Neutrino, NeutrinoPool } from './net/client.mjs';
 import { timeAdjustValue } from '../../../core/demurrage.mjs';
 import { parseTx, txid as txidOf } from '../../../core/tx.mjs';
 
@@ -31,8 +31,15 @@ export function createLightSource({ url, net, genesis, scripts }) {
     try { store.setItem(storeKey, JSON.stringify({ skey, state: n.exportState() })); } catch {}
   }
 
+  // One or more bridge URLs (comma/space separated). Multiple ⇒ multi-peer filter
+  // agreement (no single peer can hide funds); one ⇒ the plain single-peer client.
+  const urls = String(url).split(/[\s,]+/).filter(Boolean);
+
   async function sync() {
-    if (!n) { n = new Neutrino({ url, net, genesis }); loadPersisted(); await n.connect(); }
+    if (!n) {
+      n = urls.length > 1 ? new NeutrinoPool({ urls, net, genesis }) : new Neutrino({ url: urls[0], net, genesis });
+      loadPersisted(); await n.connect();
+    }
     const r = await n.syncWallet(scripts);
     savePersisted();
     const tip = r.tipHeight;
