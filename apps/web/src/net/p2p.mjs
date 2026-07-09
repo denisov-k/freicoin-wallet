@@ -124,3 +124,16 @@ function compactToTarget(bits) {
   const exp = bits >>> 24, mant = BigInt(bits & 0x007fffff);
   return exp <= 3 ? mant >> (8n * BigInt(3 - exp)) : mant << (8n * BigInt(exp - 3));
 }
+
+/** getcfilters payload (BIP157): filter_type(1) + start_height(4 LE) + stop_hash(32). */
+export function buildGetCFilters(startHeight, stopHashHex, filterType = 0) {
+  const b = Buffer.alloc(5); b[0] = filterType; b.writeUInt32LE(startHeight, 1);
+  return Buffer.concat([b, Buffer.from(stopHashHex, 'hex').reverse()]);
+}
+/** Parse a `cfilter` message: filter_type(1) + block_hash(32) + filter(varint+bytes). */
+export function parseCFilter(payload) {
+  payload = Buffer.from(payload);
+  const blockHash = Buffer.from(payload.subarray(1, 33)).reverse().toString('hex');
+  const [len, o] = readVarint(payload, 33);
+  return { blockHash, filter: payload.subarray(o, o + len) };
+}
