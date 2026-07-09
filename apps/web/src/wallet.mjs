@@ -28,6 +28,14 @@ export function resolveSecret(secret) {
   return s.toLowerCase();
 }
 
+/** Validate a Freicoin address: correct bech32m + the expected HRP for the network. */
+export function isValidAddress(addr, net = NET) {
+  try {
+    const { hrp } = decodeWitness((addr || '').trim());
+    return hrp === ({ regtest: 'fcrt', test: 'tf', main: 'fc' }[net]);
+  } catch { return false; }
+}
+
 /** A receive (chain 0) or change (chain 1) address at index. */
 export function deriveAddress(seed, index = 0, chain = 0) {
   return encodeWitness(NET, 0, wpkProgramHex(derivePath(seed, `${ACCOUNT}/${chain}/${index}`)));

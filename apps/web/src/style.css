@@ -45,3 +45,9 @@ textarea { background:var(--card); border:1px solid var(--line); border-radius:1
 .act-i.receive,.act-i.generate,.act-i.immature { color:var(--ok); } .act-i.send { color:var(--err); }
 .act-m { flex:1; display:flex; flex-direction:column; } .act-m b { text-transform:capitalize; font-weight:500; font-size:14px; }
 .act-a { font-family:ui-monospace,monospace; font-size:14px; } .act-a.pos { color:var(--ok); } .act-a.neg { color:var(--err); }
+.lock { flex:1; display:grid; place-items:center; padding:20px; }
+.lockcard { display:flex; flex-direction:column; gap:14px; width:100%; max-width:320px; text-align:center; }
+.lockcard input { text-align:center; } .lockicon { font-size:44px; } .lockcard h2 { margin:0; font-size:20px; }
+.detail { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:8px; }
+#secForm { margin-top:4px; }
+.act { cursor:pointer; }
