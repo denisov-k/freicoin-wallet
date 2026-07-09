@@ -1,0 +1,10 @@
+{
+  "name": "@freicoin-wallet/core",
+  "version": "0.0.1",
+  "type": "module",
+  "browser": { "./crypto.mjs": "./crypto.web.mjs" },
+  "dependencies": {
+    "@noble/hashes": "^2.2.0",
+    "buffer": "^6.0.3"
+  }
+}
