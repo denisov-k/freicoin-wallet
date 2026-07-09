@@ -4,7 +4,6 @@ globalThis.Buffer = Buffer;
 import QRCode from 'qrcode';
 import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress, walletScripts, configureNetwork } from './wallet.mjs';
 import { encryptSecret, decryptSecret } from './vault.mjs';
-import { createLightSource } from './light.mjs';
 import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE } from './netparams.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
@@ -16,14 +15,42 @@ const fmtProgress = p =>
   : p.phase === 'filters' ? `scanning filters ${p.done.toLocaleString()} / ${p.want.toLocaleString()}`
   : `fetching blocks ${p.done} / ${p.want}`;
 
+// The light client runs in a Web Worker: header verification (~20s of CPU on mainnet)
+// would freeze the page on the main thread. Only watch SCRIPTS go to the worker — the
+// seed stays here; signing happens on the main thread and the worker just broadcasts.
+let worker = null, wSeq = 0;
+const wCalls = new Map();
+function wcall(method, params) {
+  return new Promise((res, rej) => { const id = ++wSeq; wCalls.set(id, { res, rej }); worker.postMessage({ id, method, params }); });
+}
 function ds() {
   const net = curNet();
   configureNetwork(net);
-  if (!lightSrc) lightSrc = createLightSource({
-    url: curBridge(), net, genesis: NETWORKS[net].genesis, scripts: walletScripts(hexSeed()),
-    birthHeight: Number(store.get('fw_birth')) || 0,
-    onProgress: p => { const el = $('#syncp'); if (el) el.textContent = fmtProgress(p); },
-  });
+  if (!lightSrc) {
+    worker = new Worker(new URL('./worker.mjs', import.meta.url), { type: 'module' });
+    worker.onmessage = e => {
+      const m = e.data;
+      if (m.type === 'progress') { const el = $('#syncp'); if (el) el.textContent = fmtProgress(m.p); return; }
+      const c = wCalls.get(m.id); if (!c) return; wCalls.delete(m.id);
+      m.error ? c.rej(new Error(m.error)) : c.res(m.result);
+    };
+    worker.onerror = () => { wCalls.forEach(c => c.rej(new Error('worker error'))); wCalls.clear(); };
+    wcall('init', {
+      url: curBridge(), net, genesis: NETWORKS[net].genesis, scripts: walletScripts(hexSeed()),
+      birthHeight: Number(store.get('fw_birth')) || 0,
+    }).catch(() => {});
+    lightSrc = {
+      health: () => wcall('health'), balance: () => wcall('balance'), utxos: () => wcall('utxos'),
+      history: () => wcall('history'), refresh: () => wcall('refresh'),
+      broadcast: rawtx => wcall('broadcast', rawtx),
+      close() {
+        const w = worker; worker = null;
+        wCalls.forEach(c => c.rej(new Error('closed'))); wCalls.clear();
+        try { w.postMessage({ id: 0, method: 'close' }); } catch {}
+        setTimeout(() => { try { w.terminate(); } catch {} }, 500);
+      },
+    };
+  }
   return lightSrc;
 }
 

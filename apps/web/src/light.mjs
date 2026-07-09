@@ -24,6 +24,17 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
   // agreement (no single peer can hide funds); one ⇒ the plain single-peer client.
   const urls = String(url).split(/[\s,]+/).filter(Boolean);
 
+  // Checkpoint the chain every N header batches (~2000 headers each) so an interrupted
+  // first sync (page closed mid-way) resumes from the checkpoint instead of genesis.
+  let batches = 0, saving = false;
+  const progress = p => {
+    onProgress?.(p);
+    if (p.phase === 'headers' && ++batches % 10 === 0 && !saving) {
+      saving = true;
+      store.save(n, skey).catch(() => {}).finally(() => { saving = false; });
+    }
+  };
+
   async function sync() {
     if (!n) {
       n = urls.length > 1 ? new NeutrinoPool({ urls, net, genesis }) : new Neutrino({ url: urls[0], net, genesis });
@@ -34,7 +45,7 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       // height a new wallet would scan ~485k filters that cannot contain its coins.
       if (!resumed && birthHeight > 0) n.stateClient.scannedHeight = birthHeight - 1;
       await n.connect();
-      n.stateClient.onProgress = onProgress;   // after connect: the pool's primary is final by then
+      n.stateClient.onProgress = progress;     // after connect: the pool's primary is final by then
     }
     const r = await n.syncWallet(scripts);
     try { await store.save(n, skey); } catch {}
