@@ -171,12 +171,15 @@ function renderApp() {
   $('#statusBtn').onclick = () => { const pop = $('#statusPop'); pop.hidden = !pop.hidden; if (!pop.hidden) renderStatusPop(); };
   document.addEventListener('click', e => { const pop = $('#statusPop'); if (pop && !pop.hidden && !pop.contains(e.target) && e.target.id !== 'statusBtn') pop.hidden = true; });
   setStatus('sync', 'connecting…');
-  show('balance');
+  const saved = store.get('fw_tab');
+  show(TABS.includes(saved) ? saved : 'balance');
 }
 
+const TABS = ['balance', 'receive', 'send', 'activity', 'settings'];
 const show = tab => {
+  store.set('fw_tab', tab);   // restore the active tab across reloads
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  ['balance', 'receive', 'send', 'activity', 'settings'].forEach(s => $('#' + s).hidden = s !== tab);
+  TABS.forEach(s => $('#' + s).hidden = s !== tab);
   clearInterval(pollTimer); pollTimer = null; toast(''); render[tab]?.();
 };
 
