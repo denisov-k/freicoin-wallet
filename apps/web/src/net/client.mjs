@@ -8,6 +8,7 @@ import { encodeMessage, createDecoder, buildVersion, parseVersion, buildGetHeade
 import { filterMatchesAny } from './bip158.mjs';
 import { parseAuxPow, checkAuxPoW } from './auxpow.mjs';
 import { blockHash, parseBlock } from './scan.mjs';
+import { HeaderChain } from './chain.mjs';
 import { parseTx, txid as txidOf } from '../../../../core/tx.mjs';
 import { timeAdjustValue } from '../../../../core/demurrage.mjs';
 import { sha256d } from '../../../../core/crypto.mjs';
@@ -21,8 +22,7 @@ export class Neutrino {
     this.url = url; this.net = net; this.genesis = genesis;
     this._handlers = {};                 // command -> callback (single-shot phases)
     // persistent, incremental state (kept across syncWallet calls / restorable)
-    this.chain = [{ hash: genesis, prevHash: null, time: 0 }];
-    this.heightOf = { [genesis]: 0 };
+    this.chain = new HeaderChain(genesis);   // compact columnar chain (hashAt/timeAt/heightOf)
     this.utxos = new Map();              // "txid:vout" -> {txid,vout,value,refheight,script,coinbase}
     this.history = [];                   // {txid,category,amount,height,time}
     this.scannedHeight = 0;              // highest block scanned for wallet activity
@@ -38,7 +38,7 @@ export class Neutrino {
   /** Block locator with exponential back-off, so the node can find the fork point after a reorg. */
   _locator() {
     const c = this.chain, loc = []; let step = 1;
-    for (let i = c.length - 1; i >= 0; i -= step) { loc.push(c[i].hash); if (loc.length >= 10) step *= 2; }
+    for (let i = c.length - 1; i >= 0; i -= step) { loc.push(c.hashAt(i)); if (loc.length >= 10) step *= 2; }
     if (loc[loc.length - 1] !== this.genesis) loc.push(this.genesis);
     return loc;
   }
@@ -53,8 +53,7 @@ export class Neutrino {
 
   /** Roll the wallet/chain state back to `forkH` (drop everything above it). */
   _reorgTo(forkH) {
-    for (let ht = this.chain.length - 1; ht > forkH; ht--) delete this.heightOf[this.chain[ht].hash];
-    this.chain.length = forkH + 1;
+    this.chain.truncate(forkH + 1);
     for (const [k, u] of this.utxos) if (u.refheight > forkH) this.utxos.delete(k);
     this.history = this.history.filter(e => e.height <= forkH);
     this.scannedHeight = Math.min(this.scannedHeight, forkH);
@@ -147,15 +146,13 @@ export class Neutrino {
       // the speculative request costs nothing (its response is simply never awaited).
       inFlight = request([hs[hs.length - 1].hash, ...this._locator()]);
       // The first header connects at the last block we share with the peer (fork point).
-      const forkH = this.heightOf[hs[0].prevHash];
+      const forkH = this.chain.heightOf(hs[0].prevHash);
       if (forkH === undefined) throw new Error('headers do not connect (deep reorg?)');
       if (forkH < this.chain.length - 1) this._reorgTo(forkH);   // roll back the orphaned tail
       for (const h of hs) {
-        if (h.prevHash !== this.chain[this.chain.length - 1].hash) throw new Error('header chain break');
+        if (h.prevHash !== this.chain.tipHash()) throw new Error('header chain break');
         this._verifyPoW(h);
-        h.raw = null;                          // raw bytes only needed for PoW verify; drop to keep the chain lean (mainnet = 485k headers)
-        this.heightOf[h.hash] = this.chain.length;
-        this.chain.push(h);
+        this.chain.push(h.hash, h.time);       // raw bytes/prevHash not kept — the columnar chain stores hash+time only
       }
       this.onProgress?.({ phase: 'headers', height: this.chain.length - 1, target: Math.max(this.peerHeight, this.chain.length - 1) });
     }
@@ -169,7 +166,7 @@ export class Neutrino {
     return new Promise((res, rej) => {
       this._inflight.add(rej);
       this.on('cfilter', m => { each(parseCFilter(m.payload)); if (++seen === want) { this._inflight.delete(rej); res(); } });
-      this._send('getcfilters', buildGetCFilters(from, this.chain[to].hash));
+      this._send('getcfilters', buildGetCFilters(from, this.chain.hashAt(to)));
     });
   }
 
@@ -190,7 +187,7 @@ export class Neutrino {
       const sendMore = () => {
         while (sent < ranges.length && sent - Math.floor(received / CFILTERS_BATCH) < DEPTH) {
           const [lo, hi] = ranges[sent++];
-          this._send('getcfilters', buildGetCFilters(lo, this.chain[hi].hash));
+          this._send('getcfilters', buildGetCFilters(lo, this.chain.hashAt(hi)));
         }
       };
       this.on('cfilter', m => {
@@ -227,7 +224,7 @@ export class Neutrino {
       const hs = await new Promise((res, rej) => {
         this._inflight.add(rej);
         this.on('cfheaders', m => { this._inflight.delete(rej); res(parseCFHeaders(m.payload).filterHashes); });
-        this._send('getcfheaders', buildGetCFHeaders(lo, this.chain[hi].hash));
+        this._send('getcfheaders', buildGetCFHeaders(lo, this.chain.hashAt(hi)));
       });
       all.push(...hs);
     }
@@ -239,7 +236,7 @@ export class Neutrino {
   async filtersWithHashes(scripts, from = 1) {
     const out = [];
     await this._cfilterStream(from, cf => out.push({
-      height: this.heightOf[cf.blockHash], blockHash: cf.blockHash,
+      height: this.chain.heightOf(cf.blockHash), blockHash: cf.blockHash,
       filterHash: Buffer.from(sha256d(cf.filter)).reverse().toString('hex'),
       matched: filterMatchesAny(cf.filter, cf.blockHash, scripts),
     }));
@@ -252,12 +249,13 @@ export class Neutrino {
   async _applyBlocks(scripts, matchedHashes) {
     const tip = this.chain.length - 1;
     const blocks = await this.fetchBlocks(matchedHashes);
-    blocks.sort((a, b) => this.heightOf[a.hash] - this.heightOf[b.hash]);   // scan in height order
+    const hOf = new Map(blocks.map(b => [b.hash, this.chain.heightOf(b.hash)]));
+    blocks.sort((a, b) => hOf.get(a.hash) - hOf.get(b.hash));   // scan in height order
     const mine = new Set(scripts);
     const utxos = this.utxos, history = this.history;
     const rev = h => Buffer.from(h, 'hex').reverse().toString('hex');
     for (const { hash, bytes } of blocks) {
-      const height = this.heightOf[hash]; const time = this.chain[height].time;
+      const height = hOf.get(hash); const time = this.chain.timeAt(height);
       parseBlock(bytes).forEach((tx, txIndex) => {
         const id = txidOf(tx);
         let recv = 0n, sent = 0n;
@@ -315,11 +313,13 @@ export class Neutrino {
     return { tipHeight: tip, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()] };
   }
 
-  /** Serialize the incremental state (JSON-safe) for persistence across page reloads. */
+  /** Serialize the incremental state (JSON-safe) for persistence across page reloads.
+   *  prevHash is not stored — it is redundant (prevHash at h === hash at h-1). */
   exportState() {
+    const chain = [];
+    for (let h = 0; h < this.chain.length; h++) chain.push({ hash: this.chain.hashAt(h), time: this.chain.timeAt(h) });
     return {
-      net: this.net, genesis: this.genesis, scannedHeight: this.scannedHeight,
-      chain: this.chain.map(h => ({ hash: h.hash, prevHash: h.prevHash ?? null, time: h.time || 0 })),
+      net: this.net, genesis: this.genesis, scannedHeight: this.scannedHeight, chain,
       utxos: [...this.utxos.values()].map(u => ({ ...u, value: u.value.toString() })),
       history: this.history.map(e => ({ ...e, amount: e.amount.toString() })),
     };
@@ -328,8 +328,8 @@ export class Neutrino {
   /** Restore state from exportState(). Returns false (state untouched) if net/genesis mismatch. */
   importState(s) {
     if (!s || s.net !== this.net || s.genesis !== this.genesis || !Array.isArray(s.chain) || s.chain[0]?.hash !== this.genesis) return false;
-    this.chain = s.chain.map(h => ({ hash: h.hash, prevHash: h.prevHash, time: h.time }));
-    this.heightOf = {}; this.chain.forEach((h, i) => this.heightOf[h.hash] = i);
+    this.chain = new HeaderChain(this.genesis);
+    for (let i = 1; i < s.chain.length; i++) this.chain.push(s.chain[i].hash, s.chain[i].time || 0);
     this.utxos = new Map(s.utxos.map(u => [u.txid + ':' + u.vout, { ...u, value: BigInt(u.value) }]));
     this.history = s.history.map(e => ({ ...e, amount: BigInt(e.amount) }));
     this.scannedHeight = s.scannedHeight | 0;
@@ -386,7 +386,7 @@ export class NeutrinoPool {
     if (tip > primary.scannedHeight) {
       const from = primary.scannedHeight + 1;
       // 2. Only peers that agree with the primary on the tip header can vouch for filters.
-      const agreeing = alive.filter(p => p.chain.length - 1 >= tip && p.chain[tip].hash === primary.chain[tip].hash);
+      const agreeing = alive.filter(p => p.chain.length - 1 >= tip && p.chain.hashAt(tip) === primary.chain.hashAt(tip));
       // 3. Filter-hash commitments from every agreeing peer (one getcfheaders each).
       const cf = await Promise.all(agreeing.map(p => p.getCFHeaders(from)));
       const n = tip - from + 1;
@@ -410,7 +410,7 @@ export class NeutrinoPool {
       }
       for (const h of disputed) fetch.add(h);
       // 5. Download + scan exactly those blocks (authoritative), advance scannedHeight.
-      const hashes = [...fetch].sort((a, b) => a - b).map(h => primary.chain[h].hash);
+      const hashes = [...fetch].sort((a, b) => a - b).map(h => primary.chain.hashAt(h));
       await primary._applyBlocks(scripts, hashes);
       this.lastAgreement = { peers: this.peers.length, agreeing: agreeing.length, disputed: disputed.size, forced: fetch.size };
     } else {

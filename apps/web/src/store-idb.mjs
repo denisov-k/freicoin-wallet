@@ -53,7 +53,7 @@ export class IdbStore {
     const chain = [];
     for (const r of rows) {
       if (r.c * CHUNK !== chain.length) { await this.clear(); return false; }   // gap → store corrupt, start fresh
-      for (const [hash, prevHash, time] of r.hs) chain.push({ hash, prevHash, time });
+      for (const e of r.hs) chain.push({ hash: e[0], time: e[e.length - 1] || 0 });   // [hash,time] (v2 rows [hash,prevHash,time] read compatibly)
     }
     const ok = chain.length > 0 && client.importState({ net: client.net, genesis: client.genesis, scannedHeight: w.scannedHeight, chain, utxos: w.utxos, history: w.history });
     this.persistedTip = ok ? chain.length - 1 : -1;
@@ -76,7 +76,9 @@ export class IdbStore {
       const lastChunk = Math.floor(tip / CHUNK);
       const t = this.db.transaction('headers', 'readwrite'); const os = t.objectStore('headers');
       for (let c = firstChunk; c <= lastChunk; c++) {
-        const hs = o.chain.slice(c * CHUNK, Math.min((c + 1) * CHUNK, tip + 1)).map(h => [h.hash, h.prevHash ?? null, h.time || 0]);
+        // rows are [hash, time] — prevHash is redundant (prevHash at h === hash at h-1)
+        const hs = [];
+        for (let h = c * CHUNK; h <= Math.min((c + 1) * CHUNK - 1, tip); h++) hs.push([o.chain.hashAt(h), o.chain.timeAt(h)]);
         os.put({ c, hs });
       }
       os.delete(IDBKeyRange.lowerBound(lastChunk, true));   // drop stale chunks past the tip (reorg shrink)
