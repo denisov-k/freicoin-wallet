@@ -9,6 +9,7 @@ import { filterMatchesAny } from './bip158.mjs';
 import { parseAuxPow, checkAuxPoW } from './auxpow.mjs';
 import { blockHash, parseBlock } from './scan.mjs';
 import { HeaderChain } from './chain.mjs';
+import { makePool } from './verifypool.mjs';
 import { parseTx, txid as txidOf } from '../../../../core/tx.mjs';
 import { timeAdjustValue } from '../../../../core/demurrage.mjs';
 import { sha256d } from '../../../../core/crypto.mjs';
@@ -33,8 +34,60 @@ export class Neutrino {
     this.onProgress = null;              // optional ({phase, ...}) callback for sync progress
     this._watch = null;                  // scripts watched for mempool activity
     this._inflight = new Set();          // reject fns of in-flight _await promises (rejected on disconnect)
+    // deferred aux-pow verification: headers are linked+pushed immediately; their proofs
+    // queue here and verify in a worker pool (or inline) — verifiedHeight trails the tip
+    // and gates persistence, so an unverified chain is never trusted across a reload.
+    this.verifiedHeight = 0;
+    this._pendingVerify = [];            // [{raws: Buffer[], endH}]
+    this._verifying = null;              // in-flight drain promise
+    this._auxDone = 0; this._auxTotal = 0;
+    this._pool = undefined;              // verify-worker pool (null = inline fallback)
   }
   get stateClient() { return this; }     // the object that owns the persistable chain/UTXO state
+
+  /** Wipe all wallet/chain state (after a failed PoW verification — nothing is trustable). */
+  _resetState() {
+    this.chain = new HeaderChain(this.genesis);
+    this.utxos = new Map(); this.history = []; this.mempool = new Map();
+    this.scannedHeight = 0; this.scannedOnce = false; this.reorgFloor = null;
+    this.verifiedHeight = 0; this._pendingVerify = []; this._verifying = null;
+    this._auxDone = 0; this._auxTotal = 0;
+  }
+
+  /** Queue a batch of aux-pow proofs; a pool consumer verifies them as they arrive
+   *  (inline fallback verifies at drainVerify time instead, to not starve the socket). */
+  _queueVerify(raws, endH) {
+    this._auxTotal += raws.length;
+    this._pendingVerify.push({ raws, endH });
+    if (this._pool) this._startConsumer();
+  }
+  _startConsumer() {
+    if (this._verifying) return;
+    this._verifying = (async () => {
+      while (this._pendingVerify.length) {
+        const { raws, endH } = this._pendingVerify.shift();
+        if (this._pool) await this._pool.verify(this.net, raws);
+        else await this._verifyInline(raws);
+        this._auxDone += raws.length;
+        if (endH > this.verifiedHeight) this.verifiedHeight = endH;
+        this.onProgress?.({ phase: 'verify', done: this._auxDone, want: this._auxTotal });
+      }
+      this._verifying = null;
+    })();
+  }
+  async _verifyInline(raws) {
+    for (let i = 0; i < raws.length; i += 200) {
+      for (const raw of raws.slice(i, i + 200)) this._verifyPoW({ hasAux: true, raw });
+      await new Promise(r => setTimeout(r, 0));   // keep the socket serviced
+    }
+  }
+  /** Wait for every queued proof to verify. Throws (and resets state) on a bad proof. */
+  async drainVerify() {
+    try {
+      if (!this._pool && this._pendingVerify.length) this._startConsumer();
+      while (this._verifying) await this._verifying;
+    } catch (e) { this._resetState(); throw e; }
+  }
 
   /** Block locator with exponential back-off, so the node can find the fork point after a reorg. */
   _locator() {
@@ -58,6 +111,7 @@ export class Neutrino {
     for (const [k, u] of this.utxos) if (u.refheight > forkH) this.utxos.delete(k);
     this.history = this.history.filter(e => e.height <= forkH);
     this.scannedHeight = Math.min(this.scannedHeight, forkH);
+    this.verifiedHeight = Math.min(this.verifiedHeight, forkH);
     this.reorgFloor = Math.min(this.reorgFloor ?? Infinity, forkH);
   }
   _send(cmd, payload) { this.ws.send(encodeMessage(this.net, cmd, payload)); }
@@ -149,13 +203,24 @@ export class Neutrino {
       // The first header connects at the last block we share with the peer (fork point).
       const forkH = this.chain.heightOf(hs[0].prevHash);
       if (forkH === undefined) throw new Error('headers do not connect (deep reorg?)');
-      if (forkH < this.chain.length - 1) this._reorgTo(forkH);   // roll back the orphaned tail
+      if (forkH < this.chain.length - 1) {
+        await this.drainVerify();                                // settle pending proofs before rolling back
+        this._reorgTo(forkH);
+      }
+      // Link + push every header now; native PoW checks inline (cheap — the hash is already
+      // computed), aux-pow proofs are QUEUED and verified in parallel by the worker pool
+      // while the next batches download. verifiedHeight trails until the queue drains.
+      const auxRaws = [];
       for (const h of hs) {
         if (h.prevHash !== this.chain.tipHash()) throw new Error('header chain break');
-        this._verifyPoW(h);
+        if (h.hasAux) auxRaws.push(h.raw);
+        else if (!checkNativePoW(h)) throw new Error('header PoW invalid');
         this.chain.push(h.hash, h.time);       // raw bytes/prevHash not kept — the columnar chain stores hash+time only
       }
-      this.onProgress?.({ phase: 'headers', height: this.chain.length - 1, target: Math.max(this.peerHeight, this.chain.length - 1) });
+      const endH = this.chain.length - 1;
+      if (auxRaws.length) this._queueVerify(auxRaws, endH);
+      else if (!this._pendingVerify.length && !this._verifying) this.verifiedHeight = endH;
+      this.onProgress?.({ phase: 'headers', height: endH, target: Math.max(this.peerHeight, endH) });
     }
     return this.chain;
   }
@@ -290,8 +355,9 @@ export class Neutrino {
    * history in place. Consecutive calls with no new blocks do no filter/block work.
    * Returns { tipHeight, balance (kria), utxos, history } computed entirely client-side.
    */
-  async syncWallet(scripts) {
+  async syncWallet(scripts, { onProvisional = null } = {}) {
     await this.ensureConnected();
+    if (this._pool === undefined) this._pool = await makePool();   // null ⇒ inline fallback
     this._watch = new Set(scripts);        // watch the mempool for these scripts from now on
     await this.syncHeaders();
     const tip = this.chain.length - 1;
@@ -301,9 +367,16 @@ export class Neutrino {
       for (const id of this.mempool.keys())  // confirmed now? drop from pending
         if (this.history.some(e => e.txid === id)) this.mempool.delete(id);
     }
+    const result = () => {
+      let balance = 0n; for (const u of this.utxos.values()) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
+      return { tipHeight: tip, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()] };
+    };
+    // Provisional: the scan is done but some PoW proofs are still verifying — surface the
+    // balance now, clearly marked; the final (verified) result follows when the queue drains.
+    if (onProvisional && (this._verifying || this._pendingVerify.length)) onProvisional(result());
+    await this.drainVerify();              // throws + resets state if any proof is bad
     this.scannedOnce = true;
-    let balance = 0n; for (const u of this.utxos.values()) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
-    return { tipHeight: tip, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()] };
+    return result();
   }
 
   /** The same result shape as syncWallet, computed from the CURRENT in-memory state with
@@ -336,6 +409,7 @@ export class Neutrino {
     this.history = s.history.map(e => ({ ...e, amount: BigInt(e.amount) }));
     this.scannedHeight = s.scannedHeight | 0;
     this.scannedOnce = !!s.scannedOnce;
+    this.verifiedHeight = this.chain.length - 1;   // persisted headers were verified before saving
     return true;
   }
 
@@ -346,7 +420,7 @@ export class Neutrino {
     return null;
   }
 
-  close() { this._ready = false; this._conn = null; try { this.ws.close(); } catch {} }
+  close() { this._ready = false; this._conn = null; try { this.ws.close(); } catch {} try { this._pool?.close(); } catch {} this._pool = undefined; }
 }
 
 /**
@@ -380,9 +454,12 @@ export class NeutrinoPool {
   async syncWallet(scripts) {
     const primary = this.primary;
     await Promise.allSettled(this.peers.map(p => p.ensureConnected()));   // reconnect dropped peers
-    this.peers.forEach(p => p._watch = new Set(scripts));                 // mempool watch on every peer
-    // 1. Sync headers on every peer independently (each verifies linkage + PoW).
+    if (this._vpool === undefined) this._vpool = await makePool();        // one shared verify pool
+    this.peers.forEach(p => { p._watch = new Set(scripts); if (p._pool === undefined) p._pool = this._vpool; });
+    // 1. Sync headers on every peer independently (each verifies linkage + PoW; aux proofs
+    //    verify via the shared pool and are drained before any filter agreement).
     const hs = await Promise.allSettled(this.peers.map(p => p.syncHeaders()));
+    await Promise.allSettled(this.peers.map(p => p.drainVerify()));
     const alive = this.peers.filter((_, i) => hs[i].status === 'fulfilled');
     const tip = primary.chain.length - 1;
 
@@ -436,5 +513,5 @@ export class NeutrinoPool {
   snapshot() { return this.primary.snapshot(); }
   exportState() { return this.primary.exportState(); }
   importState(s) { return this.primary.importState(s); }
-  close() { for (const p of this.peers) p.close(); }
+  close() { for (const p of this.peers) { p._pool = undefined; p.close(); } try { this._vpool?.close(); } catch {} this._vpool = undefined; }
 }

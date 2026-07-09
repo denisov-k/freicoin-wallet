@@ -13,7 +13,7 @@ const kriaToFrc = k => Number(k) / 1e8;
 // same wallet (a different secret ⇒ different scripts ⇒ discard the persisted UTXO set).
 const scriptsKey = scripts => { let h = 5381 >>> 0; const s = scripts.join(''); for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0; return scripts.length + ':' + h.toString(16); };
 
-export function createLightSource({ url, net, genesis, scripts, birthHeight = 0, onProgress = null }) {
+export function createLightSource({ url, net, genesis, scripts, birthHeight = 0, onProgress = null, onProvisional = null }) {
   let n = null, cache = null;
   const store = new IdbStore(net, genesis);   // IndexedDB — holds a full mainnet header chain
   // birth height is part of the state fingerprint: changing it discards the stored scan
@@ -75,7 +75,11 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
   async function sync() {
     await initClient();
     if (!connected) { await n.connect(); n.stateClient.onProgress = progress; connected = true; }
-    const r = await n.syncWallet(scripts);
+    const r = await n.syncWallet(scripts, {
+      // Scan done but PoW proofs still verifying: surface the balance immediately, clearly
+      // marked provisional. cache is NOT set — Send must never build on unverified data.
+      onProvisional: prov => { try { onProvisional?.(toCache(prov, 'provisional')); } catch {} },
+    });
     try { await store.save(n, skey); } catch {}
     cache = toCache(r);
     return cache;

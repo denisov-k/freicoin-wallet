@@ -66,7 +66,9 @@ export class IdbStore {
   async save(client, scriptsKey) {
     if (!this.db) return;
     const o = client.stateClient;
-    const tip = o.chain.length - 1;
+    // Persist only the VERIFIED prefix — headers whose PoW is still in the deferred
+    // verification queue must never be trusted across a reload.
+    const tip = Math.min(o.chain.length - 1, o.verifiedHeight ?? (o.chain.length - 1));
     // Reorg: forget persisted headers above the fork; the append below rewrites the
     // partial chunk from the (already truncated + re-extended) in-memory chain.
     if (o.reorgFloor != null && o.reorgFloor < this.persistedTip) this.persistedTip = o.reorgFloor;

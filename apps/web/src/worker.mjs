@@ -18,7 +18,7 @@ export async function handle(msg, post) {
     let result = null;
     if (method === 'init') {
       src?.close();
-      src = createLightSource({ ...params, onProgress: p => post({ type: 'progress', p }) });
+      src = createLightSource({ ...params, onProgress: p => post({ type: 'progress', p }), onProvisional: c => post({ type: 'provisional', c }) });
     } else if (method === 'close') {
       src?.close(); src = null;
     } else if (!src) {

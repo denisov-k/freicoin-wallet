@@ -13,6 +13,7 @@ let lightSrc = null;
 const fmtProgress = p =>
   p.phase === 'headers' ? `verifying headers ${p.height.toLocaleString()} / ${p.target ? p.target.toLocaleString() : '…'}`
   : p.phase === 'filters' ? `scanning filters ${p.done.toLocaleString()} / ${p.want.toLocaleString()}`
+  : p.phase === 'verify' ? `verifying proof-of-work ${p.done.toLocaleString()} / ${p.want.toLocaleString()}`
   : `fetching blocks ${p.done} / ${p.want}`;
 
 // The light client runs in a Web Worker: header verification (~20s of CPU on mainnet)
@@ -31,6 +32,7 @@ function ds() {
     worker.onmessage = e => {
       const m = e.data;
       if (m.type === 'progress') { const el = $('#syncp'); if (el) el.textContent = fmtProgress(m.p); return; }
+      if (m.type === 'provisional') { try { paintBalance(m.c); } catch {} return; }
       const c = wCalls.get(m.id); if (!c) return; wCalls.delete(m.id);
       m.error ? c.rej(new Error(m.error)) : c.res(m.result);
     };
@@ -130,6 +132,24 @@ const getState = async force => (!force && cache) ? cache : (cache = await ds().
 const timeAgo = t => { const s = Math.max(0, Date.now() / 1000 - t); if (s < 60) return 'just now'; if (s < 3600) return (s / 60 | 0) + 'm ago'; if (s < 86400) return (s / 3600 | 0) + 'h ago'; return new Date(t * 1000).toLocaleDateString(); };
 const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏' };
 
+// Balance card painter — module-level so the worker's provisional events can repaint
+// the visible balance screen outside a render.balance() call.
+let balPainted = false;
+function paintBalance(s) {
+  if ($('#balance').hidden) return;
+  balPainted = true;
+  const pend = s.pending?.length ? s.pending.reduce((a, p) => a + p.amount, 0) : 0;
+  const state = s.stale === 'provisional' ? `⚠ not yet verified · tip ${s.tipHeight}`
+    : s.stale ? `last known state · tip ${s.tipHeight}` : `present value · tip ${s.tipHeight}`;
+  $('#balance').innerHTML =
+    `<div class="big">${fmt(s.balance)} <small>FRC</small></div>
+     <div class="sub">${state} · ${s.utxos.length} UTXO</div>
+     ${pend ? `<div class="sub">⏳ ${pend > 0 ? '+' : ''}${fmt(pend)} FRC pending (${s.pending.length} tx)</div>` : ''}
+     <div class="sub" id="syncp">${s.stale === 'provisional' ? '⟳ verifying proof-of-work…' : s.stale ? '⟳ syncing…' : ''}</div>
+     <button id="refresh" class="ghost">↻ Refresh</button>`;
+  $('#refresh').onclick = render.balance;
+}
+
 const render = {
   async balance() {
     // First sync (nothing persisted yet): an honest placeholder — the balance is genuinely
@@ -138,25 +158,15 @@ const render = {
       `<div class="big">— <small>FRC</small></div>
        <div class="sub">first sync — balance appears when the scan completes</div>
        <div class="sub" id="syncp"></div>`;
-    let painted = false;
-    const paint = s => {
-      painted = true;
-      const pend = s.pending?.length ? s.pending.reduce((a, p) => a + p.amount, 0) : 0;
-      $('#balance').innerHTML =
-      `<div class="big">${fmt(s.balance)} <small>FRC</small></div>
-       <div class="sub">${s.stale ? `last known state · tip ${s.tipHeight}` : `present value · tip ${s.tipHeight}`} · ${s.utxos.length} UTXO</div>
-       ${pend ? `<div class="sub">⏳ ${pend > 0 ? '+' : ''}${fmt(pend)} FRC pending (${s.pending.length} tx)</div>` : ''}
-       <div class="sub" id="syncp">${s.stale ? '⟳ syncing…' : ''}</div>
-       <button id="refresh" class="ghost">↻ Refresh</button>`;
-      $('#refresh').onclick = render.balance; };
+    balPainted = false;
     // Instant: last persisted state (no network) while the real sync runs.
-    if (!cache) { try { const pv = await ds().preview(); if (pv) paint(pv); } catch {} }
-    try { paint(await getState(true)); }
+    if (!cache) { try { const pv = await ds().preview(); if (pv) paintBalance(pv); } catch {} }
+    try { paintBalance(await getState(true)); }
     catch (e) {
-      if (!painted) { $('#balance').innerHTML = `<div class="err">sync failed — ${e.message}</div><button id="refresh" class="ghost">↻ Retry</button>`; $('#refresh').onclick = render.balance; return; }
+      if (!balPainted) { $('#balance').innerHTML = `<div class="err">sync failed — ${e.message}</div><button id="refresh" class="ghost">↻ Retry</button>`; $('#refresh').onclick = render.balance; return; }
       const el = $('#syncp'); if (el) el.textContent = 'offline — showing last known state, retrying…';
     }
-    clearInterval(pollTimer); pollTimer = setInterval(async () => { try { paint(await getState(true)); } catch {} }, 6000);
+    clearInterval(pollTimer); pollTimer = setInterval(async () => { try { paintBalance(await getState(true)); } catch {} }, 6000);
   },
   async receive() {
     let addr; try { addr = deriveAddress(hexSeed(), recvIndex, 0); } catch (e) { return toast(e.message, 'err'); }
