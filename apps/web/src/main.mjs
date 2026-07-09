@@ -10,6 +10,27 @@ import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE } from './netparams.mjs';
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
 const curBridge = () => store.get('fw_bridge') || DEFAULT_BRIDGE[curNet()];
 let lightSrc = null;
+// ---- header status indicator (dot + click-popover with sync details) ----
+const status = { state: 'sync', detail: 'connecting…', tip: null };
+function setStatus(state, detail, tip) {
+  status.state = state;
+  if (detail !== undefined) status.detail = detail;
+  if (tip !== undefined) status.tip = tip;
+  const b = $('#statusBtn');
+  if (b) b.className = 'pill statusbtn st-' + state;
+  const pop = $('#statusPop');
+  if (pop && !pop.hidden) renderStatusPop();
+}
+function renderStatusPop() {
+  const pop = $('#statusPop'); if (!pop) return;
+  const label = { ok: 'synced ✓ (verified)', sync: 'syncing…', off: 'offline' }[status.state] || status.state;
+  pop.innerHTML =
+    `<div class="rrow"><span>Network</span><b>${NETWORKS[curNet()].label}</b></div>
+     <div class="rrow"><span>Status</span><b>${label}</b></div>
+     ${status.tip != null ? `<div class="rrow"><span>Tip</span><b>${(+status.tip).toLocaleString()}</b></div>` : ''}
+     ${status.state !== 'ok' && status.detail ? `<div class="sub">${status.detail}</div>` : ''}`;
+}
+
 const fmtProgress = p =>
   p.phase === 'headers' ? `verifying headers ${p.height.toLocaleString()} / ${p.target ? p.target.toLocaleString() : '…'}`
   : p.phase === 'filters' ? `scanning filters ${p.done.toLocaleString()} / ${p.want.toLocaleString()}`
@@ -39,8 +60,8 @@ function ds() {
     worker = new Worker(new URL('./worker.mjs', import.meta.url), { type: 'module' });
     worker.onmessage = e => {
       const m = e.data;
-      if (m.type === 'progress') { const el = $('#syncp'); if (el) el.textContent = fmtProgress(m.p); return; }
-      if (m.type === 'provisional') { try { paintBalance(m.c); } catch {} return; }
+      if (m.type === 'progress') { const el = $('#syncp'); if (el) el.textContent = fmtProgress(m.p); setStatus('sync', fmtProgress(m.p)); return; }
+      if (m.type === 'provisional') { try { paintBalance(m.c); } catch {} setStatus('sync', undefined, m.c.tipHeight); return; }
       const c = wCalls.get(m.id); if (!c) return; wCalls.delete(m.id);
       m.error ? c.rej(new Error(m.error)) : c.res(m.result);
     };
@@ -110,7 +131,8 @@ function renderLock() {
 function renderApp() {
   $('#app').innerHTML = `
     <header><h1>Freicoin Wallet</h1>
-      <div class="hbtns"><button id="themeBtn" class="icon"></button><span id="net" class="pill">…</span></div></header>
+      <div class="hbtns"><button id="themeBtn" class="icon"></button><button id="statusBtn" class="pill statusbtn st-sync" title="sync status">●</button></div></header>
+    <div id="statusPop" hidden></div>
     <nav>
       <button data-tab="balance" class="active">Balance</button>
       <button data-tab="receive">Receive</button>
@@ -127,7 +149,9 @@ function renderApp() {
   applyTheme(document.documentElement.dataset.theme);
   $('#themeBtn').onclick = () => { const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; store.set('fw_theme', t); applyTheme(t); };
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.tab));
-  (async () => { try { $('#net').textContent = (await ds().health()).network; } catch { $('#net').textContent = 'offline'; } })();
+  $('#statusBtn').onclick = () => { const pop = $('#statusPop'); pop.hidden = !pop.hidden; if (!pop.hidden) renderStatusPop(); };
+  document.addEventListener('click', e => { const pop = $('#statusPop'); if (pop && !pop.hidden && !pop.contains(e.target) && e.target.id !== 'statusBtn') pop.hidden = true; });
+  setStatus('sync', 'connecting…');
   show('balance');
 }
 
@@ -155,6 +179,8 @@ const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏' };
 // the visible balance screen outside a render.balance() call.
 let balPainted = false;
 function paintBalance(s) {
+  if (!s.stale) setStatus('ok', '', s.tipHeight);
+  else setStatus('sync', undefined, s.tipHeight);
   if ($('#balance').hidden) return;
   balPainted = true;
   const pend = s.pending?.length ? s.pending.reduce((a, p) => a + p.amount, 0) : 0;
@@ -183,8 +209,9 @@ const render = {
     if (!cache) { try { const pv = await ds().preview(); if (pv) paintBalance(pv); } catch {} }
     try { paintBalance(await getState(true)); }
     catch (e) {
-      if (!balPainted) { $('#balance').innerHTML = `<div class="err">sync failed — ${e.message}</div><button id="refresh" class="ghost">↻ Retry</button>`; $('#refresh').onclick = render.balance; return; }
+      if (!balPainted) { setStatus('off', e.message); $('#balance').innerHTML = `<div class="err">sync failed — ${e.message}</div><button id="refresh" class="ghost">↻ Retry</button>`; $('#refresh').onclick = render.balance; return; }
       const el = $('#syncp'); if (el) el.textContent = 'offline — showing last known state, retrying…';
+      setStatus('off', 'bridge unreachable — retrying');
     }
     clearInterval(pollTimer); pollTimer = setInterval(async () => { try { paintBalance(await getState(true)); } catch {} }, 6000);
   },
