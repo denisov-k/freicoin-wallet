@@ -3,37 +3,101 @@
 // scriptPubKey + every spent prevout scriptPubKey in the block, keyed by SipHash
 // over the block hash. A wallet script that appears in a block's filter means the
 // block *may* touch that script (then the full block is fetched and checked).
+//
+// Hot path: a full mainnet scan runs this ~485k times × ~40 wallet scripts. The
+// SipHash core uses 32-bit integer lanes (a u64 as hi/lo uint32 pair) and the GCS
+// decoder plain Numbers — an earlier BigInt implementation was ~20× slower in
+// browsers. BigInt survives only in the one map-to-range multiply per target
+// (hash × N·M needs >64-bit intermediate); its result < N·M fits a Number.
 import { Buffer } from 'buffer';
 import { readVarint } from './p2p.mjs';
 
-const MASK = (1n << 64n) - 1n;
-const rotl = (x, b) => ((x << b) | (x >> (64n - b))) & MASK;
-const u64le = (d, o) => { let v = 0n; for (let i = 7; i >= 0; i--) v = (v << 8n) | BigInt(d[o + i]); return v; };
-
-function sip(v) {
-  v[0] = (v[0] + v[1]) & MASK; v[1] = rotl(v[1], 13n); v[1] ^= v[0]; v[0] = rotl(v[0], 32n);
-  v[2] = (v[2] + v[3]) & MASK; v[3] = rotl(v[3], 16n); v[3] ^= v[2];
-  v[0] = (v[0] + v[3]) & MASK; v[3] = rotl(v[3], 21n); v[3] ^= v[0];
-  v[2] = (v[2] + v[1]) & MASK; v[1] = rotl(v[1], 17n); v[1] ^= v[2]; v[2] = rotl(v[2], 32n);
+// SipHash-2-4 over 32-bit lanes. v = [v0h,v0l, v1h,v1l, v2h,v2l, v3h,v3l].
+function sipround(v) {
+  // v0 += v1
+  let l = v[1] + v[3]; v[0] = (v[0] + v[2] + (l > 0xffffffff ? 1 : 0)) >>> 0; v[1] = l >>> 0;
+  // v1 = rotl(v1, 13)
+  let h = v[2], lo = v[3];
+  v[2] = ((h << 13) | (lo >>> 19)) >>> 0; v[3] = ((lo << 13) | (h >>> 19)) >>> 0;
+  // v1 ^= v0
+  v[2] = (v[2] ^ v[0]) >>> 0; v[3] = (v[3] ^ v[1]) >>> 0;
+  // v0 = rotl(v0, 32)
+  h = v[0]; v[0] = v[1]; v[1] = h;
+  // v2 += v3
+  l = v[5] + v[7]; v[4] = (v[4] + v[6] + (l > 0xffffffff ? 1 : 0)) >>> 0; v[5] = l >>> 0;
+  // v3 = rotl(v3, 16)
+  h = v[6]; lo = v[7];
+  v[6] = ((h << 16) | (lo >>> 16)) >>> 0; v[7] = ((lo << 16) | (h >>> 16)) >>> 0;
+  // v3 ^= v2
+  v[6] = (v[6] ^ v[4]) >>> 0; v[7] = (v[7] ^ v[5]) >>> 0;
+  // v0 += v3
+  l = v[1] + v[7]; v[0] = (v[0] + v[6] + (l > 0xffffffff ? 1 : 0)) >>> 0; v[1] = l >>> 0;
+  // v3 = rotl(v3, 21)
+  h = v[6]; lo = v[7];
+  v[6] = ((h << 21) | (lo >>> 11)) >>> 0; v[7] = ((lo << 21) | (h >>> 11)) >>> 0;
+  // v3 ^= v0
+  v[6] = (v[6] ^ v[0]) >>> 0; v[7] = (v[7] ^ v[1]) >>> 0;
+  // v2 += v1
+  l = v[5] + v[3]; v[4] = (v[4] + v[2] + (l > 0xffffffff ? 1 : 0)) >>> 0; v[5] = l >>> 0;
+  // v1 = rotl(v1, 17)
+  h = v[2]; lo = v[3];
+  v[2] = ((h << 17) | (lo >>> 15)) >>> 0; v[3] = ((lo << 17) | (h >>> 15)) >>> 0;
+  // v1 ^= v2
+  v[2] = (v[2] ^ v[4]) >>> 0; v[3] = (v[3] ^ v[5]) >>> 0;
+  // v2 = rotl(v2, 32)
+  h = v[4]; v[4] = v[5]; v[5] = h;
 }
-function siphash(k0, k1, data) {
-  const v = [0x736f6d6570736575n ^ k0, 0x646f72616e646f6dn ^ k1, 0x6c7967656e657261n ^ k0, 0x7465646279746573n ^ k1];
+
+const rd32 = (d, o) => (d[o] | (d[o + 1] << 8) | (d[o + 2] << 16) | (d[o + 3] << 24)) >>> 0;
+
+/** SipHash-2-4(k, data) -> {hi, lo} (uint32 halves of the 64-bit hash). Key = k0h..k1l. */
+function siphash(k0h, k0l, k1h, k1l, data) {
+  const v = new Uint32Array([
+    0x736f6d65 ^ k0h, 0x70736575 ^ k0l, 0x646f7261 ^ k1h, 0x6e646f6d ^ k1l,
+    0x6c796765 ^ k0h, 0x6e657261 ^ k0l, 0x74656462 ^ k1h, 0x79746573 ^ k1l,
+  ]);
   const len = data.length; let i = 0;
-  for (; i + 8 <= len; i += 8) { const m = u64le(data, i); v[3] ^= m; sip(v); sip(v); v[0] ^= m; }
-  let b = BigInt(len & 0xff) << 56n;
-  for (let j = 0; i + j < len; j++) b |= BigInt(data[i + j]) << (8n * BigInt(j));
-  v[3] ^= b; sip(v); sip(v); v[0] ^= b;
-  v[2] ^= 0xffn; sip(v); sip(v); sip(v); sip(v);
-  return (v[0] ^ v[1] ^ v[2] ^ v[3]) & MASK;
+  for (; i + 8 <= len; i += 8) {
+    const ml = rd32(data, i), mh = rd32(data, i + 4);
+    v[6] = (v[6] ^ mh) >>> 0; v[7] = (v[7] ^ ml) >>> 0;
+    sipround(v); sipround(v);
+    v[0] = (v[0] ^ mh) >>> 0; v[1] = (v[1] ^ ml) >>> 0;
+  }
+  let bl = 0, bh = (len & 0xff) << 24;
+  for (let j = 0; i + j < len; j++) { const byte = data[i + j]; if (j < 4) bl |= byte << (8 * j); else bh |= byte << (8 * (j - 4)); }
+  bl >>>= 0; bh >>>= 0;
+  v[6] = (v[6] ^ bh) >>> 0; v[7] = (v[7] ^ bl) >>> 0;
+  sipround(v); sipround(v);
+  v[0] = (v[0] ^ bh) >>> 0; v[1] = (v[1] ^ bl) >>> 0;
+  v[5] = (v[5] ^ 0xff) >>> 0;   // v2 ^= 0xff (low half)
+  sipround(v); sipround(v); sipround(v); sipround(v);
+  return { hi: (v[0] ^ v[2] ^ v[4] ^ v[6]) >>> 0, lo: (v[1] ^ v[3] ^ v[5] ^ v[7]) >>> 0 };
 }
-const hashToRange = (item, F, k0, k1) => (siphash(k0, k1, item) * F) >> 64n;
 
+// map-to-range: (hash * F) >> 64. F = N·M can reach ~2^33 and the product ~2^97, so
+// this one step stays BigInt; the result (< F) is returned as a Number.
+const mapToRange = (h, F) => Number((((BigInt(h.hi) << 32n) | BigInt(h.lo)) * F) >> 64n);
+
+/** Golomb-Rice bit reader over plain Numbers (values < N·M < 2^53). */
 class BitReader {
-  constructor(b) { this.b = b; this.pos = 0; }
-  bit() { const x = (this.b[this.pos >> 3] >> (7 - (this.pos & 7))) & 1; this.pos++; return x; }
-  bits(n) { let v = 0n; for (let i = 0; i < n; i++) v = (v << 1n) | BigInt(this.bit()); return v; }
+  constructor(b) { this.b = b; this.pos = 0; this.acc = 0; this.cnt = 0; }
+  bit() {
+    if (this.cnt === 0) { this.acc = this.b[this.pos++] | 0; this.cnt = 8; }
+    this.cnt--;
+    return (this.acc >> this.cnt) & 1;
+  }
+  bits(n) {
+    let v = 0;
+    while (n > 0) {
+      if (this.cnt === 0) { this.acc = this.b[this.pos++] | 0; this.cnt = 8; }
+      const take = Math.min(n, this.cnt);
+      v = v * (1 << take) + ((this.acc >> (this.cnt - take)) & ((1 << take) - 1));
+      this.cnt -= take; n -= take;
+    }
+    return v;
+  }
 }
-function golomb(br, P) { let q = 0n; while (br.bit() === 1) q++; return (q << BigInt(P)) + br.bits(P); }
+function golomb(br, P) { let q = 0; while (br.bit() === 1) q++; return q * 2 ** P + br.bits(P); }
 
 /**
  * Does the filter (Buffer) for block `blockHashHex` (display order) match any of
@@ -42,13 +106,13 @@ function golomb(br, P) { let q = 0n; while (br.bit() === 1) q++; return (q << Bi
 export function filterMatchesAny(filter, blockHashHex, scriptsHex, P = 19, M = 784931n) {
   filter = Buffer.from(filter);
   const key = Buffer.from(blockHashHex, 'hex').reverse();      // internal byte order
-  const k0 = u64le(key, 0), k1 = u64le(key, 8);
+  const k0h = rd32(key, 4), k0l = rd32(key, 0), k1h = rd32(key, 12), k1l = rd32(key, 8);
   const [N, o] = readVarint(filter, 0);
   if (N === 0) return false;
   const F = BigInt(N) * M;
-  const targets = scriptsHex.map(s => hashToRange(Buffer.from(s, 'hex'), F, k0, k1)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const targets = scriptsHex.map(s => mapToRange(siphash(k0h, k0l, k1h, k1l, Buffer.from(s, 'hex')), F)).sort((a, b) => a - b);
   const br = new BitReader(filter.subarray(o));
-  let val = 0n, ti = 0;
+  let val = 0, ti = 0;
   for (let i = 0; i < N && ti < targets.length; i++) {
     val += golomb(br, P);
     while (ti < targets.length && targets[ti] < val) ti++;

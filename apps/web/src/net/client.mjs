@@ -173,22 +173,45 @@ export class Neutrino {
     });
   }
 
-  /** BIP158 filters for heights [from..tip]; return the block hashes matching `scripts`.
-   *  Batched (the node serves at most 1000 filters per request). */
-  async matchFilters(scripts, from = 1) {
+  /** Stream filters for [from..tip] through `each(cf)`, with up to `DEPTH` batch requests
+   *  in flight (the node answers requests in order over the single stream, so responses
+   *  arrive sequentially). A sequential batch loop is RTT-bound: a full mainnet scan is
+   *  ~485 batches — pipelining makes it download/CPU-bound instead. */
+  _cfilterStream(from, each) {
+    const DEPTH = 8;
     const tip = this.chain.length - 1;
     const want = tip - from + 1;
-    if (want <= 0) return [];
-    const matched = [];
-    let done = 0;
-    for (let lo = from; lo <= tip; lo += CFILTERS_BATCH) {
-      const hi = Math.min(lo + CFILTERS_BATCH - 1, tip);
-      await this._cfilterBatch(lo, hi, cf => {
-        if (filterMatchesAny(cf.filter, cf.blockHash, scripts)) matched.push(cf.blockHash);
-        done++;
+    if (want <= 0) return Promise.resolve(0);
+    const ranges = [];
+    for (let lo = from; lo <= tip; lo += CFILTERS_BATCH) ranges.push([lo, Math.min(lo + CFILTERS_BATCH - 1, tip)]);
+    let received = 0, sent = 0;
+    return new Promise((res, rej) => {
+      this._inflight.add(rej);
+      const sendMore = () => {
+        while (sent < ranges.length && sent - Math.floor(received / CFILTERS_BATCH) < DEPTH) {
+          const [lo, hi] = ranges[sent++];
+          this._send('getcfilters', buildGetCFilters(lo, this.chain[hi].hash));
+        }
+      };
+      this.on('cfilter', m => {
+        each(parseCFilter(m.payload));
+        received++;
+        if (received % CFILTERS_BATCH === 0 || received === want) {
+          this.onProgress?.({ phase: 'filters', done: received, want });
+          if (received === want) { this._inflight.delete(rej); res(want); return; }
+          sendMore();
+        }
       });
-      this.onProgress?.({ phase: 'filters', done, want });
-    }
+      sendMore();
+    });
+  }
+
+  /** BIP158 filters for heights [from..tip]; return the block hashes matching `scripts`. */
+  async matchFilters(scripts, from = 1) {
+    const matched = [];
+    await this._cfilterStream(from, cf => {
+      if (filterMatchesAny(cf.filter, cf.blockHash, scripts)) matched.push(cf.blockHash);
+    });
     return matched;
   }
 
@@ -212,20 +235,14 @@ export class Neutrino {
   }
 
   /** Full filters for [from..tip], each with its own double-SHA256 (to check against the
-   *  cross-peer agreed hash) and whether it matches `scripts`. Keyed by height. Batched. */
+   *  cross-peer agreed hash) and whether it matches `scripts`. Keyed by height. */
   async filtersWithHashes(scripts, from = 1) {
-    const tip = this.chain.length - 1;
-    if (tip < from) return [];
     const out = [];
-    for (let lo = from; lo <= tip; lo += CFILTERS_BATCH) {
-      const hi = Math.min(lo + CFILTERS_BATCH - 1, tip);
-      await this._cfilterBatch(lo, hi, cf => out.push({
-        height: this.heightOf[cf.blockHash], blockHash: cf.blockHash,
-        filterHash: Buffer.from(sha256d(cf.filter)).reverse().toString('hex'),
-        matched: filterMatchesAny(cf.filter, cf.blockHash, scripts),
-      }));
-      this.onProgress?.({ phase: 'filters', done: out.length, want: tip - from + 1 });
-    }
+    await this._cfilterStream(from, cf => out.push({
+      height: this.heightOf[cf.blockHash], blockHash: cf.blockHash,
+      filterHash: Buffer.from(sha256d(cf.filter)).reverse().toString('hex'),
+      matched: filterMatchesAny(cf.filter, cf.blockHash, scripts),
+    }));
     return out;
   }
 
