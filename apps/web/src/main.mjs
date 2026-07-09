@@ -251,7 +251,7 @@ function paintBalance(s) {
     $('#refresh').onclick = render.balance;
   }
   const pend = s.pending?.length ? s.pending.reduce((a, p) => a + p.amount, 0) : 0;
-  const state = s.stale === 'partial' ? `found so far · scanned to ${(+s.tipHeight).toLocaleString()}`
+  const state = s.stale === 'partial' ? ''            // mid-sweep: the header dot/popover carry the progress
     : s.stale === 'provisional' ? 'not yet verified'
     : s.stale ? 'last known state' : 'present value';
   status.utxos = s.utxos.length;           // detail lives in the status popover
