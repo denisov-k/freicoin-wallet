@@ -108,12 +108,10 @@ const render = {
     if (!$('#balance').innerHTML) $('#balance').innerHTML = `<div class="skel-line"></div>${skel(1)}<div class="sub" id="syncp"></div>`;
     const paint = s => {
       const pend = s.pending?.length ? s.pending.reduce((a, p) => a + p.amount, 0) : 0;
-      const agr = s.agreement && s.agreement.peers > 1
-        ? `<div class="sub">${s.agreement.disputed ? '⚠ ' + s.agreement.disputed + ' filter(s) disputed — resolved from blocks · ' : ''}${s.agreement.agreeing}/${s.agreement.peers} peers agree ✓</div>` : '';
       $('#balance').innerHTML =
       `<div class="big">${fmt(s.balance)} <small>FRC</small></div>
        <div class="sub">present value · tip ${s.tipHeight} · ${s.utxos.length} UTXO</div>
-       ${pend ? `<div class="sub">⏳ ${pend > 0 ? '+' : ''}${fmt(pend)} FRC pending (${s.pending.length} tx)</div>` : ''}${agr}
+       ${pend ? `<div class="sub">⏳ ${pend > 0 ? '+' : ''}${fmt(pend)} FRC pending (${s.pending.length} tx)</div>` : ''}
        <button id="refresh" class="ghost">↻ Refresh</button>`;
       $('#refresh').onclick = render.balance; };
     try { paint(await getState(true)); }
