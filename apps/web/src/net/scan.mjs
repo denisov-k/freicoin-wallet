@@ -1,20 +1,27 @@
 // scan.mjs — client-side wallet scan: parse the blocks BIP158 flagged, track the
 // wallet's UTXOs, and compute a demurrage present-value balance — no backend.
 import { Buffer } from 'buffer';
-import { readVarint } from './p2p.mjs';
+import { readVarint, skipAuxPow } from './p2p.mjs';
 import { parseTx, serializeTx, txid } from '../../../../core/tx.mjs';
 import { timeAdjustValue } from '../../../../core/demurrage.mjs';
 import { sha256d } from '../../../../core/crypto.mjs';
 
-/** Display block hash from a full block's bytes (double-SHA256 of the 80-byte base). */
+/** Display block hash from a full block's bytes (double-SHA256 of the 80-byte base).
+ *  The aux-pow flag (bit 1<<23 of nBits) is cleared before hashing, so an aux-pow
+ *  block hashes to the same value as its header (parseHeaders does the same). */
 export function blockHash(blockBytes) {
-  return Buffer.from(sha256d(Buffer.from(blockBytes).subarray(0, 80))).reverse().toString('hex');
+  const base = Buffer.from(Buffer.from(blockBytes).subarray(0, 80));
+  base.writeUInt32LE((base.readUInt32LE(72) & ~(1 << 23)) >>> 0, 72);
+  return Buffer.from(sha256d(base)).reverse().toString('hex');
 }
 
-/** Parse a block (native-PoW / regtest) into its transactions. */
+/** Parse a block into its transactions. Handles native-PoW blocks (80-byte header) and
+ *  aux-pow blocks (mainnet), whose header carries a merged-mining proof after the base. */
 export function parseBlock(bytes) {
   bytes = Buffer.from(bytes);
-  let [n, o] = readVarint(bytes, 80);          // skip 80-byte header, read tx count
+  let start = 80;
+  if ((bytes.readUInt32LE(72) & (1 << 23)) !== 0) start = skipAuxPow(bytes, 80 + 2);   // aux-pow: dummy(0xff)+flags+proof
+  let [n, o] = readVarint(bytes, start);       // tx count (after the full header)
   let hex = bytes.subarray(o).toString('hex');
   const txs = [];
   for (let i = 0; i < n; i++) { const tx = parseTx(hex); txs.push(tx); hex = hex.slice(serializeTx(tx).length); }
