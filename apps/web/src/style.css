@@ -1,8 +1,17 @@
-:root { --bg:#0f1115; --card:#181b22; --fg:#e8eaed; --sub:#9aa0aa; --accent:#3ea6ff; --ok:#4caf50; --err:#ef5350; --line:#262a33; }
-* { box-sizing:border-box; } body { margin:0; font:15px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--fg); }
+:root, :root[data-theme="dark"] {
+  --bg:#0f1115; --card:#181b22; --fg:#e8eaed; --sub:#9aa0aa; --accent:#3ea6ff;
+  --accent-fg:#04121f; --ok:#4caf50; --err:#ef5350; --warn:#e0a030; --line:#262a33;
+}
+:root[data-theme="light"] {
+  --bg:#f6f7f9; --card:#ffffff; --fg:#1a1d24; --sub:#6b727e; --accent:#1e88e5;
+  --accent-fg:#ffffff; --ok:#2e7d32; --err:#d32f2f; --warn:#b26a00; --line:#e2e5ea;
+}
+* { box-sizing:border-box; } body { margin:0; font:15px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--fg); transition:background .2s,color .2s; }
 #app { max-width:460px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; }
 header { display:flex; align-items:center; justify-content:space-between; padding:18px 20px; border-bottom:1px solid var(--line); }
-header h1 { font-size:18px; margin:0; } .pill { font-size:12px; color:var(--sub); border:1px solid var(--line); border-radius:99px; padding:2px 10px; }
+header h1 { font-size:18px; margin:0; } .hbtns { display:flex; align-items:center; gap:10px; }
+.pill { font-size:12px; color:var(--sub); border:1px solid var(--line); border-radius:99px; padding:2px 10px; }
+.icon { background:none; border:1px solid var(--line); border-radius:8px; color:var(--fg); width:32px; height:32px; cursor:pointer; font-size:15px; }
 nav { display:flex; gap:4px; padding:10px 16px; border-bottom:1px solid var(--line); }
 nav button { flex:1; background:none; border:0; color:var(--sub); padding:8px; border-radius:8px; cursor:pointer; font-size:14px; }
 nav button.active { background:var(--card); color:var(--fg); }
@@ -12,12 +21,15 @@ main { flex:1; padding:24px 20px; } section { display:flex; flex-direction:colum
 .sub { color:var(--sub); font-size:13px; } .label,.loading { color:var(--sub); font-size:13px; }
 .addr { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; word-break:break-all; font-family:ui-monospace,monospace; font-size:13px; }
 label { display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--sub); }
-input { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; color:var(--fg); font-size:15px; }
-button:not(nav button) { background:var(--accent); color:#04121f; border:0; border-radius:10px; padding:12px; font-size:15px; font-weight:600; cursor:pointer; }
-#msg { padding:0 20px 16px; font-size:13px; min-height:20px; } .ok{color:var(--ok);} .err{color:var(--err);}
-#sendResult .ok, #sendResult { word-break:break-all; font-size:13px; }
+input { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; color:var(--fg); font-size:15px; width:100%; }
+button:not(nav button):not(.icon) { background:var(--accent); color:var(--accent-fg); border:0; border-radius:10px; padding:12px; font-size:15px; font-weight:600; cursor:pointer; }
 .ghost { background:transparent!important; border:1px solid var(--line)!important; color:var(--fg)!important; font-weight:400!important; }
 .row { display:flex; gap:8px; } .row button { flex:1; }
+.amtrow { display:flex; gap:8px; } .amtrow input { flex:1; } .amtrow button { width:auto; padding:12px 16px; }
 .qr { align-self:center; border-radius:10px; background:#fff; padding:8px; width:220px; height:220px; }
 .txid { font-family:ui-monospace,monospace; font-size:13px; word-break:break-all; color:var(--sub); }
-.warn { color:#e0a030; font-size:12px; } button:disabled { opacity:.6; }
+.warn { color:var(--warn); font-size:12px; }
+.review { display:flex; flex-direction:column; gap:10px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-top:6px; }
+.rrow { display:flex; justify-content:space-between; font-size:14px; } .rrow span { color:var(--sub); }
+button:disabled { opacity:.6; cursor:default; }
+#msg { padding:0 20px 16px; font-size:13px; min-height:20px; } .ok{color:var(--ok);} .err{color:var(--err);}
