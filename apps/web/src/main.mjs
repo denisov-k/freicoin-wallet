@@ -246,9 +246,7 @@ function paintBalance(s) {
     $('#balance').innerHTML =
       `<div class="big" id="balBig"></div>
        <div class="sub" id="balSub"></div>
-       <div class="sub" id="balPend"></div>
-       <button id="refresh" class="ghost">↻ Refresh</button>`;
-    $('#refresh').onclick = render.balance;
+       <div class="sub" id="balPend"></div>`;
   }
   const pend = s.pending?.length ? s.pending.reduce((a, p) => a + p.amount, 0) : 0;
   const state = s.stale === 'partial' ? ''            // mid-sweep: the header dot/popover carry the progress
