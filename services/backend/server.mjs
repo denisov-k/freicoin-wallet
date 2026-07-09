@@ -9,9 +9,14 @@ import { createServer } from 'http';
 import { config } from './config.mjs';
 import { deriveAddress, scan, broadcast, txStatus } from './wallet.mjs';
 
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
 const json = (res, code, body) => {
   const s = JSON.stringify(body);
-  res.writeHead(code, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(s) });
+  res.writeHead(code, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(s), ...CORS });
   res.end(s);
 };
 const readBody = req => new Promise((ok, err) => {
@@ -19,6 +24,7 @@ const readBody = req => new Promise((ok, err) => {
 });
 
 const server = createServer(async (req, res) => {
+  if (req.method === 'OPTIONS') { res.writeHead(204, CORS); return res.end(); }
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
   try {

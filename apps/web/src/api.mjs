@@ -1,5 +1,7 @@
 // api.mjs — client for the variant-C backend.
-const base = () => localStorage.getItem('fw_backend') || 'http://127.0.0.1:3030';
+// Backend URL: user setting > build-time VITE_BACKEND > localhost.
+const DEFAULT = import.meta.env?.VITE_BACKEND || 'http://127.0.0.1:3030';
+const base = () => localStorage.getItem('fw_backend') || DEFAULT;
 const get = async p => { const r = await fetch(base() + p); if (!r.ok) throw new Error((await r.json()).error || r.status); return r.json(); };
 export const health = () => get('/health');
 export const address = (index = 0, chain = 0) => get(`/address?index=${index}&chain=${chain}`);

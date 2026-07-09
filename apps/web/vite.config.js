@@ -1,12 +1,8 @@
 import { defineConfig } from 'vite';
-import { fileURLToPath } from 'url';
 
-// Swap the core's Node crypto backend for the browser one, and polyfill Buffer.
-const cryptoWeb = fileURLToPath(new URL('../../core/crypto.web.mjs', import.meta.url));
-
+// The core's Node crypto/ecdsa backends are swapped for browser ones
+// (@noble/*) via the "browser" field of core/package.json. Buffer is polyfilled
+// in main.mjs. Nothing else is needed here.
 export default defineConfig({
-  resolve: {
-    alias: [{ find: /\/core\/crypto\.mjs$/, replacement: cryptoWeb }],
-  },
   define: { global: 'globalThis' },
 });

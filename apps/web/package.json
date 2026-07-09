@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@noble/hashes": "^2.2.0",
-    "buffer": "^6.0.3"
+    "buffer": "^6.0.3",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "vite": "^8.1.4"
