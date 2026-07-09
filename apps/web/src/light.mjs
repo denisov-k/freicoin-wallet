@@ -3,6 +3,7 @@
 // either. No trusted backend: balance/UTXOs/history are computed client-side from
 // verified headers, BIP157/158 filters and the blocks they flag.
 import { Neutrino, NeutrinoPool } from './net/client.mjs';
+import { IdbStore } from './store-idb.mjs';
 import { timeAdjustValue } from '../../../core/demurrage.mjs';
 import { parseTx, txid as txidOf } from '../../../core/tx.mjs';
 
@@ -14,22 +15,8 @@ const scriptsKey = scripts => { let h = 5381 >>> 0; const s = scripts.join(''); 
 
 export function createLightSource({ url, net, genesis, scripts }) {
   let n = null, cache = null;
-  const store = (() => { try { return globalThis.localStorage; } catch { return null; } })();
-  const storeKey = `fw:light:${net}:${genesis.slice(0, 12)}`;
+  const store = new IdbStore(net, genesis);   // IndexedDB — holds a full mainnet header chain
   const skey = scriptsKey(scripts);
-
-  function loadPersisted() {
-    if (!store) return;
-    try {
-      const raw = store.getItem(storeKey); if (!raw) return;
-      const saved = JSON.parse(raw);
-      if (saved.skey === skey) n.importState(saved.state);   // same wallet → resume; else start fresh
-    } catch {}
-  }
-  function savePersisted() {
-    if (!store || !n) return;
-    try { store.setItem(storeKey, JSON.stringify({ skey, state: n.exportState() })); } catch {}
-  }
 
   // One or more bridge URLs (comma/space separated). Multiple ⇒ multi-peer filter
   // agreement (no single peer can hide funds); one ⇒ the plain single-peer client.
@@ -38,10 +25,11 @@ export function createLightSource({ url, net, genesis, scripts }) {
   async function sync() {
     if (!n) {
       n = urls.length > 1 ? new NeutrinoPool({ urls, net, genesis }) : new Neutrino({ url: urls[0], net, genesis });
-      loadPersisted(); await n.connect();
+      try { if (await store.open()) await store.loadInto(n, skey); } catch {}   // resume persisted chain if same wallet
+      await n.connect();
     }
     const r = await n.syncWallet(scripts);
-    savePersisted();
+    try { await store.save(n, skey); } catch {}
     const tip = r.tipHeight;
     cache = {
       tipHeight: tip,
@@ -69,6 +57,6 @@ export function createLightSource({ url, net, genesis, scripts }) {
     async history() { const c = await ensure(); return { txs: c.history }; },
     async broadcast(rawtx) { if (!n) await sync(); n.broadcast(rawtx); return { txid: txidOf(parseTx(rawtx)) }; },
     refresh: sync,
-    close() { if (n) { n.close(); n = null; cache = null; } },
+    close() { if (n) { n.close(); n = null; cache = null; } store.close(); },
   };
 }

@@ -23,7 +23,9 @@ export class Neutrino {
     this.utxos = new Map();              // "txid:vout" -> {txid,vout,value,refheight,script,coinbase}
     this.history = [];                   // {txid,category,amount,height,time}
     this.scannedHeight = 0;              // highest block scanned for wallet activity
+    this.reorgFloor = null;              // lowest fork height rolled back since last persist (signal for the store)
   }
+  get stateClient() { return this; }     // the object that owns the persistable chain/UTXO state
 
   /** Block locator with exponential back-off, so the node can find the fork point after a reorg. */
   _locator() {
@@ -48,6 +50,7 @@ export class Neutrino {
     for (const [k, u] of this.utxos) if (u.refheight > forkH) this.utxos.delete(k);
     this.history = this.history.filter(e => e.height <= forkH);
     this.scannedHeight = Math.min(this.scannedHeight, forkH);
+    this.reorgFloor = Math.min(this.reorgFloor ?? Infinity, forkH);
   }
   _send(cmd, payload) { this.ws.send(encodeMessage(this.net, cmd, payload)); }
   on(cmd, fn) { this._handlers[cmd] = fn; }
@@ -248,6 +251,7 @@ export class NeutrinoPool {
     this.primary = this.peers[0];
     this.lastAgreement = null;
   }
+  get stateClient() { return this.primary; }   // the primary owns the persistable chain/UTXO state
 
   async connect() {
     const rs = await Promise.allSettled(this.peers.map(p => p.connect()));
