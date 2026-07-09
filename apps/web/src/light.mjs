@@ -35,23 +35,22 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     }
   };
 
-  async function sync() {
-    if (!n) {
-      n = urls.length > 1 ? new NeutrinoPool({ urls, net, genesis }) : new Neutrino({ url: urls[0], net, genesis });
-      let resumed = false;
-      try { if (await store.open()) resumed = await store.loadInto(n, skey); } catch {}   // resume persisted chain if same wallet
-      // Fresh start: skip filters/scan below the wallet's birth height (headers still sync
-      // fully — PoW trustlessness is not windowed). Crucial on mainnet: without a birth
-      // height a new wallet would scan ~485k filters that cannot contain its coins.
-      if (!resumed && birthHeight > 0) n.stateClient.scannedHeight = birthHeight - 1;
-      await n.connect();
-      n.stateClient.onProgress = progress;     // after connect: the pool's primary is final by then
-    }
-    const r = await n.syncWallet(scripts);
-    try { await store.save(n, skey); } catch {}
+  // Create the client + restore persisted state. NO network — connect happens in sync().
+  async function initClient() {
+    if (n) return;
+    n = urls.length > 1 ? new NeutrinoPool({ urls, net, genesis }) : new Neutrino({ url: urls[0], net, genesis });
+    let resumed = false;
+    try { if (await store.open()) resumed = await store.loadInto(n, skey); } catch {}   // resume persisted chain if same wallet
+    // Fresh start: skip filters/scan below the wallet's birth height (headers still sync
+    // fully — PoW trustlessness is not windowed). Crucial on mainnet: without a birth
+    // height a new wallet would scan ~485k filters that cannot contain its coins.
+    if (!resumed && birthHeight > 0) n.stateClient.scannedHeight = birthHeight - 1;
+  }
+
+  const toCache = (r, stale = false) => {
     const tip = r.tipHeight;
-    cache = {
-      tipHeight: tip,
+    return {
+      stale, tipHeight: tip,
       balance: kriaToFrc(r.balance),
       utxos: r.utxos.map(u => ({
         txid: u.txid, vout: u.vout, refheight: u.refheight,
@@ -71,15 +70,36 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       })),
       agreement: r.agreement || null,
     };
+  };
+
+  async function sync() {
+    await initClient();
+    if (!connected) { await n.connect(); n.stateClient.onProgress = progress; connected = true; }
+    const r = await n.syncWallet(scripts);
+    try { await store.save(n, skey); } catch {}
+    cache = toCache(r);
     return cache;
   }
+  let connected = false;
   const ensure = async () => cache || sync();
+
+  /** Last-known state, instantly and without any network: the persisted chain/UTXO set
+   *  restored from IndexedDB (or whatever is already in memory). Null when there is
+   *  nothing to show yet. Marked stale — callers must not build transactions from it. */
+  async function preview() {
+    if (cache) return cache;                       // a fresh sync already happened
+    await initClient();
+    const s = n.stateClient;
+    if (s.chain.length <= 1 && s.utxos.size === 0) return null;
+    return toCache(n.snapshot(), true);
+  }
 
   return {
     async health() { return { ok: true, network: net + ' (light)' }; },
     async balance() { const c = await ensure(); return { balance: c.balance, tipHeight: c.tipHeight, unit: 'present-value', pending: c.pending, agreement: c.agreement }; },
     async utxos() { const c = await sync(); return { balance: c.balance, tipHeight: c.tipHeight, utxos: c.utxos, pending: c.pending, agreement: c.agreement }; },
     async history() { const c = await ensure(); return { txs: [...c.pending, ...c.history] }; },
+    preview,
     async broadcast(rawtx) { if (!n) await sync(); n.broadcast(rawtx); return { txid: txidOf(parseTx(rawtx)) }; },
     refresh: sync,
     close() { if (n) { n.close(); n = null; cache = null; } store.close(); },

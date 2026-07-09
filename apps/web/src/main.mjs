@@ -41,7 +41,7 @@ function ds() {
     }).catch(() => {});
     lightSrc = {
       health: () => wcall('health'), balance: () => wcall('balance'), utxos: () => wcall('utxos'),
-      history: () => wcall('history'), refresh: () => wcall('refresh'),
+      history: () => wcall('history'), refresh: () => wcall('refresh'), preview: () => wcall('preview'),
       broadcast: rawtx => wcall('broadcast', rawtx),
       close() {
         const w = worker; worker = null;
@@ -133,16 +133,24 @@ const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏' };
 const render = {
   async balance() {
     if (!$('#balance').innerHTML) $('#balance').innerHTML = `<div class="skel-line"></div>${skel(1)}<div class="sub" id="syncp"></div>`;
+    let painted = false;
     const paint = s => {
+      painted = true;
       const pend = s.pending?.length ? s.pending.reduce((a, p) => a + p.amount, 0) : 0;
       $('#balance').innerHTML =
       `<div class="big">${fmt(s.balance)} <small>FRC</small></div>
-       <div class="sub">present value · tip ${s.tipHeight} · ${s.utxos.length} UTXO</div>
+       <div class="sub">${s.stale ? `last known state · tip ${s.tipHeight}` : `present value · tip ${s.tipHeight}`} · ${s.utxos.length} UTXO</div>
        ${pend ? `<div class="sub">⏳ ${pend > 0 ? '+' : ''}${fmt(pend)} FRC pending (${s.pending.length} tx)</div>` : ''}
+       <div class="sub" id="syncp">${s.stale ? '⟳ syncing…' : ''}</div>
        <button id="refresh" class="ghost">↻ Refresh</button>`;
       $('#refresh').onclick = render.balance; };
+    // Instant: last persisted state (no network) while the real sync runs.
+    if (!cache) { try { const pv = await ds().preview(); if (pv) paint(pv); } catch {} }
     try { paint(await getState(true)); }
-    catch (e) { $('#balance').innerHTML = `<div class="err">sync failed — ${e.message}</div><button id="refresh" class="ghost">↻ Retry</button>`; $('#refresh').onclick = render.balance; return; }
+    catch (e) {
+      if (!painted) { $('#balance').innerHTML = `<div class="err">sync failed — ${e.message}</div><button id="refresh" class="ghost">↻ Retry</button>`; $('#refresh').onclick = render.balance; return; }
+      const el = $('#syncp'); if (el) el.textContent = 'offline — showing last known state, retrying…';
+    }
     clearInterval(pollTimer); pollTimer = setInterval(async () => { try { paint(await getState(true)); } catch {} }, 6000);
   },
   async receive() {
@@ -171,20 +179,27 @@ const render = {
   },
   async activity() {
     $('#activity').innerHTML = skel(4);
-    try {
-      const { txs } = await ds().history();
-      $('#activity').innerHTML = txs.length ? txs.map((t, i) =>
+    let painted = false;
+    const paintList = (txs, stale) => {
+      painted = true;
+      $('#activity').innerHTML = (stale ? '<div class="sub">⟳ syncing — last known state</div>' : '') + (txs.length ? txs.map((t, i) =>
         `<div class="act" data-i="${i}">
            <div class="act-i ${t.category}">${CAT[t.category] || '•'}</div>
            <div class="act-m"><b>${t.category}</b><span class="sub">${t.confirmations > 0 ? t.confirmations + ' conf' : 'pending'} · ${timeAgo(t.time)}</span></div>
            <div class="act-a ${(+t.amount) < 0 ? 'neg' : 'pos'}">${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)}</div>
-         </div>`).join('') + '<div id="actDetail"></div>' : '<div class="sub">no transactions yet</div>';
+         </div>`).join('') + '<div id="actDetail"></div>' : '<div class="sub">no transactions yet</div>');
       document.querySelectorAll('.act').forEach(el => el.onclick = () => {
         const t = txs[+el.dataset.i];
         $('#actDetail').innerHTML = `<div class="detail"><span class="sub">txid</span><div class="txid" id="dtxid">${t.txid}</div><button id="copyTxid" class="ghost">Copy txid</button></div>`;
         $('#copyTxid').onclick = e => copy(t.txid, e.target);
       });
-    } catch (e) { $('#activity').innerHTML = `<div class="err">${e.message}</div>`; }
+    };
+    // Instant: last persisted history while the sync runs.
+    if (!cache) { try { const pv = await ds().preview(); if (pv) paintList([...pv.pending, ...pv.history], true); } catch {} }
+    try {
+      const { txs } = await ds().history();
+      paintList(txs, false);
+    } catch (e) { if (!painted) $('#activity').innerHTML = `<div class="err">${e.message}</div>`; }
   },
   settings() {
     const vault = getVault(), s = secret();

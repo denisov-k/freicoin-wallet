@@ -306,6 +306,15 @@ export class Neutrino {
     return { tipHeight: tip, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()] };
   }
 
+  /** The same result shape as syncWallet, computed from the CURRENT in-memory state with
+   *  no network at all — used to show a last-known balance instantly (e.g. restored from
+   *  IndexedDB) while the real sync catches up. */
+  snapshot() {
+    const tip = this.chain.length - 1;
+    let balance = 0n; for (const u of this.utxos.values()) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
+    return { tipHeight: tip, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()] };
+  }
+
   /** Serialize the incremental state (JSON-safe) for persistence across page reloads. */
   exportState() {
     return {
@@ -421,6 +430,7 @@ export class NeutrinoPool {
   }
 
   broadcast(rawHex) { for (const p of this.peers) p.broadcast(rawHex); return null; }
+  snapshot() { return this.primary.snapshot(); }
   exportState() { return this.primary.exportState(); }
   importState(s) { return this.primary.importState(s); }
   close() { for (const p of this.peers) p.close(); }
