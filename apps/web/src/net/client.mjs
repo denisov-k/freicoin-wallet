@@ -131,13 +131,21 @@ export class Neutrino {
 
   /** Incrementally extend the chain from the current tip, verifying linkage + PoW.
    *  Only NEW headers are fetched (getheaders from a back-off locator); a reorg below
-   *  the tip is detected via the locator and rolled back. Returns the chain array. */
+   *  the tip is detected via the locator and rolled back. PIPELINED: the next batch is
+   *  requested as soon as the current one is parsed (its hashes are known before PoW
+   *  verification), so the network round-trip overlaps the CPU-heavy verify — on a
+   *  high-RTT link (mobile) the sequential request→verify→request loop was RTT-bound.
+   *  Returns the chain array. */
   async syncHeaders() {
+    const request = locator => { const p = this._await('headers'); this._send('getheaders', buildGetHeaders(PROTO, locator)); return p; };
+    let inFlight = request(this._locator());
     for (;;) {
-      const p = this._await('headers');
-      this._send('getheaders', buildGetHeaders(PROTO, this._locator()));
-      const hs = parseHeaders((await p).payload);
+      const hs = parseHeaders((await inFlight).payload);
       if (hs.length === 0) break;
+      // Ask for the batch after this one BEFORE verifying: parseHeaders already computed
+      // every hash, so the locator head is known. If this batch fails PoW we throw anyway;
+      // the speculative request costs nothing (its response is simply never awaited).
+      inFlight = request([hs[hs.length - 1].hash, ...this._locator()]);
       // The first header connects at the last block we share with the peer (fork point).
       const forkH = this.heightOf[hs[0].prevHash];
       if (forkH === undefined) throw new Error('headers do not connect (deep reorg?)');

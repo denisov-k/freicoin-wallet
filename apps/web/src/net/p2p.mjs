@@ -19,22 +19,32 @@ export function encodeMessage(net, command, payload = Buffer.alloc(0)) {
   return Buffer.concat([Buffer.from(MAGIC[net]), cmd, len, chk, payload]);
 }
 
-/** Streaming decoder: push a chunk, get back an array of {command, payload, ok}. */
+/** Streaming decoder: push a chunk, get back an array of {command, payload, ok}.
+ *  Chunks are accumulated in a list and merged only once a full message is available
+ *  (`needed` tracks the message boundary) — a naive per-chunk Buffer.concat is O(n²)
+ *  on large messages (a mainnet aux-pow headers batch is ~730KB across many chunks). */
 export function createDecoder(net) {
   const magic = Buffer.from(MAGIC[net]);
-  let buf = Buffer.alloc(0);
+  let acc = [], total = 0, needed = 24;
   return chunk => {
-    buf = Buffer.concat([buf, Buffer.from(chunk)]);
+    acc.push(Buffer.from(chunk)); total += chunk.length;
     const out = [];
-    while (buf.length >= 24) {
-      if (!buf.subarray(0, 4).equals(magic)) { buf = buf.subarray(1); continue; }  // resync
-      const len = buf.readUInt32LE(16);
-      if (buf.length < 24 + len) break;
-      const command = buf.subarray(4, 16).toString('ascii').replace(/\0+$/, '');
-      const payload = buf.subarray(24, 24 + len);
-      const ok = Buffer.from(sha256d(payload)).subarray(0, 4).equals(buf.subarray(20, 24));
+    while (total >= needed) {
+      let b = acc.length === 1 ? acc[0] : (acc = [Buffer.concat(acc)])[0];
+      if (!b.subarray(0, 4).equals(magic)) {                       // resync (rare)
+        let off = 1;
+        while (off + 4 <= b.length && !b.subarray(off, off + 4).equals(magic)) off++;
+        b = b.subarray(off); acc = [b]; total = b.length; needed = 24;
+        if (total < 24) break; else continue;
+      }
+      const len = b.readUInt32LE(16);
+      if (total < 24 + len) { needed = 24 + len; break; }          // wait — no concat per chunk
+      const command = b.subarray(4, 16).toString('ascii').replace(/\0+$/, '');
+      const payload = b.subarray(24, 24 + len);
+      const ok = Buffer.from(sha256d(payload)).subarray(0, 4).equals(b.subarray(20, 24));
       out.push({ command, payload, ok });
-      buf = buf.subarray(24 + len);
+      const rest = b.subarray(24 + len);
+      acc = [rest]; total = rest.length; needed = 24;
     }
     return out;
   };
