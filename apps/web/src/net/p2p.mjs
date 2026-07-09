@@ -85,6 +85,27 @@ export function readVarint(buf, o) {
 
 const AUX_FLAG = 1 << 23;   // nBits sign bit: set => an AuxProofOfWork follows the 80-byte header
 
+/** Bitcoin VARINT (base-128; distinct from the compactSize used for vector lengths). */
+export function readBVarint(buf, o) {
+  let n = 0n;
+  for (;;) { const b = buf[o++]; n = (n << 7n) | BigInt(b & 0x7f); if (b & 0x80) n++; else break; }
+  return [Number(n), o];
+}
+
+/** Advance past an AuxProofOfWork serialization starting at `o`. Returns the new offset. */
+export function skipAuxPow(buf, o) {
+  o += 4 + 32 + 4 + 4 + 4 + 8 + 8;                        // commit_version..secret_hi
+  let n; [n, o] = readVarint(buf, o); o += n * (1 + 32); // commit_branch: N*(uchar+uint256)
+  o += 32;                                                // midstate_hash
+  [n, o] = readVarint(buf, o); o += n;                   // midstate_buffer
+  [, o] = readBVarint(buf, o);                            // VARINT midstate_length
+  o += 4;                                                 // aux_lock_time
+  [n, o] = readVarint(buf, o); o += n * 32;              // aux_branch: N*uint256
+  [, o] = readBVarint(buf, o);                            // VARINT aux_pos
+  o += 4 + 32 + 4 + 4;                                    // aux_version,aux_prev,aux_bits,aux_nonce
+  return o;
+}
+
 /** getheaders payload: version + block locator (display-hex hashes) + hash_stop. */
 export function buildGetHeaders(protoVer, locatorHex, hashStopHex = '00'.repeat(32)) {
   const parts = [Buffer.alloc(4)];
@@ -95,22 +116,27 @@ export function buildGetHeaders(protoVer, locatorHex, hashStopHex = '00'.repeat(
   return Buffer.concat(parts);
 }
 
-/** Parse a `headers` message into [{hash, prevHash, version, time, bits, nonce}].
- *  Regtest/native-PoW headers are 80 bytes; aux-pow (mainnet) headers are not yet
- *  supported here (they carry a merged-mining proof after the 80-byte base). */
+/** Parse a `headers` message into [{hash, prevHash, version, time, bits, nonce, hasAux}].
+ *  Handles native-PoW (80-byte, regtest) and aux-pow (mainnet) headers. The block hash is
+ *  HASH256 of the 80-byte base with the aux flag cleared from nBits; an aux-pow header also
+ *  carries a dummy(0xff)+flags pair and a merged-mining proof, which is parsed past.
+ *  (Aux-pow *PoW verification* — GetAuxiliaryHash — is a separate step.) */
 export function parseHeaders(payload) {
   payload = Buffer.from(payload);
   let [count, o] = readVarint(payload, 0);
   const headers = [];
   for (let i = 0; i < count; i++) {
-    const base = payload.subarray(o, o + 80);
-    const bits = base.readUInt32LE(72) >>> 0;
-    if (bits & AUX_FLAG) throw new Error('aux-pow header parsing not yet implemented (mainnet)');
+    const base = Buffer.from(payload.subarray(o, o + 80));
+    const serBits = base.readUInt32LE(72) >>> 0;
+    const hasAux = (serBits & AUX_FLAG) !== 0;
+    const bits = serBits & ~AUX_FLAG;                     // real nBits (aux flag cleared)
+    base.writeUInt32LE(bits >>> 0, 72);
     const hash = Buffer.from(sha256d(base)).reverse().toString('hex');
     const prevHash = Buffer.from(base.subarray(4, 36)).reverse().toString('hex');
-    headers.push({ hash, prevHash, version: base.readInt32LE(0), time: base.readUInt32LE(68), bits, nonce: base.readUInt32LE(76) >>> 0 });
+    headers.push({ hash, prevHash, version: base.readInt32LE(0), time: base.readUInt32LE(68), bits, nonce: base.readUInt32LE(76) >>> 0, hasAux });
     o += 80;
-    [, o] = readVarint(payload, o);   // tx_count (0 in headers)
+    if (hasAux) o = skipAuxPow(payload, o + 2);           // dummy(0xff) + flags + aux_pow
+    [, o] = readVarint(payload, o);                       // tx_count (0 in headers)
   }
   return headers;
 }

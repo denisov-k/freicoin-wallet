@@ -50,7 +50,9 @@ export class Neutrino {
       const hs = parseHeaders((await p).payload);
       for (const h of hs) {
         if (h.prevHash !== chain[chain.length - 1].hash) throw new Error('header chain break');
-        if (!checkNativePoW(h)) throw new Error('header PoW invalid');
+        // native-PoW headers (regtest) are verified here; aux-pow (mainnet) PoW
+        // verification (GetAuxiliaryHash) is a separate step — linkage only for now.
+        if (!h.hasAux && !checkNativePoW(h)) throw new Error('header PoW invalid');
         chain.push(h);
       }
       if (hs.length === 0) break;
