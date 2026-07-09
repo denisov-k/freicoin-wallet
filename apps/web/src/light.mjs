@@ -90,7 +90,9 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     if (cache) return cache;                       // a fresh sync already happened
     await initClient();
     const s = n.stateClient;
-    if (s.chain.length <= 1 && s.utxos.size === 0) return null;
+    // Only show a last-known balance if a full filter scan has ever completed — a chain
+    // checkpointed mid-first-sync has headers but NO scan, and "0 FRC" would be a lie.
+    if (!s.scannedOnce) return null;
     return toCache(n.snapshot(), true);
   }
 

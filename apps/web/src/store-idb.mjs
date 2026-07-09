@@ -55,7 +55,7 @@ export class IdbStore {
       if (r.c * CHUNK !== chain.length) { await this.clear(); return false; }   // gap → store corrupt, start fresh
       for (const e of r.hs) chain.push({ hash: e[0], time: e[e.length - 1] || 0 });   // [hash,time] (v2 rows [hash,prevHash,time] read compatibly)
     }
-    const ok = chain.length > 0 && client.importState({ net: client.net, genesis: client.genesis, scannedHeight: w.scannedHeight, chain, utxos: w.utxos, history: w.history });
+    const ok = chain.length > 0 && client.importState({ net: client.net, genesis: client.genesis, scannedHeight: w.scannedHeight, scannedOnce: w.scannedOnce, chain, utxos: w.utxos, history: w.history });
     this.persistedTip = ok ? chain.length - 1 : -1;
     if (!ok) await this.clear();
     return ok;
@@ -86,7 +86,7 @@ export class IdbStore {
     }
     const t = this.db.transaction('wallet', 'readwrite');
     t.objectStore('wallet').put({
-      k: 'state', scriptsKey, scannedHeight: o.scannedHeight,
+      k: 'state', scriptsKey, scannedHeight: o.scannedHeight, scannedOnce: o.scannedOnce,
       utxos: [...o.utxos.values()].map(u => ({ ...u, value: u.value.toString() })),
       history: o.history.map(e => ({ ...e, amount: e.amount.toString() })),
     });

@@ -132,7 +132,12 @@ const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏' };
 
 const render = {
   async balance() {
-    if (!$('#balance').innerHTML) $('#balance').innerHTML = `<div class="skel-line"></div>${skel(1)}<div class="sub" id="syncp"></div>`;
+    // First sync (nothing persisted yet): an honest placeholder — the balance is genuinely
+    // unknown until the filter scan completes, so show that instead of a bare skeleton.
+    if (!$('#balance').innerHTML) $('#balance').innerHTML =
+      `<div class="big">— <small>FRC</small></div>
+       <div class="sub">first sync — balance appears when the scan completes</div>
+       <div class="sub" id="syncp"></div>`;
     let painted = false;
     const paint = s => {
       painted = true;

@@ -26,6 +26,7 @@ export class Neutrino {
     this.utxos = new Map();              // "txid:vout" -> {txid,vout,value,refheight,script,coinbase}
     this.history = [];                   // {txid,category,amount,height,time}
     this.scannedHeight = 0;              // highest block scanned for wallet activity
+    this.scannedOnce = false;            // true once a full filter scan has completed (preview gate)
     this.reorgFloor = null;              // lowest fork height rolled back since last persist (signal for the store)
     this.mempool = new Map();            // txid -> {txid,category,amount,time} — unconfirmed wallet txs
     this.peerHeight = 0;                 // peer's chain height from the version handshake (progress target)
@@ -300,6 +301,7 @@ export class Neutrino {
       for (const id of this.mempool.keys())  // confirmed now? drop from pending
         if (this.history.some(e => e.txid === id)) this.mempool.delete(id);
     }
+    this.scannedOnce = true;
     let balance = 0n; for (const u of this.utxos.values()) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
     return { tipHeight: tip, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()] };
   }
@@ -319,7 +321,7 @@ export class Neutrino {
     const chain = [];
     for (let h = 0; h < this.chain.length; h++) chain.push({ hash: this.chain.hashAt(h), time: this.chain.timeAt(h) });
     return {
-      net: this.net, genesis: this.genesis, scannedHeight: this.scannedHeight, chain,
+      net: this.net, genesis: this.genesis, scannedHeight: this.scannedHeight, scannedOnce: this.scannedOnce, chain,
       utxos: [...this.utxos.values()].map(u => ({ ...u, value: u.value.toString() })),
       history: this.history.map(e => ({ ...e, amount: e.amount.toString() })),
     };
@@ -333,6 +335,7 @@ export class Neutrino {
     this.utxos = new Map(s.utxos.map(u => [u.txid + ':' + u.vout, { ...u, value: BigInt(u.value) }]));
     this.history = s.history.map(e => ({ ...e, amount: BigInt(e.amount) }));
     this.scannedHeight = s.scannedHeight | 0;
+    this.scannedOnce = !!s.scannedOnce;
     return true;
   }
 
