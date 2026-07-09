@@ -3,8 +3,20 @@ globalThis.Buffer = Buffer;
 
 import QRCode from 'qrcode';
 import * as api from './api.mjs';
-import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress } from './wallet.mjs';
+import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress, walletScripts } from './wallet.mjs';
 import { encryptSecret, decryptSecret } from './vault.mjs';
+import { createLightSource } from './light.mjs';
+
+// Data source: variant-C backend (default) or variant-B neutrino light client.
+const GENESIS = { regtest: '67756db06265141574ff8e7c3f97ebd57c443791e0ca27ee8b03758d6056edb8' };
+const DEFAULT_BRIDGE = import.meta.env?.VITE_BRIDGE || 'ws://127.0.0.1:3040';
+let lightSrc = null;
+const mode = () => store.get('fw_mode') || 'backend';
+function ds() {
+  if (mode() !== 'light') return api;
+  if (!lightSrc) lightSrc = createLightSource({ url: store.get('fw_bridge') || DEFAULT_BRIDGE, net: 'regtest', genesis: GENESIS.regtest, scripts: walletScripts(hexSeed()) });
+  return lightSrc;
+}
 
 const $ = s => document.querySelector(s);
 const store = { get: k => localStorage.getItem(k), set: (k, v) => localStorage.setItem(k, v), del: k => localStorage.removeItem(k) };
@@ -68,7 +80,7 @@ function renderApp() {
   applyTheme(document.documentElement.dataset.theme);
   $('#themeBtn').onclick = () => { const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; store.set('fw_theme', t); applyTheme(t); };
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.tab));
-  (async () => { try { $('#net').textContent = (await api.health()).network; } catch { $('#net').textContent = 'offline'; } })();
+  (async () => { try { $('#net').textContent = (await ds().health()).network; } catch { $('#net').textContent = 'offline'; } })();
   show('balance');
 }
 
@@ -78,7 +90,7 @@ const show = tab => {
   clearInterval(pollTimer); pollTimer = null; toast(''); render[tab]?.();
 };
 
-const getState = async force => (!force && cache) ? cache : (cache = await api.utxos());
+const getState = async force => (!force && cache) ? cache : (cache = await ds().utxos());
 const timeAgo = t => { const s = Math.max(0, Date.now() / 1000 - t); if (s < 60) return 'just now'; if (s < 3600) return (s / 60 | 0) + 'm ago'; if (s < 86400) return (s / 3600 | 0) + 'h ago'; return new Date(t * 1000).toLocaleDateString(); };
 const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏' };
 
@@ -121,7 +133,7 @@ const render = {
   async activity() {
     $('#activity').innerHTML = skel(4);
     try {
-      const { txs } = await api.history();
+      const { txs } = await ds().history();
       $('#activity').innerHTML = txs.length ? txs.map((t, i) =>
         `<div class="act" data-i="${i}">
            <div class="act-i ${t.category}">${CAT[t.category] || '•'}</div>
@@ -139,7 +151,13 @@ const render = {
     const vault = getVault(), s = secret();
     const kind = /\s/.test((s || '').trim()) ? 'recovery phrase' : 'hex seed';
     $('#settings').innerHTML =
-      `<label>Backend URL<input id="be" value="${store.get('fw_backend') || (import.meta.env?.VITE_BACKEND || 'http://127.0.0.1:3030')}"></label>
+      `<label>Data source
+         <select id="mode">
+           <option value="backend"${mode() === 'backend' ? ' selected' : ''}>Backend (variant C)</option>
+           <option value="light"${mode() === 'light' ? ' selected' : ''}>Light client (neutrino, no backend)</option>
+         </select></label>
+       <label>Backend URL<input id="be" value="${store.get('fw_backend') || (import.meta.env?.VITE_BACKEND || 'http://127.0.0.1:3030')}"></label>
+       <label>Bridge URL (light client)<input id="br" value="${store.get('fw_bridge') || DEFAULT_BRIDGE}"></label>
        <label>Wallet secret (${kind})<textarea id="sd" rows="2">${s}</textarea></label>
        <div class="row"><button id="saveCfg">Save</button><button id="genBtn" class="ghost">Generate 12 words</button><button id="copySeed" class="ghost">Copy</button></div>
        <div class="row">${vault
@@ -180,6 +198,8 @@ function saveSettings() {
   const sec = $('#sd').value.trim();
   try { resolveSecret(sec); } catch (e) { return toast(e.message, 'err'); }
   store.set('fw_backend', $('#be').value.trim());
+  store.set('fw_mode', $('#mode').value); store.set('fw_bridge', $('#br').value.trim());
+  if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
   unlockedSecret = sec; recvIndex = 0; store.set('fw_recv', 0); cache = null;
   if (getVault()) store.set('fw_vault', JSON.stringify(encryptSecret(sec, unlockedPass)));  // re-encrypt
   else store.set('fw_seed', sec);
@@ -215,7 +235,7 @@ async function doBroadcast() {
   if (!pending) return;
   const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = 'broadcasting…';
   try {
-    const { txid } = await api.broadcast(pending);
+    const { txid } = await ds().broadcast(pending);
     $('#sendResult').innerHTML = `<div class="ok">Sent ✓</div><div class="txid">${txid}</div>`;
     $('#to').value = ''; $('#amt').value = ''; pending = null; cache = null; toast('broadcast ✓');
   } catch (e) { toast('broadcast failed: ' + e.message, 'err'); btn.disabled = false; btn.textContent = 'Confirm & broadcast'; }

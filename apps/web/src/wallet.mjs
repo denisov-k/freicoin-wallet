@@ -28,6 +28,18 @@ export function resolveSecret(secret) {
   return s.toLowerCase();
 }
 
+/** The wallet's wpk scriptPubKeys (hex) over a gap limit on both chains — for the
+ *  light client's BIP158 filter matching and block scan. */
+export function walletScripts(seed, gap = 20) {
+  const acct = derivePath(seed, ACCOUNT);
+  const scripts = [];
+  for (const chain of [0, 1]) {
+    const c = ckdPriv(acct, chain);
+    for (let i = 0; i < gap; i++) scripts.push('0014' + wpkProgramHex(ckdPriv(c, i)));
+  }
+  return scripts;
+}
+
 /** Validate a Freicoin address: correct bech32m + the expected HRP for the network. */
 export function isValidAddress(addr, net = NET) {
   try {

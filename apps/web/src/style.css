@@ -51,3 +51,4 @@ textarea { background:var(--card); border:1px solid var(--line); border-radius:1
 .detail { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:8px; }
 #secForm { margin-top:4px; }
 .act { cursor:pointer; }
+select { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; color:var(--fg); font-size:15px; width:100%; }

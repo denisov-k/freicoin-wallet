@@ -2,9 +2,9 @@
 // wallet's UTXOs, and compute a demurrage present-value balance — no backend.
 import { Buffer } from 'buffer';
 import { readVarint } from './p2p.mjs';
-import { parseTx, serializeTx, txid } from '../../../core/tx.mjs';
-import { timeAdjustValue } from '../../../core/demurrage.mjs';
-import { sha256d } from '../../../core/crypto.mjs';
+import { parseTx, serializeTx, txid } from '../../../../core/tx.mjs';
+import { timeAdjustValue } from '../../../../core/demurrage.mjs';
+import { sha256d } from '../../../../core/crypto.mjs';
 
 /** Display block hash from a full block's bytes (double-SHA256 of the 80-byte base). */
 export function blockHash(blockBytes) {
