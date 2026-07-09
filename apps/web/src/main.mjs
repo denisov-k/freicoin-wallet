@@ -238,32 +238,38 @@ const render = {
        <button id="reviewBtn">Review</button><div id="sendResult"></div>`;
     $('#reviewBtn').onclick = doReview;
     $('#amt').addEventListener('keydown', e => { if (e.key === 'Enter') doReview(); });
-    try { const s = await getState(); $('#avail').textContent = `available ${fmt(s.balance)} FRC`;
-      $('#maxBtn').onclick = () => { $('#amt').value = Math.max(0, s.balance - 0.001).toFixed(8); }; }
-    catch { $('#avail').textContent = ''; }
+    // Instant: approximate available from the last-known state while the sync runs;
+    // replaced in place by the verified value (Max only binds to verified data).
+    if (!cache) { try { const pv = await ds().preview(); const el = $('#avail'); if (pv && el) el.textContent = `available ≈ ${fmt(pv.balance)} FRC`; } catch {} }
+    try { const s = await getState(); const el = $('#avail'); if (el) el.textContent = `available ${fmt(s.balance)} FRC`;
+      if ($('#maxBtn')) $('#maxBtn').onclick = () => { $('#amt').value = Math.max(0, s.balance - 0.001).toFixed(8); }; }
+    catch { const el = $('#avail'); if (el && el.textContent === 'available…') el.textContent = ''; }
   },
   async activity() {
     $('#activity').innerHTML = skel(4);
-    let painted = false;
-    const paintList = (txs, stale) => {
-      painted = true;
-      $('#activity').innerHTML = (stale ? '<div class="sub">⟳ syncing — last known state</div>' : '') + (txs.length ? txs.map((t, i) =>
+    let painted = false, lastHtml = '';
+    const paintList = txs => {
+      const html = txs.length ? txs.map((t, i) =>
         `<div class="act" data-i="${i}">
            <div class="act-i ${t.category}">${CAT[t.category] || '•'}</div>
            <div class="act-m"><b>${t.category}</b><span class="sub">${t.confirmations > 0 ? t.confirmations + ' conf' : 'pending'} · ${timeAgo(t.time)}</span></div>
            <div class="act-a ${(+t.amount) < 0 ? 'neg' : 'pos'}">${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)}</div>
-         </div>`).join('') + '<div id="actDetail"></div>' : '<div class="sub">no transactions yet</div>');
+         </div>`).join('') + '<div id="actDetail"></div>' : '<div class="sub">no transactions yet</div>';
+      painted = true;
+      if (html === lastHtml) return;   // identical content — skip the rewrite (no blink)
+      lastHtml = html;
+      $('#activity').innerHTML = html;
       document.querySelectorAll('.act').forEach(el => el.onclick = () => {
         const t = txs[+el.dataset.i];
         $('#actDetail').innerHTML = `<div class="detail"><span class="sub">txid</span><div class="txid" id="dtxid">${t.txid}</div><button id="copyTxid" class="ghost">Copy txid</button></div>`;
         $('#copyTxid').onclick = e => copy(t.txid, e.target);
       });
     };
-    // Instant: last persisted history while the sync runs.
-    if (!cache) { try { const pv = await ds().preview(); if (pv) paintList([...pv.pending, ...pv.history], true); } catch {} }
+    // Instant: last persisted history while the sync runs (the header dot shows the sync).
+    if (!cache) { try { const pv = await ds().preview(); if (pv) paintList([...pv.pending, ...pv.history]); } catch {} }
     try {
       const { txs } = await ds().history();
-      paintList(txs, false);
+      paintList(txs);
     } catch (e) { if (!painted) $('#activity').innerHTML = `<div class="err">${e.message}</div>`; }
   },
   settings() {
