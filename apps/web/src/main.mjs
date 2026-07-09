@@ -116,9 +116,14 @@ let recvIndex = +(store.get('fw_recv') || 0), pending = null, pollTimer = null, 
 const secret = () => unlockedSecret;
 const hexSeed = () => resolveSecret(unlockedSecret);
 
-// theme lives on <html>, survives #app re-renders
-const applyTheme = t => { document.documentElement.dataset.theme = t; const sel = $('#themeSel'); if (sel) sel.value = t; };
-applyTheme(store.get('fw_theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
+// theme lives on <html>, survives #app re-renders. Mode 'system' (default) follows the
+// OS preference — the OS flips it on its own schedule (e.g. dark after sunset), and the
+// media-query listener re-applies it live.
+const themeMode = () => store.get('fw_theme') || 'system';
+const resolveTheme = m => m === 'system' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : m;
+const applyTheme = m => { document.documentElement.dataset.theme = resolveTheme(m); const sel = $('#themeSel'); if (sel) sel.value = m; };
+matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { if (themeMode() === 'system') applyTheme('system'); });
+applyTheme(themeMode());
 
 const toast = (t, type = 'ok') => { const el = $('#toast'); if (!el) return; clearTimeout(toastTimer);
   if (!t) { el.className = ''; el.textContent = ''; return; }
@@ -163,7 +168,7 @@ function renderApp() {
       <section id="settings" hidden></section>
     </main>
     <div id="toast"></div>`;
-  applyTheme(document.documentElement.dataset.theme);
+  applyTheme(themeMode());
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.tab));
   $('#statusBtn').onclick = () => { const pop = $('#statusPop'); pop.hidden = !pop.hidden; if (!pop.hidden) renderStatusPop(); };
   document.addEventListener('click', e => { const pop = $('#statusPop'); if (pop && !pop.hidden && !pop.contains(e.target) && e.target.id !== 'statusBtn') pop.hidden = true; });
@@ -314,7 +319,7 @@ const render = {
     const vault = getVault(), s = secret();
     const kind = /\s/.test((s || '').trim()) ? 'recovery phrase' : 'hex seed';
     $('#settings').innerHTML =
-      `<label>Theme<select id="themeSel"><option value="dark"${document.documentElement.dataset.theme !== 'light' ? ' selected' : ''}>Dark</option><option value="light"${document.documentElement.dataset.theme === 'light' ? ' selected' : ''}>Light</option></select></label>
+      `<label>Theme<select id="themeSel">${['system', 'dark', 'light'].map(m => `<option value="${m}"${themeMode() === m ? ' selected' : ''}>${m === 'system' ? 'System' : m === 'dark' ? 'Dark' : 'Light'}</option>`).join('')}</select></label>
        <label>Network<select id="netSel">${Object.entries(NETWORKS).map(([k, v]) => `<option value="${k}"${k === curNet() ? ' selected' : ''}>${v.label}</option>`).join('')}</select></label>
        <label>Bridge URL (neutrino P2P relay)<input id="br" value="${curBridge()}"></label>
        <label>Wallet secret (${kind})<textarea id="sd" rows="2">${s}</textarea></label>
