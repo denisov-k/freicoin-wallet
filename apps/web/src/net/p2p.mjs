@@ -68,3 +68,59 @@ export function parseVersion(p) {
   const startHeight = p.readInt32LE(o);
   return { version, services, ua, startHeight };
 }
+
+// --- varint (compact size) ---
+export function writeVarint(n) {
+  if (n < 0xfd) return Buffer.from([n]);
+  if (n <= 0xffff) { const b = Buffer.alloc(3); b[0] = 0xfd; b.writeUInt16LE(n, 1); return b; }
+  const b = Buffer.alloc(5); b[0] = 0xfe; b.writeUInt32LE(n, 1); return b;
+}
+export function readVarint(buf, o) {
+  const n = buf[o];
+  if (n < 0xfd) return [n, o + 1];
+  if (n === 0xfd) return [buf.readUInt16LE(o + 1), o + 3];
+  if (n === 0xfe) return [buf.readUInt32LE(o + 1), o + 5];
+  return [Number(buf.readBigUInt64LE(o + 1)), o + 9];
+}
+
+const AUX_FLAG = 1 << 23;   // nBits sign bit: set => an AuxProofOfWork follows the 80-byte header
+
+/** getheaders payload: version + block locator (display-hex hashes) + hash_stop. */
+export function buildGetHeaders(protoVer, locatorHex, hashStopHex = '00'.repeat(32)) {
+  const parts = [Buffer.alloc(4)];
+  parts[0].writeUInt32LE(protoVer);
+  parts.push(writeVarint(locatorHex.length));
+  for (const h of locatorHex) parts.push(Buffer.from(h, 'hex').reverse());   // display -> internal
+  parts.push(Buffer.from(hashStopHex, 'hex').reverse());
+  return Buffer.concat(parts);
+}
+
+/** Parse a `headers` message into [{hash, prevHash, version, time, bits, nonce}].
+ *  Regtest/native-PoW headers are 80 bytes; aux-pow (mainnet) headers are not yet
+ *  supported here (they carry a merged-mining proof after the 80-byte base). */
+export function parseHeaders(payload) {
+  payload = Buffer.from(payload);
+  let [count, o] = readVarint(payload, 0);
+  const headers = [];
+  for (let i = 0; i < count; i++) {
+    const base = payload.subarray(o, o + 80);
+    const bits = base.readUInt32LE(72) >>> 0;
+    if (bits & AUX_FLAG) throw new Error('aux-pow header parsing not yet implemented (mainnet)');
+    const hash = Buffer.from(sha256d(base)).reverse().toString('hex');
+    const prevHash = Buffer.from(base.subarray(4, 36)).reverse().toString('hex');
+    headers.push({ hash, prevHash, version: base.readInt32LE(0), time: base.readUInt32LE(68), bits, nonce: base.readUInt32LE(76) >>> 0 });
+    o += 80;
+    [, o] = readVarint(payload, o);   // tx_count (0 in headers)
+  }
+  return headers;
+}
+
+/** Native (non-aux) PoW check: SHA256d(header) <= target(nBits). Regtest passes at min difficulty. */
+export function checkNativePoW(header) {
+  const target = compactToTarget(header.bits);
+  return BigInt('0x' + header.hash) <= target;   // hash is display (big-endian) hex
+}
+function compactToTarget(bits) {
+  const exp = bits >>> 24, mant = BigInt(bits & 0x007fffff);
+  return exp <= 3 ? mant >> (8n * BigInt(3 - exp)) : mant << (8n * BigInt(exp - 3));
+}
