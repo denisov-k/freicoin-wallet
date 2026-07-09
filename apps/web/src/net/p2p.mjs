@@ -137,3 +137,11 @@ export function parseCFilter(payload) {
   const [len, o] = readVarint(payload, 33);
   return { blockHash, filter: payload.subarray(o, o + len) };
 }
+
+export const MSG_WITNESS_BLOCK = 0x40000002;
+/** getdata payload: varint(count) + [type(4 LE) + hash(32)]. */
+export function buildGetData(items) {
+  const parts = [writeVarint(items.length)];
+  for (const it of items) { const b = Buffer.alloc(4); b.writeUInt32LE(it.type >>> 0); parts.push(b); parts.push(Buffer.from(it.hashHex, 'hex').reverse()); }
+  return Buffer.concat(parts);
+}
