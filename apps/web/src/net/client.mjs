@@ -311,8 +311,8 @@ export class Neutrino {
   /** Fetch the given blocks (display hashes), scan them into the persistent UTXO set /
    *  history in height order, and advance scannedHeight to the tip. The blocks passed are
    *  those the wallet must inspect (filter-matched and/or disputed by peer disagreement). */
-  async _applyBlocks(scripts, matchedHashes, upto = this.chain.length - 1) {
-    const blocks = await this.fetchBlocks(matchedHashes);
+  async _applyBlocks(scripts, matchedHashes, upto = this.chain.length - 1, via = this) {
+    const blocks = await via.fetchBlocks(matchedHashes);
     const hOf = new Map(blocks.map(b => [b.hash, this.chain.heightOf(b.hash)]));
     blocks.sort((a, b) => hOf.get(a.hash) - hOf.get(b.hash));   // scan in height order
     const mine = new Set(scripts);
@@ -363,6 +363,16 @@ export class Neutrino {
     await this.ensureConnected();
     if (this._pool === undefined) this._pool = await makePool();   // null ⇒ inline fallback
     this._watch = new Set(scripts);        // watch the mempool for these scripts from now on
+    // Second download connection: the follower fetches filters+blocks over its OWN socket,
+    // so they don't compete with the header stream on one TCP connection (whose congestion
+    // window caps throughput on high-RTT links). Shares the chain by reference; falls back
+    // to the main connection if it can't open.
+    if (this._dl === undefined) {
+      try { const dl = new Neutrino({ url: this.url, net: this.net, genesis: this.genesis }); dl.chain = this.chain; await dl.connect(); this._dl = dl; }
+      catch { this._dl = null; }
+    } else if (this._dl) { try { await this._dl.ensureConnected(); } catch {} }
+    const fetcher = (this._dl && this._dl._ready) ? this._dl : this;
+    fetcher.onProgress = this.onProgress;
     // OVERLAPPED sync: a scan follower trails the header front, so filter download +
     // matching + block scan run concurrently with header download+verification instead
     // of strictly after them — and the balance found so far streams out via onPartial
@@ -376,9 +386,12 @@ export class Neutrino {
         const from = this.scannedHeight + 1;
         const ready = target - from + 1;
         if (ready >= CFILTERS_BATCH || (headersDone && ready > 0)) {
-          const to = headersDone ? target : from + Math.floor(ready / CFILTERS_BATCH) * CFILTERS_BATCH - 1;
-          const matched = await this.matchFilters(scripts, from, to);
-          await this._applyBlocks(scripts, matched, to);
+          // cap each stride so partial updates stay frequent even when the header front
+          // races far ahead (a lagging follower would otherwise catch up in giant leaps)
+          const stride = Math.min(headersDone ? ready : Math.floor(ready / CFILTERS_BATCH) * CFILTERS_BATCH, 10 * CFILTERS_BATCH);
+          const to = from + stride - 1;
+          const matched = await fetcher.matchFilters(scripts, from, to);
+          await this._applyBlocks(scripts, matched, to, fetcher);
           onPartial?.(this._result(to));
         } else if (headersDone) break;
         else await new Promise(r => setTimeout(r, 50));   // wait for the header front to advance
@@ -437,7 +450,12 @@ export class Neutrino {
     return null;
   }
 
-  close() { this._ready = false; this._conn = null; try { this.ws.close(); } catch {} try { this._pool?.close(); } catch {} this._pool = undefined; }
+  close() {
+    this._ready = false; this._conn = null;
+    try { this.ws.close(); } catch {}
+    try { this._pool?.close(); } catch {} this._pool = undefined;
+    try { this._dl?.close(); } catch {} this._dl = undefined;
+  }
 }
 
 /**
