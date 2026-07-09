@@ -13,7 +13,7 @@ const kriaToFrc = k => Number(k) / 1e8;
 // same wallet (a different secret ⇒ different scripts ⇒ discard the persisted UTXO set).
 const scriptsKey = scripts => { let h = 5381 >>> 0; const s = scripts.join(''); for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0; return scripts.length + ':' + h.toString(16); };
 
-export function createLightSource({ url, net, genesis, scripts, birthHeight = 0 }) {
+export function createLightSource({ url, net, genesis, scripts, birthHeight = 0, onProgress = null }) {
   let n = null, cache = null;
   const store = new IdbStore(net, genesis);   // IndexedDB — holds a full mainnet header chain
   // birth height is part of the state fingerprint: changing it discards the stored scan
@@ -34,6 +34,7 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0 
       // height a new wallet would scan ~485k filters that cannot contain its coins.
       if (!resumed && birthHeight > 0) n.stateClient.scannedHeight = birthHeight - 1;
       await n.connect();
+      n.stateClient.onProgress = onProgress;   // after connect: the pool's primary is final by then
     }
     const r = await n.syncWallet(scripts);
     try { await store.save(n, skey); } catch {}
@@ -52,6 +53,12 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0 
         amount: kriaToFrc(h.amount < 0n ? -h.amount : h.amount) * (h.amount < 0n ? -1 : 1),
         confirmations: tip - h.height + 1, time: h.time,
       })),
+      pending: (r.pending || []).map(p => ({
+        txid: p.txid, category: p.category,
+        amount: kriaToFrc(p.amount < 0n ? -p.amount : p.amount) * (p.amount < 0n ? -1 : 1),
+        confirmations: 0, time: p.time,
+      })),
+      agreement: r.agreement || null,
     };
     return cache;
   }
@@ -59,9 +66,9 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0 
 
   return {
     async health() { return { ok: true, network: net + ' (light)' }; },
-    async balance() { const c = await ensure(); return { balance: c.balance, tipHeight: c.tipHeight, unit: 'present-value' }; },
-    async utxos() { const c = await sync(); return { balance: c.balance, tipHeight: c.tipHeight, utxos: c.utxos }; },
-    async history() { const c = await ensure(); return { txs: c.history }; },
+    async balance() { const c = await ensure(); return { balance: c.balance, tipHeight: c.tipHeight, unit: 'present-value', pending: c.pending, agreement: c.agreement }; },
+    async utxos() { const c = await sync(); return { balance: c.balance, tipHeight: c.tipHeight, utxos: c.utxos, pending: c.pending, agreement: c.agreement }; },
+    async history() { const c = await ensure(); return { txs: [...c.pending, ...c.history] }; },
     async broadcast(rawtx) { if (!n) await sync(); n.broadcast(rawtx); return { txid: txidOf(parseTx(rawtx)) }; },
     refresh: sync,
     close() { if (n) { n.close(); n = null; cache = null; } store.close(); },

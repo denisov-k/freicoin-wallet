@@ -53,7 +53,7 @@ export function buildVersion({ protoVer = 70016, services = 0n, height = 0, ua =
   u32le(protoVer); u64le(services); i64le(Math.floor(Date.now() / 1000));
   netaddr(); netaddr(); push(randNonce());
   const uab = Buffer.from(ua, 'ascii'); push(Buffer.from([uab.length])); push(uab);
-  u32le(height); push(Buffer.from([0]));   // relay = false
+  u32le(height); push(Buffer.from([1]));   // relay = true (we want mempool tx invs)
   return Buffer.concat(parts);
 }
 
@@ -185,6 +185,20 @@ export function parseCFilter(payload) {
 }
 
 export const MSG_WITNESS_BLOCK = 0x40000002;
+export const MSG_WITNESS_TX = 0x40000001;
+export const MSG_TX = 1;
+/** Parse an `inv` message: varint(count) + count × (type u32 LE + hash 32). Display-hex hashes. */
+export function parseInv(payload) {
+  payload = Buffer.from(payload);
+  let [count, o] = readVarint(payload, 0);
+  const items = [];
+  for (let i = 0; i < count; i++) {
+    const type = payload.readUInt32LE(o) >>> 0;
+    const hashHex = Buffer.from(payload.subarray(o + 4, o + 36)).reverse().toString('hex');
+    items.push({ type, hashHex }); o += 36;
+  }
+  return items;
+}
 /** getdata payload: varint(count) + [type(4 LE) + hash(32)]. */
 export function buildGetData(items) {
   const parts = [writeVarint(items.length)];

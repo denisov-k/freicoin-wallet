@@ -11,10 +11,19 @@ import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE } from './netparams.mjs';
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
 const curBridge = () => store.get('fw_bridge') || DEFAULT_BRIDGE[curNet()];
 let lightSrc = null;
+const fmtProgress = p =>
+  p.phase === 'headers' ? `verifying headers ${p.height.toLocaleString()} / ${p.target ? p.target.toLocaleString() : '…'}`
+  : p.phase === 'filters' ? `scanning filters ${p.done.toLocaleString()} / ${p.want.toLocaleString()}`
+  : `fetching blocks ${p.done} / ${p.want}`;
+
 function ds() {
   const net = curNet();
   configureNetwork(net);
-  if (!lightSrc) lightSrc = createLightSource({ url: curBridge(), net, genesis: NETWORKS[net].genesis, scripts: walletScripts(hexSeed()), birthHeight: Number(store.get('fw_birth')) || 0 });
+  if (!lightSrc) lightSrc = createLightSource({
+    url: curBridge(), net, genesis: NETWORKS[net].genesis, scripts: walletScripts(hexSeed()),
+    birthHeight: Number(store.get('fw_birth')) || 0,
+    onProgress: p => { const el = $('#syncp'); if (el) el.textContent = fmtProgress(p); },
+  });
   return lightSrc;
 }
 
@@ -96,10 +105,15 @@ const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏' };
 
 const render = {
   async balance() {
-    if (!$('#balance').innerHTML) $('#balance').innerHTML = `<div class="skel-line"></div>${skel(1)}`;
-    const paint = s => { $('#balance').innerHTML =
+    if (!$('#balance').innerHTML) $('#balance').innerHTML = `<div class="skel-line"></div>${skel(1)}<div class="sub" id="syncp"></div>`;
+    const paint = s => {
+      const pend = s.pending?.length ? s.pending.reduce((a, p) => a + p.amount, 0) : 0;
+      const agr = s.agreement && s.agreement.peers > 1
+        ? `<div class="sub">${s.agreement.disputed ? '⚠ ' + s.agreement.disputed + ' filter(s) disputed — resolved from blocks · ' : ''}${s.agreement.agreeing}/${s.agreement.peers} peers agree ✓</div>` : '';
+      $('#balance').innerHTML =
       `<div class="big">${fmt(s.balance)} <small>FRC</small></div>
        <div class="sub">present value · tip ${s.tipHeight} · ${s.utxos.length} UTXO</div>
+       ${pend ? `<div class="sub">⏳ ${pend > 0 ? '+' : ''}${fmt(pend)} FRC pending (${s.pending.length} tx)</div>` : ''}${agr}
        <button id="refresh" class="ghost">↻ Refresh</button>`;
       $('#refresh').onclick = render.balance; };
     try { paint(await getState(true)); }
