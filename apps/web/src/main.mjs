@@ -171,6 +171,17 @@ function renderApp() {
   $('#statusBtn').onclick = () => { const pop = $('#statusPop'); pop.hidden = !pop.hidden; if (!pop.hidden) renderStatusPop(); };
   document.addEventListener('click', e => { const pop = $('#statusPop'); if (pop && !pop.hidden && !pop.contains(e.target) && e.target.id !== 'statusBtn') pop.hidden = true; });
   setStatus('sync', 'connecting…');
+  // Global refresh loop: keeps the status dot, balance and (when visible) the activity
+  // list fresh no matter which tab is open — it used to live inside the Balance render,
+  // so opening on another tab froze the status at 'connecting…' forever.
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try {
+      const st = await getState(true);
+      paintBalance(st);                                   // sets status ok; skips DOM when hidden
+      if (!$('#activity').hidden) { const { txs } = await ds().history(); paintActivity(txs); }
+    } catch { setStatus('off', 'bridge unreachable — retrying'); }
+  }, 6000);
   const saved = store.get('fw_tab');
   show(TABS.includes(saved) ? saved : 'balance');
 }
@@ -180,7 +191,7 @@ const show = tab => {
   store.set('fw_tab', tab);   // restore the active tab across reloads
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   TABS.forEach(s => $('#' + s).hidden = s !== tab);
-  clearInterval(pollTimer); pollTimer = null; toast(''); render[tab]?.();
+  toast(''); render[tab]?.();
 };
 
 const getState = async force => {
@@ -273,7 +284,6 @@ const render = {
       if (!balPainted) { setStatus('off', e.message); $('#balance').innerHTML = `<div class="err">sync failed — ${e.message}</div><button id="refresh" class="ghost">↻ Retry</button>`; $('#refresh').onclick = render.balance; return; }
       setStatus('off', 'bridge unreachable — retrying');
     }
-    clearInterval(pollTimer); pollTimer = setInterval(async () => { try { const st = await getState(true); if (gen === renderGen) paintBalance(st); } catch {} }, 6000);
   },
   async receive() {
     let addr; try { addr = deriveAddress(hexSeed(), recvIndex, 0); } catch (e) { return toast(e.message, 'err'); }
@@ -301,7 +311,7 @@ const render = {
     if (seed) paintSendAvail(seed, !cache);
     else { try { const pv = await ds().preview(); if (pv) paintSendAvail(pv, true); } catch {} }
     const sendGen = renderGen;
-    try { const s = await getState(); if (sendGen !== renderGen) return; paintSendAvail(s, false);
+    try { const s = await getState(); if (sendGen !== renderGen) return; paintBalance(s); paintSendAvail(s, false);
       if ($('#maxBtn')) $('#maxBtn').onclick = () => { $('#amt').value = Math.max(0, s.balance - 0.001).toFixed(8); }; }
     catch { if (sendGen !== renderGen) return; const el = $('#avail'); if (el && el.textContent === 'available…') el.textContent = ''; }
   },
@@ -319,6 +329,7 @@ const render = {
       const { txs } = await ds().history();
       if (gen !== renderGen) return;
       painted = paintActivity(txs) || painted;
+      setStatus('ok');
     } catch (e) { if (gen === renderGen && !painted) $('#activity').innerHTML = `<div class="err">${e.message}</div>`; }
   },
   settings() {
