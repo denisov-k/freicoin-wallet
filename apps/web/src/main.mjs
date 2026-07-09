@@ -22,13 +22,15 @@ function setStatus(state, detail, tip) {
   const pop = $('#statusPop');
   if (pop && !pop.hidden) renderStatusPop();
 }
-const PHASE_LABEL = { headers: 'headers', filters: 'scan', verify: 'PoW', blocks: 'blocks' };
+const PHASE_LABEL = { headers: 'headers', filters: 'scan', blocks: 'blocks', verify: 'PoW' };
+const PHASE_ORDER = ['headers', 'filters', 'blocks', 'verify'];   // pipeline order, not arrival order
 function renderStatusPop() {
   const pop = $('#statusPop'); if (!pop) return;
   const label = { ok: 'synced ✓ (verified)', sync: 'syncing…', off: 'offline' }[status.state] || status.state;
-  // one stable line per concurrently-running phase (they overlap — a single line would flicker)
-  const phases = Object.entries(status.progress).map(([k, p]) =>
-    `<div class="rrow"><span>${PHASE_LABEL[k] || k}</span><b>${(p.done ?? p.height).toLocaleString()} / ${(p.want ?? p.target).toLocaleString()}</b></div>`).join('');
+  // one stable line per concurrently-running phase, in fixed pipeline order (rendering by
+  // arrival order made the lines shuffle depending on which stream reported first)
+  const phases = PHASE_ORDER.filter(k => status.progress[k]).map(k => { const p = status.progress[k];
+    return `<div class="rrow"><span>${PHASE_LABEL[k]}</span><b>${(p.done ?? p.height).toLocaleString()} / ${(p.want ?? p.target).toLocaleString()}</b></div>`; }).join('');
   pop.innerHTML =
     `<div class="rrow"><span>Network</span><b>${NETWORKS[curNet()].label}</b></div>
      <div class="rrow"><span>Status</span><b>${label}</b></div>
@@ -114,7 +116,7 @@ const secret = () => unlockedSecret;
 const hexSeed = () => resolveSecret(unlockedSecret);
 
 // theme lives on <html>, survives #app re-renders
-const applyTheme = t => { document.documentElement.dataset.theme = t; const b = $('#themeBtn'); if (b) b.textContent = t === 'dark' ? '☀' : '🌙'; };
+const applyTheme = t => { document.documentElement.dataset.theme = t; const sel = $('#themeSel'); if (sel) sel.value = t; };
 applyTheme(store.get('fw_theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
 
 const toast = (t, type = 'ok') => { const el = $('#toast'); if (!el) return; clearTimeout(toastTimer);
@@ -145,7 +147,7 @@ function renderLock() {
 function renderApp() {
   $('#app').innerHTML = `
     <header><h1>Freicoin Wallet</h1>
-      <div class="hbtns"><button id="themeBtn" class="icon"></button><button id="statusBtn" class="icon statusbtn st-sync" title="sync status">●</button></div></header>
+      <div class="hbtns"><button id="statusBtn" class="icon statusbtn st-sync" title="sync status">●</button></div></header>
     <div id="statusPop" hidden></div>
     <nav>
       <button data-tab="balance" class="active">Balance</button>
@@ -161,7 +163,6 @@ function renderApp() {
     </main>
     <div id="toast"></div>`;
   applyTheme(document.documentElement.dataset.theme);
-  $('#themeBtn').onclick = () => { const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; store.set('fw_theme', t); applyTheme(t); };
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.tab));
   $('#statusBtn').onclick = () => { const pop = $('#statusPop'); pop.hidden = !pop.hidden; if (!pop.hidden) renderStatusPop(); };
   document.addEventListener('click', e => { const pop = $('#statusPop'); if (pop && !pop.hidden && !pop.contains(e.target) && e.target.id !== 'statusBtn') pop.hidden = true; });
@@ -311,7 +312,8 @@ const render = {
     const vault = getVault(), s = secret();
     const kind = /\s/.test((s || '').trim()) ? 'recovery phrase' : 'hex seed';
     $('#settings').innerHTML =
-      `<label>Network<select id="netSel">${Object.entries(NETWORKS).map(([k, v]) => `<option value="${k}"${k === curNet() ? ' selected' : ''}>${v.label}</option>`).join('')}</select></label>
+      `<label>Theme<select id="themeSel"><option value="dark"${document.documentElement.dataset.theme !== 'light' ? ' selected' : ''}>Dark</option><option value="light"${document.documentElement.dataset.theme === 'light' ? ' selected' : ''}>Light</option></select></label>
+       <label>Network<select id="netSel">${Object.entries(NETWORKS).map(([k, v]) => `<option value="${k}"${k === curNet() ? ' selected' : ''}>${v.label}</option>`).join('')}</select></label>
        <label>Bridge URL (neutrino P2P relay)<input id="br" value="${curBridge()}"></label>
        <label>Wallet secret (${kind})<textarea id="sd" rows="2">${s}</textarea></label>
        <div class="row"><button id="saveCfg">Save</button><button id="genBtn" class="ghost">Generate 12 words</button><button id="copySeed" class="ghost">Copy</button></div>
@@ -321,6 +323,7 @@ const render = {
        <div id="secForm"></div>
        <p class="warn">${vault ? '🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.' : '⚠ Secret is stored unencrypted — set a passphrase to secure it. Dev/regtest only.'}</p>`;
     $('#saveCfg').onclick = saveSettings;
+    $('#themeSel').onchange = () => { const t = $('#themeSel').value; store.set('fw_theme', t); applyTheme(t); };   // applies immediately
     // Switching network swaps in that network's default bridge (user can still override).
     $('#netSel').onchange = () => { $('#br').value = DEFAULT_BRIDGE[$('#netSel').value] || ''; };
     $('#genBtn').onclick = () => {
