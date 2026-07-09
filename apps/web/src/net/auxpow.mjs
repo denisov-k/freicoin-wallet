@@ -62,11 +62,30 @@ function calcRemainder(key, used) {
   for (let idx = 0; idx < 256 - used; idx++) if (key[31 - (idx >> 3)] & (1 << (idx & 7))) ret[31 - (idx >> 3)] |= 1 << (idx & 7);
   return ret;
 }
+// calc_bits(key, begin, end): the [begin,end) key bits packed low + a terminator bit at (end-begin).
+function calcBits(key, begin, end) {
+  const ret = Buffer.alloc(32);
+  for (let idx = begin; idx < end; idx++) {
+    const src = 255 - idx, dst = end - idx - 1;
+    if (key[31 - (src >> 3)] & (1 << (src & 7))) ret[31 - (dst >> 3)] |= 1 << (dst & 7);
+  }
+  const p = end - begin;
+  ret[31 - (p >> 3)] |= 1 << (p & 7);
+  return ret;
+}
+// Port of ComputeMerkleMapRootFromBranch (consensus/merkle.cpp): fold `value` up a
+// Merkle-map path. Empty branch = the single-leaf case; a non-empty branch mixes in each
+// sibling + the packed key bits skipped between levels.
 function computeMerkleMapRoot(value, branch, key) {
   let total = 0; for (const s of branch) total += 1 + s.skip;
   if (total >= 256) return null;
   let hash = merkleMid(calcRemainder(key, total), value);
-  for (const s of branch) { /* general path — unused by the mainnet headers tested */ throw new Error('non-empty commit_branch not yet ported'); }
+  for (const s of branch) {
+    total -= 1;
+    const begin = total - s.skip, end = total;
+    hash = (key[31 - (end >> 3)] & (1 << (end & 7))) ? merkleMid(s.hash, hash) : merkleMid(hash, s.hash);
+    hash = merkleMid(calcBits(key, begin, end), hash);
+  }
   return hash;
 }
 function computeMerklePathAndMask(branchlen, position) {

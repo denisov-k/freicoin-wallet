@@ -90,6 +90,7 @@ export class Neutrino {
       for (const h of hs) {
         if (h.prevHash !== this.chain[this.chain.length - 1].hash) throw new Error('header chain break');
         this._verifyPoW(h);
+        h.raw = null;                          // raw bytes only needed for PoW verify; drop to keep the chain lean (mainnet = 485k headers)
         this.heightOf[h.hash] = this.chain.length;
         this.chain.push(h);
       }
