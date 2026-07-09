@@ -5,6 +5,7 @@ import { Buffer } from 'buffer';
 import { encodeMessage, createDecoder, buildVersion, buildGetHeaders, parseHeaders, checkNativePoW,
          buildGetCFilters, parseCFilter, buildGetData, MSG_WITNESS_BLOCK } from './p2p.mjs';
 import { filterMatchesAny } from './bip158.mjs';
+import { parseAuxPow, checkAuxPoW } from './auxpow.mjs';
 import { blockHash, parseBlock } from './scan.mjs';
 import { txid as txidOf } from '../../../../core/tx.mjs';
 import { timeAdjustValue } from '../../../../core/demurrage.mjs';
@@ -50,9 +51,12 @@ export class Neutrino {
       const hs = parseHeaders((await p).payload);
       for (const h of hs) {
         if (h.prevHash !== chain[chain.length - 1].hash) throw new Error('header chain break');
-        // native-PoW headers (regtest) are verified here; aux-pow (mainnet) PoW
-        // verification (GetAuxiliaryHash) is a separate step — linkage only for now.
-        if (!h.hasAux && !checkNativePoW(h)) throw new Error('header PoW invalid');
+        // Verify PoW: aux-pow (mainnet) merged-mining proof, or native PoW (regtest).
+        if (h.hasAux) {
+          const { aux } = parseAuxPow(h.raw, 82);          // after 80 base + dummy + flags
+          if (!checkAuxPoW({ prev: h.raw.subarray(4, 36), time: h.raw.readUInt32LE(68) }, aux, this.net === 'main' ? 'main' : this.net))
+            throw new Error('aux-pow invalid');
+        } else if (!checkNativePoW(h)) throw new Error('header PoW invalid');
         chain.push(h);
       }
       if (hs.length === 0) break;

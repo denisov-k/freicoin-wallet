@@ -126,6 +126,7 @@ export function parseHeaders(payload) {
   let [count, o] = readVarint(payload, 0);
   const headers = [];
   for (let i = 0; i < count; i++) {
+    const start = o;
     const base = Buffer.from(payload.subarray(o, o + 80));
     const serBits = base.readUInt32LE(72) >>> 0;
     const hasAux = (serBits & AUX_FLAG) !== 0;
@@ -133,9 +134,11 @@ export function parseHeaders(payload) {
     base.writeUInt32LE(bits >>> 0, 72);
     const hash = Buffer.from(sha256d(base)).reverse().toString('hex');
     const prevHash = Buffer.from(base.subarray(4, 36)).reverse().toString('hex');
-    headers.push({ hash, prevHash, version: base.readInt32LE(0), time: base.readUInt32LE(68), bits, nonce: base.readUInt32LE(76) >>> 0, hasAux });
     o += 80;
     if (hasAux) o = skipAuxPow(payload, o + 2);           // dummy(0xff) + flags + aux_pow
+    // raw = the full header bytes (base + aux-pow), for aux-pow PoW verification
+    const raw = hasAux ? Buffer.from(payload.subarray(start, o)) : base;
+    headers.push({ hash, prevHash, version: base.readInt32LE(0), time: base.readUInt32LE(68), bits, nonce: base.readUInt32LE(76) >>> 0, hasAux, raw });
     [, o] = readVarint(payload, o);                       // tx_count (0 in headers)
   }
   return headers;
