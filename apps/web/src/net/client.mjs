@@ -240,13 +240,12 @@ export class Neutrino {
    *  in flight (the node answers requests in order over the single stream, so responses
    *  arrive sequentially). A sequential batch loop is RTT-bound: a full mainnet scan is
    *  ~485 batches — pipelining makes it download/CPU-bound instead. */
-  _cfilterStream(from, each) {
+  _cfilterStream(from, to, each) {
     const DEPTH = 8;
-    const tip = this.chain.length - 1;
-    const want = tip - from + 1;
+    const want = to - from + 1;
     if (want <= 0) return Promise.resolve(0);
     const ranges = [];
-    for (let lo = from; lo <= tip; lo += CFILTERS_BATCH) ranges.push([lo, Math.min(lo + CFILTERS_BATCH - 1, tip)]);
+    for (let lo = from; lo <= to; lo += CFILTERS_BATCH) ranges.push([lo, Math.min(lo + CFILTERS_BATCH - 1, to)]);
     let received = 0, sent = 0;
     return new Promise((res, rej) => {
       this._inflight.add(rej);
@@ -260,7 +259,7 @@ export class Neutrino {
         each(parseCFilter(m.payload));
         received++;
         if (received % CFILTERS_BATCH === 0 || received === want) {
-          this.onProgress?.({ phase: 'filters', done: received, want });
+          this.onProgress?.({ phase: 'filters', done: from + received - 1, want: Math.max(this.peerHeight, this.chain.length - 1) });
           if (received === want) { this._inflight.delete(rej); res(want); return; }
           sendMore();
         }
@@ -269,10 +268,10 @@ export class Neutrino {
     });
   }
 
-  /** BIP158 filters for heights [from..tip]; return the block hashes matching `scripts`. */
-  async matchFilters(scripts, from = 1) {
+  /** BIP158 filters for heights [from..to]; return the block hashes matching `scripts`. */
+  async matchFilters(scripts, from = 1, to = this.chain.length - 1) {
     const matched = [];
-    await this._cfilterStream(from, cf => {
+    await this._cfilterStream(from, to, cf => {
       if (filterMatchesAny(cf.filter, cf.blockHash, scripts)) matched.push(cf.blockHash);
     });
     return matched;
@@ -301,7 +300,7 @@ export class Neutrino {
    *  cross-peer agreed hash) and whether it matches `scripts`. Keyed by height. */
   async filtersWithHashes(scripts, from = 1) {
     const out = [];
-    await this._cfilterStream(from, cf => out.push({
+    await this._cfilterStream(from, this.chain.length - 1, cf => out.push({
       height: this.chain.heightOf(cf.blockHash), blockHash: cf.blockHash,
       filterHash: Buffer.from(sha256d(cf.filter)).reverse().toString('hex'),
       matched: filterMatchesAny(cf.filter, cf.blockHash, scripts),
@@ -312,8 +311,7 @@ export class Neutrino {
   /** Fetch the given blocks (display hashes), scan them into the persistent UTXO set /
    *  history in height order, and advance scannedHeight to the tip. The blocks passed are
    *  those the wallet must inspect (filter-matched and/or disputed by peer disagreement). */
-  async _applyBlocks(scripts, matchedHashes) {
-    const tip = this.chain.length - 1;
+  async _applyBlocks(scripts, matchedHashes, upto = this.chain.length - 1) {
     const blocks = await this.fetchBlocks(matchedHashes);
     const hOf = new Map(blocks.map(b => [b.hash, this.chain.heightOf(b.hash)]));
     blocks.sort((a, b) => hOf.get(a.hash) - hOf.get(b.hash));   // scan in height order
@@ -331,7 +329,7 @@ export class Neutrino {
         else if (sent > recv) history.push({ txid: id, category: 'send', amount: recv - sent, height, time });
       });
     }
-    this.scannedHeight = tip;
+    this.scannedHeight = upto;
   }
 
   /** Download the given blocks (display hashes). Returns [{hash, bytes}]. */
@@ -355,28 +353,47 @@ export class Neutrino {
    * history in place. Consecutive calls with no new blocks do no filter/block work.
    * Returns { tipHeight, balance (kria), utxos, history } computed entirely client-side.
    */
-  async syncWallet(scripts, { onProvisional = null } = {}) {
+  /** Result shape at height `at` (present values evaluated at at+1). */
+  _result(at = this.chain.length - 1) {
+    let balance = 0n; for (const u of this.utxos.values()) balance += timeAdjustValue(u.value, at + 1 - u.refheight);
+    return { tipHeight: at, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()] };
+  }
+
+  async syncWallet(scripts, { onProvisional = null, onPartial = null } = {}) {
     await this.ensureConnected();
     if (this._pool === undefined) this._pool = await makePool();   // null ⇒ inline fallback
     this._watch = new Set(scripts);        // watch the mempool for these scripts from now on
-    await this.syncHeaders();
-    const tip = this.chain.length - 1;
-    if (tip > this.scannedHeight) {
-      const matched = await this.matchFilters(scripts, this.scannedHeight + 1);
-      await this._applyBlocks(scripts, matched);
-      for (const id of this.mempool.keys())  // confirmed now? drop from pending
-        if (this.history.some(e => e.txid === id)) this.mempool.delete(id);
-    }
-    const result = () => {
-      let balance = 0n; for (const u of this.utxos.values()) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
-      return { tipHeight: tip, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()] };
-    };
+    // OVERLAPPED sync: a scan follower trails the header front, so filter download +
+    // matching + block scan run concurrently with header download+verification instead
+    // of strictly after them — and the balance found so far streams out via onPartial
+    // as the sweep advances.
+    let headersDone = false, headersErr = null;
+    const headersP = this.syncHeaders().then(() => { headersDone = true; }, e => { headersDone = true; headersErr = e; });
+    const follower = (async () => {
+      for (;;) {
+        if (headersErr) break;
+        const target = this.chain.length - 1;
+        const from = this.scannedHeight + 1;
+        const ready = target - from + 1;
+        if (ready >= CFILTERS_BATCH || (headersDone && ready > 0)) {
+          const to = headersDone ? target : from + Math.floor(ready / CFILTERS_BATCH) * CFILTERS_BATCH - 1;
+          const matched = await this.matchFilters(scripts, from, to);
+          await this._applyBlocks(scripts, matched, to);
+          onPartial?.(this._result(to));
+        } else if (headersDone) break;
+        else await new Promise(r => setTimeout(r, 50));   // wait for the header front to advance
+      }
+    })();
+    await headersP; await follower;
+    if (headersErr) throw headersErr;
+    for (const id of this.mempool.keys())  // confirmed now? drop from pending
+      if (this.history.some(e => e.txid === id)) this.mempool.delete(id);
     // Provisional: the scan is done but some PoW proofs are still verifying — surface the
     // balance now, clearly marked; the final (verified) result follows when the queue drains.
-    if (onProvisional && (this._verifying || this._pendingVerify.length)) onProvisional(result());
+    if (onProvisional && (this._verifying || this._pendingVerify.length)) onProvisional(this._result());
     await this.drainVerify();              // throws + resets state if any proof is bad
     this.scannedOnce = true;
-    return result();
+    return this._result();
   }
 
   /** The same result shape as syncWallet, computed from the CURRENT in-memory state with

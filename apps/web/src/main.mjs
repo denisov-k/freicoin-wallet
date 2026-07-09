@@ -158,13 +158,14 @@ function paintBalance(s) {
   if ($('#balance').hidden) return;
   balPainted = true;
   const pend = s.pending?.length ? s.pending.reduce((a, p) => a + p.amount, 0) : 0;
-  const state = s.stale === 'provisional' ? `⚠ not yet verified · tip ${s.tipHeight}`
+  const state = s.stale === 'partial' ? `⚠ found so far · scanned to ${s.tipHeight}`
+    : s.stale === 'provisional' ? `⚠ not yet verified · tip ${s.tipHeight}`
     : s.stale ? `last known state · tip ${s.tipHeight}` : `present value · tip ${s.tipHeight}`;
   $('#balance').innerHTML =
     `<div class="big">${fmt(s.balance)} <small>FRC</small></div>
      <div class="sub">${state} · ${s.utxos.length} UTXO</div>
      ${pend ? `<div class="sub">⏳ ${pend > 0 ? '+' : ''}${fmt(pend)} FRC pending (${s.pending.length} tx)</div>` : ''}
-     <div class="sub" id="syncp">${s.stale === 'provisional' ? '⟳ verifying proof-of-work…' : s.stale ? '⟳ syncing…' : ''}</div>
+     <div class="sub" id="syncp">${s.stale === 'partial' || s.stale === 'provisional' ? '⟳ syncing…' : s.stale ? '⟳ syncing…' : ''}</div>
      <button id="refresh" class="ghost">↻ Refresh</button>`;
   $('#refresh').onclick = render.balance;
 }

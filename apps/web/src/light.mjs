@@ -80,6 +80,8 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       // Scan done but PoW proofs still verifying: surface the balance immediately, clearly
       // marked provisional. cache is NOT set — Send must never build on unverified data.
       onProvisional: prov => { try { onProvisional?.(toCache(prov, 'provisional')); } catch {} },
+      // Progressive balance during the sweep: what the scan has found so far, marked partial.
+      onPartial: part => { try { onProvisional?.(toCache(part, 'partial')); } catch {} },
     });
     try { await store.save(n, skey); } catch {}
     cache = toCache(r);
