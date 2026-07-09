@@ -227,6 +227,11 @@ function paintSendAvail(st, approx) {
   if (el && st) el.textContent = `available ${approx ? '≈ ' : ''}${fmt(st.balance)} FRC`;
 }
 
+// Render generation: bumped on every tab render; async callbacks from an older render
+// (e.g. a sync rejected with 'closed' when Settings replaced the source) check it and
+// bail instead of painting errors over the new render.
+let renderGen = 0;
+
 // Balance card painter — module-level so the worker's provisional events can repaint
 // the visible balance screen outside a render.balance() call.
 let balPainted = false;
@@ -257,6 +262,7 @@ function paintBalance(s) {
 
 const render = {
   async balance() {
+    const gen = ++renderGen;
     // First sync (nothing persisted yet): an honest placeholder — the balance is genuinely
     // unknown until the filter scan completes, so show that instead of a bare skeleton.
     if (!$('#balance').innerHTML) $('#balance').innerHTML =
@@ -264,13 +270,14 @@ const render = {
        <div class="sub">first sync…</div>`;
     balPainted = false;
     // Instant: last persisted state (no network) while the real sync runs.
-    if (!cache) { try { const pv = await ds().preview(); if (pv) paintBalance(pv); } catch {} }
-    try { paintBalance(await getState(true)); }
+    if (!cache) { try { const pv = await ds().preview(); if (gen === renderGen && pv) paintBalance(pv); } catch {} }
+    try { const st = await getState(true); if (gen !== renderGen) return; paintBalance(st); }
     catch (e) {
+      if (gen !== renderGen) return;   // stale render (source was replaced) — ignore
       if (!balPainted) { setStatus('off', e.message); $('#balance').innerHTML = `<div class="err">sync failed — ${e.message}</div><button id="refresh" class="ghost">↻ Retry</button>`; $('#refresh').onclick = render.balance; return; }
       setStatus('off', 'bridge unreachable — retrying');
     }
-    clearInterval(pollTimer); pollTimer = setInterval(async () => { try { paintBalance(await getState(true)); } catch {} }, 6000);
+    clearInterval(pollTimer); pollTimer = setInterval(async () => { try { const st = await getState(true); if (gen === renderGen) paintBalance(st); } catch {} }, 6000);
   },
   async receive() {
     let addr; try { addr = deriveAddress(hexSeed(), recvIndex, 0); } catch (e) { return toast(e.message, 'err'); }
@@ -297,11 +304,13 @@ const render = {
     const seed = cache || liveState;
     if (seed) paintSendAvail(seed, !cache);
     else { try { const pv = await ds().preview(); if (pv) paintSendAvail(pv, true); } catch {} }
-    try { const s = await getState(); paintSendAvail(s, false);
+    const sendGen = renderGen;
+    try { const s = await getState(); if (sendGen !== renderGen) return; paintSendAvail(s, false);
       if ($('#maxBtn')) $('#maxBtn').onclick = () => { $('#amt').value = Math.max(0, s.balance - 0.001).toFixed(8); }; }
-    catch { const el = $('#avail'); if (el && el.textContent === 'available…') el.textContent = ''; }
+    catch { if (sendGen !== renderGen) return; const el = $('#avail'); if (el && el.textContent === 'available…') el.textContent = ''; }
   },
   async activity() {
+    const gen = ++renderGen;
     actLastHtml = '';
     $('#activity').innerHTML = skel(4);
     let painted = false;
@@ -312,8 +321,9 @@ const render = {
     else { try { const pv = await ds().preview(); if (pv) painted = paintActivity([...pv.pending, ...pv.history]) || painted; } catch {} }
     try {
       const { txs } = await ds().history();
+      if (gen !== renderGen) return;
       painted = paintActivity(txs) || painted;
-    } catch (e) { if (!painted) $('#activity').innerHTML = `<div class="err">${e.message}</div>`; }
+    } catch (e) { if (gen === renderGen && !painted) $('#activity').innerHTML = `<div class="err">${e.message}</div>`; }
   },
   settings() {
     const vault = getVault(), s = secret();
