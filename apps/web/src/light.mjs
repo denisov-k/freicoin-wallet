@@ -73,7 +73,15 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     };
   };
 
-  async function sync() {
+  // Serialized: concurrent callers (Balance poll, Activity, Send) share ONE in-flight
+  // syncWallet — two interleaved syncs on the same client steal each other's single-shot
+  // message handlers and both hang.
+  let inflight = null;
+  function sync() {
+    if (!inflight) inflight = doSync().finally(() => { inflight = null; });
+    return inflight;
+  }
+  async function doSync() {
     await initClient();
     if (!connected) { await n.connect(); n.stateClient.onProgress = progress; connected = true; }
     const r = await n.syncWallet(scripts, {
