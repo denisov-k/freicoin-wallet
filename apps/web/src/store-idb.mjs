@@ -1,10 +1,12 @@
 // store-idb.mjs — IndexedDB persistence for the light client. localStorage cannot hold a
-// mainnet header chain (485k × 32-byte hashes ≫ its ~5MB cap), so headers are stored as
-// individual records and only NEW ones are appended each sync — persistence stays
-// incremental, matching the client's incremental header sync. The small wallet state
-// (scannedHeight + UTXO set + history) is one record. Keyed by (net, genesis); a different
-// wallet (script-set fingerprint change) discards the stored state.
-const DB_VERSION = 1;
+// mainnet header chain (485k × 32-byte hashes ≫ its ~5MB cap). Headers are stored in
+// CHUNKS of CHUNK headers per record (485k individual records made saves take minutes;
+// ~240 chunk records save in well under a second) and only chunks touched since the last
+// save are rewritten — persistence stays incremental, matching the incremental header
+// sync. The small wallet state (scannedHeight + UTXO set + history) is one record.
+// Keyed by (net, genesis); a different wallet (script-set fingerprint) discards the store.
+const DB_VERSION = 2;          // v2: chunked headers (v1 stored one record per header)
+const CHUNK = 2048;            // headers per record
 const idb = () => { try { return globalThis.indexedDB; } catch { return null; } };
 const txDone = t => new Promise((res, rej) => { t.oncomplete = () => res(); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); });
 const reqDone = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
@@ -19,7 +21,8 @@ export class IdbStore {
       const r = idb().open(this.name, DB_VERSION);
       r.onupgradeneeded = () => {
         const db = r.result;
-        if (!db.objectStoreNames.contains('headers')) db.createObjectStore('headers', { keyPath: 'h' });
+        if (db.objectStoreNames.contains('headers')) db.deleteObjectStore('headers');   // v1 schema → rebuild
+        db.createObjectStore('headers', { keyPath: 'c' });
         if (!db.objectStoreNames.contains('wallet')) db.createObjectStore('wallet', { keyPath: 'k' });
       };
       r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
@@ -46,30 +49,37 @@ export class IdbStore {
       c.onsuccess = e => { const cur = e.target.result; if (cur) { out.push(cur.value); cur.continue(); } else res(out); };
       c.onerror = () => rej(c.error);
     });
-    rows.sort((a, b) => a.h - b.h);
-    const chain = rows.map(r => ({ hash: r.hash, prevHash: r.prevHash, time: r.time }));
-    const ok = client.importState({ net: client.net, genesis: client.genesis, scannedHeight: w.scannedHeight, chain, utxos: w.utxos, history: w.history });
+    rows.sort((a, b) => a.c - b.c);
+    const chain = [];
+    for (const r of rows) {
+      if (r.c * CHUNK !== chain.length) { await this.clear(); return false; }   // gap → store corrupt, start fresh
+      for (const [hash, prevHash, time] of r.hs) chain.push({ hash, prevHash, time });
+    }
+    const ok = chain.length > 0 && client.importState({ net: client.net, genesis: client.genesis, scannedHeight: w.scannedHeight, chain, utxos: w.utxos, history: w.history });
     this.persistedTip = ok ? chain.length - 1 : -1;
     if (!ok) await this.clear();
     return ok;
   }
 
-  /** Persist the delta since the last save: any reorg rollback, newly-synced headers, and
-   *  the current wallet record. Cheap when nothing new synced. */
+  /** Persist the delta since the last save: any reorg rollback, newly-synced headers
+   *  (only the chunk records they touch are rewritten), and the wallet record. */
   async save(client, scriptsKey) {
     if (!this.db) return;
     const o = client.stateClient;
     const tip = o.chain.length - 1;
-    // Reorg: drop persisted headers above the fork so the store mirrors the client's chain.
-    if (o.reorgFloor != null && o.reorgFloor < this.persistedTip) {
-      const t = this.db.transaction('headers', 'readwrite');
-      t.objectStore('headers').delete(IDBKeyRange.lowerBound(o.reorgFloor, true));
-      await txDone(t); this.persistedTip = o.reorgFloor;
-    }
+    // Reorg: forget persisted headers above the fork; the append below rewrites the
+    // partial chunk from the (already truncated + re-extended) in-memory chain.
+    if (o.reorgFloor != null && o.reorgFloor < this.persistedTip) this.persistedTip = o.reorgFloor;
     o.reorgFloor = null;
-    if (tip > this.persistedTip) {
+    if (tip !== this.persistedTip) {
+      const firstChunk = Math.floor((this.persistedTip + 1) / CHUNK);
+      const lastChunk = Math.floor(tip / CHUNK);
       const t = this.db.transaction('headers', 'readwrite'); const os = t.objectStore('headers');
-      for (let h = this.persistedTip + 1; h <= tip; h++) { const c = o.chain[h]; os.put({ h, hash: c.hash, prevHash: c.prevHash ?? null, time: c.time || 0 }); }
+      for (let c = firstChunk; c <= lastChunk; c++) {
+        const hs = o.chain.slice(c * CHUNK, Math.min((c + 1) * CHUNK, tip + 1)).map(h => [h.hash, h.prevHash ?? null, h.time || 0]);
+        os.put({ c, hs });
+      }
+      os.delete(IDBKeyRange.lowerBound(lastChunk, true));   // drop stale chunks past the tip (reorg shrink)
       await txDone(t); this.persistedTip = tip;
     }
     const t = this.db.transaction('wallet', 'readwrite');

@@ -13,10 +13,12 @@ const kriaToFrc = k => Number(k) / 1e8;
 // same wallet (a different secret ⇒ different scripts ⇒ discard the persisted UTXO set).
 const scriptsKey = scripts => { let h = 5381 >>> 0; const s = scripts.join(''); for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0; return scripts.length + ':' + h.toString(16); };
 
-export function createLightSource({ url, net, genesis, scripts }) {
+export function createLightSource({ url, net, genesis, scripts, birthHeight = 0 }) {
   let n = null, cache = null;
   const store = new IdbStore(net, genesis);   // IndexedDB — holds a full mainnet header chain
-  const skey = scriptsKey(scripts);
+  // birth height is part of the state fingerprint: changing it discards the stored scan
+  // (a rescan from the new height), since the persisted UTXO set was windowed by the old one.
+  const skey = scriptsKey(scripts) + ':b' + (birthHeight || 0);
 
   // One or more bridge URLs (comma/space separated). Multiple ⇒ multi-peer filter
   // agreement (no single peer can hide funds); one ⇒ the plain single-peer client.
@@ -25,7 +27,12 @@ export function createLightSource({ url, net, genesis, scripts }) {
   async function sync() {
     if (!n) {
       n = urls.length > 1 ? new NeutrinoPool({ urls, net, genesis }) : new Neutrino({ url: urls[0], net, genesis });
-      try { if (await store.open()) await store.loadInto(n, skey); } catch {}   // resume persisted chain if same wallet
+      let resumed = false;
+      try { if (await store.open()) resumed = await store.loadInto(n, skey); } catch {}   // resume persisted chain if same wallet
+      // Fresh start: skip filters/scan below the wallet's birth height (headers still sync
+      // fully — PoW trustlessness is not windowed). Crucial on mainnet: without a birth
+      // height a new wallet would scan ~485k filters that cannot contain its coins.
+      if (!resumed && birthHeight > 0) n.stateClient.scannedHeight = birthHeight - 1;
       await n.connect();
     }
     const r = await n.syncWallet(scripts);
