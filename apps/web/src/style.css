@@ -54,7 +54,7 @@ textarea { background:var(--card); border:1px solid var(--line); border-radius:1
 select { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; color:var(--fg); font-size:15px; width:100%; }
 
 /* header sync-status indicator */
-.statusbtn { background:none; cursor:pointer; line-height:1; font-size:14px; padding:2px 10px; }
+.statusbtn { font-size:16px; line-height:1; }   /* sized by .icon, colored by .st-* */
 .st-ok   { color:var(--ok); }
 .st-off  { color:var(--err); }
 .st-sync { color:var(--warn); animation: stpulse 1.2s ease-in-out infinite; }

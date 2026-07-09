@@ -11,31 +11,30 @@ const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.ge
 const curBridge = () => store.get('fw_bridge') || DEFAULT_BRIDGE[curNet()];
 let lightSrc = null;
 // ---- header status indicator (dot + click-popover with sync details) ----
-const status = { state: 'sync', detail: 'connecting…', tip: null };
+const status = { state: 'sync', detail: 'connecting…', tip: null, progress: {} };
 function setStatus(state, detail, tip) {
   status.state = state;
   if (detail !== undefined) status.detail = detail;
   if (tip !== undefined) status.tip = tip;
+  if (state === 'ok') status.progress = {};
   const b = $('#statusBtn');
-  if (b) b.className = 'pill statusbtn st-' + state;
+  if (b) b.className = 'icon statusbtn st-' + state;
   const pop = $('#statusPop');
   if (pop && !pop.hidden) renderStatusPop();
 }
+const PHASE_LABEL = { headers: 'headers', filters: 'scan', verify: 'PoW', blocks: 'blocks' };
 function renderStatusPop() {
   const pop = $('#statusPop'); if (!pop) return;
   const label = { ok: 'synced ✓ (verified)', sync: 'syncing…', off: 'offline' }[status.state] || status.state;
+  // one stable line per concurrently-running phase (they overlap — a single line would flicker)
+  const phases = Object.entries(status.progress).map(([k, p]) =>
+    `<div class="rrow"><span>${PHASE_LABEL[k] || k}</span><b>${(p.done ?? p.height).toLocaleString()} / ${(p.want ?? p.target).toLocaleString()}</b></div>`).join('');
   pop.innerHTML =
     `<div class="rrow"><span>Network</span><b>${NETWORKS[curNet()].label}</b></div>
      <div class="rrow"><span>Status</span><b>${label}</b></div>
      ${status.tip != null ? `<div class="rrow"><span>Tip</span><b>${(+status.tip).toLocaleString()}</b></div>` : ''}
-     ${status.state !== 'ok' && status.detail ? `<div class="sub">${status.detail}</div>` : ''}`;
+     ${status.state !== 'ok' ? phases || (status.detail ? `<div class="sub">${status.detail}</div>` : '') : ''}`;
 }
-
-const fmtProgress = p =>
-  p.phase === 'headers' ? `verifying headers ${p.height.toLocaleString()} / ${p.target ? p.target.toLocaleString() : '…'}`
-  : p.phase === 'filters' ? `scanning filters ${p.done.toLocaleString()} / ${p.want.toLocaleString()}`
-  : p.phase === 'verify' ? `verifying proof-of-work ${p.done.toLocaleString()} / ${p.want.toLocaleString()}`
-  : `fetching blocks ${p.done} / ${p.want}`;
 
 // The light client runs in a Web Worker: header verification (~20s of CPU on mainnet)
 // would freeze the page on the main thread. Only watch SCRIPTS go to the worker — the
@@ -60,7 +59,7 @@ function ds() {
     worker = new Worker(new URL('./worker.mjs', import.meta.url), { type: 'module' });
     worker.onmessage = e => {
       const m = e.data;
-      if (m.type === 'progress') { const el = $('#syncp'); if (el) el.textContent = fmtProgress(m.p); setStatus('sync', fmtProgress(m.p)); return; }
+      if (m.type === 'progress') { status.progress[m.p.phase] = m.p; setStatus('sync'); return; }
       if (m.type === 'provisional') { try { paintBalance(m.c); } catch {} setStatus('sync', undefined, m.c.tipHeight); return; }
       const c = wCalls.get(m.id); if (!c) return; wCalls.delete(m.id);
       m.error ? c.rej(new Error(m.error)) : c.res(m.result);
@@ -131,7 +130,7 @@ function renderLock() {
 function renderApp() {
   $('#app').innerHTML = `
     <header><h1>Freicoin Wallet</h1>
-      <div class="hbtns"><button id="themeBtn" class="icon"></button><button id="statusBtn" class="pill statusbtn st-sync" title="sync status">●</button></div></header>
+      <div class="hbtns"><button id="themeBtn" class="icon"></button><button id="statusBtn" class="icon statusbtn st-sync" title="sync status">●</button></div></header>
     <div id="statusPop" hidden></div>
     <nav>
       <button data-tab="balance" class="active">Balance</button>
@@ -183,17 +182,23 @@ function paintBalance(s) {
   else setStatus('sync', undefined, s.tipHeight);
   if ($('#balance').hidden) return;
   balPainted = true;
+  // build the card once; update fields in place afterwards (a full innerHTML rewrite per
+  // streamed partial made the screen flicker)
+  if (!$('#balBig')) {
+    $('#balance').innerHTML =
+      `<div class="big" id="balBig"></div>
+       <div class="sub" id="balSub"></div>
+       <div class="sub" id="balPend"></div>
+       <button id="refresh" class="ghost">↻ Refresh</button>`;
+    $('#refresh').onclick = render.balance;
+  }
   const pend = s.pending?.length ? s.pending.reduce((a, p) => a + p.amount, 0) : 0;
-  const state = s.stale === 'partial' ? `⚠ found so far · scanned to ${s.tipHeight}`
-    : s.stale === 'provisional' ? `⚠ not yet verified · tip ${s.tipHeight}`
-    : s.stale ? `last known state · tip ${s.tipHeight}` : `present value · tip ${s.tipHeight}`;
-  $('#balance').innerHTML =
-    `<div class="big">${fmt(s.balance)} <small>FRC</small></div>
-     <div class="sub">${state} · ${s.utxos.length} UTXO</div>
-     ${pend ? `<div class="sub">⏳ ${pend > 0 ? '+' : ''}${fmt(pend)} FRC pending (${s.pending.length} tx)</div>` : ''}
-     <div class="sub" id="syncp">${s.stale === 'partial' || s.stale === 'provisional' ? '⟳ syncing…' : s.stale ? '⟳ syncing…' : ''}</div>
-     <button id="refresh" class="ghost">↻ Refresh</button>`;
-  $('#refresh').onclick = render.balance;
+  const state = s.stale === 'partial' ? `found so far · scanned to ${(+s.tipHeight).toLocaleString()}`
+    : s.stale === 'provisional' ? `not yet verified · tip ${(+s.tipHeight).toLocaleString()}`
+    : s.stale ? `last known state · tip ${(+s.tipHeight).toLocaleString()}` : `present value · tip ${(+s.tipHeight).toLocaleString()}`;
+  $('#balBig').innerHTML = `${fmt(s.balance)} <small>FRC</small>`;
+  $('#balSub').textContent = `${state} · ${s.utxos.length} UTXO`;
+  $('#balPend').textContent = pend ? `⏳ ${pend > 0 ? '+' : ''}${fmt(pend)} FRC pending (${s.pending.length} tx)` : '';
 }
 
 const render = {
@@ -202,15 +207,13 @@ const render = {
     // unknown until the filter scan completes, so show that instead of a bare skeleton.
     if (!$('#balance').innerHTML) $('#balance').innerHTML =
       `<div class="big">— <small>FRC</small></div>
-       <div class="sub">first sync — balance appears when the scan completes</div>
-       <div class="sub" id="syncp"></div>`;
+       <div class="sub">first sync…</div>`;
     balPainted = false;
     // Instant: last persisted state (no network) while the real sync runs.
     if (!cache) { try { const pv = await ds().preview(); if (pv) paintBalance(pv); } catch {} }
     try { paintBalance(await getState(true)); }
     catch (e) {
       if (!balPainted) { setStatus('off', e.message); $('#balance').innerHTML = `<div class="err">sync failed — ${e.message}</div><button id="refresh" class="ghost">↻ Retry</button>`; $('#refresh').onclick = render.balance; return; }
-      const el = $('#syncp'); if (el) el.textContent = 'offline — showing last known state, retrying…';
       setStatus('off', 'bridge unreachable — retrying');
     }
     clearInterval(pollTimer); pollTimer = setInterval(async () => { try { paintBalance(await getState(true)); } catch {} }, 6000);
