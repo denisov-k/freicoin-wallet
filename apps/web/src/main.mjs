@@ -60,7 +60,14 @@ function ds() {
     worker.onmessage = e => {
       const m = e.data;
       if (m.type === 'progress') { status.progress[m.p.phase] = m.p; setStatus('sync'); return; }
-      if (m.type === 'provisional') { try { paintBalance(m.c); } catch {} setStatus('sync', undefined, m.c.tipHeight); return; }
+      if (m.type === 'provisional') {
+        liveState = m.c;
+        try { paintBalance(m.c); } catch {}
+        try { paintActivity([...m.c.pending, ...m.c.history]); } catch {}
+        try { paintSendAvail(m.c, true); } catch {}
+        setStatus('sync', undefined, m.c.tipHeight);
+        return;
+      }
       const c = wCalls.get(m.id); if (!c) return; wCalls.delete(m.id);
       m.error ? c.rej(new Error(m.error)) : c.res(m.result);
     };
@@ -174,6 +181,37 @@ const getState = async force => {
 const timeAgo = t => { const s = Math.max(0, Date.now() / 1000 - t); if (s < 60) return 'just now'; if (s < 3600) return (s / 60 | 0) + 'm ago'; if (s < 86400) return (s / 3600 | 0) + 'h ago'; return new Date(t * 1000).toLocaleDateString(); };
 const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏' };
 
+// Latest streamed (partial/provisional) state — lets every tab show live data during a
+// first sync, when there is no cache and nothing persisted to preview.
+let liveState = null;
+
+// Activity list painter — module-level so streamed partials can update the visible list.
+let actLastHtml = '';
+function paintActivity(txs) {
+  const sec = $('#activity');
+  if (!sec || sec.hidden) return false;
+  const html = txs.length ? txs.map((t, i) =>
+    `<div class="act" data-i="${i}">
+       <div class="act-i ${t.category}">${CAT[t.category] || '•'}</div>
+       <div class="act-m"><b>${t.category}</b><span class="sub">${t.confirmations > 0 ? t.confirmations + ' conf' : 'pending'} · ${timeAgo(t.time)}</span></div>
+       <div class="act-a ${(+t.amount) < 0 ? 'neg' : 'pos'}">${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)}</div>
+     </div>`).join('') + '<div id="actDetail"></div>' : '<div class="sub">no transactions yet</div>';
+  if (html === actLastHtml) return true;   // identical content — skip the rewrite (no blink)
+  actLastHtml = html;
+  sec.innerHTML = html;
+  document.querySelectorAll('.act').forEach(el => el.onclick = () => {
+    const t = txs[+el.dataset.i];
+    $('#actDetail').innerHTML = `<div class="detail"><span class="sub">txid</span><div class="txid" id="dtxid">${t.txid}</div><button id="copyTxid" class="ghost">Copy txid</button></div>`;
+    $('#copyTxid').onclick = e => copy(t.txid, e.target);
+  });
+  return true;
+}
+// Send available line — ≈ marks unverified (streamed/preview) values.
+function paintSendAvail(st, approx) {
+  const el = $('#avail');
+  if (el && st) el.textContent = `available ${approx ? '≈ ' : ''}${fmt(st.balance)} FRC`;
+}
+
 // Balance card painter — module-level so the worker's provisional events can repaint
 // the visible balance screen outside a render.balance() call.
 let balPainted = false;
@@ -238,38 +276,27 @@ const render = {
        <button id="reviewBtn">Review</button><div id="sendResult"></div>`;
     $('#reviewBtn').onclick = doReview;
     $('#amt').addEventListener('keydown', e => { if (e.key === 'Enter') doReview(); });
-    // Instant: approximate available from the last-known state while the sync runs;
-    // replaced in place by the verified value (Max only binds to verified data).
-    if (!cache) { try { const pv = await ds().preview(); const el = $('#avail'); if (pv && el) el.textContent = `available ≈ ${fmt(pv.balance)} FRC`; } catch {} }
-    try { const s = await getState(); const el = $('#avail'); if (el) el.textContent = `available ${fmt(s.balance)} FRC`;
+    // Instant: approximate available (verified cache > streamed partial > preview); live
+    // partials keep it fresh; the verified value replaces it in place and binds Max.
+    const seed = cache || liveState;
+    if (seed) paintSendAvail(seed, !cache);
+    else { try { const pv = await ds().preview(); if (pv) paintSendAvail(pv, true); } catch {} }
+    try { const s = await getState(); paintSendAvail(s, false);
       if ($('#maxBtn')) $('#maxBtn').onclick = () => { $('#amt').value = Math.max(0, s.balance - 0.001).toFixed(8); }; }
     catch { const el = $('#avail'); if (el && el.textContent === 'available…') el.textContent = ''; }
   },
   async activity() {
+    actLastHtml = '';
     $('#activity').innerHTML = skel(4);
-    let painted = false, lastHtml = '';
-    const paintList = txs => {
-      const html = txs.length ? txs.map((t, i) =>
-        `<div class="act" data-i="${i}">
-           <div class="act-i ${t.category}">${CAT[t.category] || '•'}</div>
-           <div class="act-m"><b>${t.category}</b><span class="sub">${t.confirmations > 0 ? t.confirmations + ' conf' : 'pending'} · ${timeAgo(t.time)}</span></div>
-           <div class="act-a ${(+t.amount) < 0 ? 'neg' : 'pos'}">${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)}</div>
-         </div>`).join('') + '<div id="actDetail"></div>' : '<div class="sub">no transactions yet</div>';
-      painted = true;
-      if (html === lastHtml) return;   // identical content — skip the rewrite (no blink)
-      lastHtml = html;
-      $('#activity').innerHTML = html;
-      document.querySelectorAll('.act').forEach(el => el.onclick = () => {
-        const t = txs[+el.dataset.i];
-        $('#actDetail').innerHTML = `<div class="detail"><span class="sub">txid</span><div class="txid" id="dtxid">${t.txid}</div><button id="copyTxid" class="ghost">Copy txid</button></div>`;
-        $('#copyTxid').onclick = e => copy(t.txid, e.target);
-      });
-    };
-    // Instant: last persisted history while the sync runs (the header dot shows the sync).
-    if (!cache) { try { const pv = await ds().preview(); if (pv) paintList([...pv.pending, ...pv.history]); } catch {} }
+    let painted = false;
+    // Instant: verified cache > streamed partial > persisted preview; live partials keep
+    // updating the list via the worker's provisional events while the sync runs.
+    const seed = cache || liveState;
+    if (seed) painted = paintActivity([...seed.pending, ...seed.history]) || painted;
+    else { try { const pv = await ds().preview(); if (pv) painted = paintActivity([...pv.pending, ...pv.history]) || painted; } catch {} }
     try {
       const { txs } = await ds().history();
-      paintList(txs);
+      painted = paintActivity(txs) || painted;
     } catch (e) { if (!painted) $('#activity').innerHTML = `<div class="err">${e.message}</div>`; }
   },
   settings() {
@@ -331,7 +358,7 @@ function saveSettings() {
   const br = $('#br').value.trim();
   if (br && br !== DEFAULT_BRIDGE[net]) store.set('fw_bridge', br); else store.del('fw_bridge');   // keep the net default unless overridden
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
-  unlockedSecret = sec; recvIndex = 0; store.set('fw_recv', 0); cache = null;
+  unlockedSecret = sec; recvIndex = 0; store.set('fw_recv', 0); cache = null; liveState = null;
   if (getVault()) store.set('fw_vault', JSON.stringify(encryptSecret(sec, unlockedPass)));  // re-encrypt
   else store.set('fw_seed', sec);
   toast('saved'); show('balance');
