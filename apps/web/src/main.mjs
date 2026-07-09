@@ -24,6 +24,14 @@ const wCalls = new Map();
 function wcall(method, params) {
   return new Promise((res, rej) => { const id = ++wSeq; wCalls.set(id, { res, rej }); worker.postMessage({ id, method, params }); });
 }
+// Wallet fingerprint (same djb2 as the light source) — keys the learned birth height.
+const walletFp = scripts => { let h = 5381 >>> 0; const s = scripts.join(''); for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0; return scripts.length + ':' + h.toString(16); };
+// Birth height is fully automatic: a brand-new wallet's birth is the tip at generation
+// time; an imported wallet full-scans once, then the first-activity height learned from
+// that scan is remembered (survives IndexedDB eviction — a rescan skips straight to it).
+const learnedBirth = fp => Number(store.get('fw_ab:' + fp)) || 0;
+const effectiveBirth = fp => learnedBirth(fp);
+
 function ds() {
   const net = curNet();
   configureNetwork(net);
@@ -37,9 +45,10 @@ function ds() {
       m.error ? c.rej(new Error(m.error)) : c.res(m.result);
     };
     worker.onerror = () => { wCalls.forEach(c => c.rej(new Error('worker error'))); wCalls.clear(); };
+    const scripts = walletScripts(hexSeed());
     wcall('init', {
-      url: curBridge(), net, genesis: NETWORKS[net].genesis, scripts: walletScripts(hexSeed()),
-      birthHeight: Number(store.get('fw_birth')) || 0,
+      url: curBridge(), net, genesis: NETWORKS[net].genesis, scripts,
+      birthHeight: effectiveBirth(walletFp(scripts)),
     }).catch(() => {});
     lightSrc = {
       health: () => wcall('health'), balance: () => wcall('balance'), utxos: () => wcall('utxos'),
@@ -128,7 +137,17 @@ const show = tab => {
   clearInterval(pollTimer); pollTimer = null; toast(''); render[tab]?.();
 };
 
-const getState = async force => (!force && cache) ? cache : (cache = await ds().utxos());
+const getState = async force => {
+  if (!force && cache) return cache;
+  cache = await ds().utxos();
+  // Learn the wallet's birth height from the first completed scan (write-once per wallet):
+  // a future rescan (e.g. the browser evicted IndexedDB) then skips straight to it.
+  try {
+    const fp = walletFp(walletScripts(hexSeed()));
+    if (cache.birthAuto && !store.get('fw_ab:' + fp)) store.set('fw_ab:' + fp, cache.birthAuto);
+  } catch {}
+  return cache;
+};
 const timeAgo = t => { const s = Math.max(0, Date.now() / 1000 - t); if (s < 60) return 'just now'; if (s < 3600) return (s / 60 | 0) + 'm ago'; if (s < 86400) return (s / 3600 | 0) + 'h ago'; return new Date(t * 1000).toLocaleDateString(); };
 const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏' };
 
@@ -222,7 +241,6 @@ const render = {
     $('#settings').innerHTML =
       `<label>Network<select id="netSel">${Object.entries(NETWORKS).map(([k, v]) => `<option value="${k}"${k === curNet() ? ' selected' : ''}>${v.label}</option>`).join('')}</select></label>
        <label>Bridge URL (neutrino P2P relay)<input id="br" value="${curBridge()}"></label>
-       <label>Wallet birth height <span class="sub">(skip filter scan below; 0 = from genesis)</span><input id="birth" type="number" min="0" value="${store.get('fw_birth') || 0}"></label>
        <label>Wallet secret (${kind})<textarea id="sd" rows="2">${s}</textarea></label>
        <div class="row"><button id="saveCfg">Save</button><button id="genBtn" class="ghost">Generate 12 words</button><button id="copySeed" class="ghost">Copy</button></div>
        <div class="row">${vault
@@ -234,9 +252,11 @@ const render = {
     // Switching network swaps in that network's default bridge (user can still override).
     $('#netSel').onchange = () => { $('#br').value = DEFAULT_BRIDGE[$('#netSel').value] || ''; };
     $('#genBtn').onclick = () => {
-      $('#sd').value = generateMnemonic();
-      // A brand-new wallet has no history before the current tip — set its birth there.
-      if (cache?.tipHeight) $('#birth').value = cache.tipHeight;
+      const m = generateMnemonic();
+      $('#sd').value = m;
+      // A brand-new wallet has no history before the current tip — record its birth now
+      // (keyed by the new wallet's fingerprint; picked up when the user saves).
+      try { if (cache?.tipHeight) store.set('fw_ab:' + walletFp(walletScripts(resolveSecret(m))), cache.tipHeight); } catch {}
       toast('new phrase — back it up, then Save');
     };
     $('#copySeed').onclick = e => copy($('#sd').value, e.target);
@@ -273,8 +293,6 @@ function saveSettings() {
   store.set('fw_net', net); configureNetwork(net);
   const br = $('#br').value.trim();
   if (br && br !== DEFAULT_BRIDGE[net]) store.set('fw_bridge', br); else store.del('fw_bridge');   // keep the net default unless overridden
-  const birth = Math.max(0, parseInt($('#birth').value, 10) || 0);
-  if (birth) store.set('fw_birth', birth); else store.del('fw_birth');
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
   unlockedSecret = sec; recvIndex = 0; store.set('fw_recv', 0); cache = null;
   if (getVault()) store.set('fw_vault', JSON.stringify(encryptSecret(sec, unlockedPass)));  // re-encrypt

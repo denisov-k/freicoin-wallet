@@ -11,14 +11,15 @@ const kriaToFrc = k => Number(k) / 1e8;
 
 // Cheap fingerprint of the wallet's script set — stored state is only reused for the
 // same wallet (a different secret ⇒ different scripts ⇒ discard the persisted UTXO set).
-const scriptsKey = scripts => { let h = 5381 >>> 0; const s = scripts.join(''); for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0; return scripts.length + ':' + h.toString(16); };
+export const scriptsKey = scripts => { let h = 5381 >>> 0; const s = scripts.join(''); for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0; return scripts.length + ':' + h.toString(16); };
 
 export function createLightSource({ url, net, genesis, scripts, birthHeight = 0, onProgress = null, onProvisional = null }) {
   let n = null, cache = null;
   const store = new IdbStore(net, genesis);   // IndexedDB — holds a full mainnet header chain
-  // birth height is part of the state fingerprint: changing it discards the stored scan
-  // (a rescan from the new height), since the persisted UTXO set was windowed by the old one.
-  const skey = scriptsKey(scripts) + ':b' + (birthHeight || 0);
+  // NOTE: birthHeight is NOT part of the fingerprint — it is auto-learned from the scan
+  // itself, so it can never shrink an already-scanned window; it only applies on a fresh
+  // start (no persisted state), where it windows the initial filter scan.
+  const skey = scriptsKey(scripts);
 
   // One or more bridge URLs (comma/space separated). Multiple ⇒ multi-peer filter
   // agreement (no single peer can hide funds); one ⇒ the plain single-peer client.
@@ -82,6 +83,11 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     });
     try { await store.save(n, skey); } catch {}
     cache = toCache(r);
+    // Learned birth height: after a completed (verified) scan the wallet's first activity
+    // is known — a manual birth stays authoritative; a full scan learns min(history height)
+    // (or the tip for an empty wallet: nothing below the scanned tip can appear later).
+    cache.birthAuto = birthHeight > 0 ? birthHeight
+      : (r.history.length ? Math.min(...r.history.map(h => h.height)) : r.tipHeight);
     return cache;
   }
   let connected = false;
@@ -102,8 +108,8 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
 
   return {
     async health() { return { ok: true, network: net + ' (light)' }; },
-    async balance() { const c = await ensure(); return { balance: c.balance, tipHeight: c.tipHeight, unit: 'present-value', pending: c.pending, agreement: c.agreement }; },
-    async utxos() { const c = await sync(); return { balance: c.balance, tipHeight: c.tipHeight, utxos: c.utxos, pending: c.pending, agreement: c.agreement }; },
+    async balance() { const c = await ensure(); return { balance: c.balance, tipHeight: c.tipHeight, unit: 'present-value', pending: c.pending, agreement: c.agreement, birthAuto: c.birthAuto }; },
+    async utxos() { const c = await sync(); return { balance: c.balance, tipHeight: c.tipHeight, utxos: c.utxos, pending: c.pending, agreement: c.agreement, birthAuto: c.birthAuto }; },
     async history() { const c = await ensure(); return { txs: [...c.pending, ...c.history] }; },
     preview,
     async broadcast(rawtx) { if (!n) await sync(); n.broadcast(rawtx); return { txid: txidOf(parseTx(rawtx)) }; },
