@@ -1,9 +1,16 @@
 # freicoin-wallet
 
-A wallet for [Freicoin](https://github.com/tradecraftio/tradecraft) — the
-demurrage cryptocurrency. This repository holds the validated **wallet core**
-(the parts no off-the-shelf Bitcoin library gets right for Freicoin) and, over
-time, the **React Native app** and a thin backend that build on it.
+A **trustless browser wallet** for
+[Freicoin](https://github.com/tradecraftio/tradecraft) — the demurrage
+cryptocurrency. The wallet is a neutrino (BIP157/158) light client that runs
+entirely in the browser: it downloads headers, verifies every proof-of-work
+(including Freicoin's merged-mining aux-pow), matches compact block filters and
+scans matched blocks itself. The only hosted pieces are byte relays and a static
+file — nothing the wallet has to trust.
+
+This repository holds that web app, the validated **wallet core** (the parts no
+off-the-shelf Bitcoin library gets right for Freicoin) and the small services
+around them.
 
 ## Why a Freicoin-specific core
 
@@ -61,24 +68,43 @@ The `gen_*.py` scripts regenerate the golden vectors from a checked-out
 Freicoin/Tradecraft tree (`test_framework` on the path); the committed `*.json`
 vectors let the harnesses run without it.
 
-## Architecture (planned)
+## Architecture
 
-The core is architecture-neutral. The wallet ships in two stages:
+```
+browser                                   host (untrusted)
+┌─────────────────────────────────┐
+│ main thread: UI + KEYS + signing│
+│   ↕ postMessage (scripts only)  │      ┌───────────────────┐
+│ Web Worker: neutrino client     │─WS──▶│ p2p-bridge (bytes) │──TCP──▶ freicoind
+│   headers · filters · scan ·    │─HTTP▶│ snapshot (static)  │        (-peerblockfilters)
+│   IndexedDB persistence         │      └───────────────────┘
+│   ↕ sub-worker pool             │
+│   aux-pow verify + GCS matching │
+└─────────────────────────────────┘
+```
 
-- **C (now):** a thin backend over `freicoind` RPC + the RN app — fastest path to
-  a working, demurrage-correct wallet.
-- **B (destination):** a neutrino (BIP157/158) light client that drops the
-  trusted backend, reusing the same core and UI. Freicoin nodes already serve
-  compact block filters (`-peerblockfilters`) and carry `libbitcoinkernel`.
+- The **seed never leaves the main thread**; the worker only receives watch
+  scripts and broadcasts already-signed transactions.
+- The **bridge** is a WebSocket↔TCP byte relay (browsers can't open raw TCP);
+  it can censor or observe, but not forge — every header's PoW is verified
+  client-side, filters are cross-checked, blocks are self-authenticating.
+- The **snapshot** is a static dump of the header chain for fast first syncs;
+  it goes through the exact same verification as P2P data.
+- Multiple bridge URLs (comma-separated in Settings) enable **multi-peer filter
+  agreement**: as long as one peer is honest, a payment cannot be hidden.
 
-See [`../drafts/rn-wallet-design.md`](../drafts/rn-wallet-design.md) for the full
-design rationale (kept alongside during prototyping).
+First sync ≈ one minute (all phases overlap: snapshot/header download, filter
+scan, parallel PoW verification), streaming the balance found so far from the
+first second; afterwards everything is incremental and resumes from IndexedDB.
 
 ## Layout
 
 ```
-core/            validated wallet-core modules
-core/test/       harnesses, vector generators, golden vectors
-examples/        capstone.mjs — end-to-end signed tx against a node
-research/        related experiments (Lightning payment-channel prototypes)
+core/               validated wallet-core modules (environment-neutral)
+core/test/          harnesses, vector generators, golden vectors
+apps/web/           the wallet (Vite, vanilla JS, Web Worker light client)
+services/p2p-bridge WebSocket↔TCP byte relay
+services/snapshot   header-snapshot generator + static server
+examples/           capstone.mjs — end-to-end signed tx against a node
+research/           related experiments (Lightning payment-channel prototypes)
 ```
