@@ -3,9 +3,10 @@ import { config, rpcAuth } from './config.mjs';
 
 let idCounter = 0;
 
-/** Call a freicoind RPC method. Throws on RPC error or transport failure. */
-export async function rpc(method, params = []) {
-  const res = await fetch(config.rpc.url, {
+/** Call a freicoind RPC method. `path` targets a wallet endpoint, e.g. "/wallet/name".
+ *  Throws on RPC error or transport failure. */
+export async function rpc(method, params = [], path = '') {
+  const res = await fetch(config.rpc.url + path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: rpcAuth() },
     body: JSON.stringify({ jsonrpc: '1.0', id: ++idCounter, method, params }),

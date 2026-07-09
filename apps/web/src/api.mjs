@@ -11,3 +11,4 @@ export const broadcast = async rawtx => {
   const r = await fetch(base() + '/broadcast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rawtx }) });
   const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j;
 };
+export const history = () => get('/history');

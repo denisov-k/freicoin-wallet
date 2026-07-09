@@ -7,7 +7,7 @@
 //   FW_RPC_URL=http://127.0.0.1:19445 node server.mjs
 import { createServer } from 'http';
 import { config } from './config.mjs';
-import { deriveAddress, scan, broadcast, txStatus } from './wallet.mjs';
+import { deriveAddress, scan, broadcast, txStatus, history } from './wallet.mjs';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -42,6 +42,9 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === 'GET' && p === '/utxos') {
       return json(res, 200, await scan());
+    }
+    if (req.method === 'GET' && p === '/history') {
+      return json(res, 200, { txs: await history() });
     }
     if (req.method === 'POST' && p === '/broadcast') {
       const { rawtx } = JSON.parse((await readBody(req)) || '{}');

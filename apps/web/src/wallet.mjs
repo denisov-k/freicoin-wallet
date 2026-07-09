@@ -1,4 +1,6 @@
 // wallet.mjs — client-side wallet ops built on the core. Keys never leave here.
+import { generateMnemonic as genM, mnemonicToSeedSync, validateMnemonic } from '@scure/bip39';
+import { wordlist } from '@scure/bip39/wordlists/english.js';
 import { derivePath, ckdPriv, wpkProgramHex } from '../../../core/hd.mjs';
 import { pubkeyCompressed, signEcdsa } from '../../../core/ecdsa.mjs';
 import { segwitV0Sighash, SIGHASH_ALL } from '../../../core/sighash.mjs';
@@ -10,6 +12,21 @@ import { encodeWitness, decodeWitness } from '../../../core/address.mjs';
 export const ACCOUNT = "m/84'/1'/0'";
 export const NET = 'regtest';
 const toKria = frc => BigInt(Math.round(frc * 1e8));
+
+/** A fresh 12-word BIP39 mnemonic. */
+export const generateMnemonic = () => genM(wordlist, 128);
+export const isMnemonic = s => validateMnemonic(s.trim(), wordlist);
+
+/** Resolve a stored secret (BIP39 mnemonic OR raw hex seed) to a hex BIP32 seed. */
+export function resolveSecret(secret) {
+  const s = (secret || '').trim();
+  if (/\s/.test(s)) {
+    if (!validateMnemonic(s, wordlist)) throw new Error('invalid recovery phrase');
+    return Buffer.from(mnemonicToSeedSync(s)).toString('hex');
+  }
+  if (!/^[0-9a-fA-F]+$/.test(s)) throw new Error('enter a recovery phrase or hex seed');
+  return s.toLowerCase();
+}
 
 /** A receive (chain 0) or change (chain 1) address at index. */
 export function deriveAddress(seed, index = 0, chain = 0) {
