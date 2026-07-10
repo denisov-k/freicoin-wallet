@@ -495,11 +495,14 @@ const render = {
     if (vault) { $('#lockBtn').onclick = lock; $('#chgBtn').onclick = () => passForm(tr('Change passphrase'), pw => secure(secret(), pw, true)); }
     else $('#secBtn').onclick = () => passForm(tr('Set a passphrase'), pw => secure(s, pw, false));
     $('#outBtn').onclick = () => {
-      $('#secForm').innerHTML = `<div class="review">
+      const m = document.createElement('div'); m.id = 'modal';
+      m.innerHTML = `<div class="review">
         <p class="warn">${tr('This removes the wallet from this device. Without the recovery phrase the funds are UNRECOVERABLE.')}</p>
         <div class="row"><button id="outYes">${tr('Log out & wipe')}</button><button id="outNo" class="ghost">${tr('Cancel')}</button></div></div>`;
-      $('#outNo').onclick = () => { $('#secForm').innerHTML = ''; };
-      $('#outYes').onclick = logout;
+      document.body.appendChild(m);
+      m.onclick = e => { if (e.target === m) m.remove(); };   // tap outside the card = cancel
+      m.querySelector('#outNo').onclick = () => m.remove();
+      m.querySelector('#outYes').onclick = () => { m.remove(); logout(); };
     };
   },
 };
