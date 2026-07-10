@@ -404,10 +404,13 @@ const render = {
       `<div class="label">${tr('Receive address')} #${recvIndex}</div>
        <img id="qr" class="qr" alt="qr"/>
        <div class="addr" id="addr">${addr}</div>
-       <div class="row"><button id="copyAddr" class="ghost">${tr('Copy')}</button><button id="nextAddr" class="ghost">${tr('Next →')}</button></div>`;
+       <div class="row"><button id="copyAddr" class="ghost">${tr('Copy')}</button><button id="prevAddr" class="ghost"${recvIndex === 0 ? ' disabled' : ''}>${tr('← Prev')}</button><button id="nextAddr" class="ghost"${recvIndex >= 19 ? ' disabled' : ''}>${tr('Next →')}</button></div>`;
     $('#qr').src = await QRCode.toDataURL(addr.toUpperCase(), { margin: 1, width: 220 });
     $('#copyAddr').onclick = e => copy(addr, e.target);
-    $('#nextAddr').onclick = () => { recvIndex++; store.set('fw_recv', recvIndex); render.receive(); };
+    // the wallet watches the first 20 receive addresses (gap limit) — don't hand out
+    // addresses it wouldn't see payments on
+    $('#nextAddr').onclick = () => { if (recvIndex < 19) { recvIndex++; store.set('fw_recv', recvIndex); render.receive(); } };
+    $('#prevAddr').onclick = () => { if (recvIndex > 0) { recvIndex--; store.set('fw_recv', recvIndex); render.receive(); } };
   },
   async send() {
     pending = null;
