@@ -333,13 +333,22 @@ function paintActivity(txs) {
        <div class="act-i ${t.category}">${CAT[t.category] || '•'}</div>
        <div class="act-m"><b>${t.category}</b><span class="sub">${t.confirmations > 0 ? t.confirmations + ' ' + tr('conf') : tr('pending')} · ${timeAgo(t.time)}</span></div>
        <div class="act-a ${(+t.amount) < 0 ? 'neg' : 'pos'}">${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)}</div>
-     </div>`).join('') + '<div id="actDetail"></div>' : `<div class="sub">${tr('no transactions yet')}</div>`;
+     </div>`).join('') : `<div class="sub">${tr('no transactions yet')}</div>`;
   if (html === actLastHtml) return true;   // identical content — skip the rewrite (no blink)
   actLastHtml = html;
   sec.innerHTML = html;
+  // detail opens RIGHT UNDER the tapped row (a fixed slot at the list's end scrolled out
+  // of view on long histories — taps looked like they did nothing); tap again to close
   document.querySelectorAll('.act').forEach(el => el.onclick = () => {
     const t = txs[+el.dataset.i];
-    $('#actDetail').innerHTML = `<div class="detail"><span class="sub">txid</span><div class="txid" id="dtxid">${t.txid}</div><button id="copyTxid" class="ghost">${tr('Copy txid')}</button></div>`;
+    const open = $('#actDetail');
+    const sameRow = open?.dataset.txid === t.txid;
+    open?.remove();
+    if (sameRow) return;
+    const d = document.createElement('div');
+    d.id = 'actDetail'; d.dataset.txid = t.txid;
+    d.innerHTML = `<div class="detail"><span class="sub">txid</span><div class="txid">${t.txid}</div><button id="copyTxid" class="ghost">${tr('Copy txid')}</button></div>`;
+    el.insertAdjacentElement('afterend', d);
     $('#copyTxid').onclick = e => copy(t.txid, e.target);
   });
   return true;
