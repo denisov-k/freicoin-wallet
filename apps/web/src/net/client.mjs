@@ -407,7 +407,12 @@ export class Neutrino {
         const id = txidOf(tx);
         let recv = 0n, sent = 0n;
         for (const vin of tx.vin) { const k = rev(vin.prevout.txid) + ':' + vin.prevout.vout; const u = utxos.get(k); if (u) { sent += u.value; utxos.delete(k); } }
-        tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) { recv += o.value; utxos.set(id + ':' + i, { txid: id, vout: i, value: o.value, refheight: height, script: o.scriptPubKey, coinbase: txIndex === 0 }); } });
+        // CONSENSUS: a coin's refheight is the TRANSACTION's lock_height, not the block
+        // height — they differ whenever a tx confirms later than it was built, and using
+        // the block height overvalues the coin by the demurrage of the gap (spends then
+        // fail bad-txns-in-belowout). Coinbases have lock_height == height, which is why
+        // mining-only wallets never tripped this.
+        tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) { recv += o.value; utxos.set(id + ':' + i, { txid: id, vout: i, value: o.value, refheight: tx.lockHeight, script: o.scriptPubKey, coinbase: txIndex === 0 }); } });
         if (recv > sent) history.push({ txid: id, category: txIndex === 0 ? 'generate' : 'receive', amount: recv - sent, height, time });
         else if (sent > recv) history.push({ txid: id, category: 'send', amount: recv - sent, height, time });
       });
