@@ -3,7 +3,7 @@
 import { check, finish } from './helpers.mjs';
 import { timeAdjustValue } from '../../../core/demurrage.mjs';
 import {
-  FRC, assetIdOf, serializeAssetDef, assetPresentValue, validateTransfer, validateIssuance,
+  FRC, assetIdOf, serializeAssetDef, assetPresentValue, validateTransfer, validateIssuance, _demurragePV,
 } from '../../../core/assets.mjs';
 
 const FRC_RATE = { k: 20, interest: false };
@@ -18,6 +18,9 @@ check('asset id is a 20-byte tag', idCoop.length === 40);
 
 // per-asset demurrage: k=20 matches the canonical FRC kernel; k=18 melts faster
 check('model reduces to FRC kernel at k=20', assetPresentValue(1000000000n, 5000, FRC_RATE) === timeAdjustValue(1000000000n, 5000));
+// the GENERAL guard-bit method (not the fast path) is itself bit-exact vs the canonical kernel
+let genOk = true; for (const d of [1,2,7,96,1000,52560,485000]) if (_demurragePV(1234567890n, d, 20) !== timeAdjustValue(1234567890n, d)) genOk = false;
+check('general guard-bit kernel is bit-exact at k=20', genOk);
 const meltCoop = 1000000000n - assetPresentValue(1000000000n, 5000, coop);
 const meltFrc = 1000000000n - timeAdjustValue(1000000000n, 5000);
 check('faster-shift asset melts more than FRC', meltCoop > meltFrc, `coop −${meltCoop} vs frc −${meltFrc} kria`);

@@ -21,22 +21,42 @@ const u32 = n => { const a = []; for (let i = 0; i < 4; i++) a.push((n >>> (8 * 
 // ---- per-asset present value ---------------------------------------------------------
 // FRC melts by factor (1 − 2^-20) per block. A user asset picks its own shift k (rate
 // 2^-k per block) and a sign: DEMURRAGE (melts, like FRC) or INTEREST (grows — a bond).
-// Computed in Q64 fixed point by square-and-multiply, deterministic and integer-truncating.
-// NOTE: at k=20/demurrage this closely tracks the canonical FRC kernel but is not bit-identical
-// (the kernel uses a specific term-by-term truncation); the C++ port MUST reuse the canonical
-// kernel generalised to k. The model is exact-as-defined and self-consistent.
-const S = 1n << 64n;
-function powFactor(factorQ64, distance) {
-  let result = S, base = factorQ64, e = BigInt(distance);
-  while (e > 0n) { if (e & 1n) result = (result * base) / S; base = (base * base) / S; e >>= 1n; }
-  return result;
+//
+// CANONICAL GENERALISATION (empirically resolved — research/nversion3/verify_kernel.py):
+// the existing FRC kernel is an exponentiation ladder of (1 − 2^-20)^(2^bit) in 0.64 fixed
+// point. Regenerating that ladder for an arbitrary shift k requires ≥96 fractional GUARD
+// BITS during the squaring (naive 64-bit squaring drifts by a few ULPs and does NOT match
+// the shipped table). With 96 guard bits the ladder + the kernel's own 64-bit truncating
+// multiplies reproduce FRC bit-for-bit at k=20 over every test vector — so demurrage assets
+// share one canonical algorithm with the host currency. This is what the C++ port implements.
+const M64 = (1n << 64n) - 1n;
+function demurrageLadder(k) {                    // 26 entries, 64 fractional bits each
+  const P = 96n; let c = (1n << P) - (1n << (P - BigInt(k))); const L = [];
+  for (let bit = 0; bit < 26; bit++) { L.push((c >> (P - 64n)) & M64); c = (c * c) >> P; }
+  return L;
+}
+function demurragePV(nominal, distance, k) {     // exact structural port of TimeAdjustValueForward
+  if (distance === 0) return nominal;
+  if (distance >= (1 << 26)) return 0n;
+  const sign = nominal > 0n ? 1n : nominal < 0n ? -1n : 0n, v = nominal < 0n ? -nominal : nominal;
+  const L = demurrageLadder(k); let w = null;
+  for (let bit = 0; bit < 26; bit++) if ((distance >> bit) & 1) { const e = L[bit]; if (w === null) { w = e; continue; } w = (w * e) >> 64n; }
+  if (w === null) return nominal;
+  return sign * ((v * w) >> 64n);
+}
+function interestPV(nominal, distance, k) {      // model-only: growth needs a >1.0 representation
+  const P = 96n; let acc = 1n << P, base = (1n << P) + (1n << (P - BigInt(k))), e = BigInt(distance);
+  while (e > 0n) { if (e & 1n) acc = (acc * base) >> P; base = (base * base) >> P; e >>= 1n; }
+  return (nominal * acc) >> P;
 }
 export function assetPresentValue(nominal, distance, { k, interest }) {
   if (distance === 0) return nominal;
-  if (k === 20 && !interest) return timeAdjustValue(nominal, distance);   // FRC: use the canonical kernel exactly
-  const factor = interest ? S + (S >> BigInt(k)) : S - (S >> BigInt(k));
-  return (nominal * powFactor(factor, distance)) / S;
+  if (interest) return interestPV(nominal, distance, k);
+  if (k === 20) return timeAdjustValue(nominal, distance);   // FRC fast path (== demurragePV(…,20))
+  return demurragePV(nominal, distance, k);
 }
+// exposed so the test can assert the general method is canonical-consistent with the kernel
+export const _demurragePV = demurragePV;
 
 // ---- asset identity ------------------------------------------------------------------
 // An asset's 20-byte tag = RIPEMD160(SHA256(canonical asset-definition bytes)), mirroring the
