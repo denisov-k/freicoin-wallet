@@ -8,7 +8,7 @@ export const NETWORKS = {
   regtest: { label: 'Regtest', hrp: 'fcrt', coinType: 1, genesis: '67756db06265141574ff8e7c3f97ebd57c443791e0ca27ee8b03758d6056edb8' },
 };
 
-export const DEFAULT_NET = 'regtest';
+export const DEFAULT_NET = 'main';
 
 // Default bridge (WS↔TCP relay) per network — overridable in Settings / via VITE_BRIDGE.
 // Static header-snapshot per network (verified client-side — the channel needs no trust);
