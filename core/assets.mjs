@@ -73,6 +73,47 @@ export function assetIdOf(def) {
   return bytesToHex(ripemd160(sha256(hexToBytes(serializeAssetDef(def)))));
 }
 
+// ---- nVersion=3-lite wire format -----------------------------------------------------
+// The ONLY structural change vs the current tx format: version==3 and every output gains a
+// 20-byte asset tag prefix. FRC uses a reserved sentinel tag (the real chain uses
+// RIPEMD160(SHA256(genesis))). nV3-lite deliberately OMITS the whitepaper's per-output token
+// list, signatories, validation scripts and nExpireTime. Inputs, witness, nLockTime and the
+// Freicoin lock_height are unchanged, so parsers reuse the existing machinery for everything
+// but the vout loop. Assets ride in the same tx as FRC (the fee currency).
+export const FRC_WIRE_TAG = 'ff'.repeat(20);      // 20-byte host-currency sentinel in the model
+const tagOf = id => id === FRC ? FRC_WIRE_TAG : id;
+const idOfTag = t => t === FRC_WIRE_TAG ? FRC : t;
+const u32le = n => { const a = []; for (let i = 0; i < 4; i++) a.push((n >>> (8 * i)) & 0xff); return a; };
+const u64le = v => { const a = []; for (let i = 0n; i < 8n; i++) a.push(Number((v >> (8n * i)) & 0xffn)); return a; };
+const cs = n => n < 0xfd ? [n] : [0xfd, n & 0xff, (n >> 8) & 0xff];
+const toHex = a => a.map(b => b.toString(16).padStart(2, '0')).join('');
+
+/** Serialize an nV3-lite output list (asset-tagged). out = {assetId, value(BigInt), scriptPubKey(hex)}. */
+export function serializeNv3Outputs(outputs) {
+  const a = [...cs(outputs.length)];
+  for (const o of outputs) {
+    a.push(...hexToBytes(tagOf(o.assetId)));       // 20-byte asset tag
+    a.push(...u64le(o.value));                     // amount of THAT asset
+    const spk = hexToBytes(o.scriptPubKey); a.push(...cs(spk.length), ...spk);
+  }
+  return toHex(a);
+}
+
+/** Parse it back — round-trip inverse of serializeNv3Outputs. */
+export function parseNv3Outputs(hex) {
+  const b = hexToBytes(hex); let p = 0;
+  const rd = n => { const s = b.slice(p, p + n); p += n; return s; };
+  const csz = () => { const n = b[p++]; return n < 0xfd ? n : (b[p++] | (b[p++] << 8)); };
+  const n = csz(), outs = [];
+  for (let i = 0; i < n; i++) {
+    const assetId = idOfTag(bytesToHex(rd(20)));
+    let value = 0n; for (let j = 0n; j < 8n; j++) value += BigInt(b[p++]) << (8n * j);
+    const spk = bytesToHex(rd(csz()));
+    outs.push({ assetId, value, scriptPubKey: spk });
+  }
+  return outs;
+}
+
 // ---- validation ----------------------------------------------------------------------
 // A UTXO in the model: { assetId, value (BigInt kria of that asset), refheight }.
 // Outputs of a transfer are minted at the tx's lockHeight (refheight = lockHeight, distance 0).

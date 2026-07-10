@@ -4,6 +4,7 @@ import { check, finish } from './helpers.mjs';
 import { timeAdjustValue } from '../../../core/demurrage.mjs';
 import {
   FRC, assetIdOf, serializeAssetDef, assetPresentValue, validateTransfer, validateIssuance, _demurragePV,
+  serializeNv3Outputs, parseNv3Outputs, FRC_WIRE_TAG,
 } from '../../../core/assets.mjs';
 
 const FRC_RATE = { k: 20, interest: false };
@@ -74,5 +75,17 @@ check('interest asset lets output nominal exceed input nominal', bondXfer.ok && 
 check('unknown asset rejected', !validateTransfer({
   inputs: [{ assetId: 'deadbeef'.repeat(5), value: 1n, refheight: 1000 }], outputs: [], lockHeight: 1001, assets,
 }).ok);
+
+// nV3-lite wire format: asset-tagged outputs round-trip (FRC + a user asset in one tx)
+const outs = [
+  { assetId: FRC,    value: 498000n,   scriptPubKey: '0014' + 'ab'.repeat(20) },
+  { assetId: idCoop, value: 100000000n, scriptPubKey: '0020' + 'cd'.repeat(32) },
+];
+const wire = serializeNv3Outputs(outs);
+const back = parseNv3Outputs(wire);
+check('nV3 outputs round-trip (asset tag + value + spk)',
+  JSON.stringify(back, (k,v)=>typeof v==='bigint'?v.toString():v) ===
+  JSON.stringify(outs, (k,v)=>typeof v==='bigint'?v.toString():v), `${wire.length/2} bytes`);
+check('FRC output carries the sentinel tag on the wire', wire.slice(2, 42) === FRC_WIRE_TAG && back[0].assetId === FRC);
 
 finish();
