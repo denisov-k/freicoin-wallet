@@ -194,9 +194,11 @@ function renderWelcome() {
   };
   $('#wDemo').onclick = e => {
     e.preventDefault();
+    store.set('fw_net', 'regtest');           // the shared demo wallet lives on regtest
+    configureNetwork('regtest');
     store.set('fw_seed', '000102030405060708090a0b0c0d0e0f');
     unlockedSecret = '000102030405060708090a0b0c0d0e0f';
-    renderApp(); toast('shared demo wallet — do not store real funds here');
+    renderApp(); toast('shared demo wallet (regtest) — do not store real funds here');
   };
 }
 
