@@ -124,6 +124,82 @@ async function addrPage(addr) {
     rows.map(u => `<tr><td>${L('/tx/' + u.txid, u.txid)}:${u.vout}</td><td class="r">${L('/block/' + u.height, u.height)}</td><td class="r">${u.amount.toFixed(8)}</td></tr>`).join('') + '</table>');
 }
 
+// ---- Freigeld clock: live demurrage dashboard ----------------------------------
+// All constants follow from consensus: per-block demurrage factor 2^-20, aux block
+// spacing 900s, perpetual subsidy 100M * 2^-20 = 95.36743164 FRC. Equilibrium supply
+// (emission == network-wide melt) is therefore exactly 100,000,000 FRC.
+let fgCache = { at: 0, data: null };
+async function freigeldJson() {
+  if (Date.now() - fgCache.at > 30_000) {
+    const info = await rpc('gettxoutsetinfo');
+    fgCache = { at: Date.now(), data: { height: info.height, supply: info.total_amount, ts: Math.floor(Date.now() / 1000) } };
+  }
+  return fgCache.data;
+}
+
+function freigeldPage() {
+  return `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Freigeld clock · Freicoin</title><style>
+:root{--bg:#0f1115;--card:#181b22;--fg:#e8eaed;--sub:#9aa0aa;--acc:#3ea6ff;--line:#262a33;--warn:#e0a030}
+body{margin:0;font:15px/1.6 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+.wrap{max-width:760px;margin:0 auto;padding:32px 20px;text-align:center}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+h1{font-size:24px;margin:0}
+.sub{color:var(--sub)}
+.big{font:600 clamp(26px,6vw,44px)/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;margin:18px 0 2px;font-variant-numeric:tabular-nums}
+.melt{color:var(--warn)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:28px 0;text-align:left}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.card b{font-size:19px;font-variant-numeric:tabular-nums}.card div{color:var(--sub);font-size:13px}
+.note{text-align:left;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;font-size:14px;color:var(--sub)}
+.foot{margin-top:28px;font-size:13px;color:var(--sub)}
+</style></head><body><div class="wrap">
+<h1>⏳ Freigeld clock</h1>
+<p class="sub">Freicoin’s money supply, melting live — Silvio Gesell’s demurrage at work</p>
+<div class="big" id="supply">…</div>
+<div class="sub">FRC in existence right now (present value)</div>
+<div class="big melt" id="melted" style="font-size:clamp(18px,3.5vw,26px)">…</div>
+<div class="sub">melted since you opened this page · ≈ 0.106 FRC every second, network-wide</div>
+<div class="grid">
+ <div class="card"><b>100,000,000</b><div>equilibrium supply — where minting exactly equals melting</div></div>
+ <div class="card"><b id="dist">…</b><div>distance from equilibrium (13 years of convergence: 0.0006%)</div></div>
+ <div class="card"><b>+95.37 FRC</b><div>minted every block (~15 min) — perpetual, never halves</div></div>
+ <div class="card"><b id="burn">…</b><div>melting per day network-wide ≈ daily emission: the identity that caps supply</div></div>
+ <div class="card"><b>−3.29% / year</b><div>demurrage rate — exact consensus math, not monetary policy</div></div>
+ <div class="card"><b>≈21 years</b><div>half-life of idle money — spend it or lose it, slowly</div></div>
+ <div class="card"><b id="height">…</b><div>block height (<a href="/explorer">explorer</a>)</div></div>
+ <div class="card"><b>1932</b><div>Wörgl, Austria: stamp scrip — the experiment this coin encodes in consensus</div></div>
+</div>
+<div class="note"><b style="color:var(--fg)">Why would money melt?</b> Silvio Gesell (1862–1930) argued money should
+age like the goods it buys — otherwise its holder can extract interest just by waiting. Freicoin
+(2012) implements this: every unspent coin loses ~3.3%/year to demurrage, and the same amount is
+re-minted to miners forever. Saving is possible — hoarding is expensive. Total supply provably
+converges to 100M FRC: this page is that theorem, ticking.</div>
+<div class="foot"><a href="https://wallet.testtty.ru">wallet</a> · <a href="/explorer">explorer</a> · <a href="https://wallet.testtty.ru/mine">mine</a> · <a href="https://freico.in">freico.in</a></div>
+</div><script>
+const f2 = n => n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+let base = null, opened = null;
+async function load() {
+  const r = await fetch('${PREFIX}/freigeld.json'); const j = await r.json();
+  base = j; if (opened === null) opened = { supply: j.supply, ts: j.ts };
+  document.getElementById('height').textContent = j.height.toLocaleString('en-US');
+  document.getElementById('burn').textContent = '\u2212' + Math.round(j.supply * (1 - Math.pow(1 - Math.pow(2, -20), 96))).toLocaleString('en-US') + ' FRC';
+}
+function tick() {
+  if (!base) return;
+  const dt = Date.now() / 1000 - base.ts;
+  const melt = base.supply * (1 - Math.pow(1 - Math.pow(2, -20), dt / 900));   // continuous view of per-block melt
+  const now = base.supply - melt;
+  document.getElementById('supply').textContent = f2(now) + ' FRC';
+  document.getElementById('dist').textContent = '\u2212' + f2(1e8 - now) + ' FRC';
+  const sinceOpen = (opened.supply - now) + opened.supply * (1 - Math.pow(1 - Math.pow(2, -20), (base.ts - opened.ts) / 900));
+  document.getElementById('melted').textContent = '\ud83d\udd25 \u2212' + sinceOpen.toFixed(4) + ' FRC';
+}
+load(); setInterval(load, 30000); setInterval(tick, 100);
+</script></body></html>`;
+}
+
 async function search(q) {
   q = q.trim();
   if (/^\d+$/.test(q)) return { to: '/block/' + q };
@@ -145,6 +221,8 @@ http.createServer(async (req, res) => {
     else if (path.startsWith('/block/')) html = await blockPage(path.slice(7));
     else if (path.startsWith('/tx/')) html = await txPage(path.slice(4));
     else if (path.startsWith('/address/')) html = await addrPage(path.slice(9));
+    else if (path === '/freigeld' || path === '/freigeld/') html = freigeldPage();
+    else if (path === '/freigeld.json') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=10' }); res.end(JSON.stringify(await freigeldJson())); return; }
     else { res.writeHead(404); res.end('not found'); return; }
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=10' });
     res.end(html);
