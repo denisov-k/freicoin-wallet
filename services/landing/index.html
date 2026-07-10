@@ -1,0 +1,104 @@
+<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Freicoin — money that melts, on purpose</title>
+<meta name="description" content="Freicoin is a 2012 cryptocurrency implementing Silvio Gesell's demurrage: money that loses ~3.3%/year, re-minted to miners forever. Alive, maintained, usable.">
+<style>
+:root{--bg:#0f1115;--card:#181b22;--fg:#e8eaed;--sub:#9aa0aa;--acc:#3ea6ff;--line:#262a33;--warn:#e0a030}
+body{margin:0;font:16px/1.65 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+.wrap{max-width:840px;margin:0 auto;padding:48px 20px}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.hero{text-align:center;padding:24px 0 8px}
+.hero h1{font-size:clamp(30px,6vw,44px);margin:18px 0 6px}
+.hero .tag{font-size:clamp(17px,3vw,21px);color:var(--sub)}
+.live{font:500 15px/1.4 ui-monospace,Menlo,monospace;color:var(--sub);margin-top:18px;font-variant-numeric:tabular-nums}
+.live b{color:var(--fg)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin:36px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;display:block;color:var(--fg)}
+a.card:hover{text-decoration:none;border-color:var(--acc)}
+.card .t{font-weight:600;font-size:17px}.card .d{color:var(--sub);font-size:14px;margin-top:4px}
+h2{font-size:21px;margin:44px 0 10px}
+p{margin:10px 0}
+.sub{color:var(--sub)}
+.num{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:20px 0}
+.num div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.num b{font-size:18px;font-variant-numeric:tabular-nums}.num span{display:block;color:var(--sub);font-size:13px}
+.hon{border-left:3px solid var(--warn);padding:2px 0 2px 14px;color:var(--sub);font-size:14px}
+.foot{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--sub)}
+</style></head><body><div class="wrap">
+
+<div class="hero">
+<svg width="88" height="88" viewBox="0 0 72 72" aria-hidden="true">
+  <defs><linearGradient id="coinG" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#63bbff"/><stop offset="1" stop-color="#1565c0"/>
+  </linearGradient></defs>
+  <circle cx="36" cy="36" r="34" fill="url(#coinG)"/>
+  <circle cx="36" cy="36" r="34" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/>
+  <circle cx="36" cy="36" r="27.5" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.5" stroke-dasharray="2.5 3.5"/>
+  <text x="35" y="49" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-style="italic" font-size="40" fill="#fff">ƒ</text>
+</svg>
+<h1>Freicoin</h1>
+<div class="tag">Money that melts — on purpose.</div>
+<div class="live" id="live">chain height …</div>
+</div>
+
+<div class="grid">
+<a class="card" href="https://wallet.testtty.ru"><span class="t">👛 Use it</span><span class="d">Light wallet in your browser. Keys never leave your device; syncs to mainnet in about a second.</span></a>
+<a class="card" href="https://wallet.testtty.ru/explorer/freigeld"><span class="t">⏳ Watch it melt</span><span class="d">The Freigeld clock: the money supply shrinking live, converging on its 100M equilibrium.</span></a>
+<a class="card" href="https://wallet.testtty.ru/mine"><span class="t">⛏ Mine it</span><span class="d">Point any SHA256d ASIC — even a Bitaxe — at the public stratum. Blocks pay your address directly.</span></a>
+<a class="card" href="https://wallet.testtty.ru/explorer"><span class="t">🔍 Explore it</span><span class="d">Blocks, transactions, addresses — present values, demurrage accounted.</span></a>
+</div>
+
+<h2>What is this?</h2>
+<p>Freicoin is a cryptocurrency launched in <b>2012</b> — one of the oldest chains alive — built to test
+the economics of <b>Silvio Gesell</b> (1862–1930): money should age, like the goods it buys.
+Every unspent coin loses <b>≈3.3% per year</b> to <i>demurrage</i>, and exactly that much is re-minted
+to the miners who secure the chain — <b>forever, with no halvings</b>.</p>
+<p>The consequences are unlike any other cryptocurrency: the supply provably converges to
+<b>100,000,000 FRC</b> and stays there; security has a permanent budget that never depends on fees;
+and hoarding is possible but expensive — this is money designed to <i>move</i>, not to be a lottery
+ticket. Saving is what capital and Bitcoin are for; Freicoin is a medium of exchange.</p>
+
+<div class="num">
+<div><b>2012</b><span>launched; the chain has never stopped</span></div>
+<div><b>−3.3%/yr</b><span>demurrage — consensus math, not policy</span></div>
+<div><b>95.37 FRC</b><span>minted every block, perpetually</span></div>
+<div><b>100M</b><span>equilibrium supply — reached to 0.0006%</span></div>
+</div>
+
+<p>Technically it is a cousin of Bitcoin: SHA256d proof-of-work <b>merge-mined with Bitcoin</b>
+(your Bitcoin hashrate can secure Freicoin at no extra cost), MAST script trees, and a codebase
+kept current with upstream — it builds and fully validates on Bitcoin Core v31.1
+(<a href="https://github.com/tradecraftio/tradecraft/issues/108">details</a>).</p>
+
+<h2>Get involved</h2>
+<div class="grid">
+<a class="card" href="https://github.com/tradecraftio/tradecraft"><span class="t">🛠 Node &amp; protocol</span><span class="d">tradecraftio/tradecraft — the reference client. Issues and PRs welcome.</span></a>
+<a class="card" href="https://github.com/denisov-k/freicoin-wallet"><span class="t">📦 Wallet &amp; services</span><span class="d">The browser wallet, explorer, bridge, seed — all open source, all reusable.</span></a>
+<a class="card" href="https://bitcointalk.org/index.php?topic=89843"><span class="t">💬 The 2012 thread</span><span class="d">Fourteen years of history on BitcoinTalk — still the community's living room.</span></a>
+<a class="card" href="https://freico.in"><span class="t">📜 freico.in</span><span class="d">The historical project site by the original developers.</span></a>
+</div>
+
+<h2>Run a node</h2>
+<p class="sub">Stock <a href="https://github.com/tradecraftio/tradecraft/releases">freicoind v28.1</a>
+bootstraps out of the box with <code>-seednode=seed.testtty.ru</code>. A full sync is under an hour —
+the chain is light (~800 MB).</p>
+
+<p class="hon">Honesty first: this is a small network with a thin market. Don't bring money you
+can't lose — bring curiosity. What you get in exchange is the only place on earth where Gesell's
+century-old idea runs, measurably, block by block.</p>
+
+<div class="foot">
+Community infrastructure: <a href="https://wallet.testtty.ru">wallet</a> ·
+<a href="https://wallet.testtty.ru/explorer">explorer</a> ·
+<a href="https://wallet.testtty.ru/mine">mining</a> ·
+seed.testtty.ru · stratum.testtty.ru — run by volunteers, mirrors welcome.
+</div>
+</div>
+<script>
+fetch('https://wallet.testtty.ru/explorer/freigeld.json').then(r => r.json()).then(j => {
+  document.getElementById('live').innerHTML =
+    'block <b>' + j.height.toLocaleString('en-US') + '</b> · supply <b>' +
+    j.supply.toLocaleString('en-US', {maximumFractionDigits: 0}) + '</b> FRC · melting <b>≈0.106 FRC/s</b>';
+}).catch(() => { document.getElementById('live').textContent = ''; });
+</script>
+</body></html>
