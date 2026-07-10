@@ -143,7 +143,25 @@ const $ = s => document.querySelector(s);
 const store = { get: k => localStorage.getItem(k), set: (k, v) => localStorage.setItem(k, v), del: k => localStorage.removeItem(k) };
 const short = a => a && a.length > 20 ? a.slice(0, 12) + '…' + a.slice(-8) : (a || '');
 const fmt = n => (+n).toLocaleString(undefined, { maximumFractionDigits: 8 });
-const copy = (t, el) => { navigator.clipboard?.writeText(t); if (el) { const o = el.textContent; el.textContent = tr('copied ✓'); setTimeout(() => el.textContent = o, 1200); } };
+// Copy with a legacy fallback: navigator.clipboard needs a secure context and its promise
+// can reject (iOS is fond of both); the old textarea+execCommand path works everywhere a
+// user gesture is present. Feedback reflects the ACTUAL outcome.
+const copy = async (t, el) => {
+  let ok = false;
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(t); ok = true; } } catch {}
+  if (!ok) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = t;
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select(); ta.setSelectionRange(0, t.length);
+      ok = document.execCommand('copy');
+      ta.remove();
+    } catch {}
+  }
+  if (el) { const o = el.textContent; el.textContent = ok ? tr('copied ✓') : tr('copy failed'); setTimeout(() => el.textContent = o, 1200); }
+};
 const skel = (n = 1) => Array.from({ length: n }, () => '<div class="skel"></div>').join('');
 const getVault = () => { const v = store.get('fw_vault'); return v ? JSON.parse(v) : null; };
 
