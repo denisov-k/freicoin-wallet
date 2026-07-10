@@ -13,7 +13,7 @@ const RU = {
   'Receive address': 'Адрес получения', 'Copy': 'Копировать', 'Next →': 'Следующий →', 'copied ✓': 'скопировано ✓',
   'available…': 'доступно…', 'available ': 'доступно ',
   'To address': 'Адрес получателя', 'Amount (FRC)': 'Сумма (FRC)', 'Max': 'Макс', 'Review': 'Проверить',
-  'To': 'Кому', 'Amount': 'Сумма', 'Fee': 'Комиссия', 'Inputs': 'Входы',
+  'To': 'Кому', 'Amount': 'Сумма', 'Fee': 'Комиссия',
   'Confirm & broadcast': 'Подтвердить и отправить', 'Cancel': 'Отмена', 'Sent ✓': 'Отправлено ✓',
   'broadcasting…': 'отправка…', 'broadcast ✓': 'отправлено ✓', 'broadcast failed: ': 'сбой отправки: ',
   'review the transaction': 'проверьте транзакцию', 'building…': 'подготовка…',
