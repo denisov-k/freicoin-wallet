@@ -47,6 +47,11 @@ const RU = {
   'wallet created — you can add a passphrase in Settings 🔒': 'кошелёк создан — пароль можно задать в настройках 🔒',
   'wallet restored — scanning its history…': 'кошелёк восстановлен — сканируем историю…',
   'shared demo wallet (regtest) — do not store real funds here': 'общий демо-кошелёк (regtest) — не храните здесь реальные средства',
+  'Protect your wallet with a passphrase — it encrypts the phrase on this device.':
+    'Защитите кошелёк паролем — фраза будет храниться на устройстве в зашифрованном виде.',
+  'Skip for now': 'Пропустить пока',
+  'you can add a passphrase later in Settings': 'пароль можно задать позже в настройках',
+  'Auto-locks after 5 minutes of inactivity.': 'Автоблокировка через 5 минут бездействия.',
 };
 
 const TABLES = { ru: RU };

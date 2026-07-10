@@ -160,6 +160,27 @@ const toast = (t, type = 'ok') => { const el = $('#toast'); if (!el) return; cle
   el.textContent = t; el.className = 'show ' + type; toastTimer = setTimeout(() => el.className = '', 2800); };
 
 // ---------- first-run welcome ----------
+// Onboarding passphrase step: encrypting the secret is the default path; skipping is an
+// explicit (discouraged) choice — a mainnet wallet should not sit in plaintext storage.
+function welcomePassStep(sec, doneToast) {
+  $('#wBody').innerHTML = `
+    <p class="sub" style="margin-top:12px">${tr('Protect your wallet with a passphrase — it encrypts the phrase on this device.')}</p>
+    <input id="p1" type="password" placeholder="${tr('passphrase')}">
+    <input id="p2" type="password" placeholder="${tr('repeat passphrase')}">
+    <div class="row"><button id="wEnc">${tr('Encrypt')}</button><button id="wSkip" class="ghost">${tr('Skip for now')}</button></div>`;
+  $('#wEnc').onclick = () => {
+    const a = $('#p1').value, b = $('#p2').value;
+    if (a.length < 4) return toast(tr('passphrase too short'), 'err');
+    if (a !== b) return toast(tr('passphrases do not match'), 'err');
+    store.set('fw_vault', JSON.stringify(encryptSecret(sec, a)));
+    store.del('fw_seed'); unlockedSecret = sec; unlockedPass = a;
+    renderApp(); toast(tr('wallet secured 🔒'));
+  };
+  $('#wSkip').onclick = () => {
+    store.set('fw_seed', sec); unlockedSecret = sec;
+    renderApp(); toast(doneToast + ' · ' + tr('you can add a passphrase later in Settings'));
+  };
+}
 function renderWelcome() {
   $('#app').innerHTML = `<div class="lock"><div class="lockcard">
     <div class="lockicon">👛</div><h2>Freicoin Wallet</h2>
@@ -177,8 +198,7 @@ function renderWelcome() {
     $('#wCopy').onclick = e => copy(m, e.target);
     $('#wDone').onclick = () => {
       recordNewWalletBirth(m);
-      store.set('fw_seed', m); unlockedSecret = m;
-      renderApp(); toast(tr('wallet created — you can add a passphrase in Settings 🔒'));
+      welcomePassStep(m, tr('wallet created — you can add a passphrase in Settings 🔒').split(' — ')[0]);
     };
   };
   $('#wRestore').onclick = () => {
@@ -189,8 +209,7 @@ function renderWelcome() {
     $('#wGo').onclick = () => {
       const sec = $('#wSeed').value.trim();
       try { resolveSecret(sec); } catch (e) { return toast(e.message, 'err'); }
-      store.set('fw_seed', sec); unlockedSecret = sec;
-      renderApp(); toast(tr('wallet restored — scanning its history…'));
+      welcomePassStep(sec, tr('wallet restored — scanning its history…'));
     };
   };
   $('#wDemo').onclick = e => {
@@ -430,7 +449,7 @@ const render = {
           ? `<button id="lockBtn" class="ghost">${tr('🔓 Lock')}</button><button id="chgBtn" class="ghost">${tr('Change passphrase')}</button>`
           : `<button id="secBtn" class="ghost">${tr('🔒 Secure with passphrase')}</button>`}</div>
        <div id="secForm"></div>
-       <p class="warn">${vault ? tr('🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.') : tr('⚠ Secret is stored unencrypted — set a passphrase to secure it. Dev/regtest only.')}</p>`;
+       <p class="warn">${vault ? tr('🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.') + ' ' + tr('Auto-locks after 5 minutes of inactivity.') : tr('⚠ Secret is stored unencrypted — set a passphrase to secure it. Dev/regtest only.')}</p>`;
     $('#saveCfg').onclick = saveSettings;
     $('#langSel').onchange = () => { setLang($('#langSel').value); renderApp(); };   // applies immediately, re-renders all
     $('#themeSel').onchange = () => { const t = $('#themeSel').value; store.set('fw_theme_mode', t); applyTheme(t); };   // applies immediately
@@ -525,6 +544,15 @@ async function doBroadcast() {
     $('#to').value = ''; $('#amt').value = ''; pending = null; cache = null; toast(tr('broadcast ✓'));
   } catch (e) { toast(tr('broadcast failed: ') + e.message, 'err'); btn.disabled = false; btn.textContent = tr('Confirm & broadcast'); }
 }
+
+// Auto-lock: with a vault present, an idle unlocked wallet locks itself after 5 minutes
+// (activity = any pointer/key/touch on the page).
+let lastActivity = Date.now();
+['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
+  document.addEventListener(ev, () => { lastActivity = Date.now(); }, { passive: true }));
+setInterval(() => {
+  if (getVault() && unlockedSecret && Date.now() - lastActivity > 5 * 60_000) lock();
+}, 30_000);
 
 // boot
 configureNetwork(curNet());   // set NET/ACCOUNT before any address derivation
