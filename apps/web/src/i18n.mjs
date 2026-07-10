@@ -1,6 +1,6 @@
 // i18n.mjs — tiny translation layer. Keys ARE the English strings (unknown keys pass
 // through untouched, so new UI text degrades to English instead of breaking). Language
-// defaults to the browser's, overridable in Settings (fw_lang).
+// defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
   'Balance': 'Баланс', 'Receive': 'Получить', 'Send': 'Отправить', 'Activity': 'Активность',
   'Network': 'Сеть', 'Status': 'Статус', 'Downloaded': 'Загружено',
@@ -58,12 +58,304 @@ const RU = {
   'Log out & wipe': 'Выйти и удалить',
 };
 
-const TABLES = { ru: RU };
+const ES = {
+  'Balance': 'Saldo', 'Receive': 'Recibir', 'Send': 'Enviar', 'Activity': 'Actividad',
+  'Network': 'Red', 'Status': 'Estado', 'Downloaded': 'Descargado',
+  'synced ✓ (verified)': 'sincronizado ✓', 'syncing…': 'sincronizando…', 'offline': 'sin conexión',
+  'connecting…': 'conectando…', 'bridge unreachable — retrying': 'puente inaccesible — reintentando…',
+  'headers': 'cabeceras', 'scan': 'escaneo', 'blocks': 'bloques', 'PoW': 'PoW',
+  'first sync…': 'primera sincronización…', 'pending': 'pendiente', 'conf': 'conf.',
+  'no transactions yet': 'aún no hay transacciones', 'just now': 'ahora mismo', 'm ago': ' min atrás', 'h ago': ' h atrás',
+  'sync failed — ': 'fallo de sincronización — ', '↻ Retry': '↻ Reintentar',
+  'Receive address': 'Dirección de recepción', 'Copy': 'Copiar', 'Next →': 'Siguiente →', 'copied ✓': 'copiado ✓',
+  'available…': 'disponible…', 'available ': 'disponible ',
+  'To address': 'Dirección de destino', 'Amount (FRC)': 'Cantidad (FRC)', 'Max': 'Máx', 'Review': 'Revisar',
+  'To': 'Para', 'Amount': 'Cantidad', 'Fee': 'Comisión',
+  'Confirm & broadcast': 'Confirmar y transmitir', 'Cancel': 'Cancelar', 'Sent ✓': 'Enviado ✓',
+  'broadcasting…': 'transmitiendo…', 'broadcast ✓': 'transmitido ✓', 'broadcast failed: ': 'fallo al transmitir: ',
+  'review the transaction': 'revise la transacción', 'building…': 'preparando…',
+  'invalid Freicoin address': 'dirección Freicoin no válida', 'enter an amount': 'introduzca una cantidad',
+  'amount exceeds available': 'la cantidad supera lo disponible', 'Copy txid': 'Copiar txid',
+  'Language': 'Idioma', 'Theme': 'Tema', 'System': 'Sistema', 'Dark': 'Oscuro', 'Light': 'Claro',
+  'Bridge URL (neutrino P2P relay)': 'Puente (relé P2P neutrino)', 'Wallet secret': 'Secreto del monedero',
+  'recovery phrase': 'frase de recuperación', 'hex seed': 'semilla hex',
+  '🔓 Lock': '🔓 Bloquear', 'Change passphrase': 'Cambiar contraseña', '🔒 Secure with passphrase': '🔒 Proteger con contraseña',
+  '🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.':
+    '🔒 El secreto está cifrado con su contraseña (AES-GCM) y solo se descifra en memoria.',
+  '⚠ Secret is stored unencrypted — set a passphrase to secure it.':
+    '⚠ El secreto se guarda sin cifrar — establezca una contraseña.',
+  'Set a passphrase': 'Establecer contraseña', 'passphrase': 'contraseña', 'repeat passphrase': 'repita la contraseña',
+  'Encrypt': 'Cifrar', 'passphrase too short': 'contraseña demasiado corta',
+  'passphrases do not match': 'las contraseñas no coinciden', 'passphrase changed': 'contraseña cambiada',
+  'wallet secured 🔒': 'monedero protegido 🔒', 'saved': 'guardado',
+  'Unlock wallet': 'Desbloquear monedero', 'Unlock': 'Desbloquear',
+  'unlocking…': 'desbloqueando…', 'wrong passphrase': 'contraseña incorrecta',
+  'A trustless light wallet — keys never leave your device.': 'Un monedero ligero sin confianza — las claves nunca salen de su dispositivo.',
+  'Create a new wallet': 'Crear un monedero nuevo', 'Restore from recovery phrase': 'Restaurar desde la frase',
+  '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
+    '⚠ Anote estas 12 palabras. Son la ÚNICA llave de su dinero — nadie puede recuperarlas por usted.',
+  'I wrote them down': 'Las he anotado', 'Recovery phrase or hex seed': 'Frase de recuperación o semilla hex',
+  'Restoring an existing wallet scans its whole history once — this can take a minute.':
+    'Restaurar un monedero existente escanea todo su historial una vez — puede tardar un minuto.',
+  'Restore': 'Restaurar',
+  'wallet created — you can add a passphrase in Settings 🔒': 'monedero creado — puede añadir una contraseña en Ajustes 🔒',
+  'wallet restored — scanning its history…': 'monedero restaurado — escaneando su historial…',
+  'Protect your wallet with a passphrase — it encrypts the phrase on this device.':
+    'Proteja su monedero con una contraseña — cifra la frase en este dispositivo.',
+  'Skip for now': 'Omitir por ahora',
+  'you can add a passphrase later in Settings': 'puede añadir una contraseña más tarde en Ajustes',
+  'Auto-locks after 5 minutes of inactivity.': 'Se bloquea tras 5 minutos de inactividad.',
+  'verifying…': 'verificando…',
+  '← Prev': '← Anterior',
+  'send': 'envío', 'receive': 'recepción', 'generate': 'minado', 'immature': 'inmaduro',
+  'Show': 'Mostrar', 'Hide': 'Ocultar',
+  'Log out of wallet': 'Salir del monedero',
+  'This removes the wallet from this device. Without the recovery phrase the funds are UNRECOVERABLE.':
+    'Esto elimina el monedero de este dispositivo. Sin la frase de recuperación los fondos son IRRECUPERABLES.',
+  'Log out & wipe': 'Salir y borrar',
+  'Settings': 'Ajustes',
+};
+
+const DE = {
+  'Balance': 'Guthaben', 'Receive': 'Empfangen', 'Send': 'Senden', 'Activity': 'Aktivität',
+  'Network': 'Netzwerk', 'Status': 'Status', 'Downloaded': 'Heruntergeladen',
+  'synced ✓ (verified)': 'synchronisiert ✓', 'syncing…': 'synchronisiere…', 'offline': 'offline',
+  'connecting…': 'verbinde…', 'bridge unreachable — retrying': 'Bridge nicht erreichbar — neuer Versuch…',
+  'headers': 'Header', 'scan': 'Scan', 'blocks': 'Blöcke', 'PoW': 'PoW',
+  'first sync…': 'erste Synchronisierung…', 'pending': 'ausstehend', 'conf': 'Best.',
+  'no transactions yet': 'noch keine Transaktionen', 'just now': 'gerade eben', 'm ago': ' Min. her', 'h ago': ' Std. her',
+  'sync failed — ': 'Synchronisierung fehlgeschlagen — ', '↻ Retry': '↻ Erneut versuchen',
+  'Receive address': 'Empfangsadresse', 'Copy': 'Kopieren', 'Next →': 'Nächste →', 'copied ✓': 'kopiert ✓',
+  'available…': 'verfügbar…', 'available ': 'verfügbar ',
+  'To address': 'Zieladresse', 'Amount (FRC)': 'Betrag (FRC)', 'Max': 'Max', 'Review': 'Prüfen',
+  'To': 'An', 'Amount': 'Betrag', 'Fee': 'Gebühr',
+  'Confirm & broadcast': 'Bestätigen & senden', 'Cancel': 'Abbrechen', 'Sent ✓': 'Gesendet ✓',
+  'broadcasting…': 'sende…', 'broadcast ✓': 'gesendet ✓', 'broadcast failed: ': 'Senden fehlgeschlagen: ',
+  'review the transaction': 'Transaktion prüfen', 'building…': 'erstelle…',
+  'invalid Freicoin address': 'ungültige Freicoin-Adresse', 'enter an amount': 'Betrag eingeben',
+  'amount exceeds available': 'Betrag übersteigt das Verfügbare', 'Copy txid': 'Txid kopieren',
+  'Language': 'Sprache', 'Theme': 'Design', 'System': 'System', 'Dark': 'Dunkel', 'Light': 'Hell',
+  'Bridge URL (neutrino P2P relay)': 'Bridge (Neutrino-P2P-Relay)', 'Wallet secret': 'Wallet-Geheimnis',
+  'recovery phrase': 'Wiederherstellungsphrase', 'hex seed': 'Hex-Seed',
+  '🔓 Lock': '🔓 Sperren', 'Change passphrase': 'Passwort ändern', '🔒 Secure with passphrase': '🔒 Mit Passwort schützen',
+  '🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.':
+    '🔒 Das Geheimnis ist mit Ihrem Passwort verschlüsselt (AES-GCM) und wird nur im Speicher entschlüsselt.',
+  '⚠ Secret is stored unencrypted — set a passphrase to secure it.':
+    '⚠ Das Geheimnis ist unverschlüsselt gespeichert — legen Sie ein Passwort fest.',
+  'Set a passphrase': 'Passwort festlegen', 'passphrase': 'Passwort', 'repeat passphrase': 'Passwort wiederholen',
+  'Encrypt': 'Verschlüsseln', 'passphrase too short': 'Passwort zu kurz',
+  'passphrases do not match': 'Passwörter stimmen nicht überein', 'passphrase changed': 'Passwort geändert',
+  'wallet secured 🔒': 'Wallet geschützt 🔒', 'saved': 'gespeichert',
+  'Unlock wallet': 'Wallet entsperren', 'Unlock': 'Entsperren',
+  'unlocking…': 'entsperre…', 'wrong passphrase': 'falsches Passwort',
+  'A trustless light wallet — keys never leave your device.': 'Ein vertrauensloses Light-Wallet — Schlüssel verlassen nie Ihr Gerät.',
+  'Create a new wallet': 'Neues Wallet erstellen', 'Restore from recovery phrase': 'Aus Phrase wiederherstellen',
+  '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
+    '⚠ Schreiben Sie diese 12 Wörter auf. Sie sind der EINZIGE Schlüssel zu Ihrem Geld — niemand kann sie für Sie wiederherstellen.',
+  'I wrote them down': 'Ich habe sie notiert', 'Recovery phrase or hex seed': 'Wiederherstellungsphrase oder Hex-Seed',
+  'Restoring an existing wallet scans its whole history once — this can take a minute.':
+    'Die Wiederherstellung scannt einmalig die gesamte Historie — das kann eine Minute dauern.',
+  'Restore': 'Wiederherstellen',
+  'wallet created — you can add a passphrase in Settings 🔒': 'Wallet erstellt — ein Passwort können Sie in den Einstellungen festlegen 🔒',
+  'wallet restored — scanning its history…': 'Wallet wiederhergestellt — Historie wird gescannt…',
+  'Protect your wallet with a passphrase — it encrypts the phrase on this device.':
+    'Schützen Sie Ihr Wallet mit einem Passwort — es verschlüsselt die Phrase auf diesem Gerät.',
+  'Skip for now': 'Vorerst überspringen',
+  'you can add a passphrase later in Settings': 'ein Passwort können Sie später in den Einstellungen festlegen',
+  'Auto-locks after 5 minutes of inactivity.': 'Automatische Sperre nach 5 Minuten Inaktivität.',
+  'verifying…': 'verifiziere…',
+  '← Prev': '← Vorherige',
+  'send': 'gesendet', 'receive': 'empfangen', 'generate': 'gemint', 'immature': 'unreif',
+  'Show': 'Anzeigen', 'Hide': 'Verbergen',
+  'Log out of wallet': 'Wallet abmelden',
+  'This removes the wallet from this device. Without the recovery phrase the funds are UNRECOVERABLE.':
+    'Dies entfernt das Wallet von diesem Gerät. Ohne die Wiederherstellungsphrase sind die Gelder UNWIEDERBRINGLICH verloren.',
+  'Log out & wipe': 'Abmelden & löschen',
+  'Settings': 'Einstellungen',
+};
+
+const FR = {
+  'Balance': 'Solde', 'Receive': 'Recevoir', 'Send': 'Envoyer', 'Activity': 'Activité',
+  'Network': 'Réseau', 'Status': 'État', 'Downloaded': 'Téléchargé',
+  'synced ✓ (verified)': 'synchronisé ✓', 'syncing…': 'synchronisation…', 'offline': 'hors ligne',
+  'connecting…': 'connexion…', 'bridge unreachable — retrying': 'pont inaccessible — nouvel essai…',
+  'headers': 'en-têtes', 'scan': 'analyse', 'blocks': 'blocs', 'PoW': 'PoW',
+  'first sync…': 'première synchronisation…', 'pending': 'en attente', 'conf': 'conf.',
+  'no transactions yet': 'aucune transaction pour l’instant', 'just now': 'à l’instant', 'm ago': ' min', 'h ago': ' h',
+  'sync failed — ': 'échec de synchronisation — ', '↻ Retry': '↻ Réessayer',
+  'Receive address': 'Adresse de réception', 'Copy': 'Copier', 'Next →': 'Suivante →', 'copied ✓': 'copié ✓',
+  'available…': 'disponible…', 'available ': 'disponible ',
+  'To address': 'Adresse du destinataire', 'Amount (FRC)': 'Montant (FRC)', 'Max': 'Max', 'Review': 'Vérifier',
+  'To': 'À', 'Amount': 'Montant', 'Fee': 'Frais',
+  'Confirm & broadcast': 'Confirmer et diffuser', 'Cancel': 'Annuler', 'Sent ✓': 'Envoyé ✓',
+  'broadcasting…': 'diffusion…', 'broadcast ✓': 'diffusé ✓', 'broadcast failed: ': 'échec de diffusion : ',
+  'review the transaction': 'vérifiez la transaction', 'building…': 'préparation…',
+  'invalid Freicoin address': 'adresse Freicoin invalide', 'enter an amount': 'saisissez un montant',
+  'amount exceeds available': 'le montant dépasse le disponible', 'Copy txid': 'Copier le txid',
+  'Language': 'Langue', 'Theme': 'Thème', 'System': 'Système', 'Dark': 'Sombre', 'Light': 'Clair',
+  'Bridge URL (neutrino P2P relay)': 'Pont (relais P2P neutrino)', 'Wallet secret': 'Secret du portefeuille',
+  'recovery phrase': 'phrase de récupération', 'hex seed': 'graine hex',
+  '🔓 Lock': '🔓 Verrouiller', 'Change passphrase': 'Changer le mot de passe', '🔒 Secure with passphrase': '🔒 Protéger par mot de passe',
+  '🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.':
+    '🔒 Le secret est chiffré avec votre mot de passe (AES-GCM) et n’est déchiffré qu’en mémoire.',
+  '⚠ Secret is stored unencrypted — set a passphrase to secure it.':
+    '⚠ Le secret est stocké en clair — définissez un mot de passe.',
+  'Set a passphrase': 'Définir un mot de passe', 'passphrase': 'mot de passe', 'repeat passphrase': 'répétez le mot de passe',
+  'Encrypt': 'Chiffrer', 'passphrase too short': 'mot de passe trop court',
+  'passphrases do not match': 'les mots de passe ne correspondent pas', 'passphrase changed': 'mot de passe modifié',
+  'wallet secured 🔒': 'portefeuille protégé 🔒', 'saved': 'enregistré',
+  'Unlock wallet': 'Déverrouiller le portefeuille', 'Unlock': 'Déverrouiller',
+  'unlocking…': 'déverrouillage…', 'wrong passphrase': 'mot de passe incorrect',
+  'A trustless light wallet — keys never leave your device.': 'Un portefeuille léger sans tiers de confiance — les clés ne quittent jamais votre appareil.',
+  'Create a new wallet': 'Créer un nouveau portefeuille', 'Restore from recovery phrase': 'Restaurer depuis la phrase',
+  '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
+    '⚠ Notez ces 12 mots. Ils sont la SEULE clé de votre argent — personne ne peut les récupérer à votre place.',
+  'I wrote them down': 'Je les ai notés', 'Recovery phrase or hex seed': 'Phrase de récupération ou graine hex',
+  'Restoring an existing wallet scans its whole history once — this can take a minute.':
+    'La restauration analyse une fois tout l’historique — cela peut prendre une minute.',
+  'Restore': 'Restaurer',
+  'wallet created — you can add a passphrase in Settings 🔒': 'portefeuille créé — vous pouvez définir un mot de passe dans les Réglages 🔒',
+  'wallet restored — scanning its history…': 'portefeuille restauré — analyse de l’historique…',
+  'Protect your wallet with a passphrase — it encrypts the phrase on this device.':
+    'Protégez votre portefeuille par un mot de passe — il chiffre la phrase sur cet appareil.',
+  'Skip for now': 'Passer pour l’instant',
+  'you can add a passphrase later in Settings': 'vous pourrez définir un mot de passe plus tard dans les Réglages',
+  'Auto-locks after 5 minutes of inactivity.': 'Verrouillage automatique après 5 minutes d’inactivité.',
+  'verifying…': 'vérification…',
+  '← Prev': '← Précédente',
+  'send': 'envoi', 'receive': 'réception', 'generate': 'minage', 'immature': 'immature',
+  'Show': 'Afficher', 'Hide': 'Masquer',
+  'Log out of wallet': 'Quitter le portefeuille',
+  'This removes the wallet from this device. Without the recovery phrase the funds are UNRECOVERABLE.':
+    'Cela supprime le portefeuille de cet appareil. Sans la phrase de récupération, les fonds sont IRRÉCUPÉRABLES.',
+  'Log out & wipe': 'Quitter et effacer',
+  'Settings': 'Réglages',
+};
+
+const PT = {
+  'Balance': 'Saldo', 'Receive': 'Receber', 'Send': 'Enviar', 'Activity': 'Atividade',
+  'Network': 'Rede', 'Status': 'Estado', 'Downloaded': 'Baixado',
+  'synced ✓ (verified)': 'sincronizado ✓', 'syncing…': 'sincronizando…', 'offline': 'sem conexão',
+  'connecting…': 'conectando…', 'bridge unreachable — retrying': 'ponte inacessível — tentando de novo…',
+  'headers': 'cabeçalhos', 'scan': 'varredura', 'blocks': 'blocos', 'PoW': 'PoW',
+  'first sync…': 'primeira sincronização…', 'pending': 'pendente', 'conf': 'conf.',
+  'no transactions yet': 'ainda não há transações', 'just now': 'agora mesmo', 'm ago': ' min atrás', 'h ago': ' h atrás',
+  'sync failed — ': 'falha na sincronização — ', '↻ Retry': '↻ Tentar de novo',
+  'Receive address': 'Endereço de recebimento', 'Copy': 'Copiar', 'Next →': 'Próximo →', 'copied ✓': 'copiado ✓',
+  'available…': 'disponível…', 'available ': 'disponível ',
+  'To address': 'Endereço de destino', 'Amount (FRC)': 'Quantia (FRC)', 'Max': 'Máx', 'Review': 'Revisar',
+  'To': 'Para', 'Amount': 'Quantia', 'Fee': 'Taxa',
+  'Confirm & broadcast': 'Confirmar e transmitir', 'Cancel': 'Cancelar', 'Sent ✓': 'Enviado ✓',
+  'broadcasting…': 'transmitindo…', 'broadcast ✓': 'transmitido ✓', 'broadcast failed: ': 'falha ao transmitir: ',
+  'review the transaction': 'revise a transação', 'building…': 'preparando…',
+  'invalid Freicoin address': 'endereço Freicoin inválido', 'enter an amount': 'informe uma quantia',
+  'amount exceeds available': 'a quantia excede o disponível', 'Copy txid': 'Copiar txid',
+  'Language': 'Idioma', 'Theme': 'Tema', 'System': 'Sistema', 'Dark': 'Escuro', 'Light': 'Claro',
+  'Bridge URL (neutrino P2P relay)': 'Ponte (relé P2P neutrino)', 'Wallet secret': 'Segredo da carteira',
+  'recovery phrase': 'frase de recuperação', 'hex seed': 'semente hex',
+  '🔓 Lock': '🔓 Bloquear', 'Change passphrase': 'Alterar senha', '🔒 Secure with passphrase': '🔒 Proteger com senha',
+  '🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.':
+    '🔒 O segredo é criptografado com sua senha (AES-GCM) e só é descriptografado na memória.',
+  '⚠ Secret is stored unencrypted — set a passphrase to secure it.':
+    '⚠ O segredo está guardado sem criptografia — defina uma senha.',
+  'Set a passphrase': 'Definir senha', 'passphrase': 'senha', 'repeat passphrase': 'repita a senha',
+  'Encrypt': 'Criptografar', 'passphrase too short': 'senha muito curta',
+  'passphrases do not match': 'as senhas não coincidem', 'passphrase changed': 'senha alterada',
+  'wallet secured 🔒': 'carteira protegida 🔒', 'saved': 'salvo',
+  'Unlock wallet': 'Desbloquear carteira', 'Unlock': 'Desbloquear',
+  'unlocking…': 'desbloqueando…', 'wrong passphrase': 'senha incorreta',
+  'A trustless light wallet — keys never leave your device.': 'Uma carteira leve sem confiança — as chaves nunca saem do seu dispositivo.',
+  'Create a new wallet': 'Criar nova carteira', 'Restore from recovery phrase': 'Restaurar pela frase',
+  '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
+    '⚠ Anote estas 12 palavras. Elas são a ÚNICA chave do seu dinheiro — ninguém pode recuperá-las por você.',
+  'I wrote them down': 'Eu as anotei', 'Recovery phrase or hex seed': 'Frase de recuperação ou semente hex',
+  'Restoring an existing wallet scans its whole history once — this can take a minute.':
+    'Restaurar uma carteira existente varre todo o histórico uma vez — pode levar um minuto.',
+  'Restore': 'Restaurar',
+  'wallet created — you can add a passphrase in Settings 🔒': 'carteira criada — você pode definir uma senha em Configurações 🔒',
+  'wallet restored — scanning its history…': 'carteira restaurada — varrendo o histórico…',
+  'Protect your wallet with a passphrase — it encrypts the phrase on this device.':
+    'Proteja sua carteira com uma senha — ela criptografa a frase neste dispositivo.',
+  'Skip for now': 'Pular por enquanto',
+  'you can add a passphrase later in Settings': 'você pode definir uma senha depois em Configurações',
+  'Auto-locks after 5 minutes of inactivity.': 'Bloqueia automaticamente após 5 minutos de inatividade.',
+  'verifying…': 'verificando…',
+  '← Prev': '← Anterior',
+  'send': 'envio', 'receive': 'recebimento', 'generate': 'mineração', 'immature': 'imaturo',
+  'Show': 'Mostrar', 'Hide': 'Ocultar',
+  'Log out of wallet': 'Sair da carteira',
+  'This removes the wallet from this device. Without the recovery phrase the funds are UNRECOVERABLE.':
+    'Isto remove a carteira deste dispositivo. Sem a frase de recuperação os fundos são IRRECUPERÁVEIS.',
+  'Log out & wipe': 'Sair e apagar',
+  'Settings': 'Configurações',
+};
+
+const ZH = {
+  'Balance': '余额', 'Receive': '收款', 'Send': '发送', 'Activity': '记录',
+  'Network': '网络', 'Status': '状态', 'Downloaded': '已下载',
+  'synced ✓ (verified)': '已同步 ✓', 'syncing…': '同步中…', 'offline': '离线',
+  'connecting…': '连接中…', 'bridge unreachable — retrying': '网桥不可达 — 正在重试…',
+  'headers': '区块头', 'scan': '扫描', 'blocks': '区块', 'PoW': 'PoW',
+  'first sync…': '首次同步…', 'pending': '待确认', 'conf': '确认',
+  'no transactions yet': '暂无交易', 'just now': '刚刚', 'm ago': ' 分钟前', 'h ago': ' 小时前',
+  'sync failed — ': '同步失败 — ', '↻ Retry': '↻ 重试',
+  'Receive address': '收款地址', 'Copy': '复制', 'Next →': '下一个 →', 'copied ✓': '已复制 ✓',
+  'available…': '可用…', 'available ': '可用 ',
+  'To address': '收款方地址', 'Amount (FRC)': '金额 (FRC)', 'Max': '最大', 'Review': '核对',
+  'To': '收款方', 'Amount': '金额', 'Fee': '手续费',
+  'Confirm & broadcast': '确认并广播', 'Cancel': '取消', 'Sent ✓': '已发送 ✓',
+  'broadcasting…': '广播中…', 'broadcast ✓': '已广播 ✓', 'broadcast failed: ': '广播失败：',
+  'review the transaction': '请核对交易', 'building…': '构建中…',
+  'invalid Freicoin address': '无效的 Freicoin 地址', 'enter an amount': '请输入金额',
+  'amount exceeds available': '金额超出可用余额', 'Copy txid': '复制 txid',
+  'Language': '语言', 'Theme': '主题', 'System': '跟随系统', 'Dark': '深色', 'Light': '浅色',
+  'Bridge URL (neutrino P2P relay)': '网桥（neutrino P2P 中继）', 'Wallet secret': '钱包密钥',
+  'recovery phrase': '助记词', 'hex seed': '十六进制种子',
+  '🔓 Lock': '🔓 锁定', 'Change passphrase': '修改密码', '🔒 Secure with passphrase': '🔒 设置密码保护',
+  '🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.':
+    '🔒 密钥已用您的密码加密（AES-GCM），仅在内存中解密。',
+  '⚠ Secret is stored unencrypted — set a passphrase to secure it.':
+    '⚠ 密钥未加密存储 — 请设置密码。',
+  'Set a passphrase': '设置密码', 'passphrase': '密码', 'repeat passphrase': '重复密码',
+  'Encrypt': '加密', 'passphrase too short': '密码太短',
+  'passphrases do not match': '两次密码不一致', 'passphrase changed': '密码已修改',
+  'wallet secured 🔒': '钱包已加密 🔒', 'saved': '已保存',
+  'Unlock wallet': '解锁钱包', 'Unlock': '解锁',
+  'unlocking…': '解锁中…', 'wrong passphrase': '密码错误',
+  'A trustless light wallet — keys never leave your device.': '无需信任的轻钱包 — 密钥永不离开您的设备。',
+  'Create a new wallet': '创建新钱包', 'Restore from recovery phrase': '通过助记词恢复',
+  '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
+    '⚠ 请抄写这 12 个单词。它们是您资金的唯一钥匙 — 没有任何人能替您找回。',
+  'I wrote them down': '我已抄写', 'Recovery phrase or hex seed': '助记词或十六进制种子',
+  'Restoring an existing wallet scans its whole history once — this can take a minute.':
+    '恢复已有钱包需要完整扫描一次历史 — 可能需要一分钟。',
+  'Restore': '恢复',
+  'wallet created — you can add a passphrase in Settings 🔒': '钱包已创建 — 可在设置中添加密码 🔒',
+  'wallet restored — scanning its history…': '钱包已恢复 — 正在扫描历史…',
+  'Protect your wallet with a passphrase — it encrypts the phrase on this device.':
+    '用密码保护您的钱包 — 助记词将在本设备上加密存储。',
+  'Skip for now': '暂时跳过',
+  'you can add a passphrase later in Settings': '之后可在设置中添加密码',
+  'Auto-locks after 5 minutes of inactivity.': '闲置 5 分钟后自动锁定。',
+  'verifying…': '校验中…',
+  '← Prev': '← 上一个',
+  'send': '发送', 'receive': '收款', 'generate': '挖矿', 'immature': '未成熟',
+  'Show': '显示', 'Hide': '隐藏',
+  'Log out of wallet': '退出钱包',
+  'This removes the wallet from this device. Without the recovery phrase the funds are UNRECOVERABLE.':
+    '这将从本设备删除钱包。没有助记词，资金将无法找回。',
+  'Log out & wipe': '退出并清除',
+  'Settings': '设置',
+};
+
+const TABLES = { ru: RU, es: ES, de: DE, fr: FR, pt: PT, zh: ZH };
 let lang;
-try { lang = localStorage.getItem('fw_lang') || (navigator.language?.toLowerCase().startsWith('ru') ? 'ru' : 'en'); }
-catch { lang = 'en'; }
+try {
+  const nav = (navigator.language || 'en').toLowerCase().slice(0, 2);
+  lang = localStorage.getItem('fw_lang') || (TABLES[nav] ? nav : 'en');
+} catch { lang = 'en'; }
 
 export const tr = s => TABLES[lang]?.[s] ?? s;
 export const getLang = () => lang;
-export const setLang = l => { lang = TABLES[l] || l === 'en' ? l : 'en'; try { localStorage.setItem('fw_lang', lang); } catch {} };
-export const LANGS = { en: 'English', ru: 'Русский' };
+export const setLang = l => { lang = (TABLES[l] || l === 'en') ? l : 'en'; try { localStorage.setItem('fw_lang', lang); } catch {} };
+export const LANGS = { en: 'English', ru: 'Русский', es: 'Español', de: 'Deutsch', fr: 'Français', pt: 'Português', zh: '中文' };
