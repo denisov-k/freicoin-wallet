@@ -35,7 +35,6 @@ const RU = {
   'unlocking…': 'разблокировка…', 'wrong passphrase': 'неверный пароль',
   'A trustless light wallet — keys never leave your device.': 'Лёгкий кошелёк без доверия — ключи не покидают ваше устройство.',
   'Create a new wallet': 'Создать новый кошелёк', 'Restore from recovery phrase': 'Восстановить из фразы',
-  'try the shared demo wallet': 'попробовать общий демо-кошелёк',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Запишите эти 12 слов. Это ЕДИНСТВЕННЫЙ ключ к вашим деньгам — восстановить его за вас не сможет никто.',
   'I wrote them down': 'Я записал(а) слова', 'Recovery phrase or hex seed': 'Фраза восстановления или hex-сид',
@@ -44,7 +43,6 @@ const RU = {
   'Restore': 'Восстановить',
   'wallet created — you can add a passphrase in Settings 🔒': 'кошелёк создан — пароль можно задать в настройках 🔒',
   'wallet restored — scanning its history…': 'кошелёк восстановлен — сканируем историю…',
-  'shared demo wallet (regtest) — do not store real funds here': 'общий демо-кошелёк (regtest) — не храните здесь реальные средства',
   'Protect your wallet with a passphrase — it encrypts the phrase on this device.':
     'Защитите кошелёк паролем — фраза будет храниться на устройстве в зашифрованном виде.',
   'Skip for now': 'Пропустить пока',
