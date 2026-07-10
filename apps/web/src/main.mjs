@@ -23,8 +23,8 @@ function setStatus(state, detail, tip) {
   const pop = $('#statusPop');
   if (pop && !pop.hidden) renderStatusPop();
 }
-const PHASE_LABEL = { headers: 'headers', filters: 'scan', blocks: 'blocks', verify: 'PoW' };
-const PHASE_ORDER = ['headers', 'filters', 'blocks', 'verify'];   // pipeline order, not arrival order
+const PHASE_LABEL = { headers: 'headers', filters: 'scan' };
+const PHASE_ORDER = ['headers', 'filters'];   // pipeline order; blocks/PoW are internal detail
 function renderStatusPop() {
   const pop = $('#statusPop'); if (!pop) return;
   const label = tr({ ok: 'synced ✓ (verified)', sync: 'syncing…', off: 'offline' }[status.state] || status.state);
