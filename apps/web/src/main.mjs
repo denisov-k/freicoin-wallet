@@ -177,6 +177,8 @@ const toast = (t, type = 'ok') => { const el = $('#toast'); if (!el) return; cle
 // Onboarding passphrase step: encrypting the secret is the default path; skipping is an
 // explicit (discouraged) choice — a mainnet wallet should not sit in plaintext storage.
 function welcomePassStep(sec, doneToast) {
+  // The wallet choice is made — the create/restore buttons have no business on this step.
+  $('#wCreate').style.display = 'none'; $('#wRestore').style.display = 'none';
   $('#wBody').innerHTML = `
     <p class="sub" style="margin-top:12px">${tr('Protect your wallet with a passphrase — it encrypts the phrase on this device.')}</p>
     <input id="p1" type="password" placeholder="${tr('passphrase')}">
