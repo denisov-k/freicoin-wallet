@@ -35,6 +35,7 @@ button:not(nav button):not(.icon) { background:var(--accent); color:var(--accent
 button:disabled { opacity:.6; cursor:default; }
 #msg { padding:0 20px 16px; font-size:13px; min-height:20px; } .ok{color:var(--ok);} .err{color:var(--err);}
 textarea { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; color:var(--fg); font:16px ui-monospace,monospace; width:100%; resize:vertical; }
+#toast::first-letter { text-transform:uppercase; }
 #toast { position:fixed; left:50%; bottom:24px; transform:translate(-50%,20px); max-width:420px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 16px; font-size:13px; opacity:0; pointer-events:none; transition:.25s; box-shadow:0 8px 30px rgba(0,0,0,.3); }
 #toast.show { opacity:1; transform:translate(-50%,0); } #toast.err { color:var(--err); } #toast.ok { color:var(--ok); }
 .skel, .skel-line { background:linear-gradient(90deg,var(--card),var(--line),var(--card)); background-size:200% 100%; animation:sh 1.2s infinite; border-radius:8px; height:44px; }
