@@ -381,7 +381,6 @@ function paintBalance(s) {
   if (!$('#balBig')) {
     $('#balance').innerHTML =
       `<div class="big" id="balBig"></div>
-       <div class="sub melt" id="balMelt"></div>
        <div class="sub" id="balPend"></div>`;
   }
   // no qualifier line: the header dot carries the state (amber = syncing/unverified,
@@ -389,24 +388,9 @@ function paintBalance(s) {
   const pend = s.pending?.length ? s.pending.reduce((a, p) => a + p.amount, 0) : 0;
   status.utxos = s.utxos.length;           // detail lives in the status popover
   $('#balBig').innerHTML = `${fmtBal(s.balance)} <small>FRC</small>`;
-  meltBase = { balance: s.balance, at: Date.now() };
-  paintMelt();
   $('#balPend').textContent = pend ? `⏳ ${pend > 0 ? '+' : ''}${fmtBal(pend)} FRC ${tr('pending')} (${s.pending.length} tx)` : '';
 }
 
-// Demurrage, visibly: the precise present value ticks down in real time between blocks.
-// Consensus melts per BLOCK (2^-20 of value each); the per-second view interpolates that
-// same curve, so the number on screen is what the next block will confirm.
-let meltBase = null;
-function paintMelt() {
-  const el = $('#balMelt');
-  if (!el) return;
-  if (!meltBase || !(meltBase.balance > 0)) { el.textContent = ''; return; }
-  const dt = (Date.now() - meltBase.at) / 1000;
-  const now = meltBase.balance * Math.pow(1 - Math.pow(2, -20), dt / 900);   // 900s aux block target
-  el.textContent = `${now.toFixed(8)} FRC · 🔥 −${(meltBase.balance * (1 - Math.pow(1 - Math.pow(2, -20), 96))).toFixed(8)} / 24h`;
-}
-setInterval(paintMelt, 1000);
 
 const render = {
   async balance() {
