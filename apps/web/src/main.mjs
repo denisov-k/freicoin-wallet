@@ -471,7 +471,7 @@ const render = {
        <label>${tr('Network')}<select id="netSel">${Object.entries(NETWORKS).map(([k, v]) => `<option value="${k}"${k === curNet() ? ' selected' : ''}>${v.label}</option>`).join('')}</select></label>
        <label>${tr('Bridge URL (neutrino P2P relay)')}<input id="br" value="${curBridge()}"></label>
        <label>${tr('Wallet secret')} (${kind})<textarea id="sd" rows="2">${s}</textarea></label>
-       <div class="row"><button id="saveCfg">${tr('Save')}</button><button id="genBtn" class="ghost">${tr('Generate 12 words')}</button><button id="copySeed" class="ghost">${tr('Copy')}</button></div>
+       <div class="row"><button id="saveCfg">${tr('Save')}</button><button id="copySeed" class="ghost">${tr('Copy')}</button></div>
        <div class="row">${vault
           ? `<button id="lockBtn" class="ghost">${tr('🔓 Lock')}</button><button id="chgBtn" class="ghost">${tr('Change passphrase')}</button>`
           : `<button id="secBtn" class="ghost">${tr('🔒 Secure with passphrase')}</button>`}</div>
@@ -483,14 +483,6 @@ const render = {
     $('#themeSel').onchange = () => { const t = $('#themeSel').value; store.set('fw_theme_mode', t); applyTheme(t); };   // applies immediately
     // Switching network swaps in that network's default bridge (user can still override).
     $('#netSel').onchange = () => { $('#br').value = DEFAULT_BRIDGE[$('#netSel').value] || ''; };
-    $('#genBtn').onclick = () => {
-      const m = generateMnemonic();
-      $('#sd').value = m;
-      // A brand-new wallet has no history before the current tip — record its birth now
-      // (keyed by the new wallet's fingerprint; picked up when the user saves).
-      recordNewWalletBirth(m);
-      toast(tr('new phrase — back it up, then Save'));
-    };
     $('#copySeed').onclick = e => copy($('#sd').value, e.target);
     if (vault) { $('#lockBtn').onclick = lock; $('#chgBtn').onclick = () => passForm(tr('Change passphrase'), pw => secure(secret(), pw, true)); }
     else $('#secBtn').onclick = () => passForm(tr('Set a passphrase'), pw => secure($('#sd').value.trim(), pw, false));
