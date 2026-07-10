@@ -52,6 +52,23 @@ const walletFp = scripts => { let h = 5381 >>> 0; const s = scripts.join(''); fo
 // per wallet fingerprint) holds {birth, anchorH, anchorHash}: the anchor is a verified
 // (height, hash) ~100 blocks below the birth — fresh starts anchor the header chain
 // there instead of genesis. Unknown birth (a fresh import) full-scans ONCE to learn it.
+// A newly created wallet is born "now" on EVERY network (fingerprints differ per net —
+// the coin type changes the scripts), so record its birth for each network that has a
+// build checkpoint; nets without one (regtest) full-scan cheaply anyway.
+function recordNewWalletBirth(secret) {
+  try {
+    const seed = resolveSecret(secret);
+    const cur = curNet();
+    for (const netK of Object.keys(NETWORKS)) {
+      const cp = CHECKPOINT[netK];
+      if (!cp) continue;
+      configureNetwork(netK);
+      store.set('fw_ab:' + walletFp(walletScripts(seed)), JSON.stringify({ birth: cp.height, anchorH: cp.height, anchorHash: cp.hash }));
+    }
+    configureNetwork(cur);
+  } catch {}
+}
+
 const birthRec = fp => {
   const v = store.get('fw_ab:' + fp);
   if (!v) return null;
@@ -158,11 +175,7 @@ function renderWelcome() {
       <div class="row"><button id="wCopy" class="ghost">Copy</button><button id="wDone">I wrote them down</button></div>`;
     $('#wCopy').onclick = e => copy(m, e.target);
     $('#wDone').onclick = () => {
-      try {
-        const cp = CHECKPOINT[curNet()];
-        const rec = cp ? { birth: cp.height, anchorH: cp.height, anchorHash: cp.hash } : null;
-        if (rec) store.set('fw_ab:' + walletFp(walletScripts(resolveSecret(m))), JSON.stringify(rec));
-      } catch {}
+      recordNewWalletBirth(m);
       store.set('fw_seed', m); unlockedSecret = m;
       renderApp(); toast('wallet created — you can add a passphrase in Settings 🔒');
     };
@@ -423,11 +436,7 @@ const render = {
       $('#sd').value = m;
       // A brand-new wallet has no history before the current tip — record its birth now
       // (keyed by the new wallet's fingerprint; picked up when the user saves).
-      try {
-        const cp = CHECKPOINT[curNet()];
-        if (cp) store.set('fw_ab:' + walletFp(walletScripts(resolveSecret(m))), JSON.stringify({ birth: cp.height, anchorH: cp.height, anchorHash: cp.hash }));
-        else if (cache?.tipHeight) store.set('fw_ab:' + walletFp(walletScripts(resolveSecret(m))), JSON.stringify({ birth: cache.tipHeight }));
-      } catch {}
+      recordNewWalletBirth(m);
       toast('new phrase — back it up, then Save');
     };
     $('#copySeed').onclick = e => copy($('#sd').value, e.target);
