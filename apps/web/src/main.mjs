@@ -223,7 +223,8 @@ function renderWelcome() {
     $('#wGo').onclick = () => {
       const sec = $('#wSeed').value.trim();
       try { resolveSecret(sec); } catch (e) { return toast(e.message, 'err'); }
-      welcomePassStep(sec, tr('wallet restored — scanning its history…'));
+      store.set('fw_seed', sec); unlockedSecret = sec;
+      renderApp(); toast(tr('wallet restored — scanning its history…'));
     };
   };
   $('#wDemo').onclick = e => {
@@ -475,6 +476,7 @@ const render = {
           ? `<button id="lockBtn" class="ghost">${tr('🔓 Lock')}</button><button id="chgBtn" class="ghost">${tr('Change passphrase')}</button>`
           : `<button id="secBtn" class="ghost">${tr('🔒 Secure with passphrase')}</button>`}</div>
        <div id="secForm"></div>
+       <div class="row" style="margin-top:20px"><button id="outBtn" class="ghost">${tr('Log out of wallet')}</button></div>
        <p class="warn">${vault ? tr('🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.') + ' ' + tr('Auto-locks after 5 minutes of inactivity.') : tr('⚠ Secret is stored unencrypted — set a passphrase to secure it. Dev/regtest only.')}</p>`;
     $('#saveCfg').onclick = saveSettings;
     $('#langSel').onchange = () => { setLang($('#langSel').value); renderApp(); };   // applies immediately, re-renders all
@@ -492,6 +494,13 @@ const render = {
     $('#copySeed').onclick = e => copy($('#sd').value, e.target);
     if (vault) { $('#lockBtn').onclick = lock; $('#chgBtn').onclick = () => passForm(tr('Change passphrase'), pw => secure(secret(), pw, true)); }
     else $('#secBtn').onclick = () => passForm(tr('Set a passphrase'), pw => secure($('#sd').value.trim(), pw, false));
+    $('#outBtn').onclick = () => {
+      $('#secForm').innerHTML = `<div class="review">
+        <p class="warn">${tr('This removes the wallet from this device. Without the recovery phrase the funds are UNRECOVERABLE.')}</p>
+        <div class="row"><button id="outYes">${tr('Log out & wipe')}</button><button id="outNo" class="ghost">${tr('Cancel')}</button></div></div>`;
+      $('#outNo').onclick = () => { $('#secForm').innerHTML = ''; };
+      $('#outYes').onclick = logout;
+    };
   },
 };
 
@@ -515,6 +524,14 @@ function secure(sec, pass, wasVault) {
   toast(wasVault ? tr('passphrase changed') : tr('wallet secured 🔒')); render.settings();
 }
 function lock() { unlockedSecret = null; unlockedPass = null; clearInterval(pollTimer); renderLock(); }
+
+function logout() {
+  if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
+  ['fw_seed', 'fw_vault', 'fw_recv', 'fw_tab'].forEach(k => store.del(k));
+  unlockedSecret = null; unlockedPass = null; cache = null; liveState = null; recvIndex = 0;
+  clearInterval(pollTimer); pollTimer = null;
+  renderWelcome();
+}
 
 function saveSettings() {
   const sec = $('#sd').value.trim();
