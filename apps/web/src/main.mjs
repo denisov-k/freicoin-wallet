@@ -4,7 +4,7 @@ globalThis.Buffer = Buffer;
 import QRCode from 'qrcode';
 import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress, walletScripts, configureNetwork } from './wallet.mjs';
 import { encryptSecret, decryptSecret } from './vault.mjs';
-import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT } from './netparams.mjs';
+import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS } from './netparams.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
@@ -85,6 +85,7 @@ function ds() {
       url: curBridge(), net, genesis: NETWORKS[net].genesis, scripts,
       birthHeight: effectiveBirth(walletFp(scripts)),
       snapshotUrl: DEFAULT_SNAPSHOT[net] || null,
+      filterSnapshotUrl: DEFAULT_SNAPSHOT_FILTERS[net] || null,
     }).catch(() => {});
     lightSrc = {
       health: () => wcall('health'), balance: () => wcall('balance'), utxos: () => wcall('utxos'),

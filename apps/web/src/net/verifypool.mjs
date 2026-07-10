@@ -1,7 +1,13 @@
-// verifypool.mjs — a pool of verify-worker threads for parallel aux-pow verification.
-// Works with browser Workers (nested workers — inside the light-client worker) and
-// node worker_threads (tests). Returns null when neither is available; the client
-// falls back to inline verification.
+// verifypool.mjs — a pool of verify-worker threads for parallel aux-pow verification and
+// GCS filter matching. Works with browser Workers (nested workers — inside the light-client
+// worker) and node worker_threads (tests). Returns null when neither is available; the
+// client falls back to inline execution.
+//
+// The pool schedules jobs ITSELF (one in flight per worker, priority queues) instead of
+// dumping them into worker FIFOs: a fast header bootstrap queues minutes of verify work
+// up front, and filter-match jobs — which the scan follower BLOCKS on — would otherwise
+// sit behind the whole verification backlog (a head-of-line convoy that made the scan
+// crawl). Matching is high priority; verification fills the remaining capacity.
 
 async function spawn() {
   if (typeof Worker !== 'undefined') {
@@ -17,36 +23,57 @@ async function spawn() {
   return null;
 }
 
-/** Create a verification pool of `k` workers (defaults to cores-1, clamped). Null if
- *  worker threads are unavailable in this environment. */
+const VERIFY_CHUNK = 400;   // proofs per scheduled job (~0.1s) — keeps priority latency low
+
+/** Create a verification/matching pool of `k` workers (defaults to cores-1, clamped).
+ *  Null if worker threads are unavailable in this environment. */
 export async function makePool(k) {
   const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2;
-  k = k || Math.max(1, Math.min(4, cores - 1));
+  // during the CPU-heavy phase the client thread is mostly idle (downloads done), so on
+  // small machines use every core; on bigger ones leave one for the client thread
+  k = k || Math.max(1, Math.min(4, cores <= 2 ? cores : cores - 1));
   let workers;
   try {
     workers = await Promise.all(Array.from({ length: k }, spawn));
     if (workers.some(w => !w)) throw new Error('unavailable');
   } catch { return null; }
-  let seq = 0, rr = 0;
-  const waits = new Map();
-  for (const w of workers) w.on(m => { const p = waits.get(m.id); if (p) { waits.delete(m.id); p(m); } });
-  const call = (w, payload) => new Promise(res => { const id = ++seq; waits.set(id, res); w.post({ id, ...payload }); });
+
+  let seq = 0;
+  const waits = new Map();     // id -> {worker, resolve}
+  const hi = [], lo = [];      // priority queues of {payload, res}
+  const idle = [...workers];
+  const pump = () => {
+    while (idle.length && (hi.length || lo.length)) {
+      const job = hi.length ? hi.shift() : lo.shift();
+      const w = idle.pop();
+      const id = ++seq;
+      waits.set(id, { w, res: job.res });
+      w.post({ id, ...job.payload });
+    }
+  };
+  for (const w of workers) w.on(m => {
+    const p = waits.get(m.id); if (!p) return;
+    waits.delete(m.id);
+    idle.push(p.w);
+    p.res(m);
+    pump();
+  });
+  const call = (payload, prio) => new Promise(res => { (prio === 'hi' ? hi : lo).push({ payload, res }); pump(); });
+
   return {
     size: k,
-    /** Verify a batch of raw aux-pow headers across all workers. Throws on any failure. */
+    /** Verify a batch of raw aux-pow headers (low priority, chunked). Throws on failure. */
     async verify(net, raws) {
       if (!raws.length) return;
-      const per = Math.ceil(raws.length / workers.length);
       const parts = [];
-      for (let i = 0; i < raws.length; i += per) parts.push(raws.slice(i, i + per));
-      const rs = await Promise.all(parts.map((p, i) => call(workers[i % workers.length], { net, raws: p })));
-      const bad = rs.find(r => !r.ok);
-      if (bad) throw new Error('aux-pow invalid (parallel verify)');
+      for (let i = 0; i < raws.length; i += VERIFY_CHUNK) parts.push(raws.slice(i, i + VERIFY_CHUNK));
+      const rs = await Promise.all(parts.map(p => call({ net, raws: p }, 'lo')));
+      if (rs.some(r => !r.ok)) throw new Error('aux-pow invalid (parallel verify)');
     },
-    /** Match one filter batch against the wallet scripts on the next worker (round-robin).
-     *  Concurrent calls overlap — matching runs off the client thread, in parallel. */
+    /** Match one filter batch against the wallet scripts (HIGH priority — the scan
+     *  follower blocks on these; they must not queue behind the verify backlog). */
     async matchBatch(filters, scripts) {
-      const r = await call(workers[rr++ % workers.length], { kind: 'match', filters, scripts });
+      const r = await call({ kind: 'match', filters, scripts }, 'hi');
       return r.matched;
     },
     close() { for (const w of workers) { try { w.kill(); } catch {} } },

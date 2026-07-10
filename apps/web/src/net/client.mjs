@@ -19,8 +19,9 @@ const CFILTERS_BATCH = 1000;    // node's MAX_GETCFILTERS_SIZE — larger reques
 const CFHEADERS_BATCH = 2000;   // node's MAX_GETCFHEADERS_SIZE
 
 export class Neutrino {
-  constructor({ url, net = 'regtest', genesis, snapshotUrl = null }) {
-    this.url = url; this.net = net; this.genesis = genesis; this.snapshotUrl = snapshotUrl;
+  constructor({ url, net = 'regtest', genesis, snapshotUrl = null, filterSnapshotUrl = null }) {
+    this.url = url; this.net = net; this.genesis = genesis;
+    this.snapshotUrl = snapshotUrl; this.filterSnapshotUrl = filterSnapshotUrl;
     this._rx = 0;                        // bytes received (this connection + snapshot)
     this._handlers = {};                 // command -> callback (single-shot phases)
     // persistent, incremental state (kept across syncWallet calls / restorable)
@@ -403,6 +404,60 @@ export class Neutrino {
     return { tipHeight: at, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()] };
   }
 
+  /** Consume a static cfilter snapshot for a from-genesis scan: filters stream over HTTP
+   *  (much faster than per-user P2P serialization), are matched in the worker pool, and
+   *  matched blocks are fetched/scanned per 10k stride. Height CONTIGUITY is enforced —
+   *  a gap, reorder or unknown block aborts and the P2P follower takes over from the
+   *  last applied height. Hiding-by-tampering is possible as with any single filter
+   *  source; blocks themselves stay self-authenticating. */
+  async _bootstrapFilters(scripts, onPartial, isHeadersDone, via) {
+    if (!this.filterSnapshotUrl || this._fsnapBroken || this.scannedHeight !== 0 || typeof fetch !== 'function') return;
+    try {
+      const resp = await fetch(this.filterSnapshotUrl);
+      if (!resp.ok || !resp.body) return;
+      const decode = createDecoder(this.net);
+      const reader = resp.body.getReader();
+      let batch = [], jobs = [], expected = 1, lastApplied = 0;
+      const flush = () => {
+        if (!batch.length) return;
+        const b = batch; batch = [];
+        jobs.push(this._pool ? this._pool.matchBatch(b, scripts)
+          : Promise.resolve(b.filter(x => filterMatchesAny(Buffer.from(x.f), x.h, scripts)).map(x => x.h)));
+      };
+      const applyUpTo = async h => {
+        flush();
+        const matched = (await Promise.all(jobs)).flat(); jobs = [];
+        await this._applyBlocks(scripts, matched, h, via);
+        lastApplied = h;
+        this.onProgress?.({ phase: 'filters', done: h, want: Math.max(this.peerHeight, this.chain.length - 1) });
+        onPartial?.(this._result(h));
+      };
+      outer: for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        this._rx += value.byteLength;
+        for (const m of decode(Buffer.from(value))) {
+          if (m.command !== 'cfilter' || !m.ok) continue;
+          const cf = parseCFilter(m.payload);
+          let h = this.chain.heightOf(cf.blockHash);
+          while (h === undefined && !isHeadersDone()) {       // wait for the header front
+            await new Promise(r => setTimeout(r, 50));
+            h = this.chain.heightOf(cf.blockHash);
+          }
+          if (h === undefined) break outer;                   // beyond our (complete) chain — stop
+          if (h < expected) continue;                         // duplicate
+          if (h !== expected) break outer;                    // gap — abort, P2P covers the rest
+          batch.push({ h: cf.blockHash, f: Buffer.from(cf.filter) });
+          expected++;
+          if (batch.length >= CFILTERS_BATCH) flush();
+          if (expected - 1 - lastApplied >= 10 * CFILTERS_BATCH) await applyUpTo(expected - 1);
+        }
+      }
+      if (expected - 1 > lastApplied) await applyUpTo(expected - 1);
+      try { reader.cancel(); } catch {}
+    } catch { this._fsnapBroken = true; }   // any failure: the P2P follower continues from scannedHeight
+  }
+
   async syncWallet(scripts, { onProvisional = null, onPartial = null } = {}) {
     await this.ensureConnected();
     if (this._pool === undefined) this._pool = await makePool();   // null ⇒ inline fallback
@@ -422,9 +477,16 @@ export class Neutrino {
     // of strictly after them — and the balance found so far streams out via onPartial
     // as the sweep advances.
     let headersDone = false, headersErr = null;
-    const headersP = this._bootstrapSnapshot().then(() => this.syncHeaders())
+    // The two snapshot streams are SEQUENCED: the header snapshot is ingested first
+    // (fast), THEN the filter snapshot streams at full speed with every height already
+    // known — interleaving them just made both crawl (shared thread + per-filter
+    // wait-for-header polling) while buying nothing.
+    const snapP = this._bootstrapSnapshot();
+    const headersP = snapP.then(() => this.syncHeaders())
       .then(() => { headersDone = true; }, e => { headersDone = true; headersErr = e; });
     const follower = (async () => {
+      await snapP.catch(() => {});
+      await this._bootstrapFilters(scripts, onPartial, () => headersDone, fetcher);
       for (;;) {
         if (headersErr) break;
         const target = this.chain.length - 1;

@@ -18,6 +18,11 @@ export const DEFAULT_SNAPSHOT = {
   test:    null,
   regtest: null,
 };
+export const DEFAULT_SNAPSHOT_FILTERS = {
+  main:    import.meta.env?.VITE_SNAP_MAIN_FILTERS || null,
+  test:    null,
+  regtest: null,
+};
 
 export const DEFAULT_BRIDGE = {
   main:    import.meta.env?.VITE_BRIDGE_MAIN || 'ws://127.0.0.1:3041',

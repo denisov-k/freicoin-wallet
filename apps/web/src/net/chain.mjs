@@ -7,7 +7,11 @@
 // redundant (prevHash of height h === hash at h-1).
 import { Buffer } from 'buffer';
 
-const keyOf = hashHex => parseInt(hashHex.slice(0, 13), 16);   // 52 bits — exact as a Number
+// Key on the TAIL of the display hex: the head is the PoW target's leading zeros (the
+// deeper the native-difficulty era, the more zeros), which collapses a head-based key's
+// entropy and turns the index into huge collision chains. The tail bytes are uniformly
+// random for every era. 52 bits — exact as a Number.
+const keyOf = hashHex => parseInt(hashHex.slice(-13), 16);
 
 export class HeaderChain {
   constructor(genesisHex) {
