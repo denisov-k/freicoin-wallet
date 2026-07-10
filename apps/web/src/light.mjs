@@ -25,12 +25,15 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
   // agreement (no single peer can hide funds); one ⇒ the plain single-peer client.
   const urls = String(url).split(/[\s,]+/).filter(Boolean);
 
-  // Checkpoint the chain every N header batches (~2000 headers each) so an interrupted
-  // first sync (page closed mid-way) resumes from the checkpoint instead of genesis.
+  // Checkpoint the chain as the sync progresses — every N header batches during the
+  // download AND on every verification batch during the verify tail (the store persists
+  // only up to verifiedHeight, so each save writes just the newly-verified chunks). An
+  // interrupted first sync resumes from the checkpoint instead of redoing the work.
   let batches = 0, saving = false;
   const progress = p => {
     onProgress?.(p);
-    if (p.phase === 'headers' && ++batches % 10 === 0 && !saving) {
+    const shouldSave = (p.phase === 'headers' && ++batches % 10 === 0) || p.phase === 'verify';
+    if (shouldSave && !saving) {
       saving = true;
       store.save(n, skey).catch(() => {}).finally(() => { saving = false; });
     }
