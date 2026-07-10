@@ -211,7 +211,9 @@ function renderWelcome() {
     <p class="sub">${tr('A trustless light wallet — keys never leave your device.')}</p>
     <button id="wCreate">${tr('Create a new wallet')}</button>
     <button id="wRestore" class="ghost">${tr('Restore from recovery phrase')}</button>
-    <div id="wBody"></div></div></div>`;
+    <div id="wBody"></div>
+    <select id="wLang" class="wlang">${Object.entries(LANGS).map(([k, v]) => `<option value="${k}"${getLang() === k ? ' selected' : ''}>${v}</option>`).join('')}</select></div></div>`;
+  $('#wLang').onchange = () => { setLang($('#wLang').value); renderWelcome(); };
   $('#wCreate').onclick = () => {
     const m = generateMnemonic();
     $('#wBody').innerHTML = `
