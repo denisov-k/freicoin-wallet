@@ -1,0 +1,78 @@
+<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mine Freicoin — solo, with any SHA256d miner</title><style>
+:root{--bg:#0f1115;--card:#181b22;--fg:#e8eaed;--sub:#9aa0aa;--acc:#3ea6ff;--line:#262a33;--warn:#e0a030}
+body{margin:0;font:15px/1.6 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+.wrap{max-width:760px;margin:0 auto;padding:32px 20px}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+h1{font-size:26px;margin:0 0 4px}h2{font-size:18px;margin:32px 0 8px}
+.sub{color:var(--sub)}
+pre{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;overflow-x:auto;font-size:13px}
+code{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:13px}
+pre code{background:none;border:0;padding:0}
+table{width:100%;border-collapse:collapse;background:var(--card);border-radius:10px;overflow:hidden;font-size:14px}
+td{padding:8px 12px;border-bottom:1px solid var(--line)}td:first-child{color:var(--sub);width:220px}
+.warn{color:var(--warn);font-size:13px}
+.foot{margin-top:40px;font-size:13px;color:var(--sub)}
+</style></head><body><div class="wrap">
+<h1>⛏ Mine Freicoin</h1>
+<p class="sub">Freicoin (2012) is a SHA256d chain with demurrage economics and a <b>perpetual block
+reward — 95.37 FRC every ~15 minutes, forever, no halvings</b>. The whole network currently runs on
+a few TH/s, so even a single small miner earns a real share. Payouts are trustless: blocks pay
+your address directly in the coinbase.</p>
+
+<table>
+<tr><td>algorithm</td><td>SHA256d (any Bitcoin ASIC: Antminer, Bitaxe, …)</td></tr>
+<tr><td>block reward</td><td>95.36743164 FRC, perpetual</td></tr>
+<tr><td>blocks per day</td><td>~96 (15-minute spacing)</td></tr>
+<tr><td>payout</td><td>directly to your address in the coinbase — non-custodial, no registration</td></tr>
+</table>
+
+<h2>1. Get an address</h2>
+<p>Create a wallet at <a href="https://wallet.testtty.ru">wallet.testtty.ru</a> (12 words, keys stay
+on your device) and copy your <code>fc1q…</code> receive address.</p>
+
+<h2>2. Point your miner</h2>
+<pre><code>URL:      stratum+tcp://stratum.testtty.ru:9638
+Worker:   fc1q…your-address…
+Password: x</code></pre>
+<p class="sub">That's it. This is <b>solo mining</b>: shares don't accumulate — when your miner
+finds a block, the block itself pays your address 95.37 FRC. With today's network size that is a
+lottery with unusually good odds (a 1 TH/s Bitaxe is a double-digit percentage of the whole
+network), but it is still a lottery: expect nothing for days, then a whole block.</p>
+<p class="sub">Mined coins mature for 100 blocks (~a day) before they are spendable; the wallet
+shows them as pending until then.</p>
+
+<h2>Prefer your own node? (recommended for serious mining)</h2>
+<p>The endpoint above is a stock <code>freicoind</code> — you can run the same thing and depend on
+no one:</p>
+<pre><code># freicoin.conf
+server=1
+stratum=1
+stratumbind=127.0.0.1        # or your LAN
+stratumallowip=192.168.0.0/16
+# stratum port defaults to 9638 on mainnet</code></pre>
+<p>Node: <a href="https://github.com/tradecraftio/tradecraft/releases">tradecraft releases</a>
+(Freicoin v28.1). Bootstrap works out of the box with
+<code>-seednode=seed.testtty.ru</code>.</p>
+
+<h2>Pool operator? Real merged mining</h2>
+<p>Freicoin is merge-mined against Bitcoin: your pool can collect the FRC emission with the
+hashrate you already have, at no extra ASIC time. <code>freicoind</code> ships the coordination
+protocol (<code>mining.aux.subscribe / notify / submit</code>); your side places a 36-byte
+commitment in your Bitcoin block template. Includes block-withholding protection. See
+<a href="https://github.com/tradecraftio/tradecraft/blob/28.1/doc/auxpow.md">doc/auxpow.md</a>
+— and <a href="https://github.com/tradecraftio/tradecraft/issues/121">reach out on the tracker</a>,
+we'll help you integrate.</p>
+
+<p class="warn">⚠ Honesty note: at current prices the whole network's emission is worth a few tens
+of dollars a day. Mine it because it's a living piece of 2012 crypto history with unique economics
+— not for the money. The stratum.testtty.ru endpoint is community infrastructure, best-effort.</p>
+
+<div class="foot">
+<a href="https://wallet.testtty.ru">wallet</a> ·
+<a href="https://wallet.testtty.ru/explorer">explorer</a> ·
+<a href="https://github.com/denisov-k/freicoin-wallet">source</a> ·
+<a href="https://github.com/tradecraftio/tradecraft">tradecraft</a>
+</div>
+</div></body></html>
