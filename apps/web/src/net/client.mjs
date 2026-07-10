@@ -217,6 +217,40 @@ export class Neutrino {
     this.onProgress?.({ phase: 'headers', height: endH, target: Math.max(this.peerHeight, endH), rx: this._rx + (this._dl?._rx || 0) });
   }
 
+  /** Stream an HTTP snapshot through the wire decoder with a STALL WATCHDOG and HTTP
+   *  Range RESUME: mobile browsers freeze the network when the page is backgrounded and
+   *  the fetch stream dies silently (0.0 MB/s forever) — on a 25s stall the request is
+   *  re-issued from the last received byte (the decoder keeps its partial-message tail,
+   *  so mid-message resumes stay aligned). Gives up after a few stalls; `onMessage` may
+   *  return 'stop' to end the stream early. */
+  async _streamSnapshot(url, onMessage) {
+    const decode = createDecoder(this.net);
+    let offset = 0, stalls = 0;
+    while (stalls < 3) {
+      let reader;
+      try {
+        const resp = await fetch(url, offset ? { headers: { Range: `bytes=${offset}-` } } : undefined);
+        if (!resp.ok || !resp.body) return;
+        reader = resp.body.getReader();
+        for (;;) {
+          let timer;
+          const r = await Promise.race([
+            reader.read(),
+            new Promise(res => { timer = setTimeout(() => res('stall'), 15000); }),
+          ]);
+          clearTimeout(timer);
+          if (r === 'stall') { stalls++; try { reader.cancel(); } catch {} break; }
+          const { done, value } = r;
+          if (done) return;
+          offset += value.byteLength; this._rx += value.byteLength;
+          for (const m of decode(Buffer.from(value))) {
+            if (await onMessage(m) === 'stop') { try { reader.cancel(); } catch {} return; }
+          }
+        }
+      } catch { stalls++; try { reader?.cancel(); } catch {} }
+    }
+  }
+
   /** Bootstrap the header chain from a static HTTP snapshot (a dump of standard P2P
    *  `headers` messages). MUCH cheaper for the server than P2P serialization+relay, and
    *  needs no trust: every header goes through the same linkage+PoW verification. Any
@@ -225,20 +259,11 @@ export class Neutrino {
   async _bootstrapSnapshot() {
     if (!this.snapshotUrl || this.chain.length > 1 || this._snapshotBroken || typeof fetch !== 'function') return;
     try {
-      const resp = await fetch(this.snapshotUrl);
-      if (!resp.ok || !resp.body) return;
-      const decode = createDecoder(this.net);
-      const reader = resp.body.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        this._rx += value.byteLength;
-        for (const m of decode(Buffer.from(value))) {
-          if (m.command !== 'headers' || !m.ok) continue;
-          const hs = parseHeaders(m.payload);
-          if (hs.length) await this._processBatch(hs);
-        }
-      }
+      await this._streamSnapshot(this.snapshotUrl, async m => {
+        if (m.command !== 'headers' || !m.ok) return;
+        const hs = parseHeaders(m.payload);
+        if (hs.length) await this._processBatch(hs);
+      });
     } catch { this._snapshotBroken = true; }   // fall back to P2P; don't retry a bad snapshot
   }
 
@@ -413,10 +438,6 @@ export class Neutrino {
   async _bootstrapFilters(scripts, onPartial, isHeadersDone, via) {
     if (!this.filterSnapshotUrl || this._fsnapBroken || this.scannedHeight !== 0 || typeof fetch !== 'function') return;
     try {
-      const resp = await fetch(this.filterSnapshotUrl);
-      if (!resp.ok || !resp.body) return;
-      const decode = createDecoder(this.net);
-      const reader = resp.body.getReader();
       let batch = [], jobs = [], expected = 1, lastApplied = 0;
       const flush = () => {
         if (!batch.length) return;
@@ -432,29 +453,23 @@ export class Neutrino {
         this.onProgress?.({ phase: 'filters', done: h, want: Math.max(this.peerHeight, this.chain.length - 1) });
         onPartial?.(this._result(h));
       };
-      outer: for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        this._rx += value.byteLength;
-        for (const m of decode(Buffer.from(value))) {
-          if (m.command !== 'cfilter' || !m.ok) continue;
-          const cf = parseCFilter(m.payload);
-          let h = this.chain.heightOf(cf.blockHash);
-          while (h === undefined && !isHeadersDone()) {       // wait for the header front
-            await new Promise(r => setTimeout(r, 50));
-            h = this.chain.heightOf(cf.blockHash);
-          }
-          if (h === undefined) break outer;                   // beyond our (complete) chain — stop
-          if (h < expected) continue;                         // duplicate
-          if (h !== expected) break outer;                    // gap — abort, P2P covers the rest
-          batch.push({ h: cf.blockHash, f: Buffer.from(cf.filter) });
-          expected++;
-          if (batch.length >= CFILTERS_BATCH) flush();
-          if (expected - 1 - lastApplied >= 10 * CFILTERS_BATCH) await applyUpTo(expected - 1);
+      await this._streamSnapshot(this.filterSnapshotUrl, async m => {
+        if (m.command !== 'cfilter' || !m.ok) return;
+        const cf = parseCFilter(m.payload);
+        let h = this.chain.heightOf(cf.blockHash);
+        while (h === undefined && !isHeadersDone()) {         // wait for the header front
+          await new Promise(r => setTimeout(r, 50));
+          h = this.chain.heightOf(cf.blockHash);
         }
-      }
+        if (h === undefined) return 'stop';                   // beyond our (complete) chain — stop
+        if (h < expected) return;                             // duplicate
+        if (h !== expected) return 'stop';                    // gap — abort, P2P covers the rest
+        batch.push({ h: cf.blockHash, f: Buffer.from(cf.filter) });
+        expected++;
+        if (batch.length >= CFILTERS_BATCH) flush();
+        if (expected - 1 - lastApplied >= 10 * CFILTERS_BATCH) await applyUpTo(expected - 1);
+      });
       if (expected - 1 > lastApplied) await applyUpTo(expected - 1);
-      try { reader.cancel(); } catch {}
     } catch { this._fsnapBroken = true; }   // any failure: the P2P follower continues from scannedHeight
   }
 
