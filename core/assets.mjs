@@ -99,6 +99,20 @@ export function serializeNv3Outputs(outputs) {
   return toHex(a);
 }
 
+/** The BIP143 `hashOutputs` for an nV3 tx: hash256 over each output's (assetTag‖value‖spk),
+ *  WITHOUT a count prefix. Because the asset tag is inside the preimage, a signature commits to
+ *  WHICH asset each output pays — an attacker cannot swap an output's tag without invalidating
+ *  every signature. This is the one change the C++ SegwitV0 sighash needs for nV3. */
+export function nv3HashOutputs(outputs) {
+  const a = [];
+  for (const o of outputs) {
+    a.push(...hexToBytes(tagOf(o.assetId)));
+    a.push(...u64le(o.value));
+    const spk = hexToBytes(o.scriptPubKey); a.push(...cs(spk.length), ...spk);
+  }
+  return bytesToHex(sha256(sha256(Uint8Array.from(a))));
+}
+
 /** Parse it back — round-trip inverse of serializeNv3Outputs. */
 export function parseNv3Outputs(hex) {
   const b = hexToBytes(hex); let p = 0;

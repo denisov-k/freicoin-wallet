@@ -4,7 +4,7 @@ import { check, finish } from './helpers.mjs';
 import { timeAdjustValue } from '../../../core/demurrage.mjs';
 import {
   FRC, assetIdOf, serializeAssetDef, assetPresentValue, validateTransfer, validateIssuance, _demurragePV,
-  serializeNv3Outputs, parseNv3Outputs, FRC_WIRE_TAG,
+  serializeNv3Outputs, parseNv3Outputs, FRC_WIRE_TAG, nv3HashOutputs,
 } from '../../../core/assets.mjs';
 
 const FRC_RATE = { k: 20, interest: false };
@@ -87,5 +87,11 @@ check('nV3 outputs round-trip (asset tag + value + spk)',
   JSON.stringify(back, (k,v)=>typeof v==='bigint'?v.toString():v) ===
   JSON.stringify(outs, (k,v)=>typeof v==='bigint'?v.toString():v), `${wire.length/2} bytes`);
 check('FRC output carries the sentinel tag on the wire', wire.slice(2, 42) === FRC_WIRE_TAG && back[0].assetId === FRC);
+
+// nV3 sighash commits the asset tag: swapping an output's asset invalidates the signature
+const oA = [{ assetId: idCoop, value: 100n, scriptPubKey: '0014'+'ab'.repeat(20) }];
+const oB = [{ assetId: idBond, value: 100n, scriptPubKey: '0014'+'ab'.repeat(20) }];   // same but different asset
+check('sighash commits the asset tag (swap ⇒ different hashOutputs)', nv3HashOutputs(oA) !== nv3HashOutputs(oB));
+check('identical outputs ⇒ identical hashOutputs (determinism)', nv3HashOutputs(oA) === nv3HashOutputs([{...oA[0]}]));
 
 finish();
