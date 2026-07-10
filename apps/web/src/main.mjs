@@ -48,11 +48,16 @@ function wcall(method, params) {
 }
 // Wallet fingerprint (same djb2 as the light source) — keys the learned birth height.
 const walletFp = scripts => { let h = 5381 >>> 0; const s = scripts.join(''); for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0; return scripts.length + ':' + h.toString(16); };
-// Birth height is fully automatic: a brand-new wallet's birth is the tip at generation
-// time; an imported wallet full-scans once, then the first-activity height learned from
-// that scan is remembered (survives IndexedDB eviction — a rescan skips straight to it).
-const learnedBirth = fp => Number(store.get('fw_ab:' + fp)) || 0;
-const effectiveBirth = fp => learnedBirth(fp);
+// ONE sync mode: data always from the wallet's BIRTH. The birth record (localStorage,
+// per wallet fingerprint) holds {birth, anchorH, anchorHash}: the anchor is a verified
+// (height, hash) ~100 blocks below the birth — fresh starts anchor the header chain
+// there instead of genesis. Unknown birth (a fresh import) full-scans ONCE to learn it.
+const birthRec = fp => {
+  const v = store.get('fw_ab:' + fp);
+  if (!v) return null;
+  try { const j = JSON.parse(v); if (j && j.birth) return j; } catch {}
+  const n = Number(v); return n > 0 ? { birth: n } : null;   // legacy: height only, no anchor
+};
 
 function ds() {
   const net = curNet();
@@ -81,12 +86,15 @@ function ds() {
     };
     worker.onerror = () => { wCalls.forEach(c => c.rej(new Error('worker error'))); wCalls.clear(); };
     const scripts = walletScripts(hexSeed());
+    const rec = birthRec(walletFp(scripts));
     wcall('init', {
       url: curBridge(), net, genesis: NETWORKS[net].genesis, scripts,
-      birthHeight: effectiveBirth(walletFp(scripts)),
+      birthHeight: rec?.birth || 0,
       snapshotUrl: DEFAULT_SNAPSHOT[net] || null,
       filterSnapshotUrl: DEFAULT_SNAPSHOT_FILTERS[net] || null,
-      checkpoint: store.get('fw_syncmode') === 'full' ? null : CHECKPOINT[net] || null,
+      // anchor: the wallet's own recorded birth anchor, else the build-time one (valid
+      // only when the birth is at/above it — the source enforces that)
+      checkpoint: (rec?.anchorH && rec?.anchorHash) ? { height: rec.anchorH, hash: rec.anchorHash } : (CHECKPOINT[net] || null),
     }).catch(() => {});
     lightSrc = {
       health: () => wcall('health'), balance: () => wcall('balance'), utxos: () => wcall('utxos'),
@@ -207,7 +215,9 @@ const getState = async force => {
   // a future rescan (e.g. the browser evicted IndexedDB) then skips straight to it.
   try {
     const fp = walletFp(walletScripts(hexSeed()));
-    if (cache.birthAuto && !store.get('fw_ab:' + fp)) store.set('fw_ab:' + fp, cache.birthAuto);
+    const cur = birthRec(fp);
+    if (cache.birthAuto && (!cur || !cur.anchorH))   // learn once; upgrade legacy height-only records
+      store.set('fw_ab:' + fp, JSON.stringify({ birth: cache.birthAuto, anchorH: cache.birthAnchor?.height, anchorHash: cache.birthAnchor?.hash }));
   } catch {}
   return cache;
 };
@@ -287,6 +297,12 @@ const render = {
     try { const st = await getState(true); if (gen !== renderGen) return; paintBalance(st); }
     catch (e) {
       if (gen !== renderGen) return;   // stale render (source was replaced) — ignore
+      if (String(e.message).includes('below the checkpoint')) {
+        // the anchor was reorged out (very deep reorg): drop it and resync from scratch
+        try { store.del('fw_ab:' + walletFp(walletScripts(hexSeed()))); } catch {}
+        if (lightSrc) { lightSrc.close?.(); lightSrc = null; } cache = null; liveState = null;
+        render.balance(); return;
+      }
       if (!balPainted) { setStatus('off', e.message); $('#balance').innerHTML = `<div class="err">sync failed — ${e.message}</div><button id="refresh" class="ghost">↻ Retry</button>`; $('#refresh').onclick = render.balance; return; }
       setStatus('off', 'bridge unreachable — retrying');
     }
@@ -342,8 +358,7 @@ const render = {
     const vault = getVault(), s = secret();
     const kind = /\s/.test((s || '').trim()) ? 'recovery phrase' : 'hex seed';
     $('#settings').innerHTML =
-      `<label>Sync<select id="syncSel"><option value="fast"${store.get('fw_syncmode') !== 'full' ? ' selected' : ''}>Fast (checkpoint)</option><option value="full"${store.get('fw_syncmode') === 'full' ? ' selected' : ''}>Full verification</option></select></label>
-       <label>Theme<select id="themeSel">${['system', 'dark', 'light'].map(m => `<option value="${m}"${themeMode() === m ? ' selected' : ''}>${m === 'system' ? 'System' : m === 'dark' ? 'Dark' : 'Light'}</option>`).join('')}</select></label>
+      `<label>Theme<select id="themeSel">${['system', 'dark', 'light'].map(m => `<option value="${m}"${themeMode() === m ? ' selected' : ''}>${m === 'system' ? 'System' : m === 'dark' ? 'Dark' : 'Light'}</option>`).join('')}</select></label>
        <label>Network<select id="netSel">${Object.entries(NETWORKS).map(([k, v]) => `<option value="${k}"${k === curNet() ? ' selected' : ''}>${v.label}</option>`).join('')}</select></label>
        <label>Bridge URL (neutrino P2P relay)<input id="br" value="${curBridge()}"></label>
        <label>Wallet secret (${kind})<textarea id="sd" rows="2">${s}</textarea></label>
@@ -362,7 +377,11 @@ const render = {
       $('#sd').value = m;
       // A brand-new wallet has no history before the current tip — record its birth now
       // (keyed by the new wallet's fingerprint; picked up when the user saves).
-      try { const birth = cache?.tipHeight || CHECKPOINT[curNet()]?.height; if (birth) store.set('fw_ab:' + walletFp(walletScripts(resolveSecret(m))), birth); } catch {}
+      try {
+        const cp = CHECKPOINT[curNet()];
+        if (cp) store.set('fw_ab:' + walletFp(walletScripts(resolveSecret(m))), JSON.stringify({ birth: cp.height, anchorH: cp.height, anchorHash: cp.hash }));
+        else if (cache?.tipHeight) store.set('fw_ab:' + walletFp(walletScripts(resolveSecret(m))), JSON.stringify({ birth: cache.tipHeight }));
+      } catch {}
       toast('new phrase — back it up, then Save');
     };
     $('#copySeed').onclick = e => copy($('#sd').value, e.target);
@@ -397,7 +416,6 @@ function saveSettings() {
   try { resolveSecret(sec); } catch (e) { return toast(e.message, 'err'); }
   const net = NETWORKS[$('#netSel').value] ? $('#netSel').value : DEFAULT_NET;
   store.set('fw_net', net); configureNetwork(net);
-  store.set('fw_syncmode', $('#syncSel')?.value === 'full' ? 'full' : 'fast');
   const br = $('#br').value.trim();
   if (br && br !== DEFAULT_BRIDGE[net]) store.set('fw_bridge', br); else store.del('fw_bridge');   // keep the net default unless overridden
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }

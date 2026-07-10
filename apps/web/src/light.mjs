@@ -106,6 +106,13 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     // (or the tip for an empty wallet: nothing below the scanned tip can appear later).
     cache.birthAuto = birthHeight > 0 ? birthHeight
       : (r.history.length ? Math.min(...r.history.map(h => h.height)) : r.tipHeight);
+    // Birth anchor: a (height, hash) pair ~100 blocks below the birth (reorg margin),
+    // taken from the just-VERIFIED chain — future fresh starts anchor the chain here.
+    try {
+      const c = n.stateClient.chain;
+      const ah = Math.max(c.base || 0, cache.birthAuto - 100);
+      cache.birthAnchor = { height: ah, hash: c.hashAt(ah) };
+    } catch { cache.birthAnchor = null; }
     return cache;
   }
   let connected = false;
@@ -127,7 +134,7 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
   return {
     async health() { return { ok: true, network: net + ' (light)' }; },
     async balance() { const c = await ensure(); return { balance: c.balance, tipHeight: c.tipHeight, unit: 'present-value', pending: c.pending, agreement: c.agreement, birthAuto: c.birthAuto }; },
-    async utxos() { const c = await sync(); return { balance: c.balance, tipHeight: c.tipHeight, utxos: c.utxos, pending: c.pending, agreement: c.agreement, birthAuto: c.birthAuto }; },
+    async utxos() { const c = await sync(); return { balance: c.balance, tipHeight: c.tipHeight, utxos: c.utxos, pending: c.pending, agreement: c.agreement, birthAuto: c.birthAuto, birthAnchor: c.birthAnchor }; },
     async history() { const c = await ensure(); return { txs: [...c.pending, ...c.history] }; },
     preview,
     async broadcast(rawtx) { if (!n) await sync(); n.broadcast(rawtx); return { txid: txidOf(parseTx(rawtx)) }; },
