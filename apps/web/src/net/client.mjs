@@ -193,7 +193,7 @@ export class Neutrino {
     if (this.mempool.has(id)) return;
     const rev = h => Buffer.from(h, 'hex').reverse().toString('hex');
     let recv = 0n, sent = 0n;
-    for (const vin of tx.vin) { const u = this.utxos.get(rev(vin.prevout.txid) + ':' + vin.prevout.vout); if (u) sent += u.value; }
+    for (const vin of tx.vin) { const u = this.utxos.get(rev(vin.prevout.txid) + ':' + vin.prevout.vout); if (u) sent += timeAdjustValue(u.value, tx.lockHeight - u.refheight); }   // value at the tx's lock_height (see _applyBlocks)
     for (const o of tx.vout) if (this._watch.has(o.scriptPubKey)) recv += o.value;
     if (recv === 0n && sent === 0n) return;
     this.mempool.set(id, { txid: id, category: recv >= sent ? 'receive' : 'send', amount: recv - sent, time: Math.floor(Date.now() / 1000) });
@@ -406,7 +406,10 @@ export class Neutrino {
       parseBlock(bytes).forEach((tx, txIndex) => {
         const id = txidOf(tx);
         let recv = 0n, sent = 0n;
-        for (const vin of tx.vin) { const k = rev(vin.prevout.txid) + ':' + vin.prevout.vout; const u = utxos.get(k); if (u) { sent += u.value; utxos.delete(k); } }
+        // Value spent coins AT THE TX'S LOCK_HEIGHT: their nominal is written at an older
+        // refheight, and diffing raw nominals would blame the coin's accrued demurrage on
+        // this transfer (a 10 FRC send out of an aged coin showed as "sent 10.0038").
+        for (const vin of tx.vin) { const k = rev(vin.prevout.txid) + ':' + vin.prevout.vout; const u = utxos.get(k); if (u) { sent += timeAdjustValue(u.value, tx.lockHeight - u.refheight); utxos.delete(k); } }
         // CONSENSUS: a coin's refheight is the TRANSACTION's lock_height, not the block
         // height — they differ whenever a tx confirms later than it was built, and using
         // the block height overvalues the coin by the demurrage of the gap (spends then
