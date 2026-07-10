@@ -531,6 +531,11 @@ function lock() { unlockedSecret = null; unlockedPass = null; clearInterval(poll
 
 function logout() {
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
+  // "Removes the wallet from this device" includes the synced history/UTXO cache —
+  // financial data must not survive the seed. (Headers go with it; a later wallet
+  // re-bootstraps from the checkpoint/snapshot.) Deletion waits out the worker's
+  // closing connection via the store's versionchange self-close.
+  try { Object.entries(NETWORKS).forEach(([k, v]) => indexedDB.deleteDatabase(`fw-light-${k}-${v.genesis.slice(0, 12)}`)); } catch {}
   ['fw_seed', 'fw_vault', 'fw_recv', 'fw_tab'].forEach(k => store.del(k));
   unlockedSecret = null; unlockedPass = null; cache = null; liveState = null; recvIndex = 0;
   clearInterval(pollTimer); pollTimer = null;
