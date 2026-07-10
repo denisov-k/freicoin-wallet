@@ -180,7 +180,7 @@ function welcomePassStep(sec, doneToast) {
   // The wallet choice is made — the create/restore buttons have no business on this step.
   $('#wCreate').style.display = 'none'; $('#wRestore').style.display = 'none';
   $('#wBody').innerHTML = `
-    <p class="sub" style="margin-top:12px">${tr('Protect your wallet with a passphrase — it encrypts the phrase on this device.')}</p>
+    <p class="sub">${tr('Protect your wallet with a passphrase — it encrypts the phrase on this device.')}</p>
     <input id="p1" type="password" placeholder="${tr('passphrase')}">
     <input id="p2" type="password" placeholder="${tr('repeat passphrase')}">
     <div class="row"><button id="wEnc">${tr('Encrypt')}</button><button id="wSkip" class="ghost">${tr('Skip for now')}</button></div>`;
@@ -215,7 +215,7 @@ function renderWelcome() {
   $('#wCreate').onclick = () => {
     const m = generateMnemonic();
     $('#wBody').innerHTML = `
-      <div class="addr" style="margin-top:12px">${m}</div>
+      <div class="addr">${m}</div>
       <p class="warn">${tr('⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.')}</p>
       <div class="row"><button id="wCopy" class="ghost">${tr('Copy')}</button><button id="wDone">${tr('I wrote them down')}</button></div>`;
     $('#wCopy').onclick = e => copy(m, e.target);
@@ -226,7 +226,7 @@ function renderWelcome() {
   };
   $('#wRestore').onclick = () => {
     $('#wBody').innerHTML = `
-      <label style="margin-top:12px">${tr('Recovery phrase or hex seed')}<textarea id="wSeed" rows="2"></textarea></label>
+      <label>${tr('Recovery phrase or hex seed')}<textarea id="wSeed" rows="2"></textarea></label>
       <p class="sub">${tr('Restoring an existing wallet scans its whole history once — this can take a minute.')}</p>
       <div class="row"><button id="wGo">${tr('Restore')}</button></div>`;
     $('#wGo').onclick = () => {
