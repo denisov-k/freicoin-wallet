@@ -141,6 +141,52 @@ const toast = (t, type = 'ok') => { const el = $('#toast'); if (!el) return; cle
   if (!t) { el.className = ''; el.textContent = ''; return; }
   el.textContent = t; el.className = 'show ' + type; toastTimer = setTimeout(() => el.className = '', 2800); };
 
+// ---------- first-run welcome ----------
+function renderWelcome() {
+  $('#app').innerHTML = `<div class="lock"><div class="lockcard">
+    <div class="lockicon">👛</div><h2>Freicoin Wallet</h2>
+    <p class="sub">A trustless light wallet — keys never leave your device.</p>
+    <button id="wCreate">Create a new wallet</button>
+    <button id="wRestore" class="ghost">Restore from recovery phrase</button>
+    <p class="sub"><a href="#" id="wDemo">try the shared demo wallet</a></p>
+    <div id="wBody"></div></div></div>`;
+  $('#wCreate').onclick = () => {
+    const m = generateMnemonic();
+    $('#wBody').innerHTML = `
+      <div class="addr" style="margin-top:12px">${m}</div>
+      <p class="warn">⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.</p>
+      <div class="row"><button id="wCopy" class="ghost">Copy</button><button id="wDone">I wrote them down</button></div>`;
+    $('#wCopy').onclick = e => copy(m, e.target);
+    $('#wDone').onclick = () => {
+      try {
+        const cp = CHECKPOINT[curNet()];
+        const rec = cp ? { birth: cp.height, anchorH: cp.height, anchorHash: cp.hash } : null;
+        if (rec) store.set('fw_ab:' + walletFp(walletScripts(resolveSecret(m))), JSON.stringify(rec));
+      } catch {}
+      store.set('fw_seed', m); unlockedSecret = m;
+      renderApp(); toast('wallet created — you can add a passphrase in Settings 🔒');
+    };
+  };
+  $('#wRestore').onclick = () => {
+    $('#wBody').innerHTML = `
+      <label style="margin-top:12px">Recovery phrase or hex seed<textarea id="wSeed" rows="2"></textarea></label>
+      <p class="sub">Restoring an existing wallet scans its whole history once — this can take a minute.</p>
+      <div class="row"><button id="wGo">Restore</button></div>`;
+    $('#wGo').onclick = () => {
+      const sec = $('#wSeed').value.trim();
+      try { resolveSecret(sec); } catch (e) { return toast(e.message, 'err'); }
+      store.set('fw_seed', sec); unlockedSecret = sec;
+      renderApp(); toast('wallet restored — scanning its history…');
+    };
+  };
+  $('#wDemo').onclick = e => {
+    e.preventDefault();
+    store.set('fw_seed', '000102030405060708090a0b0c0d0e0f');
+    unlockedSecret = '000102030405060708090a0b0c0d0e0f';
+    renderApp(); toast('shared demo wallet — do not store real funds here');
+  };
+}
+
 // ---------- lock screen ----------
 function renderLock() {
   $('#app').innerHTML = `<div class="lock">
@@ -469,4 +515,5 @@ async function doBroadcast() {
 // boot
 configureNetwork(curNet());   // set NET/ACCOUNT before any address derivation
 if (getVault()) renderLock();
-else { unlockedSecret = store.get('fw_seed') || '000102030405060708090a0b0c0d0e0f'; renderApp(); }
+else if (store.get('fw_seed')) { unlockedSecret = store.get('fw_seed'); renderApp(); }
+else renderWelcome();
