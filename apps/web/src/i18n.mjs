@@ -25,8 +25,8 @@ const RU = {
   '🔓 Lock': '🔓 Заблокировать', 'Change passphrase': 'Сменить пароль', '🔒 Secure with passphrase': '🔒 Защитить паролем',
   '🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.':
     '🔒 Секрет зашифрован вашим паролем (AES-GCM) и расшифровывается только в памяти.',
-  '⚠ Secret is stored unencrypted — set a passphrase to secure it. Dev/regtest only.':
-    '⚠ Секрет хранится без шифрования — задайте пароль. Только для тестов.',
+  '⚠ Secret is stored unencrypted — set a passphrase to secure it.':
+    '⚠ Секрет хранится без шифрования — задайте пароль.',
   'Set a passphrase': 'Задать пароль', 'passphrase': 'пароль', 'repeat passphrase': 'повторите пароль',
   'Encrypt': 'Зашифровать', 'passphrase too short': 'пароль слишком короткий',
   'passphrases do not match': 'пароли не совпадают', 'passphrase changed': 'пароль изменён',

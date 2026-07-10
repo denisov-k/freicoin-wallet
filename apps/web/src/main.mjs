@@ -472,12 +472,12 @@ const render = {
        <label>${tr('Bridge URL (neutrino P2P relay)')}<input id="br" value="${curBridge()}"></label>
        <label>${tr('Wallet secret')} (${kind})<textarea id="sd" rows="2" readonly>${'•'.repeat(24)}</textarea></label>
        <div class="row"><button id="revealSeed" class="ghost">${tr('Show')}</button><button id="copySeed" class="ghost">${tr('Copy')}</button></div>
+       <p class="warn">${vault ? tr('🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.') + ' ' + tr('Auto-locks after 5 minutes of inactivity.') : tr('⚠ Secret is stored unencrypted — set a passphrase to secure it.')}</p>
        <div class="row">${vault
           ? `<button id="lockBtn" class="ghost">${tr('🔓 Lock')}</button><button id="chgBtn" class="ghost">${tr('Change passphrase')}</button>`
           : `<button id="secBtn" class="ghost">${tr('🔒 Secure with passphrase')}</button>`}</div>
        <div id="secForm"></div>
-       <div class="row"><button id="outBtn" class="ghost">${tr('Log out of wallet')}</button></div>
-       <p class="warn">${vault ? tr('🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.') + ' ' + tr('Auto-locks after 5 minutes of inactivity.') : tr('⚠ Secret is stored unencrypted — set a passphrase to secure it. Dev/regtest only.')}</p>`;
+       <div class="row"><button id="outBtn" class="ghost">${tr('Log out of wallet')}</button></div>`;
     $('#langSel').onchange = () => { setLang($('#langSel').value); renderApp(); };   // applies immediately, re-renders all
     $('#themeSel').onchange = () => { const t = $('#themeSel').value; store.set('fw_theme_mode', t); applyTheme(t); };   // applies immediately
     // Network/bridge apply immediately too: network on select (swapping in that network's
