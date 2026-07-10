@@ -64,12 +64,13 @@ export class IdbStore {
       c.onerror = () => rej(c.error);
     });
     rows.sort((a, b) => a.c - b.c);
+    const base = w.base || 0;                 // checkpoint anchor of the persisted chain
     const chain = [];
     for (const r of rows) {
       if (r.c * CHUNK !== chain.length) { await this.clear(); return false; }   // gap → store corrupt, start fresh
       for (const e of r.hs) chain.push({ hash: e[0], time: e[e.length - 1] || 0 });   // [hash,time] (v2 rows [hash,prevHash,time] read compatibly)
     }
-    const ok = chain.length > 0 && client.importState({ net: client.net, genesis: client.genesis, scannedHeight: w.scannedHeight, scannedOnce: w.scannedOnce, chain, utxos: w.utxos, history: w.history });
+    const ok = chain.length > 0 && client.importState({ net: client.net, genesis: client.genesis, base, scannedHeight: w.scannedHeight, scannedOnce: w.scannedOnce, chain, utxos: w.utxos, history: w.history });
     this.persistedTip = ok ? chain.length - 1 : -1;
     if (!ok) await this.clear();
     return ok;
@@ -87,14 +88,16 @@ export class IdbStore {
     // partial chunk from the (already truncated + re-extended) in-memory chain.
     if (o.reorgFloor != null && o.reorgFloor < this.persistedTip) this.persistedTip = o.reorgFloor;
     o.reorgFloor = null;
+    const base = o.chain.base || 0;           // chunk indices are RELATIVE to the anchor
+    if (this.persistedTip < base) this.persistedTip = base - 1;
     if (tip !== this.persistedTip) {
-      const firstChunk = Math.floor((this.persistedTip + 1) / CHUNK);
-      const lastChunk = Math.floor(tip / CHUNK);
+      const firstChunk = Math.floor((this.persistedTip + 1 - base) / CHUNK);
+      const lastChunk = Math.floor((tip - base) / CHUNK);
       const t = this.db.transaction('headers', 'readwrite'); const os = t.objectStore('headers');
       for (let c = firstChunk; c <= lastChunk; c++) {
         // rows are [hash, time] — prevHash is redundant (prevHash at h === hash at h-1)
         const hs = [];
-        for (let h = c * CHUNK; h <= Math.min((c + 1) * CHUNK - 1, tip); h++) hs.push([o.chain.hashAt(h), o.chain.timeAt(h)]);
+        for (let h = base + c * CHUNK; h <= Math.min(base + (c + 1) * CHUNK - 1, tip); h++) hs.push([o.chain.hashAt(h), o.chain.timeAt(h)]);
         os.put({ c, hs });
       }
       os.delete(IDBKeyRange.lowerBound(lastChunk, true));   // drop stale chunks past the tip (reorg shrink)
@@ -105,7 +108,7 @@ export class IdbStore {
     // anything above the persisted tip (a resumed sync re-scans and re-finds it).
     const t = this.db.transaction('wallet', 'readwrite');
     t.objectStore('wallet').put({
-      k: 'state', scriptsKey, scannedHeight: Math.min(o.scannedHeight, tip), scannedOnce: o.scannedOnce,
+      k: 'state', scriptsKey, base, scannedHeight: Math.min(o.scannedHeight, tip), scannedOnce: o.scannedOnce,
       utxos: [...o.utxos.values()].filter(u => u.refheight <= tip).map(u => ({ ...u, value: u.value.toString() })),
       history: o.history.filter(e => e.height <= tip).map(e => ({ ...e, amount: e.amount.toString() })),
     });

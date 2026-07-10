@@ -14,15 +14,18 @@ import { Buffer } from 'buffer';
 const keyOf = hashHex => parseInt(hashHex.slice(-13), 16);
 
 export class HeaderChain {
-  constructor(genesisHex) {
+  /** `base` > 0 anchors the chain at a CHECKPOINT instead of genesis: heights below the
+   *  anchor simply don't exist in this instance (fast-sync mode). */
+  constructor(anchorHex, base = 0) {
     this.cap = 4096;
+    this.base = base;
     this.hashes = new Uint8Array(this.cap * 32);
     this.times = new Uint32Array(this.cap);
     this.len = 0;
-    this.index = new Map();          // key -> height | [heights] (prefix collisions)
-    this.push(genesisHex, 0);
+    this.index = new Map();          // key -> internal idx | [idxs] (prefix collisions)
+    this.push(anchorHex, 0);
   }
-  get length() { return this.len; }
+  get length() { return this.base + this.len; }
 
   _grow(min) {
     let cap = this.cap; while (cap < min) cap *= 2;
@@ -31,9 +34,9 @@ export class HeaderChain {
     this.cap = cap;
   }
 
-  hashAt(h) { return Buffer.from(this.hashes.subarray(h * 32, h * 32 + 32)).toString('hex'); }
-  timeAt(h) { return this.times[h]; }
-  tipHash() { return this.hashAt(this.len - 1); }
+  hashAt(h) { const i = h - this.base; return Buffer.from(this.hashes.subarray(i * 32, i * 32 + 32)).toString('hex'); }
+  timeAt(h) { return this.times[h - this.base]; }
+  tipHash() { return this.hashAt(this.base + this.len - 1); }
 
   push(hashHex, time) {
     if (this.len === this.cap) this._grow(this.len + 1);
@@ -50,17 +53,18 @@ export class HeaderChain {
   heightOf(hashHex) {
     const cur = this.index.get(keyOf(hashHex));
     if (cur === undefined) return undefined;
-    for (const h of Array.isArray(cur) ? cur : [cur]) if (h < this.len && this.hashAt(h) === hashHex) return h;
+    for (const i of Array.isArray(cur) ? cur : [cur]) if (i < this.len && this.hashAt(this.base + i) === hashHex) return this.base + i;
     return undefined;
   }
 
   /** Drop everything at height >= newLen (reorg rollback). */
   truncate(newLen) {
-    for (let h = this.len - 1; h >= newLen; h--) {
-      const k = keyOf(this.hashAt(h)), cur = this.index.get(k);
-      if (Array.isArray(cur)) { const i = cur.indexOf(h); if (i >= 0) cur.splice(i, 1); if (cur.length === 1) this.index.set(k, cur[0]); }
-      else if (cur === h) this.index.delete(k);
+    const newInternal = newLen - this.base;
+    for (let i = this.len - 1; i >= newInternal; i--) {
+      const k = keyOf(this.hashAt(this.base + i)), cur = this.index.get(k);
+      if (Array.isArray(cur)) { const j = cur.indexOf(i); if (j >= 0) cur.splice(j, 1); if (cur.length === 1) this.index.set(k, cur[0]); }
+      else if (cur === i) this.index.delete(k);
     }
-    this.len = newLen;
+    this.len = newInternal;
   }
 }

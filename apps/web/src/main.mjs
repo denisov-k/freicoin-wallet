@@ -4,7 +4,7 @@ globalThis.Buffer = Buffer;
 import QRCode from 'qrcode';
 import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress, walletScripts, configureNetwork } from './wallet.mjs';
 import { encryptSecret, decryptSecret } from './vault.mjs';
-import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS } from './netparams.mjs';
+import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS, CHECKPOINT } from './netparams.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
@@ -86,6 +86,7 @@ function ds() {
       birthHeight: effectiveBirth(walletFp(scripts)),
       snapshotUrl: DEFAULT_SNAPSHOT[net] || null,
       filterSnapshotUrl: DEFAULT_SNAPSHOT_FILTERS[net] || null,
+      checkpoint: store.get('fw_syncmode') === 'full' ? null : CHECKPOINT[net] || null,
     }).catch(() => {});
     lightSrc = {
       health: () => wcall('health'), balance: () => wcall('balance'), utxos: () => wcall('utxos'),
@@ -341,7 +342,8 @@ const render = {
     const vault = getVault(), s = secret();
     const kind = /\s/.test((s || '').trim()) ? 'recovery phrase' : 'hex seed';
     $('#settings').innerHTML =
-      `<label>Theme<select id="themeSel">${['system', 'dark', 'light'].map(m => `<option value="${m}"${themeMode() === m ? ' selected' : ''}>${m === 'system' ? 'System' : m === 'dark' ? 'Dark' : 'Light'}</option>`).join('')}</select></label>
+      `<label>Sync<select id="syncSel"><option value="fast"${store.get('fw_syncmode') !== 'full' ? ' selected' : ''}>Fast (checkpoint)</option><option value="full"${store.get('fw_syncmode') === 'full' ? ' selected' : ''}>Full verification</option></select></label>
+       <label>Theme<select id="themeSel">${['system', 'dark', 'light'].map(m => `<option value="${m}"${themeMode() === m ? ' selected' : ''}>${m === 'system' ? 'System' : m === 'dark' ? 'Dark' : 'Light'}</option>`).join('')}</select></label>
        <label>Network<select id="netSel">${Object.entries(NETWORKS).map(([k, v]) => `<option value="${k}"${k === curNet() ? ' selected' : ''}>${v.label}</option>`).join('')}</select></label>
        <label>Bridge URL (neutrino P2P relay)<input id="br" value="${curBridge()}"></label>
        <label>Wallet secret (${kind})<textarea id="sd" rows="2">${s}</textarea></label>
@@ -360,7 +362,7 @@ const render = {
       $('#sd').value = m;
       // A brand-new wallet has no history before the current tip — record its birth now
       // (keyed by the new wallet's fingerprint; picked up when the user saves).
-      try { if (cache?.tipHeight) store.set('fw_ab:' + walletFp(walletScripts(resolveSecret(m))), cache.tipHeight); } catch {}
+      try { const birth = cache?.tipHeight || CHECKPOINT[curNet()]?.height; if (birth) store.set('fw_ab:' + walletFp(walletScripts(resolveSecret(m))), birth); } catch {}
       toast('new phrase — back it up, then Save');
     };
     $('#copySeed').onclick = e => copy($('#sd').value, e.target);
@@ -395,6 +397,7 @@ function saveSettings() {
   try { resolveSecret(sec); } catch (e) { return toast(e.message, 'err'); }
   const net = NETWORKS[$('#netSel').value] ? $('#netSel').value : DEFAULT_NET;
   store.set('fw_net', net); configureNetwork(net);
+  store.set('fw_syncmode', $('#syncSel')?.value === 'full' ? 'full' : 'fast');
   const br = $('#br').value.trim();
   if (br && br !== DEFAULT_BRIDGE[net]) store.set('fw_bridge', br); else store.del('fw_bridge');   // keep the net default unless overridden
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }

@@ -18,6 +18,15 @@ export const DEFAULT_SNAPSHOT = {
   test:    null,
   regtest: null,
 };
+// Build-time checkpoint 'height:hash' — fast first syncs anchor here instead of genesis.
+// For a web-delivered wallet this adds no trust: the same host already serves the code.
+const parseCp = v => { const m = /^(\d+):([0-9a-f]{64})$/.exec(v || ''); return m ? { height: +m[1], hash: m[2] } : null; };
+export const CHECKPOINT = {
+  main:    parseCp(import.meta.env?.VITE_CHECKPOINT_MAIN),
+  test:    null,
+  regtest: null,
+};
+
 export const DEFAULT_SNAPSHOT_FILTERS = {
   main:    import.meta.env?.VITE_SNAP_MAIN_FILTERS || null,
   test:    null,

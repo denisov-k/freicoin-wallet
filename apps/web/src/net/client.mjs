@@ -47,6 +47,16 @@ export class Neutrino {
   }
   get stateClient() { return this; }     // the object that owns the persistable chain/UTXO state
 
+  /** Fast-sync anchor: start the chain at a build-time CHECKPOINT instead of genesis.
+   *  Headers below the anchor don't exist in this client, so it must only be used when
+   *  the wallet's birth height is at or above the checkpoint (enforced by the caller —
+   *  imports that need to scan below it take the full-from-genesis path). */
+  initCheckpoint({ height, hash }) {
+    this.chain = new HeaderChain(hash, height);
+    this.verifiedHeight = height;
+    this.scannedHeight = height;
+  }
+
   /** Wipe all wallet/chain state (after a failed PoW verification — nothing is trustable). */
   _resetState() {
     this.chain = new HeaderChain(this.genesis);
@@ -94,8 +104,10 @@ export class Neutrino {
   /** Block locator with exponential back-off, so the node can find the fork point after a reorg. */
   _locator() {
     const c = this.chain, loc = []; let step = 1;
-    for (let i = c.length - 1; i >= 0; i -= step) { loc.push(c.hashAt(i)); if (loc.length >= 10) step *= 2; }
-    if (loc[loc.length - 1] !== this.genesis) loc.push(this.genesis);
+    const floor = c.base || 0;
+    for (let i = c.length - 1; i >= floor; i -= step) { loc.push(c.hashAt(i)); if (loc.length >= 10) step *= 2; }
+    const anchor = c.hashAt(floor);
+    if (loc[loc.length - 1] !== anchor) loc.push(anchor);
     return loc;
   }
 
@@ -109,6 +121,7 @@ export class Neutrino {
 
   /** Roll the wallet/chain state back to `forkH` (drop everything above it). */
   _reorgTo(forkH) {
+    if (forkH < (this.chain.base || 0)) throw new Error('reorg below the checkpoint — full resync required');
     this.chain.truncate(forkH + 1);
     for (const [k, u] of this.utxos) if (u.refheight > forkH) this.utxos.delete(k);
     this.history = this.history.filter(e => e.height <= forkH);
@@ -541,10 +554,11 @@ export class Neutrino {
   /** Serialize the incremental state (JSON-safe) for persistence across page reloads.
    *  prevHash is not stored — it is redundant (prevHash at h === hash at h-1). */
   exportState() {
+    const base = this.chain.base || 0;
     const chain = [];
-    for (let h = 0; h < this.chain.length; h++) chain.push({ hash: this.chain.hashAt(h), time: this.chain.timeAt(h) });
+    for (let h = base; h < this.chain.length; h++) chain.push({ hash: this.chain.hashAt(h), time: this.chain.timeAt(h) });
     return {
-      net: this.net, genesis: this.genesis, scannedHeight: this.scannedHeight, scannedOnce: this.scannedOnce, chain,
+      net: this.net, genesis: this.genesis, base, scannedHeight: this.scannedHeight, scannedOnce: this.scannedOnce, chain,
       utxos: [...this.utxos.values()].map(u => ({ ...u, value: u.value.toString() })),
       history: this.history.map(e => ({ ...e, amount: e.amount.toString() })),
     };
@@ -552,8 +566,10 @@ export class Neutrino {
 
   /** Restore state from exportState(). Returns false (state untouched) if net/genesis mismatch. */
   importState(s) {
-    if (!s || s.net !== this.net || s.genesis !== this.genesis || !Array.isArray(s.chain) || s.chain[0]?.hash !== this.genesis) return false;
-    this.chain = new HeaderChain(this.genesis);
+    const base = s.base || 0;
+    if (!s || s.net !== this.net || s.genesis !== this.genesis || !Array.isArray(s.chain) || !s.chain.length) return false;
+    if (base === 0 && s.chain[0].hash !== this.genesis) return false;
+    this.chain = new HeaderChain(s.chain[0].hash, base);
     for (let i = 1; i < s.chain.length; i++) this.chain.push(s.chain[i].hash, s.chain[i].time || 0);
     this.utxos = new Map(s.utxos.map(u => [u.txid + ':' + u.vout, { ...u, value: BigInt(u.value) }]));
     this.history = s.history.map(e => ({ ...e, amount: BigInt(e.amount) }));

@@ -13,7 +13,7 @@ const kriaToFrc = k => Number(k) / 1e8;
 // same wallet (a different secret ⇒ different scripts ⇒ discard the persisted UTXO set).
 export const scriptsKey = scripts => { let h = 5381 >>> 0; const s = scripts.join(''); for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0; return scripts.length + ':' + h.toString(16); };
 
-export function createLightSource({ url, net, genesis, scripts, birthHeight = 0, onProgress = null, onProvisional = null, snapshotUrl = null, filterSnapshotUrl = null }) {
+export function createLightSource({ url, net, genesis, scripts, birthHeight = 0, onProgress = null, onProvisional = null, snapshotUrl = null, filterSnapshotUrl = null, checkpoint = null }) {
   let n = null, cache = null;
   const store = new IdbStore(net, genesis);   // IndexedDB — holds a full mainnet header chain
   // NOTE: birthHeight is NOT part of the fingerprint — it is auto-learned from the scan
@@ -45,7 +45,15 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     // Fresh start: skip filters/scan below the wallet's birth height (headers still sync
     // fully — PoW trustlessness is not windowed). Crucial on mainnet: without a birth
     // height a new wallet would scan ~485k filters that cannot contain its coins.
-    if (!resumed && birthHeight > 0) n.stateClient.scannedHeight = birthHeight - 1;
+    if (!resumed) {
+      // Fast sync: anchor at the build-time checkpoint when nothing below it is needed
+      // (the wallet's birth is at/above it). Imports that must scan older history take
+      // the full-from-genesis path automatically.
+      if (checkpoint && urls.length === 1 && (birthHeight || 0) >= checkpoint.height) {
+        n.stateClient.initCheckpoint(checkpoint);
+        if (birthHeight > 0) n.stateClient.scannedHeight = Math.max(checkpoint.height, birthHeight - 1);
+      } else if (birthHeight > 0) n.stateClient.scannedHeight = birthHeight - 1;
+    }
   }
 
   const toCache = (r, stale = false) => {
