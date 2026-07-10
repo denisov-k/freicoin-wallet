@@ -17,17 +17,31 @@ export class IdbStore {
 
   async open() {
     if (!this.available) return false;
-    this.db = await new Promise((res, rej) => {
-      const r = idb().open(this.name, DB_VERSION);
-      r.onupgradeneeded = () => {
-        const db = r.result;
-        if (db.objectStoreNames.contains('headers')) db.deleteObjectStore('headers');   // v1 schema → rebuild
-        db.createObjectStore('headers', { keyPath: 'c' });
-        if (!db.objectStoreNames.contains('wallet')) db.createObjectStore('wallet', { keyPath: 'k' });
-      };
-      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
-    });
-    return true;
+    // An upgrade `open` BLOCKS FOREVER if another tab (or a zombie connection — mobile
+    // browsers restore tabs) still holds the database at an older version, and would
+    // freeze the whole sync at "connecting". Time-box the open and treat blocked/slow
+    // as "no persistence this session" — the wallet still syncs, it just won't resume.
+    try {
+      this.db = await new Promise((res, rej) => {
+        const timer = setTimeout(() => rej(new Error('idb open timeout/blocked')), 4000);
+        const r = idb().open(this.name, DB_VERSION);
+        r.onupgradeneeded = () => {
+          const db = r.result;
+          if (db.objectStoreNames.contains('headers')) db.deleteObjectStore('headers');   // v1 schema → rebuild
+          db.createObjectStore('headers', { keyPath: 'c' });
+          if (!db.objectStoreNames.contains('wallet')) db.createObjectStore('wallet', { keyPath: 'k' });
+        };
+        r.onblocked = () => { clearTimeout(timer); rej(new Error('idb blocked by another connection')); };
+        r.onsuccess = () => {
+          clearTimeout(timer);
+          // if a future version wants to upgrade, don't be the tab that bricks it
+          r.result.onversionchange = () => { try { r.result.close(); } catch {} this.db = null; };
+          res(r.result);
+        };
+        r.onerror = () => { clearTimeout(timer); rej(r.error); };
+      });
+      return true;
+    } catch { this.db = null; return false; }
   }
   _os(store, mode) { return this.db.transaction(store, mode).objectStore(store); }
 
