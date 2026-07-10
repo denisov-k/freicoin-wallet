@@ -59,6 +59,22 @@ export class Nv3State {
       if (id === FRC) fee = inPv - outSum;
       else if (inPv !== outSum) return { ok: false, err: `asset ${id} not conserved: in ${inPv} != out ${outSum}` };
     }
+
+    // Unique tokens (indivisible smart-property bitstrings, per asset): every output token must
+    // come from an input of the SAME asset (or be minted by a definition tx), and no token may
+    // appear in two outputs. Tokens not re-output are destroyed (allowed). Keyed per asset, so
+    // the same bitstring under different assets is a different token.
+    const inTok = new Map();     // assetId -> Set(token)
+    for (const c of ins) for (const t of (c.tokens || [])) (inTok.get(c.assetId) || inTok.set(c.assetId, new Set()).get(c.assetId)).add(t);
+    const seen = new Set();      // `${assetId}:${token}` guards against duplicate output tokens
+    for (const o of tx.outputs) for (const t of (o.tokens || [])) {
+      const key = `${o.assetId}:${t}`;
+      if (seen.has(key)) return { ok: false, err: `token ${t} of ${o.assetId} output twice` };
+      seen.add(key);
+      const fromInput = inTok.get(o.assetId)?.has(t);
+      if (!fromInput && o.assetId !== mintedId) return { ok: false, err: `token ${t} of ${o.assetId} created from nothing` };
+    }
+
     return { ok: true, fee };
   }
 
@@ -70,6 +86,7 @@ export class Nv3State {
     for (const op of tx.inputs) this.utxos.delete(op);
     tx.outputs.forEach((o, i) => this.utxos.set(opkey(tx.txid, i), {
       assetId: o.assetId, value: o.value, refheight: tx.lockHeight, scriptPubKey: o.scriptPubKey, coinbase: false,
+      ...(o.tokens && o.tokens.length ? { tokens: o.tokens } : {}),
     }));
     this.fees += v.fee;
     return v;

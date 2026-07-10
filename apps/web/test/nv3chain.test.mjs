@@ -74,4 +74,26 @@ const badGran = st3.check({ txid: 'g2', lockHeight: 1000, inputs: ['is:0'], outp
 check('granularity: multiple-of-unit outputs accepted', okGran.ok);
 check('granularity: non-multiple output rejected', !badGran.ok);
 
+// 9. unique tokens (smart property): mint a token with an asset, transfer it, conserve it
+const st4 = new Nv3State();
+const fT = st4.seed('cbT', 0, { assetId: FRC, value: 10000000n, refheight: 1000, scriptPubKey: spk('11') });
+const collectible = { k: 20, interest: false, granularity: 1 };
+const idC = assetIdOf(collectible);
+// issuance mints token 'deadbeef' of the new asset (value 0 — a pure token) + FRC change
+const issT = st4.apply({ txid: 'mintok', lockHeight: 1000, def: collectible, inputs: [fT],
+  outputs: [{ assetId: idC, value: 0n, scriptPubKey: spk('a1'), tokens: ['deadbeef'] }, { assetId: FRC, value: 9998000n, scriptPubKey: spk('11') }] });
+check('token minted at issuance', issT.ok && st4.utxos.get('mintok:0').tokens[0] === 'deadbeef');
+// transfer the token to a new output — must be conserved (present in an input)
+const xferT = st4.apply({ txid: 'movtok', lockHeight: 1001, inputs: ['mintok:0'],
+  outputs: [{ assetId: idC, value: 0n, scriptPubKey: spk('a2'), tokens: ['deadbeef'] }] });
+check('token transferred (conserved from an input)', xferT.ok && st4.utxos.get('movtok:0').tokens[0] === 'deadbeef');
+// creating a token from nothing is rejected
+const forge = st4.check({ txid: 'forge', lockHeight: 1002, inputs: ['movtok:0'],
+  outputs: [{ assetId: idC, value: 0n, scriptPubKey: spk('a3'), tokens: ['cafe1234'] }] });
+check('cannot create a token from nothing', !forge.ok);
+// duplicating a token across two outputs is rejected
+const dup = st4.check({ txid: 'dup', lockHeight: 1002, inputs: ['movtok:0'],
+  outputs: [{ assetId: idC, value: 0n, scriptPubKey: spk('a4'), tokens: ['deadbeef'] }, { assetId: idC, value: 0n, scriptPubKey: spk('a5'), tokens: ['deadbeef'] }] });
+check('cannot output the same token twice (uniqueness)', !dup.ok);
+
 finish();
