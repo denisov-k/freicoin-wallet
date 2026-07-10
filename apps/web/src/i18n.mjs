@@ -54,6 +54,7 @@ const RU = {
   'verifying…': 'проверка…',
   '← Prev': '← Предыдущий',
   'send': 'отправка', 'receive': 'получение', 'generate': 'добыча', 'immature': 'незрелые',
+  'Show': 'Показать', 'Hide': 'Скрыть',
   'Log out of wallet': 'Выйти из кошелька',
   'This removes the wallet from this device. Without the recovery phrase the funds are UNRECOVERABLE.':
     'Кошелёк будет удалён с этого устройства. Без фразы восстановления средства ВОССТАНОВИТЬ НЕВОЗМОЖНО.',

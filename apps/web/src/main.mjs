@@ -470,8 +470,8 @@ const render = {
        <label>${tr('Theme')}<select id="themeSel">${['system', 'dark', 'light'].map(m => `<option value="${m}"${themeMode() === m ? ' selected' : ''}>${m === 'system' ? tr('System') : m === 'dark' ? tr('Dark') : tr('Light')}</option>`).join('')}</select></label>
        <label>${tr('Network')}<select id="netSel">${Object.entries(NETWORKS).map(([k, v]) => `<option value="${k}"${k === curNet() ? ' selected' : ''}>${v.label}</option>`).join('')}</select></label>
        <label>${tr('Bridge URL (neutrino P2P relay)')}<input id="br" value="${curBridge()}"></label>
-       <label>${tr('Wallet secret')} (${kind})<textarea id="sd" rows="2">${s}</textarea></label>
-       <div class="row"><button id="saveCfg">${tr('Save')}</button><button id="copySeed" class="ghost">${tr('Copy')}</button></div>
+       <label>${tr('Wallet secret')} (${kind})<textarea id="sd" rows="2" readonly>${'•'.repeat(24)}</textarea></label>
+       <div class="row"><button id="saveCfg">${tr('Save')}</button><button id="revealSeed" class="ghost">${tr('Show')}</button><button id="copySeed" class="ghost">${tr('Copy')}</button></div>
        <div class="row">${vault
           ? `<button id="lockBtn" class="ghost">${tr('🔓 Lock')}</button><button id="chgBtn" class="ghost">${tr('Change passphrase')}</button>`
           : `<button id="secBtn" class="ghost">${tr('🔒 Secure with passphrase')}</button>`}</div>
@@ -483,9 +483,16 @@ const render = {
     $('#themeSel').onchange = () => { const t = $('#themeSel').value; store.set('fw_theme_mode', t); applyTheme(t); };   // applies immediately
     // Switching network swaps in that network's default bridge (user can still override).
     $('#netSel').onchange = () => { $('#br').value = DEFAULT_BRIDGE[$('#netSel').value] || ''; };
-    $('#copySeed').onclick = e => copy($('#sd').value, e.target);
+    // The secret never sits in the DOM while masked — Show swaps the real value in.
+    let revealed = false;
+    $('#revealSeed').onclick = () => {
+      revealed = !revealed;
+      $('#sd').value = revealed ? s : '•'.repeat(24);
+      $('#revealSeed').textContent = revealed ? tr('Hide') : tr('Show');
+    };
+    $('#copySeed').onclick = e => copy(s, e.target);
     if (vault) { $('#lockBtn').onclick = lock; $('#chgBtn').onclick = () => passForm(tr('Change passphrase'), pw => secure(secret(), pw, true)); }
-    else $('#secBtn').onclick = () => passForm(tr('Set a passphrase'), pw => secure($('#sd').value.trim(), pw, false));
+    else $('#secBtn').onclick = () => passForm(tr('Set a passphrase'), pw => secure(s, pw, false));
     $('#outBtn').onclick = () => {
       $('#secForm').innerHTML = `<div class="review">
         <p class="warn">${tr('This removes the wallet from this device. Without the recovery phrase the funds are UNRECOVERABLE.')}</p>
@@ -526,16 +533,13 @@ function logout() {
 }
 
 function saveSettings() {
-  const sec = $('#sd').value.trim();
-  try { resolveSecret(sec); } catch (e) { return toast(e.message, 'err'); }
+  const sec = secret();   // the secret field is read-only — Save only applies network/bridge
   const net = NETWORKS[$('#netSel').value] ? $('#netSel').value : DEFAULT_NET;
   store.set('fw_net', net); configureNetwork(net);
   const br = $('#br').value.trim();
   if (br && br !== DEFAULT_BRIDGE[net]) store.set('fw_bridge', br); else store.del('fw_bridge');   // keep the net default unless overridden
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
-  unlockedSecret = sec; recvIndex = 0; store.set('fw_recv', 0); cache = null; liveState = null;
-  if (getVault()) store.set('fw_vault', JSON.stringify(encryptSecret(sec, unlockedPass)));  // re-encrypt
-  else store.set('fw_seed', sec);
+  unlockedSecret = sec; cache = null; liveState = null;   // same wallet — keep the receive index
   // Reset the UI to the new source's reality — the old network/wallet's numbers must not
   // linger on screen while the new one syncs (nor its download counters in the popover).
   $('#balance').innerHTML = ''; $('#activity').innerHTML = ''; actLastHtml = '';
