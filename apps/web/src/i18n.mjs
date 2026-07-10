@@ -22,7 +22,6 @@ const RU = {
   'Language': 'Язык', 'Theme': 'Тема', 'System': 'Системная', 'Dark': 'Тёмная', 'Light': 'Светлая',
   'Bridge URL (neutrino P2P relay)': 'Мост (neutrino P2P)', 'Wallet secret': 'Секрет кошелька',
   'recovery phrase': 'фраза восстановления', 'hex seed': 'hex-сид',
-  'Save': 'Сохранить',
   '🔓 Lock': '🔓 Заблокировать', 'Change passphrase': 'Сменить пароль', '🔒 Secure with passphrase': '🔒 Защитить паролем',
   '🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.':
     '🔒 Секрет зашифрован вашим паролем (AES-GCM) и расшифровывается только в памяти.',

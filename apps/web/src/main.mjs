@@ -471,18 +471,19 @@ const render = {
        <label>${tr('Network')}<select id="netSel">${Object.entries(NETWORKS).map(([k, v]) => `<option value="${k}"${k === curNet() ? ' selected' : ''}>${v.label}</option>`).join('')}</select></label>
        <label>${tr('Bridge URL (neutrino P2P relay)')}<input id="br" value="${curBridge()}"></label>
        <label>${tr('Wallet secret')} (${kind})<textarea id="sd" rows="2" readonly>${'•'.repeat(24)}</textarea></label>
-       <div class="row"><button id="saveCfg">${tr('Save')}</button><button id="revealSeed" class="ghost">${tr('Show')}</button><button id="copySeed" class="ghost">${tr('Copy')}</button></div>
+       <div class="row"><button id="revealSeed" class="ghost">${tr('Show')}</button><button id="copySeed" class="ghost">${tr('Copy')}</button></div>
        <div class="row">${vault
           ? `<button id="lockBtn" class="ghost">${tr('🔓 Lock')}</button><button id="chgBtn" class="ghost">${tr('Change passphrase')}</button>`
           : `<button id="secBtn" class="ghost">${tr('🔒 Secure with passphrase')}</button>`}</div>
        <div id="secForm"></div>
        <div class="row" style="margin-top:20px"><button id="outBtn" class="ghost">${tr('Log out of wallet')}</button></div>
        <p class="warn">${vault ? tr('🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.') + ' ' + tr('Auto-locks after 5 minutes of inactivity.') : tr('⚠ Secret is stored unencrypted — set a passphrase to secure it. Dev/regtest only.')}</p>`;
-    $('#saveCfg').onclick = saveSettings;
     $('#langSel').onchange = () => { setLang($('#langSel').value); renderApp(); };   // applies immediately, re-renders all
     $('#themeSel').onchange = () => { const t = $('#themeSel').value; store.set('fw_theme_mode', t); applyTheme(t); };   // applies immediately
-    // Switching network swaps in that network's default bridge (user can still override).
-    $('#netSel').onchange = () => { $('#br').value = DEFAULT_BRIDGE[$('#netSel').value] || ''; };
+    // Network/bridge apply immediately too: network on select (swapping in that network's
+    // default bridge), bridge on leaving the field.
+    $('#netSel').onchange = () => { $('#br').value = DEFAULT_BRIDGE[$('#netSel').value] || ''; applyNetSettings(); };
+    $('#br').onchange = applyNetSettings;
     // The secret never sits in the DOM while masked — Show swaps the real value in.
     let revealed = false;
     $('#revealSeed').onclick = () => {
@@ -532,21 +533,20 @@ function logout() {
   renderWelcome();
 }
 
-function saveSettings() {
-  const sec = secret();   // the secret field is read-only — Save only applies network/bridge
+function applyNetSettings() {
   const net = NETWORKS[$('#netSel').value] ? $('#netSel').value : DEFAULT_NET;
   store.set('fw_net', net); configureNetwork(net);
   const br = $('#br').value.trim();
   if (br && br !== DEFAULT_BRIDGE[net]) store.set('fw_bridge', br); else store.del('fw_bridge');   // keep the net default unless overridden
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
-  unlockedSecret = sec; cache = null; liveState = null;   // same wallet — keep the receive index
-  // Reset the UI to the new source's reality — the old network/wallet's numbers must not
+  cache = null; liveState = null;   // same wallet — keep the receive index
+  // Reset the UI to the new source's reality — the old network's numbers must not
   // linger on screen while the new one syncs (nor its download counters in the popover).
   $('#balance').innerHTML = ''; $('#activity').innerHTML = ''; actLastHtml = '';
   const av = $('#avail'); if (av) av.textContent = tr('available…');
   status.progress = {}; status.rx = 0; status.rxAt = 0; status.mbps = 0; status.utxos = null; status.tip = null;
   setStatus('sync', 'connecting…');
-  toast(tr('saved')); show('balance');
+  toast(tr('saved'));
 }
 
 async function doReview() {
