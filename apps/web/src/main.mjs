@@ -219,7 +219,7 @@ function renderWelcome() {
     $('#wBody').innerHTML = `
       <div class="addr">${m}</div>
       <p class="warn">${tr('⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.')}</p>
-      <div class="row"><button id="wCopy" class="ghost">${tr('Copy')}</button><button id="wDone">${tr('I wrote them down')}</button></div>`;
+      <div class="row"><button id="wCopy" class="ghost">⧉ ${tr('Copy')}</button><button id="wDone">${tr('I wrote them down')}</button></div>`;
     $('#wCopy').onclick = e => copy(m, e.target);
     $('#wDone').onclick = () => {
       recordNewWalletBirth(m);
@@ -422,7 +422,7 @@ const render = {
       `<div class="label">${tr('Receive address')} #${recvIndex}</div>
        <img id="qr" class="qr" alt="qr"/>
        <div class="addr" id="addr">${addr}</div>
-       <div class="row"><button id="copyAddr" class="ghost">${tr('Copy')}</button><button id="prevAddr" class="ghost"${recvIndex === 0 ? ' disabled' : ''}>${tr('← Prev')}</button><button id="nextAddr" class="ghost"${recvIndex >= 19 ? ' disabled' : ''}>${tr('→ Next')}</button></div>`;
+       <div class="row"><button id="copyAddr" class="ghost">⧉ ${tr('Copy')}</button><button id="prevAddr" class="ghost"${recvIndex === 0 ? ' disabled' : ''}>${tr('← Prev')}</button><button id="nextAddr" class="ghost"${recvIndex >= 19 ? ' disabled' : ''}>${tr('→ Next')}</button></div>`;
     $('#qr').src = await QRCode.toDataURL(addr.toUpperCase(), { margin: 1, width: 220 });
     $('#copyAddr').onclick = e => copy(addr, e.target);
     // the wallet watches the first 20 receive addresses (gap limit) — don't hand out
@@ -475,7 +475,7 @@ const render = {
        <label>${tr('Network')}<select id="netSel">${Object.entries(NETWORKS).map(([k, v]) => `<option value="${k}"${k === curNet() ? ' selected' : ''}>${v.label}</option>`).join('')}</select></label>
        <label>${tr('Bridge URL (neutrino P2P relay)')}<input id="br" value="${curBridge()}"></label>
        <label>${tr('Wallet secret')} (${kind})<textarea id="sd" rows="2" readonly>${'•'.repeat(24)}</textarea></label>
-       <div class="row"><button id="revealSeed" class="ghost">${tr('Show')}</button><button id="copySeed" class="ghost">${tr('Copy')}</button></div>
+       <div class="row"><button id="revealSeed" class="ghost">${tr('Show')}</button><button id="copySeed" class="ghost">⧉ ${tr('Copy')}</button></div>
        <p class="warn">${vault ? tr('🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.') + ' ' + tr('Auto-locks after 5 minutes of inactivity.') : tr('⚠ Secret is stored unencrypted — set a passphrase to secure it.')}</p>
        <div class="row">${vault
           ? `<button id="lockBtn" class="ghost">${tr('🔓 Lock')}</button><button id="chgBtn" class="ghost">${tr('Change passphrase')}</button>`
