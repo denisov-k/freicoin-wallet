@@ -143,6 +143,10 @@ const $ = s => document.querySelector(s);
 const store = { get: k => localStorage.getItem(k), set: (k, v) => localStorage.setItem(k, v), del: k => localStorage.removeItem(k) };
 const short = a => a && a.length > 20 ? a.slice(0, 12) + '…' + a.slice(-8) : (a || '');
 const fmt = n => (+n).toLocaleString(undefined, { maximumFractionDigits: 8 });
+// Display balance: 2 decimals, rounded DOWN (never show more than is spendable) — the
+// demurrage churns the low digits every block, so full precision is visual noise here.
+// Full 8-digit precision stays where it matters: amounts, fees, activity records.
+const fmtBal = n => (Math.floor((+n) * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const copy = (t, el) => { navigator.clipboard?.writeText(t); if (el) { const o = el.textContent; el.textContent = tr('copied ✓'); setTimeout(() => el.textContent = o, 1200); } };
 const skel = (n = 1) => Array.from({ length: n }, () => '<div class="skel"></div>').join('');
 const getVault = () => { const v = store.get('fw_vault'); return v ? JSON.parse(v) : null; };
@@ -343,7 +347,7 @@ function paintActivity(txs) {
 // Send available line — ≈ marks unverified (streamed/preview) values.
 function paintSendAvail(st, approx) {
   const el = $('#avail');
-  if (el && st) el.textContent = `${tr('available ')}${approx ? '≈ ' : ''}${fmt(st.balance)} FRC`;
+  if (el && st) el.textContent = `${tr('available ')}${approx ? '≈ ' : ''}${fmtBal(st.balance)} FRC`;
 }
 
 // Render generation: bumped on every tab render; async callbacks from an older render
@@ -370,8 +374,8 @@ function paintBalance(s) {
   // green = verified) and the popover the details
   const pend = s.pending?.length ? s.pending.reduce((a, p) => a + p.amount, 0) : 0;
   status.utxos = s.utxos.length;           // detail lives in the status popover
-  $('#balBig').innerHTML = `${fmt(s.balance)} <small>FRC</small>`;
-  $('#balPend').textContent = pend ? `⏳ ${pend > 0 ? '+' : ''}${fmt(pend)} FRC ${tr('pending')} (${s.pending.length} tx)` : '';
+  $('#balBig').innerHTML = `${fmtBal(s.balance)} <small>FRC</small>`;
+  $('#balPend').textContent = pend ? `⏳ ${pend > 0 ? '+' : ''}${fmtBal(pend)} FRC ${tr('pending')} (${s.pending.length} tx)` : '';
 }
 
 const render = {
