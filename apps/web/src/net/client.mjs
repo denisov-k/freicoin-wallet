@@ -492,15 +492,12 @@ export class Neutrino {
     // of strictly after them — and the balance found so far streams out via onPartial
     // as the sweep advances.
     let headersDone = false, headersErr = null;
-    // The two snapshot streams are SEQUENCED: the header snapshot is ingested first
-    // (fast), THEN the filter snapshot streams at full speed with every height already
-    // known — interleaving them just made both crawl (shared thread + per-filter
-    // wait-for-header polling) while buying nothing.
-    const snapP = this._bootstrapSnapshot();
-    const headersP = snapP.then(() => this.syncHeaders())
+    const headersP = this._bootstrapSnapshot().then(() => this.syncHeaders())
       .then(() => { headersDone = true; }, e => { headersDone = true; headersErr = e; });
+    // The scan starts IMMEDIATELY and trails the header front (the filter-snapshot
+    // consumer politely waits per-filter when it outpaces the headers) — so scan
+    // progress and streamed balances run alongside the header download.
     const follower = (async () => {
-      await snapP.catch(() => {});
       await this._bootstrapFilters(scripts, onPartial, () => headersDone, fetcher);
       for (;;) {
         if (headersErr) break;
