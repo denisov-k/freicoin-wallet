@@ -422,7 +422,7 @@ const render = {
       `<div class="label">${tr('Receive address')} #${recvIndex}</div>
        <img id="qr" class="qr" alt="qr"/>
        <div class="addr" id="addr">${addr}</div>
-       <div class="row"><button id="copyAddr" class="ghost">${tr('Copy')}</button><button id="prevAddr" class="ghost"${recvIndex === 0 ? ' disabled' : ''}>${tr('← Prev')}</button><button id="nextAddr" class="ghost"${recvIndex >= 19 ? ' disabled' : ''}>${tr('Next →')}</button></div>`;
+       <div class="row"><button id="copyAddr" class="ghost">${tr('Copy')}</button><button id="prevAddr" class="ghost"${recvIndex === 0 ? ' disabled' : ''}>${tr('← Prev')}</button><button id="nextAddr" class="ghost"${recvIndex >= 19 ? ' disabled' : ''}>${tr('→ Next')}</button></div>`;
     $('#qr').src = await QRCode.toDataURL(addr.toUpperCase(), { margin: 1, width: 220 });
     $('#copyAddr').onclick = e => copy(addr, e.target);
     // the wallet watches the first 20 receive addresses (gap limit) — don't hand out
