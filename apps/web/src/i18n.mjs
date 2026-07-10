@@ -53,6 +53,7 @@ const RU = {
   'you can add a passphrase later in Settings': 'пароль можно задать позже в настройках',
   'Auto-locks after 5 minutes of inactivity.': 'Автоблокировка через 5 минут бездействия.',
   'verifying…': 'проверка…',
+  '← Prev': '← Предыдущий',
 };
 
 const TABLES = { ru: RU };
