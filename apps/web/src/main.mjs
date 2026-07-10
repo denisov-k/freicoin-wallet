@@ -27,7 +27,17 @@ const PHASE_LABEL = { headers: 'headers', filters: 'scan' };
 const PHASE_ORDER = ['headers', 'filters'];   // pipeline order; blocks/PoW are internal detail
 function renderStatusPop() {
   const pop = $('#statusPop'); if (!pop) return;
-  const label = tr({ ok: 'synced ✓ (verified)', sync: 'syncing…', off: 'offline' }[status.state] || status.state);
+  // The verify tail runs after download+scan complete; without this the status showed a
+  // motionless 'syncing…' with both visible phases at 100%.
+  const label = (() => {
+    if (status.state !== 'sync') return tr({ ok: 'synced ✓ (verified)', off: 'offline' }[status.state] || status.state);
+    const v = status.progress.verify, h = status.progress.headers, f = status.progress.filters;
+    const headersDone = !h || (h.height ?? h.done) >= (h.target ?? h.want);
+    const scanDone = !f || f.done >= f.want;
+    if (v && v.done < v.want && headersDone && scanDone)
+      return tr('verifying…') + ' ' + Math.floor(v.done / v.want * 100) + '%';
+    return tr('syncing…');
+  })();
   // one stable line per concurrently-running phase, in fixed pipeline order (rendering by
   // arrival order made the lines shuffle depending on which stream reported first)
   const phases = PHASE_ORDER.filter(k => status.progress[k]).map(k => { const p = status.progress[k];
