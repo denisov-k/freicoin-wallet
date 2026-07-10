@@ -567,7 +567,7 @@ async function doReview() {
       `<div class="review">
          <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
          <div class="rrow"><span>${tr('Amount')}</span><b>${fmt(amt)} FRC</b></div>
-         <div class="rrow"><span>${tr('Fee')}</span><b>${(r.fee / 1e8).toFixed(8)} FRC</b></div>
+         <div class="rrow"><span>${tr('Fee')}</span><b>${(Number(r.fee) / 1e8).toFixed(8)} FRC</b></div>
          <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
        </div>`;
     $('#confirmBtn').onclick = doBroadcast;
