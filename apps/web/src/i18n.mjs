@@ -54,6 +54,7 @@ const RU = {
   'Auto-locks after 5 minutes of inactivity.': 'Автоблокировка через 5 минут бездействия.',
   'verifying…': 'проверка…',
   '← Prev': '← Предыдущий',
+  'send': 'отправка', 'receive': 'получение', 'generate': 'добыча', 'immature': 'незрелые',
 };
 
 const TABLES = { ru: RU };

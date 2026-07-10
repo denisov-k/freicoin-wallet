@@ -331,7 +331,7 @@ function paintActivity(txs) {
   const html = txs.length ? txs.map((t, i) =>
     `<div class="act" data-i="${i}">
        <div class="act-i ${t.category}">${CAT[t.category] || '•'}</div>
-       <div class="act-m"><b>${t.category}</b><span class="sub">${t.confirmations > 0 ? t.confirmations + ' ' + tr('conf') : tr('pending')} · ${timeAgo(t.time)}</span></div>
+       <div class="act-m"><b>${tr(t.category)}</b><span class="sub">${t.confirmations > 0 ? t.confirmations + ' ' + tr('conf') : tr('pending')} · ${timeAgo(t.time)}</span></div>
        <div class="act-a ${(+t.amount) < 0 ? 'neg' : 'pos'}">${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)}</div>
      </div>`).join('') : `<div class="sub">${tr('no transactions yet')}</div>`;
   if (html === actLastHtml) return true;   // identical content — skip the rewrite (no blink)
