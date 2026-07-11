@@ -472,6 +472,11 @@ function render() {
       <p class="sub" style="font-size:12px">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p>
 
       <p class="label" style="margin-top:14px">${tr('Order book')}</p>
+      <div class="row">
+        <label>${tr('Selling')}<select id="fGive"></select></label>
+        <label>${tr('Wants')}<select id="fWant"></select></label>
+        <label style="display:flex;flex-direction:row;align-items:center;gap:6px;flex:0 0 auto"><input type="checkbox" id="fOpen" checked>${tr('open only')}</label>
+      </div>
       <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>
     </section>
 
@@ -494,6 +499,7 @@ function render() {
   $('#faucetBtn').onclick = faucet;
   $('#issueBtn').onclick = issue;
   $('#rOfferBtn').onclick = postRangedOffer;
+  ['#fGive', '#fWant', '#fOpen'].forEach(s => { const el = $(s); if (el) el.onchange = paint; });
   $('#langSel').onchange = () => { setLang($('#langSel').value); render(); };
   $('#themeSel').onchange = () => { const t = $('#themeSel').value; localStorage.setItem('fw_theme_mode', t); applyTheme(t); };
   $('#setReveal').onclick = () => { $('#setPhrase').style.filter = 'none'; };
@@ -536,9 +542,17 @@ function paint() {
   setOptions('#rWant', ['FRC', ...state.info.assets.map(a => a.tag)]
     .map(t => `<option value="${t}">${t === 'FRC' ? 'FRC' : assetName(t)}</option>`).join(''));
 
+  // order-book filters: by give asset, by want asset, and open-only (selection preserved)
+  const fopt = `<option value="">${tr('all')}</option>` + ['FRC', ...state.info.assets.map(a => a.tag)]
+    .map(t => `<option value="${t}">${t === 'FRC' ? 'FRC' : assetName(t)}</option>`).join('');
+  setOptions('#fGive', fopt); setOptions('#fWant', fopt);
+
   // skip repainting the book while a fill amount is being typed into it (else the 15s refresh
   // wipes the input) — same reason the offer selects are preserved.
   if (!$('#bookBody').contains(document.activeElement)) {
+    const giveOf = o => o.give ? (o.give.assetTag ?? 'FRC') : '';
+    const wantOf = o => o.ranged ? ((o.desc.payoutAsset && o.desc.payoutAsset !== HOST_TAG) ? o.desc.payoutAsset : 'FRC') : (o.want?.assetTag ?? 'FRC');
+    const fg = $('#fGive')?.value || '', fw = $('#fWant')?.value || '', fo = $('#fOpen')?.checked;
     const bookRow = o => {
       const mine = spks.includes(o.makerSpk);
       const give = o.give ? fmtA(o.give.assetTag ?? 'FRC', BigInt(o.give.pv)) : '—';
@@ -557,8 +571,9 @@ function paint() {
       return `<tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td><td>${give}</td>
         <td>${fmtA(o.want.assetTag ?? 'FRC', BigInt(o.want.value))}</td><td>${mine ? tr('mine') : ''} ${o.status}</td></tr>`;
     };
-    $('#bookBody').innerHTML = state.info.book.slice().reverse().map(bookRow).join('')
-      || `<tr><td colspan="4" class="sub">${tr('no offers yet')}</td></tr>`;
+    const rows = state.info.book.filter(o => (!fg || giveOf(o) === fg) && (!fw || wantOf(o) === fw) && (!fo || o.status === 'open')).reverse();
+    $('#bookBody').innerHTML = rows.map(bookRow).join('')
+      || `<tr><td colspan="4" class="sub">${state.info.book.length ? tr('no offers match') : tr('no offers yet')}</td></tr>`;
     $('#bookBody').querySelectorAll('.rbtn').forEach(b => b.onclick = () => {
       const id = +b.dataset.id, offer = state.info.book.find(o => o.id === id);
       const inp = $(`.rfill[data-id="${id}"]`), amt = parseFloat(inp?.value || inp?.placeholder || '0');
