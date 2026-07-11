@@ -11,6 +11,7 @@
 import { FRC, assetIdOf, assetPresentValue } from './assets.mjs';
 import { sha256 } from './crypto.mjs';
 import { verifyEcdsaPub } from './ecdsa.mjs';
+import { checkRanged } from './dex.mjs';
 
 /** Digest an authorizer signs to approve one asset's movement in one tx:
  *  SHA256d( "FRAPPROV" || txid (32 bytes, wire/internal order) || asset tag (20 bytes) ).
@@ -157,6 +158,12 @@ export class Nv3State {
       // (else the matcher could re-value every give with the signatures intact)
       if (sub.lockHeight != null && sub.lockHeight !== ctx.lockHeight)
         return { ok: false, err: `subtx ${i} pinned to lockHeight ${sub.lockHeight}, composite has ${ctx.lockHeight}` };
+      // phase 2b: a RANGED bundle's outputs were chosen by the matcher — check them against
+      // the maker-signed constraint (destinations, fill bounds, price ratio).
+      if (sub.ranged) {
+        const err = checkRanged(this, sub, ctx.lockHeight);
+        if (err) return { ok: false, err: `subtx ${i}: ${err}` };
+      }
     }
     const seen = new Set();
     const flatIn = [...ctx.subtxs.flatMap(s => s.inputs), ...(ctx.matcher?.inputs ?? [])];

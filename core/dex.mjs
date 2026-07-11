@@ -193,6 +193,78 @@ export function makeBundle({ inputs, outputs, nExpireTime, lockHeight }) {
   return sub;
 }
 
+// ---------------- phase 2b: RANGED bundles (partial fills at a signed price ratio) --------
+// The maker signs a CONSTRAINT, not amounts: "sell between minFill and maxFill of my give
+// asset at a price of at least priceNum/priceDen (payout asset per give asset), payout to
+// THIS script, remainder back to THAT script." The miner picks the fill; consensus checks
+// the materialized outputs against the descriptor. Integer rule (rounding favors the maker):
+//     payout.value * priceDen >= fill * priceNum,   fill = givePV(lockHeight) - change.value
+// The descriptor id — what the maker's signature covers in the node — pins everything above
+// plus the expiry and the valuation lockHeight. The fill amount is deliberately NOT in it.
+
+/** Ranged-bundle descriptor id (the maker's signature scope). */
+export function rangedId(sub) {
+  const enc = JSON.stringify({
+    in: sub.inputs,
+    pa: [sub.payout.assetId, sub.payout.scriptPubKey, String(sub.payout.priceNum), String(sub.payout.priceDen)],
+    ch: sub.changeScript,
+    mn: String(sub.minFill), mx: String(sub.maxFill),
+    exp: sub.nExpireTime ?? 0, lh: sub.lockHeight ?? 0,
+  });
+  return [...sha256(new TextEncoder().encode(enc))].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+/** Make a ranged maker bundle. give coins must all be ONE asset (change returns in kind). */
+export function makeRangedBundle({ inputs, payout, changeScript, minFill, maxFill, nExpireTime, lockHeight }) {
+  if (!inputs?.length) throw new Error('ranged bundle needs inputs');
+  if (lockHeight == null) throw new Error('ranged bundle must pin its valuation lockHeight');
+  const giveAsset = inputs[0].coin.assetId;
+  if (!inputs.every(i => i.coin.assetId === giveAsset)) throw new Error('give coins must be one asset');
+  if (payout.assetId === giveAsset) throw new Error('payout must differ from the give asset');
+  if (!(payout.priceNum > 0n) || !(payout.priceDen > 0n)) throw new Error('price must be positive');
+  if (!(minFill >= 0n) || !(maxFill >= minFill)) throw new Error('bad fill bounds');
+  const sub = {
+    ranged: true,
+    inputs: inputs.map(i => i.outpoint),
+    coins: Object.fromEntries(inputs.map(i => [i.outpoint, i.coin])),
+    giveAsset, payout, changeScript, minFill, maxFill,
+    nExpireTime: nExpireTime ?? 0, lockHeight,
+    outputs: null,   // materialized by the matcher via fillRanged
+  };
+  sub.id = rangedId(sub);
+  return sub;
+}
+
+/** The matcher materializes a fill: returns the bundle's two outputs [payout, change].
+ *  `fill` is in give-asset kria (present value at the bundle's lockHeight). */
+export function fillRanged(state, sub, fill) {
+  const givePv = sub.inputs.reduce((a, op) => a + state.presentValueOf(sub.coins[op], sub.lockHeight), 0n);
+  if (fill < sub.minFill || fill > sub.maxFill || fill > givePv) throw new Error('fill out of bounds');
+  // minimal payout satisfying the ratio, rounded UP (the maker never gets less than the price)
+  const pay = (fill * sub.payout.priceNum + sub.payout.priceDen - 1n) / sub.payout.priceDen;
+  return {
+    ...sub,
+    outputs: [
+      { assetId: sub.payout.assetId, value: pay, scriptPubKey: sub.payout.scriptPubKey },
+      { assetId: sub.giveAsset, value: givePv - fill, scriptPubKey: sub.changeScript },
+    ],
+  };
+}
+
+/** Consensus-side check of one materialized ranged bundle (called from checkComposite). */
+export function checkRanged(state, sub, lockHeight) {
+  if (!sub.outputs || sub.outputs.length !== 2) return 'ranged bundle must have [payout, change]';
+  if (sub.lockHeight !== lockHeight) return `ranged bundle pinned to lockHeight ${sub.lockHeight}`;
+  const [pay, change] = sub.outputs;
+  if (pay.assetId !== sub.payout.assetId || pay.scriptPubKey !== sub.payout.scriptPubKey) return 'payout leg mismatch';
+  if (change.assetId !== sub.giveAsset || change.scriptPubKey !== sub.changeScript) return 'change leg mismatch';
+  const givePv = sub.inputs.reduce((a, op) => a + state.presentValueOf(sub.coins[op], sub.lockHeight), 0n);
+  const fill = givePv - change.value;
+  if (fill < sub.minFill || fill > sub.maxFill || fill < 0n) return 'fill out of signed bounds';
+  if (pay.value * sub.payout.priceDen < fill * sub.payout.priceNum) return 'payout below the signed price';
+  return null;
+}
+
 /** A bundle's per-asset DELTA at lockHeight: positive = it gives more than it takes (surplus
  *  for the pool), negative = it wants more than it gives. The matcher composes bundles whose
  *  deltas sum >= 0 per asset (host residual pays the fee + spread). */

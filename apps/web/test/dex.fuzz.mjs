@@ -13,7 +13,7 @@
 import { check, finish } from './helpers.mjs';
 import { FRC, assetIdOf } from '../../../core/assets.mjs';
 import { Nv3State } from '../../../core/nv3chain.mjs';
-import { makeBundle, bundleId, composeBundles } from '../../../core/dex.mjs';
+import { makeBundle, bundleId, composeBundles, makeRangedBundle, rangedId, fillRanged } from '../../../core/dex.mjs';
 
 // mulberry32 PRNG — deterministic runs
 const prng = seed => () => { seed |= 0; seed = seed + 0x6d2b79f5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
@@ -119,5 +119,80 @@ for (let world = 0; world < 60; world++) {
 check(`fuzz built enough composites (${composites})`, composites >= 30);
 check(`fuzz ran a real battery (${mutations} mutations)`, mutations >= 300);
 check(`NO HOLES: every mutation rejected or signature-breaking (${holes} holes)`, holes === 0, HOLES.slice(0, 5).join(' | '));
+
+// ---- phase 2b: ranged bundles — constraint attacks must fail, miner freedom must SUCCEED ----
+let rWorlds = 0, rAttacks = 0, rHoles = 0, rFreedom = 0;
+const RHOLES = [];
+for (let world = 0; world < 40; world++) {
+  const st = new Nv3State();
+  const H = 1000, Hm = H + ri(30);
+  const def = { k: 8 + ri(23), interest: R() < 0.3, granularity: 1, contractHash: 'e' + world.toString(16).padStart(63, '0') };
+  const id = assetIdOf(def);
+  const fund = st.seed('cb', 0, { assetId: FRC, value: 1000000000n, refheight: H, scriptPubKey: spk(1) });
+  st.apply({ txid: 'iss', lockHeight: H, def, inputs: [fund],
+    outputs: [{ assetId: id, value: 100000n, scriptPubKey: spk(10) }, { assetId: FRC, value: 999000000n, scriptPubKey: spk(1) }] });
+  st.seed('buy', 0, { assetId: FRC, value: 500000000n, refheight: H, scriptPubKey: spk(20) });
+  st.seed('mf', 0, { assetId: FRC, value: 100000000n, refheight: H, scriptPubKey: spk(30) });
+
+  const givePv = st.presentValueOf({ assetId: id, value: 100000n, refheight: H }, H);
+  const minFill = rb(givePv / 4n), maxFill = minFill + rb(givePv - minFill);
+  const price = rb(3000n);
+  const ranged = makeRangedBundle({
+    inputs: [{ outpoint: 'iss:0', coin: { assetId: id, value: 100000n, refheight: H } }],
+    payout: { assetId: FRC, scriptPubKey: spk(11), priceNum: price, priceDen: 1n },
+    changeScript: spk(10), minFill, maxFill, lockHeight: H,
+    nExpireTime: R() < 0.5 ? 0 : Hm + 5,
+  });
+  const fill = minFill + rb(maxFill - minFill + 1n) - 1n;
+  let filled, ctx;
+  try {
+    filled = fillRanged(st, ranged, fill);
+    const taker = makeBundle({
+      inputs: [{ outpoint: 'buy:0', coin: { assetId: FRC, value: 500000000n, refheight: H } }],
+      outputs: [{ assetId: id, value: fill, scriptPubKey: spk(21) }], lockHeight: H,
+    });
+    ({ ctx } = composeBundles(st, [filled, taker], { lockHeight: H, atHeight: Hm, txid: `r${world}`,
+      matcher: { funds: [{ outpoint: 'mf:0', coin: { assetId: FRC, value: 100000000n, refheight: H } }], script: spk(31), fee: rb(10000n) } }));
+  } catch { continue; }
+  rWorlds++;
+  const clone = () => { const s = new Nv3State(); s.utxos = new Map(st.utxos); s.assets = new Map(st.assets); return s; };
+
+  // MINER FREEDOM: a different in-bounds fill (with the taker re-balanced) must still compose
+  try {
+    const fill2 = minFill + rb(maxFill - minFill + 1n) - 1n;
+    const filled2 = fillRanged(st, ranged, fill2);
+    const taker2 = makeBundle({
+      inputs: [{ outpoint: 'buy:0', coin: { assetId: FRC, value: 500000000n, refheight: H } }],
+      outputs: [{ assetId: id, value: fill2, scriptPubKey: spk(21) }], lockHeight: H,
+    });
+    composeBundles(clone(), [filled2, taker2], { lockHeight: H, atHeight: Hm, txid: `r${world}b`,
+      matcher: { funds: [{ outpoint: 'mf:0', coin: { assetId: FRC, value: 100000000n, refheight: H } }], script: spk(31), fee: 1000n } });
+    if (rangedId(filled2) !== ranged.id) { rHoles++; RHOLES.push(`world ${world}: refill changed the id`); }
+    rFreedom++;
+  } catch (e) { rHoles++; RHOLES.push(`world ${world}: legal refill refused: ${e.message}`); }
+
+  // CONSTRAINT ATTACKS on the materialized outputs: consensus must reject (id can't help —
+  // the outputs are outside the descriptor id by design)
+  const attacks = [
+    c => { c.subtxs[0].outputs[0].value -= 1n; },                       // shave the payout below price
+    c => { c.subtxs[0].outputs[0].scriptPubKey = spk(99); },            // steal payout
+    c => { c.subtxs[0].outputs[1].scriptPubKey = spk(99); },            // steal change
+    c => { c.subtxs[0].outputs[1].value = 0n; },                        // force overfill (fill = givePv)
+    c => { c.subtxs[0].outputs[0].assetId = id; },                      // pay in the wrong asset
+    c => { c.subtxs[0].minFill = 0n; },                                 // relax the signed bounds
+    c => { c.subtxs[0].payout.priceNum = 1n; },                         // rewrite the signed price
+  ];
+  for (const [ai, attack] of attacks.entries()) {
+    const mctx = structuredClone(ctx);
+    attack(mctx);
+    rAttacks++;
+    const ok = clone().checkComposite(mctx, Hm).ok;
+    const idMoved = rangedId(mctx.subtxs[0]) !== ranged.id;
+    if (ok && !idMoved) { rHoles++; RHOLES.push(`world ${world} attack ${ai}: accepted with intact id`); }
+  }
+}
+check(`ranged fuzz: enough worlds (${rWorlds})`, rWorlds >= 15);
+check(`ranged fuzz: miner freedom exercised (${rFreedom} refills)`, rFreedom >= 10);
+check(`ranged fuzz: NO HOLES (${rHoles} over ${rAttacks} attacks)`, rHoles === 0, RHOLES.slice(0, 5).join(' | '));
 
 finish();

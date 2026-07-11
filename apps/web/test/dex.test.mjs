@@ -5,7 +5,8 @@ import { check, finish } from './helpers.mjs';
 import { FRC, assetIdOf, assetPresentValue } from '../../../core/assets.mjs';
 import { Nv3State } from '../../../core/nv3chain.mjs';
 import { makeOffer, offersCross, matchOffers, matchMany, findCross, findRing, offerPrice,
-         makeBundle, bundleId, bundleDelta, composeBundles } from '../../../core/dex.mjs';
+         makeBundle, bundleId, bundleDelta, composeBundles,
+         makeRangedBundle, rangedId, fillRanged, checkRanged } from '../../../core/dex.mjs';
 
 const spk = t => '0014' + t.repeat(20);
 const st = new Nv3State();
@@ -163,5 +164,78 @@ let dblThrew = false;
 try { composeBundles(st2, [denoms[0], denoms[1]], { lockHeight: 2000, txid: 'comp3', matcher: { funds: [{ outpoint: 'mat4:0', coin: { assetId: FRC, value: 30000000n, refheight: 2000 } }], script: spk('c2'), fee: 0n } }); }
 catch (e) { dblThrew = /duplicate input/.test(e.message); }
 check('two bundles spending the same coin refused (duplicate input)', dblThrew);
+
+// ---- phase 2b: RANGED bundles — the MINER picks the fill inside a signed constraint ----
+const st3 = new Nv3State();
+st3.apply({ txid: 'iss3', lockHeight: 3000, def: coop,
+  inputs: [st3.seed('cb3', 0, { assetId: FRC, value: 200000000n, refheight: 3000, scriptPubKey: spk('11') })],
+  outputs: [{ assetId: idCoop, value: 1000n, scriptPubKey: spk('aa') },
+            { assetId: FRC, value: 199000000n, scriptPubKey: spk('11') }] });
+st3.seed('buyer', 0, { assetId: FRC, value: 90000000n, refheight: 3000, scriptPubKey: spk('bb') });
+st3.seed('matr', 0, { assetId: FRC, value: 1000000n, refheight: 3000, scriptPubKey: spk('cc') });
+
+// Alice: "sell 100..800 of my 1000 coop at >= 30000 FRC-kria per coop-kria, payout here,
+// change there" — one signature, ANY fill in range.
+const ranged = makeRangedBundle({
+  inputs: [{ outpoint: 'iss3:0', coin: { assetId: idCoop, value: 1000n, refheight: 3000 } }],
+  payout: { assetId: FRC, scriptPubKey: spk('a2'), priceNum: 30000n, priceDen: 1n },
+  changeScript: spk('aa'), minFill: 100n, maxFill: 800n, lockHeight: 3000,
+});
+
+// miner fills 700 of it; buyer's fixed bundle takes the coop
+const filled = fillRanged(st3, ranged, 700n);
+check('fill materializes payout at the signed price (rounded up)', filled.outputs[0].value === 21000000n && filled.outputs[1].value === 300n);
+check('descriptor id ignores the fill (300 vs 700 fill, same signature)',
+  rangedId(fillRanged(st3, ranged, 300n)) === rangedId(filled) && rangedId(filled) === ranged.id);
+
+const buyerBundle = makeBundle({
+  inputs: [{ outpoint: 'buyer:0', coin: { assetId: FRC, value: 90000000n, refheight: 3000 } }],
+  outputs: [{ assetId: idCoop, value: 700n, scriptPubKey: spk('b2') },
+            { assetId: FRC, value: 60000000n, scriptPubKey: spk('bb') }],   // ~2.1e7 pays alice, rest change
+  lockHeight: 3000,
+});
+const { ctx: ctx3 } = composeBundles(st3, [filled, buyerBundle],
+  { lockHeight: 3000, txid: 'comp2b', matcher: { funds: [{ outpoint: 'matr:0', coin: { assetId: FRC, value: 1000000n, refheight: 3000 } }], script: spk('c2'), fee: 10000n } });
+check('ranged composite passes consensus', st3.applyComposite(ctx3).ok !== false);
+check('alice: payout + 300 coop change', st3.utxos.get('comp2b:0')?.value === 21000000n && st3.utxos.get('comp2b:1')?.value === 300n);
+
+// consensus catches every constraint violation
+const stale = new Nv3State(); stale.utxos = new Map(st3.utxos); stale.assets = new Map(st3.assets);
+const probe = (mutate) => {
+  const bad = structuredClone(filled);
+  mutate(bad);
+  return checkRanged(st3, bad, 3000) !== null;
+};
+check('underpaying the price rejected', probe(b => { b.outputs[0].value -= 1n; }));
+check('overfilling past maxFill rejected', probe(b => { b.outputs[1].value = 100n; }));   // fill = 900 > 800
+check('underfilling below minFill rejected', probe(b => { b.outputs[1].value = 950n; })); // fill = 50 < 100
+check('stealing the payout destination rejected', probe(b => { b.outputs[0].scriptPubKey = spk('99'); }));
+check('stealing the change destination rejected', probe(b => { b.outputs[1].scriptPubKey = spk('99'); }));
+check('swapping the payout asset rejected', probe(b => { b.outputs[0].assetId = idCoop; }));
+// …and mutating the CONSTRAINT itself changes the id (breaks the signature)
+check('price tamper changes the descriptor id', rangedId({ ...ranged, payout: { ...ranged.payout, priceNum: 29999n } }) !== ranged.id);
+check('bounds tamper changes the descriptor id', rangedId({ ...ranged, maxFill: 900n }) !== ranged.id);
+
+// ---- application pattern: a DUTCH AUCTION is just a ladder of expiring ranged offers ----
+// The seller signs K offers over the SAME coin at descending prices with staggered expiries:
+// price 40000 valid to height 3005, 35000 to 3010, 30000 to 3015. Only one can ever fill
+// (same input = double-spend protection). A buyer at height 3012 can only take the 30000 one:
+// the better-for-seller offers have expired; the model enforces exactly the auction schedule.
+const rung = (price, expire) => makeRangedBundle({
+  inputs: [{ outpoint: 'comp2b:1', coin: { assetId: idCoop, value: 300n, refheight: 3000 } }],
+  payout: { assetId: FRC, scriptPubKey: spk('a2'), priceNum: price, priceDen: 1n },
+  changeScript: spk('aa'), minFill: 50n, maxFill: 300n, lockHeight: 3000, nExpireTime: expire,
+});
+const auction = [rung(40000n, 3005), rung(35000n, 3010), rung(30000n, 3015)];
+const live = h => auction.filter(r => r.nExpireTime >= h);
+check('dutch auction: at h=3003 all rungs live', live(3003).length === 3);
+check('dutch auction: at h=3012 only the cheapest survives', live(3012).length === 1 && live(3012)[0].payout.priceNum === 30000n);
+// an expired rung really is dead at consensus level
+const deadRung = fillRanged(st3, auction[0], 100n);
+const mat5 = st3.seed('mat5', 0, { assetId: FRC, value: 90000000n, refheight: 3000, scriptPubKey: spk('cc') });
+let deadThrew = false;
+try { composeBundles(st3, [deadRung], { lockHeight: 3000, atHeight: 3012, txid: 'dead', matcher: { funds: [{ outpoint: 'mat5:0', coin: { assetId: FRC, value: 90000000n, refheight: 3000 } }], script: spk('c2'), fee: 0n } }); }
+catch (e) { deadThrew = /expired/.test(e.message); }
+check('dutch auction: expired rung rejected by consensus', deadThrew);
 
 finish();
