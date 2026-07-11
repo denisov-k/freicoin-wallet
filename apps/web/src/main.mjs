@@ -403,7 +403,8 @@ let balPainted = false;
 // action buttons under the balance: Receive + Send (all networks), Issue asset (nv3 only) — each
 // opens a modal instead of a tab.
 const balActions = () => `<div class="row" style="margin-top:12px"><button id="rcvBtn">${tr('Receive')}</button><button id="sndBtn">${tr('Send')}</button></div>`
-  + (MKT() ? `<div class="row"><button id="issBtn" class="ghost">${tr('Issue asset')}</button></div>` : '');
+  + (MKT() ? `<div class="row"><button id="issBtn" class="ghost">${tr('Issue asset')}</button></div>
+              <div class="row"><button id="faucetBtn" class="ghost">${tr('Faucet (+1 FRC)')}</button></div>` : '');
 function wireBalActions() {
   const r = $('#rcvBtn'); if (r) r.onclick = () => render.receive();
   const s = $('#sndBtn'); if (s) s.onclick = () => render.send();

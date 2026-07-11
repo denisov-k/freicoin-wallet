@@ -368,9 +368,8 @@ const skelRows = n => Array.from({ length: n }, () =>
   '<tr><td><div class="skel-line" style="height:16px;width:70%;margin:4px 0"></div></td><td><div class="skel-line" style="height:16px;width:45%;margin:4px 0"></div></td></tr>').join('');
 export function renderAssetBalance(el) {
   el.innerHTML = `
-    <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th>${tr('Quantity')}</th></tr></thead><tbody id="assetBalBody">${skelRows(3)}</tbody></table>
-    <div class="row"><button id="faucetBtn" class="ghost">${tr('Faucet (+1 FRC)')}</button></div>`;
-  $('#faucetBtn').onclick = faucet;
+    <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th>${tr('Quantity')}</th></tr></thead><tbody id="assetBalBody">${skelRows(3)}</tbody></table>`;
+  const f = $('#faucetBtn'); if (f) f.onclick = faucet;   // the button itself lives with the other Balance actions
   if (state) paintAssetBalance(); else mvRefresh();
 }
 function paintAssetBalance() {
