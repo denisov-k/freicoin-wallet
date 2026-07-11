@@ -381,7 +381,7 @@ function paintAssetBalance() {
   const amt = (tag, v) => tag === 'FRC' ? frc(v) : String(v);
   body.innerHTML = [...byAsset.entries()].map(([tag, e]) => {
     const melt = e.pv < e.nominal, grow = e.pv > e.nominal;
-    return `<tr><td>${assetName(tag === 'FRC' ? null : tag)}</td><td class="r ${melt ? 'melt' : grow ? 'grow' : ''}">${amt(tag, e.pv)}</td></tr>`;
+    return `<tr><td${tag === 'FRC' ? '' : ` title="${tag}"`}>${assetName(tag === 'FRC' ? null : tag)}</td><td class="r ${melt ? 'melt' : grow ? 'grow' : ''}">${amt(tag, e.pv)}</td></tr>`;
   }).join('') || `<tr><td colspan="2" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
 }
 
