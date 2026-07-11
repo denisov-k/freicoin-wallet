@@ -8,6 +8,7 @@ import { sha256d } from '../../../../core/crypto.mjs';
 export const MAGIC = {
   main: [0x2c, 0xfe, 0x7e, 0x6d], test: [0x5e, 0xd6, 0x7c, 0xf3],
   regtest: [0xed, 0x99, 0x9c, 0xf6], signet: [0x0a, 0x03, 0xcf, 0x40],
+  nv3: [0xed, 0x99, 0x9c, 0xf6],   // the Freimarkets nV3 chain is a regtest chain (same magic)
 };
 
 /** Frame a message: magic(4) ++ command(12) ++ len(4 LE) ++ checksum(4) ++ payload. */
