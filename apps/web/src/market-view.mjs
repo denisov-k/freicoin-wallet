@@ -364,9 +364,11 @@ export function renderExchange(el) {
   if (state) paint(); else mvRefresh();
 }
 // per-asset balance table (FRC + user assets) — the wallet's Balance tab shows this on nv3
+const skelRows = n => Array.from({ length: n }, () =>
+  '<tr><td><div class="skel-line" style="height:16px;width:70%;margin:4px 0"></div></td><td><div class="skel-line" style="height:16px;width:45%;margin:4px 0"></div></td></tr>').join('');
 export function renderAssetBalance(el) {
   el.innerHTML = `
-    <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th>${tr('Quantity')}</th></tr></thead><tbody id="assetBalBody"><tr><td colspan="2" class="sub">${tr('first sync…')}</td></tr></tbody></table>
+    <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th>${tr('Quantity')}</th></tr></thead><tbody id="assetBalBody">${skelRows(3)}</tbody></table>
     <div class="row"><button id="faucetBtn" class="ghost">${tr('Faucet (+1 FRC)')}</button></div>`;
   $('#faucetBtn').onclick = faucet;
   if (state) paintAssetBalance(); else mvRefresh();
