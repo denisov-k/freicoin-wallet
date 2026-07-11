@@ -410,7 +410,6 @@ function render() {
     <button data-tab="bal"${act('bal')}>${tr('Balance')}</button>
     <button data-tab="issue"${act('issue')}>${tr('Issue')}</button>
     <button data-tab="dex"${act('dex')}>${tr('Exchange')}</button>
-    <button data-tab="log"${act('log')}>${tr('Log')}</button>
     <button data-tab="set"${act('set')}>⚙</button>
   </nav>
   <main>
@@ -443,7 +442,6 @@ function render() {
       <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>
     </section>
 
-    <section id="tab-log"${on('log')}><div id="mlog"><div class="sub">${tr('first sync…')}</div></div></section>
 
     <section id="tab-set"${on('set')}>
       <label>${tr('Language')}<select id="langSel">${Object.entries(LANGS).map(([k, v]) => `<option value="${k}"${getLang() === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
@@ -532,12 +530,10 @@ function paint() {
       if (offer && amt > 0) fillRangedNow(offer, amt);
     });
   }
-
-  $('#mlog').innerHTML = state.info.events.map(e => `<div>${new Date(e.t).toLocaleTimeString(getLang())} — ${e.m}</div>`).join('') || `<div class="sub">${tr('empty so far')}</div>`;
 }
 function showTab(t) {
   curTab = t;
-  ['bal', 'issue', 'dex', 'log', 'set'].forEach(x => { const s = $(`#tab-${x}`); if (s) s.hidden = x !== t; });
+  ['bal', 'issue', 'dex', 'set'].forEach(x => { const s = $(`#tab-${x}`); if (s) s.hidden = x !== t; });
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
 }
 
@@ -617,7 +613,6 @@ style.textContent = `
   table.mkt th{text-align:left;color:var(--sub);font-weight:500;padding:4px 8px;border-bottom:1px solid var(--line)}
   table.mkt td{padding:5px 8px;border-bottom:1px solid var(--line);font-family:ui-monospace,monospace}
   .melt{color:var(--warn)} .grow{color:var(--ok)} .filled{opacity:.45}
-  #mlog div{font-size:12.5px;color:var(--sub);padding:2px 0;border-bottom:1px dashed var(--line)}
   h1 .sub{font-size:13px;font-weight:400}
   #tab-set textarea{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--fg);font:14px ui-monospace,monospace;width:100%}
 `;
