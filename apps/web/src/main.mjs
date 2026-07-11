@@ -278,11 +278,11 @@ function renderLock() {
 
 // ---------- main app ----------
 // On the Freimarkets (nv3) network the wallet grows two extra tabs (Issue + Exchange); on every
-// other network it stays a plain wallet. The title reads "Freimarkets" (the unified product).
+// other network it stays a plain wallet. The product is titled "Freicoin"; the ƒ is its mark.
 const MKT = () => curNet() === 'nv3';
 function renderApp() {
   $('#app').innerHTML = `
-    <header><h1 style="font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:600;font-size:26px;line-height:1;margin:0" title="Freimarkets">ƒ</h1>
+    <header><h1 style="font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:600;font-size:26px;line-height:1;margin:0" title="Freicoin">ƒ</h1>
       <div class="hbtns"><button id="statusBtn" class="icon statusbtn st-sync" title="sync status">●</button></div></header>
     <div id="statusPop" hidden></div>
     <nav>
