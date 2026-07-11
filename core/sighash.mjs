@@ -14,6 +14,7 @@ export const SIGHASH_NONE = 2;
 export const SIGHASH_SINGLE = 3;
 export const SIGHASH_ANYONECANPAY = 0x80;
 export const SIGHASH_NO_LOCK_HEIGHT = 0x100; // Freicoin-specific
+export const SIGHASH_BUNDLE = 0x40;          // nV3 DEX phase 2a: bundle-scoped signature
 
 export const hash256 = b => sha256(sha256(b));
 
@@ -93,4 +94,34 @@ export function segwitV0SighashPreimage(tx, inIdx, scriptCodeHex, amount, refhei
 export function segwitV0Sighash(tx, inIdx, scriptCodeHex, amount, refheight, hashtype) {
   return bytesToHex(hash256(hexToBytes(
     segwitV0SighashPreimage(tx, inIdx, scriptCodeHex, amount, refheight, hashtype))));
+}
+
+/** nV3 DEX phase 2a — the BUNDLE-scoped digest (SIGHASH_BUNDLE, 0x40): BIP143 with the
+ *  prevouts/sequences/outputs hashes computed over the maker's BUNDLE SLICE instead of the
+ *  whole transaction, plus the bundle's nExpireTime right after lock_height. The maker's
+ *  signature therefore commits: their inputs (prevouts+sequences), their outputs (with asset
+ *  tags + tokens — v3 rules), their expiry, and the valuation lock_height — and NOTHING
+ *  outside, which is what makes bundles splice-safe. A signer needs only their own bundle:
+ *  `bundle` = {vin:[...], vout:[...], nExpireTime}, `inIdx` indexes INTO THE BUNDLE. */
+export function bundleSighash(bundle, inIdx, scriptCodeHex, amount, refheight,
+                              { version = 3, nLockTime = 0, lockHeight, hashtype = SIGHASH_ALL | SIGHASH_BUNDLE }) {
+  const hashPrevouts = [...hash256(bundle.vin.flatMap(serPrevout))];
+  const hashSequence = [...hash256(bundle.vin.flatMap(i => u32le(i.sequence)))];
+  const hashOutputs = [...hash256(bundle.vout.flatMap(o => serOutput(o, version)))];
+  const ss = [
+    ...u32le(version),
+    ...hashPrevouts,
+    ...hashSequence,
+    ...serPrevout(bundle.vin[inIdx]),
+    ...serString(scriptCodeHex),
+    ...i64le(amount),
+    ...i64le(refheight),                                    // Freicoin
+    ...u32le(bundle.vin[inIdx].sequence),
+    ...hashOutputs,
+    ...u32le(nLockTime),
+    ...u32le(lockHeight),                                   // the fuzzer-mandated pin
+    ...u32le(bundle.nExpireTime ?? 0),                      // bundle expiry (0 = never)
+    ...u32le(hashtype & ~SIGHASH_NO_LOCK_HEIGHT),
+  ];
+  return bytesToHex(hash256(ss));
 }

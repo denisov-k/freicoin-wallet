@@ -59,10 +59,16 @@ export function parseTx(hex) {
     const n = r.varint();
     for (let i = 0; i < n; i++) approvals.push({ assetTag: r.hex(20), sig: r.varbytes() });
   }
+  // nVersion=3 DEX: the bundle partition, witness-side (flag bit 4)
+  let bundles = [];
+  if (version === 3 && (flags & 4) !== 0) {
+    const n = r.varint();
+    for (let i = 0; i < n; i++) bundles.push({ nIn: r.u32(), nOut: r.u32(), nExpireTime: r.u32() });
+  }
   const nLockTime = r.u32();
   const lockHeight = r.u32();          // <-- Freicoin
   const nExpireTime = version === 3 ? r.u32() : 0;   // nVersion=3-lite
-  return { version, hasWitness, flags, vin, vout, nLockTime, lockHeight, nExpireTime, approvals, nvin, nvout };
+  return { version, hasWitness, flags, vin, vout, nLockTime, lockHeight, nExpireTime, approvals, bundles, nvin, nvout };
 }
 
 // --- serializer (for round-trip parity) ---
@@ -80,9 +86,12 @@ const HOST_TAG = '00'.repeat(20);   // null tag = the host currency
 export function serializeTx(tx) {
   const a = [];
   const approvals = tx.approvals ?? [];
+  const bundles = tx.bundles ?? [];
   const withApprovals = tx.version === 3 && approvals.length > 0 && tx.hasWitness !== false;
+  const withBundles = tx.version === 3 && bundles.length > 0 && tx.hasWitness !== false;
   pushU32(a, tx.version);
-  if (tx.hasWitness || withApprovals) a.push(MARKER, (tx.hasWitness ? 1 : 0) | (withApprovals ? 2 : 0));
+  if (tx.hasWitness || withApprovals || withBundles)
+    a.push(MARKER, (tx.hasWitness ? 1 : 0) | (withApprovals ? 2 : 0) | (withBundles ? 4 : 0));
   pushVarint(a, tx.vin.length);
   for (const i of tx.vin) {
     a.push(...i.prevout.txid.match(/../g).map(h => parseInt(h, 16)));
@@ -108,6 +117,10 @@ export function serializeTx(tx) {
   if (withApprovals) {
     pushVarint(a, approvals.length);
     for (const ap of approvals) { a.push(...ap.assetTag.match(/../g).map(h => parseInt(h, 16))); pushVarbytes(a, ap.sig); }
+  }
+  if (withBundles) {
+    pushVarint(a, bundles.length);
+    for (const b of bundles) { pushU32(a, b.nIn); pushU32(a, b.nOut); pushU32(a, b.nExpireTime ?? 0); }
   }
   pushU32(a, tx.nLockTime);
   pushU32(a, tx.lockHeight);
