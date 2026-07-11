@@ -114,11 +114,13 @@ const aliceBundle = makeBundle({
   inputs: [{ outpoint: 'iss2:0', coin: { assetId: idCoop, value: 150n, refheight: 2000 } }],
   outputs: [{ assetId: FRC, value: 40000000n, scriptPubKey: spk('a2') },     // payout
             { assetId: idCoop, value: 50n, scriptPubKey: spk('aa') }],       // CHANGE
+  lockHeight: 2000,
 });
 const bobBundle = makeBundle({
   inputs: [{ outpoint: 'bob2:0', coin: { assetId: FRC, value: 50000000n, refheight: 2000 } }],
   outputs: [{ assetId: idCoop, value: 99n, scriptPubKey: spk('b2') },        // wants 99 coop
             { assetId: FRC, value: 9000000n, scriptPubKey: spk('bb') }],     // FRC change
+  lockHeight: 2000,
 });
 const dA = bundleDelta(st2, aliceBundle, 2000);
 check('bundle delta: alice nets +100 coop, -0.4 FRC', dA.get(idCoop) === 100n && dA.get(FRC) === -40000000n);
@@ -139,7 +141,7 @@ check('tampering a bundle changes its id', bundleId(tampered2) !== aliceBundle.i
 const expiring = makeBundle({
   inputs: [{ outpoint: 'comp1:1', coin: { assetId: idCoop, value: 50n, refheight: 2000 } }],
   outputs: [{ assetId: FRC, value: 1000n, scriptPubKey: spk('a2') }],
-  nExpireTime: 2005,
+  nExpireTime: 2005, lockHeight: 2000,
 });
 const freshMat = st2.seed('mat3', 0, { assetId: FRC, value: 500000n, refheight: 2000, scriptPubKey: spk('cc') });
 let expThrew = false;
@@ -151,6 +153,7 @@ check('expired bundle rejected at mining height', expThrew);
 const denoms = [25n, 26n, 48n].map((v, n) => makeBundle({
   inputs: [{ outpoint: `comp1:2`, coin: { assetId: idCoop, value: 99n, refheight: 2000 } }],
   outputs: [{ assetId: FRC, value: v * 400000n, scriptPubKey: spk('b2') }],
+  lockHeight: 2000,
 }));
 check('denomination bundles have distinct ids (outputs differ)', new Set(denoms.map(b => b.id)).size === 3);
 // …but they all spend the SAME coin, so a matcher can take only ONE — taking two is a

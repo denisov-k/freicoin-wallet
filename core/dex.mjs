@@ -164,25 +164,30 @@ export function offerPrice(offer) {
 import { sha256 } from './crypto.mjs';
 
 /** Canonical bundle id — hash over everything the maker's signature scopes: their inputs,
- *  their outputs (asset/value/spk/tokens) and the bundle expiry. Splice-invariant: composing
- *  bundles into any transaction leaves each id unchanged; tampering changes it. */
+ *  their outputs (asset/value/spk/tokens), the bundle expiry AND the valuation lockHeight.
+ *  The lockHeight matters: give coins are valued (melt/grow) at the composite's lock_height,
+ *  so a matcher who could re-height a composite would re-value every maker's give with the
+ *  signatures intact — found by the mutation fuzzer, hence pinned here (and the C++ bundle
+ *  sighash must commit lock_height for the same reason). Splice-invariant, tamper-sensitive. */
 export function bundleId(sub) {
   const enc = JSON.stringify({
     in: sub.inputs,
     out: sub.outputs.map(o => [o.assetId, String(o.value), o.scriptPubKey, o.tokens ?? []]),
     exp: sub.nExpireTime ?? 0,
+    lh: sub.lockHeight ?? 0,
   });
   return [...sha256(new TextEncoder().encode(enc))].map(x => x.toString(16).padStart(2, '0')).join('');
 }
 
 /** Make a maker bundle: give coins (their outpoints+data for valuation), take outputs
- *  (payout + change). All-or-nothing: a matcher includes it whole or not at all. */
-export function makeBundle({ inputs, outputs, nExpireTime }) {
+ *  (payout + change), pinned to the valuation lockHeight. All-or-nothing. */
+export function makeBundle({ inputs, outputs, nExpireTime, lockHeight }) {
   if (!inputs?.length || !outputs?.length) throw new Error('bundle needs inputs and outputs');
+  if (lockHeight == null) throw new Error('bundle must pin its valuation lockHeight');
   const sub = {
     inputs: inputs.map(i => i.outpoint),
     coins: Object.fromEntries(inputs.map(i => [i.outpoint, i.coin])),
-    outputs, nExpireTime: nExpireTime ?? 0,
+    outputs, nExpireTime: nExpireTime ?? 0, lockHeight,
   };
   sub.id = bundleId(sub);
   return sub;

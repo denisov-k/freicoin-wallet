@@ -153,6 +153,10 @@ export class Nv3State {
       if (sub.def) return { ok: false, err: 'no minting inside a composite (2a)' };
       if (!sub.inputs?.length || !sub.outputs?.length)
         return { ok: false, err: `subtx ${i} must have inputs and outputs` };
+      // the maker signed a valuation height — the composite must ride at exactly that height
+      // (else the matcher could re-value every give with the signatures intact)
+      if (sub.lockHeight != null && sub.lockHeight !== ctx.lockHeight)
+        return { ok: false, err: `subtx ${i} pinned to lockHeight ${sub.lockHeight}, composite has ${ctx.lockHeight}` };
     }
     const seen = new Set();
     const flatIn = [...ctx.subtxs.flatMap(s => s.inputs), ...(ctx.matcher?.inputs ?? [])];
