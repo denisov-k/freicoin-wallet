@@ -42,35 +42,54 @@ export function offersCross(state, a, b, lockHeight) {
  *    input[1] = b.give   output[1] = b.want
  *    input[2..] = matcher funds; output[2..] = matcher spread/change outputs.
  *  Returns {tx, spread: Map assetId->kria} or throws when the offers don't cross. */
-export function matchOffers(state, a, b, { lockHeight, matcher, txid }) {
-  if (!offersCross(state, a, b, lockHeight)) throw new Error('offers do not cross');
-  const inputs = [a.outpoint, b.outpoint, ...matcher.funds.map(f => f.outpoint)];
-  const outputs = [
-    { assetId: a.want.assetId, value: a.want.value, scriptPubKey: a.want.scriptPubKey },
-    { assetId: b.want.assetId, value: b.want.value, scriptPubKey: b.want.scriptPubKey },
-  ];
+export function matchOffers(state, a, b, { lockHeight, matcher, txid, atHeight }) {
+  return matchMany(state, [a, b], { lockHeight, matcher, txid, atHeight });
+}
+
+/** Splice ANY set of offers whose asset flows balance — a pair, or an N-way RING (the
+ *  whitepaper's transitive payments: A gives X wants Y, B gives Y wants Z, C gives Z wants
+ *  X). Per asset, the sum given (present value at lockHeight) must cover the sum wanted;
+ *  non-host surplus goes to the matcher as outputs, host surplus pays the fee + change.
+ *
+ *  Offers are valued at `lockHeight` (all makers signed that height); the tx may be MINED at
+ *  any later height (`atHeight`, default lockHeight) — consensus only requires
+ *  lock_height <= mining height, so a book of same-height offers stays matchable. */
+export function matchMany(state, offers, { lockHeight, matcher, txid, atHeight }) {
+  if (offers.length < 2) throw new Error('need at least two offers');
+  // per-asset totals: what the offers give (PV) and want (fresh nominal)
+  const given = new Map(), wanted = new Map();
+  for (const o of offers) {
+    given.set(o.coin.assetId, (given.get(o.coin.assetId) || 0n) + state.presentValueOf(o.coin, lockHeight));
+    wanted.set(o.want.assetId, (wanted.get(o.want.assetId) || 0n) + o.want.value);
+  }
+  for (const [asset, w] of wanted) {
+    if ((given.get(asset) || 0n) < w && asset !== FRC) throw new Error(`offers do not balance: asset ${asset} short`);
+  }
+
+  const inputs = [...offers.map(o => o.outpoint), ...matcher.funds.map(f => f.outpoint)];
+  const outputs = offers.map(o => ({ assetId: o.want.assetId, value: o.want.value, scriptPubKey: o.want.scriptPubKey }));
   const spread = new Map();
 
-  // per-asset surplus: give PV minus what the counter-offer's want consumes of it
-  const surplus = (give, otherWant) =>
-    state.presentValueOf(give.coin, lockHeight) - otherWant.value;
-  const sA = surplus(a, b.want);   // asset a gives (goes to matcher as change)
-  const sB = surplus(b, a.want);   // asset b gives
-
-  // non-host assets must conserve EXACTLY -> surplus goes to the matcher, always as an output.
-  // host-currency surplus joins the matcher's funds and leaves fee + change.
   let hostIn = 0n;
   for (const f of matcher.funds) {
     if (f.coin.assetId !== FRC) throw new Error('matcher funds must be host currency');
     hostIn += state.presentValueOf(f.coin, lockHeight);
   }
-  for (const [asset, s] of [[a.coin.assetId, sA], [b.coin.assetId, sB]]) {
-    if (asset === FRC) { hostIn += s; continue; }
+  // host surplus may be NEGATIVE (offers collectively want more FRC than they give) —
+  // then the matcher's funds subsidize the difference. Computed from both maps so an
+  // FRC-wanting book with no FRC-giving offer is accounted correctly.
+  hostIn += (given.get(FRC) || 0n) - (wanted.get(FRC) || 0n);
+  for (const [asset, g] of given) {
+    if (asset === FRC) continue;
+    const s = g - (wanted.get(asset) || 0n);   // surplus of this asset
+    if (s < 0n) throw new Error(`offers do not balance: asset ${asset} short`);
     if (s > 0n) {
       outputs.push({ assetId: asset, value: s, scriptPubKey: matcher.script });
       spread.set(asset, (spread.get(asset) || 0n) + s);
     }
   }
+  // hostIn already includes the offers' host surplus (which is NEGATIVE when the offers
+  // collectively want more FRC than they give — then the matcher's funds subsidize it).
   const fee = matcher.fee ?? 0n;
   const hostChange = hostIn - fee;
   if (hostChange < 0n) throw new Error('matcher cannot cover the fee');
@@ -81,9 +100,46 @@ export function matchOffers(state, a, b, { lockHeight, matcher, txid }) {
   }
 
   const tx = { txid, lockHeight, inputs, outputs };
-  const v = state.check(tx);
+  const v = state.check(tx, atHeight ?? lockHeight);
   if (!v.ok) throw new Error(`matched tx invalid: ${v.err}`);
   return { tx, spread };
+}
+
+/** Find an N-way ring in the book: a cycle of offers where each one's want asset is the next
+ *  one's give asset, and the amounts chain (each give covers the next want). Depth-first over
+ *  asset edges, max ring size `maxLen`. Returns the offer array or null. */
+export function findRing(state, book, lockHeight, maxLen = 4) {
+  const open = book.filter(o => o.status !== 'filled');
+  const walk = (chain, used) => {
+    if (chain.length >= 2) {
+      const head = chain[0], tail = chain[chain.length - 1];
+      if (tail.want.assetId === head.coin.assetId) {
+        // candidate ring: verify every leg is covered
+        const ok = chain.every((o, i) => {
+          const giver = chain[(i + 1) % chain.length];   // who supplies o's want
+          return giver.coin.assetId === o.want.assetId
+            && state.presentValueOf(giver.coin, lockHeight) >= o.want.value;
+        });
+        if (ok) return chain;
+      }
+    }
+    if (chain.length >= maxLen) return null;
+    const tail = chain[chain.length - 1];
+    for (const o of open) {
+      if (used.has(o)) continue;
+      if (o.coin.assetId !== tail.want.assetId) continue;   // o supplies what tail wants
+      used.add(o);
+      const r = walk([...chain, o], used);
+      if (r) return r;
+      used.delete(o);
+    }
+    return null;
+  };
+  for (const o of open) {
+    const r = walk([o], new Set([o]));
+    if (r) return r;
+  }
+  return null;
 }
 
 /** Scan an order book (array of offers) for the first crossing pair. O(n^2), fine for a

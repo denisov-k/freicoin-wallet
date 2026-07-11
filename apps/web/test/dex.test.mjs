@@ -4,7 +4,7 @@
 import { check, finish } from './helpers.mjs';
 import { FRC, assetIdOf, assetPresentValue } from '../../../core/assets.mjs';
 import { Nv3State } from '../../../core/nv3chain.mjs';
-import { makeOffer, offersCross, matchOffers, findCross, offerPrice } from '../../../core/dex.mjs';
+import { makeOffer, offersCross, matchOffers, matchMany, findCross, findRing, offerPrice } from '../../../core/dex.mjs';
 
 const spk = t => '0014' + t.repeat(20);
 const st = new Nv3State();
@@ -57,5 +57,45 @@ let threw = false;
 try { makeOffer({ outpoint: 'x:0', coin: { assetId: FRC, value: 1n, refheight: 0 }, want: { assetId: FRC, value: 1n, scriptPubKey: spk('00') } }); }
 catch { threw = true; }
 check('same-asset offer refused', threw);
+
+// ---- N-way RING (transitive payments): X gives coop wants bond, Y gives bond wants FRC,
+// Z gives FRC wants coop — no pair crosses, but the cycle does. ----
+const bond = { k: 18, interest: true, granularity: 1 };
+const idBond = assetIdOf(bond);
+st.apply({ txid: 'issb', lockHeight: H, def: bond, inputs: ['match1:0'],   // alice's FRC funds the def
+  outputs: [{ assetId: idBond, value: 2000000n, scriptPubKey: spk('dd') },
+            { assetId: FRC, value: 39990000n, scriptPubKey: spk('aa') }] });
+const xCoop = st.seed('xc', 0, { assetId: idCoop, value: 1000000n, refheight: H, scriptPubKey: spk('e1') });
+const zFrc = st.seed('zf', 0, { assetId: FRC, value: 30000000n, refheight: H, scriptPubKey: spk('e3') });
+const m2 = st.seed('m2', 0, { assetId: FRC, value: 500000n, refheight: H, scriptPubKey: spk('cc') });
+
+const oX = makeOffer({ outpoint: 'xc:0', coin: { assetId: idCoop, value: 1000000n, refheight: H },
+  want: { assetId: idBond, value: 1999000n, scriptPubKey: spk('e1') } });
+const oY = makeOffer({ outpoint: 'issb:0', coin: { assetId: idBond, value: 2000000n, refheight: H },
+  want: { assetId: FRC, value: 29000000n, scriptPubKey: spk('dd') } });
+const oZ = makeOffer({ outpoint: 'zf:0', coin: { assetId: FRC, value: 30000000n, refheight: H },
+  want: { assetId: idCoop, value: 999000n, scriptPubKey: spk('e3') } });
+
+check('no PAIR crosses in the ring book', findCross(st, [oX, oY, oZ], H) === null);
+const ring = findRing(st, [oX, oY, oZ], H);
+check('3-way ring found', ring !== null && ring.length === 3);
+
+// mine the ring FIVE blocks after the offers were signed — same-height offers stay matchable
+const { tx: ringTx, spread: ringSpread } = matchMany(st, ring,
+  { lockHeight: H, atHeight: H + 5, txid: 'ring1', matcher: { funds: [{ outpoint: 'm2:0', coin: { assetId: FRC, value: 500000n, refheight: H } }], script: spk('c9'), fee: 10000n } });
+check('ring tx passes consensus, mined later than signing height', st.apply(ringTx, H + 5).ok !== false);
+check('ring: X got bonds', st.utxos.get('ring1:0')?.assetId === idBond && st.utxos.get('ring1:0')?.value === 1999000n);
+check('ring: Y got FRC', st.utxos.get('ring1:1')?.assetId === FRC);
+check('ring: Z got coop', st.utxos.get('ring1:2')?.assetId === idCoop);
+check('ring: matcher spread in coop + bond + FRC',
+  (ringSpread.get(idCoop) ?? 0n) === 1000n && (ringSpread.get(idBond) ?? 0n) === 1000n && (ringSpread.get(FRC) ?? 0n) > 0n);
+
+// a ring that shorts one leg must refuse
+const oZbad = makeOffer({ outpoint: 'zf:0', coin: { assetId: FRC, value: 30000000n, refheight: H },
+  want: { assetId: idCoop, value: 1000001n, scriptPubKey: spk('e3') } });   // wants more coop than X gives
+let ringThrew = false;
+try { matchMany(st, [oX, oY, oZbad], { lockHeight: H, txid: 'ring2', matcher: { funds: [], script: spk('c9'), fee: 0n } }); }
+catch { ringThrew = true; }
+check('short ring refused', ringThrew);
 
 finish();
