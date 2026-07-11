@@ -133,6 +133,11 @@ export class Nv3State {
   /** Seed a coinbase-style coin directly (for tests / genesis funding). */
   seed(txid, vout, coin) { this.utxos.set(opkey(txid, vout), { coinbase: false, ...coin }); return opkey(txid, vout); }
 
+  /** Present value of one coin at a height, under its asset's own monetary policy. */
+  presentValueOf(coin, height) {
+    return assetPresentValue(coin.value, height - coin.refheight, this.rate(coin.assetId));
+  }
+
   /** Total present value of every UTXO of one asset at a given height (for invariant checks). */
   supplyPresentValue(assetId, height) {
     let s = 0n;
