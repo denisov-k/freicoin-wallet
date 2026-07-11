@@ -489,7 +489,7 @@ const render = {
       `<div id="qrBox" class="qr skel" style="margin:0 auto;height:220px"></div>
        <div class="addr" id="addr"><div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div></div>
        <div class="row"><button id="copyAddr" class="ghost" disabled>⧉ ${tr('Copy')}</button></div>
-       <div class="row"><button id="newAddr" class="ghost">${tr('Get new address')}</button></div>`);
+       <div class="row"><button id="newAddr" class="ghost">${tr('New address')}</button></div>`);
     // derive+QR complete faster than a frame — without the floor the shimmer never paints
     // and consecutive "get new address" clicks look like nothing happened
     const t0 = performance.now();
@@ -500,23 +500,26 @@ const render = {
     box.className = 'qr'; box.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`;
     $('#addr').textContent = addr;
     const cp = $('#copyAddr'); cp.disabled = false; cp.onclick = e => copy(addr, e.target);
-    // Unbounded fresh addresses: the watch window is recvIndex+20 (watchGap). Before handing
-    // out the next index, copy each network's birth record onto the grown fingerprint (a fresh
-    // address has no history — the birth stays valid, no rescan), then restart the light
-    // client on the wider script set.
+    // Unbounded fresh addresses: bump the index and repaint (skeleton shows at once), THEN —
+    // off the click frame — grow the watch window: copy each network's birth record onto the
+    // grown fingerprint (a fresh address has no history — the birth stays valid, no rescan)
+    // and restart the light client on the wider script set. Doing the migration first froze
+    // the click for the length of a few hundred HD derivations.
     $('#newAddr').onclick = () => {
-      const seed = hexSeed(), cur = curNet();
-      try {
-        for (const netK of Object.keys(NETWORKS)) {
-          configureNetwork(netK);
-          const rec = store.get('fw_ab:' + walletFp(walletScripts(seed, watchGap())));
-          if (rec) store.set('fw_ab:' + walletFp(walletScripts(seed, watchGap() + 1)), rec);
-        }
-      } finally { configureNetwork(cur); }
       recvIndex++; store.set('fw_recv', recvIndex);
-      if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
-      cache = null; ds();
       render.receive();
+      setTimeout(() => {
+        const seed = hexSeed(), cur = curNet();
+        try {
+          for (const netK of Object.keys(NETWORKS)) {
+            configureNetwork(netK);
+            const rec = store.get('fw_ab:' + walletFp(walletScripts(seed, watchGap() - 1)));
+            if (rec) store.set('fw_ab:' + walletFp(walletScripts(seed, watchGap())), rec);
+          }
+        } finally { configureNetwork(cur); }
+        if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
+        cache = null; ds();
+      }, 60);
     };
   },
   async send() {
