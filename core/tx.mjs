@@ -70,10 +70,22 @@ export function parseTx(hex) {
     const n = r.varint();
     for (let i = 0; i < n; i++) bundles.push({ nIn: r.u32(), nOut: r.u32(), nExpireTime: r.u32() });
   }
+  // nVersion=3 DEX 2b: ranged bundles, witness-side (flag bit 8). Field order mirrors the C++
+  // CRangedBundle (primitives/transaction.h): nIn, payoutAsset(20), payoutScript, priceNum,
+  // priceDen, changeScript, minFill, maxFill, nExpireTime.
+  let ranged = [];
+  if (version === NV3_TX_VERSION && (flags & 8) !== 0) {
+    const n = r.varint();
+    for (let i = 0; i < n; i++) ranged.push({
+      nIn: r.u32(), payoutAsset: r.hex(20), payoutScript: r.varbytes(),
+      priceNum: r.u64(), priceDen: r.u64(), changeScript: r.varbytes(),
+      minFill: r.u64(), maxFill: r.u64(), nExpireTime: r.u32(),
+    });
+  }
   const nLockTime = r.u32();
   const lockHeight = r.u32();          // <-- Freicoin
   const nExpireTime = version === NV3_TX_VERSION ? r.u32() : 0;   // nVersion=3-lite
-  return { version, hasWitness, flags, vin, vout, nLockTime, lockHeight, nExpireTime, approvals, bundles, nvin, nvout };
+  return { version, hasWitness, flags, vin, vout, nLockTime, lockHeight, nExpireTime, approvals, bundles, ranged, nvin, nvout };
 }
 
 // --- serializer (for round-trip parity) ---
@@ -92,11 +104,13 @@ export function serializeTx(tx) {
   const a = [];
   const approvals = tx.approvals ?? [];
   const bundles = tx.bundles ?? [];
+  const ranged = tx.ranged ?? [];
   const withApprovals = tx.version === NV3_TX_VERSION && approvals.length > 0 && tx.hasWitness !== false;
   const withBundles = tx.version === NV3_TX_VERSION && bundles.length > 0 && tx.hasWitness !== false;
+  const withRanged = tx.version === NV3_TX_VERSION && ranged.length > 0 && tx.hasWitness !== false;
   pushU32(a, tx.version);
-  if (tx.hasWitness || withApprovals || withBundles)
-    a.push(MARKER, (tx.hasWitness ? 1 : 0) | (withApprovals ? 2 : 0) | (withBundles ? 4 : 0));
+  if (tx.hasWitness || withApprovals || withBundles || withRanged)
+    a.push(MARKER, (tx.hasWitness ? 1 : 0) | (withApprovals ? 2 : 0) | (withBundles ? 4 : 0) | (withRanged ? 8 : 0));
   pushVarint(a, tx.vin.length);
   for (const i of tx.vin) {
     a.push(...i.prevout.txid.match(/../g).map(h => parseInt(h, 16)));
@@ -126,6 +140,18 @@ export function serializeTx(tx) {
   if (withBundles) {
     pushVarint(a, bundles.length);
     for (const b of bundles) { pushU32(a, b.nIn); pushU32(a, b.nOut); pushU32(a, b.nExpireTime ?? 0); }
+  }
+  if (withRanged) {
+    pushVarint(a, ranged.length);
+    for (const rb of ranged) {
+      pushU32(a, rb.nIn);
+      a.push(...(rb.payoutAsset ?? HOST_TAG).match(/../g).map(h => parseInt(h, 16)));
+      pushVarbytes(a, rb.payoutScript);
+      pushU64(a, BigInt(rb.priceNum)); pushU64(a, BigInt(rb.priceDen));
+      pushVarbytes(a, rb.changeScript);
+      pushU64(a, BigInt(rb.minFill)); pushU64(a, BigInt(rb.maxFill));
+      pushU32(a, rb.nExpireTime ?? 0);
+    }
   }
   pushU32(a, tx.nLockTime);
   pushU32(a, tx.lockHeight);
