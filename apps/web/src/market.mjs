@@ -254,7 +254,7 @@ function render() {
       <p class="label">${tr('Your receiving address')}</p>
       <div class="addr">${myAddress}</div>
       <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th>${tr('Nominal')}</th><th>${tr('Present value')}</th></tr></thead><tbody id="balBody"><tr><td colspan="3" class="sub">${tr('first sync…')}</td></tr></tbody></table>
-      <div class="row"><button id="faucetBtn" class="ghost">${tr('Faucet (+1 FRC)')}</button><button id="refreshBtn" class="ghost">${tr('Refresh')}</button></div>
+      <div class="row"><button id="faucetBtn" class="ghost">${tr('Faucet (+1 FRC)')}</button></div>
     </section>
 
     <section id="tab-issue"${on('issue')}>
@@ -298,7 +298,6 @@ function render() {
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
   $('#statusBtn').onclick = () => { const pop = $('#statusPop'); pop.hidden = !pop.hidden; if (!pop.hidden) renderStatusPop(); };
   $('#faucetBtn').onclick = faucet;
-  $('#refreshBtn').onclick = refresh;
   $('#issueBtn').onclick = issue;
   $('#offerBtn').onclick = postOffer;
   $('#langSel').onchange = () => { setLang($('#langSel').value); render(); };
