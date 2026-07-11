@@ -15,6 +15,15 @@ import { serializeTx, NV3_TX_VERSION } from '../../../core/tx.mjs';
 import { assetPresentValue } from '../../../core/assets.mjs';
 import { decodeWitness } from '../../../core/address.mjs';
 import { Neutrino } from './net/client.mjs';
+import { tr, getLang, setLang, LANGS } from './i18n.mjs';
+
+// the wallet's ƒ coin mark (shared look for the login / loading cards)
+const COIN_SVG = `<svg width="64" height="64" viewBox="0 0 72 72" aria-hidden="true">
+  <defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#63bbff"/><stop offset="1" stop-color="#1565c0"/></linearGradient></defs>
+  <circle cx="36" cy="36" r="34" fill="url(#cg)"/><circle cx="36" cy="36" r="34" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/>
+  <circle cx="36" cy="36" r="27.5" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.5" stroke-dasharray="2.5 3.5"/>
+  <text x="35" y="49" text-anchor="middle" font-family="Georgia,serif" font-style="italic" font-size="40" fill="#fff">ƒ</text></svg>`;
+const langSelect = id => `<select id="${id}" class="wlang">${Object.entries(LANGS).map(([k, v]) => `<option value="${k}"${getLang() === k ? ' selected' : ''}>${v}</option>`).join('')}</select>`;
 
 // origin-aware endpoints: on the TLS domain (market.testtty.ru) nginx proxies /api and /ws,
 // so we stay same-origin (no mixed content); on plain http we hit the raw ports directly.
@@ -40,10 +49,11 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if
 // ---- sync indicator: a header dot pulses while a light-client sync is in flight ----
 const setSync = on => { const d = $('#syncDot'); if (d) d.classList.toggle('on', on); };
 function renderLoading() {
-  $('#app').innerHTML = `<header><h1>Freimarkets</h1></header>
-    <main><section style="align-items:center;text-align:center;padding-top:60px;gap:12px">
-      <div class="spin"></div><p class="sub">Синхронизация цепи…</p>
-      <p class="sub" style="font-size:12px">Свет-клиент проверяет заголовки и фильтры</p></section></main>`;
+  $('#app').innerHTML = `<div class="lock"><div class="lockcard">
+    <div class="lockicon">${COIN_SVG}</div><h2>Freimarkets</h2>
+    <div class="spin" style="align-self:center"></div>
+    <p class="sub">${tr('Syncing the chain…')}</p>
+    <p class="sub" style="font-size:12px">${tr('The light client verifies headers and filters')}</p></div></div>`;
 }
 
 async function api(path, body) {
@@ -102,7 +112,7 @@ async function ensureLc() {
 function refresh() {                              // serialized: one sync at a time (concurrent
   if (inflight) return inflight;                 // syncWallet calls on one client deadlock)
   setSync(true);
-  inflight = doRefresh().catch(e => toast('синхронизация: ' + e.message, 'err')).finally(() => { inflight = null; setSync(false); });
+  inflight = doRefresh().catch(e => toast(tr('sync') + ': ' + e.message, 'err')).finally(() => { inflight = null; setSync(false); });
   return inflight;
 }
 async function doRefresh() {
@@ -117,13 +127,13 @@ async function doRefresh() {
 }
 
 // ---- actions ----
-async function faucet() { try { await api('faucet', { address: myAddress }); toast('Кран: +1 FRC', 'ok'); refresh(); } catch (e) { toast(e.message, 'err'); } }
+async function faucet() { try { await api('faucet', { address: myAddress }); toast(tr('Faucet: +1 FRC'), 'ok'); refresh(); } catch (e) { toast(e.message, 'err'); } }
 
 async function issue() {
   try {
     const name = $('#iName').value.trim() || 'актив';
     await api('issue', { name, shift: $('#iShift').value, interest: $('#iKind').value === 'i', amount: $('#iAmt').value, spk: spks[0] });
-    toast(`«${name}» выпущен на ваш адрес`, 'ok'); refresh();
+    toast(`«${name}» ${tr('issued to your address')}`, 'ok'); refresh();
   } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -149,12 +159,12 @@ function findMatch() {
 async function matchNow() {
   try {
     const m = findMatch();
-    if (!m) { toast('нет пересекающихся офферов для сведения', ''); return; }
+    if (!m) { toast(tr('no crossing offers to match'), ''); return; }
     const { a, b, apv, bpv } = m;
     const L = a.lockHeight, fee = 10000n;
     // my fee coin: host currency, older than the offers' lock height (monotonic lock_height)
     const myFee = state.mine.utxos.find(u => u.assetTag === null && u.refheight <= L && assetPresentValue(BigInt(u.value), L - u.refheight, { k: 20, interest: false }) > fee + 1000n);
-    if (!myFee) throw new Error('нужна ваша FRC-монета старше высоты книги (нажмите Кран пораньше)');
+    if (!myFee) throw new Error(tr('you need an FRC coin older than the book height (tap Faucet earlier)'));
     const at = a.give.assetTag ?? null, bt = b.give.assetTag ?? null;
     const sA = apv - BigInt(b.want.value);   // surplus of asset A gives -> me
     const sB = bpv - BigInt(a.want.value);
@@ -180,7 +190,7 @@ async function matchNow() {
     };
     signInput(tx, 2, myFee.spk, myFee.value, myFee.refheight, SIGHASH_ALL);   // I sign only MY input
     await api('tx', { rawtx: serializeTx(tx), kind: 'match' });
-    toast(`Свёл офферы #${a.id}×#${b.id}, спред ваш`, 'ok'); refresh();
+    toast(`${tr('Matched')} #${a.id}×#${b.id}`, 'ok'); refresh();
   } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -188,9 +198,9 @@ async function postOffer() {
   try {
     const giveOp = $('#oGive').value;
     const u = state.mine.utxos.find(x => x.outpoint === giveOp);
-    if (!u) throw new Error('монета не найдена');
+    if (!u) throw new Error(tr('coin not found'));
     const wantTag = $('#oWant').value === 'FRC' ? null : $('#oWant').value;
-    if ((u.assetTag ?? null) === wantTag) throw new Error('оффер должен менять один актив на другой');
+    if ((u.assetTag ?? null) === wantTag) throw new Error(tr('an offer must trade one asset for another'));
     const wantValue = wantTag === null ? BigInt(Math.round(parseFloat($('#oAmt').value) * 1e8)) : BigInt($('#oAmt').value);
     const L = state.mine.height;
     const skel = {
@@ -200,7 +210,7 @@ async function postOffer() {
     };
     signInput(skel, 0, u.spk, u.value, u.refheight, SIGHASH_SINGLE | SIGHASH_ANYONECANPAY);
     await api('offer', { giveOutpoint: giveOp, makerSpk: u.spk, want: { assetTag: wantTag, value: wantValue }, lockHeight: L, sequence: 0xffffffff, witness: skel.vin[0].witness });
-    toast('Оффер подписан и выставлен', 'ok'); refresh();
+    toast(tr('Offer signed and posted'), 'ok'); refresh();
   } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -221,7 +231,7 @@ function render() {
     const melt = e.pv < e.nominal, grow = e.pv > e.nominal;
     return `<tr><td>${assetName(tag === 'FRC' ? null : tag)}</td><td>${fmt(tag, e.nominal)}</td>
       <td class="${melt ? 'melt' : grow ? 'grow' : ''}">${fmt(tag, e.pv)}</td></tr>`;
-  }).join('') || `<tr><td colspan="3" class="sub">пусто — нажмите «Кран»</td></tr>`;
+  }).join('') || `<tr><td colspan="3" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
 
   const allAssetOpts = ['FRC', ...state.info.assets.map(a => a.tag)]
     .map(t => `<option value="${t}">${t === 'FRC' ? 'FRC' : assetName(t)}</option>`).join('');
@@ -232,67 +242,68 @@ function render() {
     <tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td>
       <td>${o.give ? fmt(o.give.assetTag ?? 'FRC', BigInt(o.give.pv)) : '—'}</td>
       <td>${fmt(o.want.assetTag ?? 'FRC', BigInt(o.want.value))}</td>
-      <td>${o.makerSpk === spks[0] || spks.includes(o.makerSpk) ? 'мой' : ''} ${o.status}</td></tr>`).join('')
-    || `<tr><td colspan="4" class="sub">офферов пока нет</td></tr>`;
+      <td>${spks.includes(o.makerSpk) ? tr('mine') : ''} ${o.status}</td></tr>`).join('')
+    || `<tr><td colspan="4" class="sub">${tr('no offers yet')}</td></tr>`;
 
   const on = t => curTab === t ? '' : ' hidden';
   const act = t => curTab === t ? ' class="active"' : '';
   $('#app').innerHTML = `
   <header><h1>Freimarkets</h1>
-    <span id="syncDot" class="dot" title="синхронизация"></span></header>
+    <span id="syncDot" class="dot" title="sync"></span></header>
   <nav>
-    <button data-tab="bal"${act('bal')}>Баланс</button>
-    <button data-tab="issue"${act('issue')}>Выпуск</button>
-    <button data-tab="dex"${act('dex')}>Биржа</button>
-    <button data-tab="log"${act('log')}>Журнал</button>
+    <button data-tab="bal"${act('bal')}>${tr('Balance')}</button>
+    <button data-tab="issue"${act('issue')}>${tr('Issue')}</button>
+    <button data-tab="dex"${act('dex')}>${tr('Exchange')}</button>
+    <button data-tab="log"${act('log')}>${tr('Log')}</button>
     <button data-tab="set"${act('set')}>⚙</button>
   </nav>
   <main>
     <section id="tab-bal"${on('bal')}>
-      <p class="label">Ваш адрес для получения</p>
+      <p class="label">${tr('Your receiving address')}</p>
       <div class="addr">${myAddress}</div>
-      <table class="mkt"><thead><tr><th>Актив</th><th>Номинал</th><th>Сейчас стоит</th></tr></thead><tbody>${balRows}</tbody></table>
-      <div class="row"><button id="faucetBtn" class="ghost">Кран (+1 FRC)</button><button id="refreshBtn" class="ghost">Обновить</button></div>
+      <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th>${tr('Nominal')}</th><th>${tr('Present value')}</th></tr></thead><tbody>${balRows}</tbody></table>
+      <div class="row"><button id="faucetBtn" class="ghost">${tr('Faucet (+1 FRC)')}</button><button id="refreshBtn" class="ghost">${tr('Refresh')}</button></div>
     </section>
 
     <section id="tab-issue"${on('issue')}>
-      <p class="sub">Выпустите свой актив: он живёт в цепи со своей ставкой демерреджа (плавится) или процента (растёт).</p>
-      <label>Название<input id="iName" maxlength="24" placeholder="часы-труда"></label>
+      <p class="sub">${tr('Issue an asset that lives on the chain with its own demurrage (melts) or interest (grows) rate.')}</p>
+      <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="часы-труда"></label>
       <div class="row">
-        <label>Ставка k<input id="iShift" type="number" value="16" min="1" max="64"></label>
-        <label>Тип<select id="iKind"><option value="d">плавится</option><option value="i">растёт</option></select></label>
+        <label>${tr('Rate k')}<input id="iShift" type="number" value="16" min="1" max="64"></label>
+        <label>${tr('Type')}<select id="iKind"><option value="d">${tr('melts')}</option><option value="i">${tr('grows')}</option></select></label>
       </div>
-      <label>Количество<input id="iAmt" type="number" value="1000000"></label>
-      <div class="row"><button id="issueBtn">Выпустить</button></div>
+      <label>${tr('Quantity')}<input id="iAmt" type="number" value="1000000"></label>
+      <div class="row"><button id="issueBtn">${tr('Issue')}</button></div>
     </section>
 
     <section id="tab-dex"${on('dex')}>
-      <p class="label">Выставить оффер</p>
+      <p class="label">${tr('Post an offer')}</p>
       <div class="row">
-        <label>Отдаю монету<select id="oGive">${giveOpts}</select></label>
-        <label>Хочу<select id="oWant">${allAssetOpts}</select></label>
+        <label>${tr('I give')}<select id="oGive">${giveOpts}</select></label>
+        <label>${tr('I want')}<select id="oWant">${allAssetOpts}</select></label>
       </div>
-      <div class="row"><label>Сколько хочу<input id="oAmt" type="text" inputmode="decimal"></label><button id="offerBtn">Выставить оффер</button></div>
-      ${findMatch() ? `<div class="row"><button id="matchBtn">⚡ Свести встречные офферы и забрать спред</button></div>
-        <p class="sub">Сведение делает любой участник своей монетой на комиссию — привилегированного матчера нет.</p>` : ''}
-      <p class="label" style="margin-top:14px">Книга офферов</p>
-      <table class="mkt"><thead><tr><th>#</th><th>Отдают</th><th>Хотят</th><th></th></tr></thead><tbody>${bookRows}</tbody></table>
+      <div class="row"><label>${tr('How much I want')}<input id="oAmt" type="text" inputmode="decimal"></label><button id="offerBtn">${tr('Post offer')}</button></div>
+      ${findMatch() ? `<div class="row"><button id="matchBtn">${tr('⚡ Match crossing offers and take the spread')}</button></div>
+        <p class="sub">${tr('Matching is done by any participant with their own fee coin — there is no privileged matcher.')}</p>` : ''}
+      <p class="label" style="margin-top:14px">${tr('Order book')}</p>
+      <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody>${bookRows}</tbody></table>
     </section>
 
     <section id="tab-log"${on('log')}>
-      <div id="mlog">${state.info.events.map(e => `<div>${new Date(e.t).toLocaleTimeString('ru-RU')} — ${e.m}</div>`).join('') || '<div class="sub">пока пусто</div>'}</div>
+      <div id="mlog">${state.info.events.map(e => `<div>${new Date(e.t).toLocaleTimeString(getLang())} — ${e.m}</div>`).join('') || `<div class="sub">${tr('empty so far')}</div>`}</div>
     </section>
 
     <section id="tab-set"${on('set')}>
-      <label>Тема<select id="themeSel">
-        <option value="system"${themeMode() === 'system' ? ' selected' : ''}>Системная</option>
-        <option value="dark"${themeMode() === 'dark' ? ' selected' : ''}>Тёмная</option>
-        <option value="light"${themeMode() === 'light' ? ' selected' : ''}>Светлая</option></select></label>
-      <p class="label" style="margin-top:14px">Аккаунт</p>
-      <label>Секретная фраза<textarea id="setPhrase" rows="2" readonly style="filter:blur(4px)">${localStorage.getItem('fw_seed') || ''}</textarea></label>
-      <div class="row"><button id="setReveal" class="ghost">Показать</button><button id="setCopy" class="ghost">Копировать</button></div>
-      <p class="sub" style="font-size:12px">Хранится только в этом браузере.</p>
-      <div class="row" style="margin-top:10px"><button id="setLogout">Выйти из аккаунта</button></div>
+      <label>${tr('Language')}<select id="langSel">${Object.entries(LANGS).map(([k, v]) => `<option value="${k}"${getLang() === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+      <label>${tr('Theme')}<select id="themeSel">
+        <option value="system"${themeMode() === 'system' ? ' selected' : ''}>${tr('System')}</option>
+        <option value="dark"${themeMode() === 'dark' ? ' selected' : ''}>${tr('Dark')}</option>
+        <option value="light"${themeMode() === 'light' ? ' selected' : ''}>${tr('Light')}</option></select></label>
+      <p class="label" style="margin-top:14px">${tr('Account')}</p>
+      <label>${tr('Secret phrase')}<textarea id="setPhrase" rows="2" readonly style="filter:blur(4px)">${localStorage.getItem('fw_seed') || ''}</textarea></label>
+      <div class="row"><button id="setReveal" class="ghost">${tr('Show')}</button><button id="setCopy" class="ghost">${tr('Copy')}</button></div>
+      <p class="sub" style="font-size:12px">${tr('Stored only in this browser.')}</p>
+      <div class="row" style="margin-top:10px"><button id="setLogout">${tr('Log out of account')}</button></div>
     </section>
   </main>`;
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -301,11 +312,12 @@ function render() {
   $('#issueBtn').onclick = issue;
   $('#offerBtn').onclick = postOffer;
   if ($('#matchBtn')) $('#matchBtn').onclick = matchNow;
+  $('#langSel').onchange = () => { setLang($('#langSel').value); render(); };
   $('#themeSel').onchange = () => { const t = $('#themeSel').value; localStorage.setItem('fw_theme_mode', t); applyTheme(t); };
   $('#setReveal').onclick = () => { $('#setPhrase').style.filter = 'none'; };
-  $('#setCopy').onclick = async () => { try { await navigator.clipboard.writeText(localStorage.getItem('fw_seed') || ''); toast('Фраза скопирована', 'ok'); } catch { $('#setPhrase').style.filter = 'none'; } };
+  $('#setCopy').onclick = async () => { try { await navigator.clipboard.writeText(localStorage.getItem('fw_seed') || ''); toast(tr('Phrase copied'), 'ok'); } catch { $('#setPhrase').style.filter = 'none'; } };
   $('#setLogout').onclick = () => {
-    if (!confirm('Выйти из аккаунта? Без сохранённой фразы восстановить его будет нельзя.')) return;
+    if (!confirm(tr('Log out of account? Without the saved phrase it cannot be recovered.'))) return;
     localStorage.removeItem('fw_seed'); localStorage.removeItem('fw_vault'); location.reload();
   };
 }
@@ -326,32 +338,39 @@ function boot() {
   const plain = localStorage.getItem('fw_seed');
   if (plain) { seed = resolveSecret(plain); return start(); }
   if (vault) {
-    $('#app').innerHTML = `<header><h1>Freimarkets</h1></header><main><section>
-      <p class="sub">Введите парольную фразу кошелька этого домена.</p>
-      <label>Парольная фраза<input id="pw" type="password"></label>
-      <button id="unlockBtn">Разблокировать</button><p id="lerr" class="err"></p></section></main>`;
-    $('#unlockBtn').onclick = () => {
-      try { seed = resolveSecret(decryptSecret(JSON.parse(vault), $('#pw').value)); start(); }
-      catch { $('#lerr').textContent = 'неверная фраза'; }
-    };
+    $('#app').innerHTML = `<div class="lock"><div class="lockcard">
+      <div class="lockicon">🔒</div><h2>Freimarkets</h2>
+      <input id="pw" type="password" placeholder="${tr('Passphrase')}" autofocus>
+      <button id="unlockBtn">${tr('Unlock')}</button><p id="lerr" class="err"></p>
+      ${langSelect('lLang')}</div></div>`;
+    $('#lLang').onchange = () => { setLang($('#lLang').value); boot(); };
+    const go = () => { try { seed = resolveSecret(decryptSecret(JSON.parse(vault), $('#pw').value)); start(); } catch { $('#lerr').textContent = tr('wrong phrase'); } };
+    $('#unlockBtn').onclick = go;
+    $('#pw').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
     return;
   }
   // no key on this origin — offer "log in with wallet" (primary) or a fresh/restored key.
-  $('#app').innerHTML = `<header><h1>Freimarkets</h1></header><main><section>
-    <p class="sub">Биржа пользовательских активов с демерреджем и процентом. Ключ хранится только в этом браузере.</p>
-    <div class="row"><button id="walletBtn">Войти через кошелёк</button></div>
-    <p class="sub" style="font-size:12px">Откроется кошелёк во всплывающем окне; после разблокировки он передаст сессию сюда напрямую (минуя сервер).</p>
-    <p class="label" style="margin-top:16px">…или завести отдельный ключ здесь:</p>
-    <div class="row"><button id="genBtn" class="ghost">Создать</button></div>
-    <textarea id="restore" rows="2" placeholder="или войти 12 словами"></textarea>
-    <button id="restoreBtn" class="ghost">Восстановить</button>
-    <p id="oerr" class="err"></p></section></main>`;
+  $('#app').innerHTML = `<div class="lock"><div class="lockcard">
+    <div class="lockicon">${COIN_SVG}</div><h2>Freimarkets</h2>
+    <p class="sub">${tr('A non-custodial exchange for user-issued Freicoin assets.')}</p>
+    <button id="walletBtn">${tr('Log in with wallet')}</button>
+    <p class="sub" style="font-size:12px">${tr('The wallet opens in a popup; after you unlock it, it hands the session here directly (bypassing the server).')}</p>
+    <div id="wBody"></div>
+    <button id="altBtn" class="ghost">${tr('…or set up a separate key here:')}</button>
+    ${langSelect('wLang')}</div></div>`;
+  $('#wLang').onchange = () => { setLang($('#wLang').value); boot(); };
   $('#walletBtn').onclick = loginViaWallet;
-  $('#genBtn').onclick = () => { const m = generateMnemonic(); localStorage.setItem('fw_seed', m); seed = resolveSecret(m); start(); toast('Ключ создан — сохраните фразу в 🔑', 'ok'); };
-  $('#restoreBtn').onclick = () => {
-    const m = $('#restore').value.trim();
-    if (!isMnemonic(m)) { $('#oerr').textContent = 'неверная фраза'; return; }
-    localStorage.setItem('fw_seed', m); seed = resolveSecret(m); start();
+  $('#altBtn').onclick = () => {
+    $('#altBtn').remove();
+    $('#wBody').innerHTML = `<div class="row"><button id="genBtn" class="ghost">${tr('Create')}</button></div>
+      <textarea id="restore" rows="2" placeholder="${tr('or log in with 12 words')}"></textarea>
+      <button id="restoreBtn" class="ghost">${tr('Restore')}</button><p id="oerr" class="err"></p>`;
+    $('#genBtn').onclick = () => { const m = generateMnemonic(); localStorage.setItem('fw_seed', m); seed = resolveSecret(m); start(); toast(tr('Key created — save the phrase in Settings'), 'ok'); };
+    $('#restoreBtn').onclick = () => {
+      const m = $('#restore').value.trim();
+      if (!isMnemonic(m)) { $('#oerr').textContent = tr('invalid phrase'); return; }
+      localStorage.setItem('fw_seed', m); seed = resolveSecret(m); start();
+    };
   };
 }
 
@@ -360,7 +379,7 @@ function boot() {
 const WALLET_ORIGIN = 'https://wallet.testtty.ru';
 function loginViaWallet() {
   const w = window.open(WALLET_ORIGIN + '/#market-auth', 'fw-wallet-auth', 'width=460,height=680');
-  if (!w) { toast('Разрешите всплывающие окна', 'err'); return; }
+  if (!w) { toast(tr('Allow pop-ups'), 'err'); return; }
   const onMsg = e => {
     if (e.origin !== WALLET_ORIGIN || e.source !== w) return;
     if (e.data && e.data.type === 'fw-session' && typeof e.data.secret === 'string') {
@@ -368,7 +387,7 @@ function loginViaWallet() {
       localStorage.setItem('fw_seed', e.data.secret);
       seed = resolveSecret(e.data.secret);
       try { w.close(); } catch {}
-      toast('Вошли через кошелёк', 'ok');
+      toast(tr('Signed in via wallet'), 'ok');
       start();
     }
   };
