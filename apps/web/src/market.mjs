@@ -309,8 +309,26 @@ async function postRangedOffer() {
     const desc = { payoutAsset: wantTag, payoutScript: give.spk, priceNum, priceDen, changeScript: give.spk, minFill: 0n, maxFill: Q };
     const witness = signRangedGive(desc, give.outpoint, give, give.L);
     await api('rangedOffer', { makerSpk: give.spk, giveOutpoint: give.outpoint, desc, nExpireTime: 0, lockHeight: give.L, witness });
+    $('#modal')?.remove();                 // close the offer modal on success
     toast(tr('Offer signed and posted'), 'ok'); refresh();
   } catch (e) { toast(e.message, 'err'); }
+}
+
+// the offer form in a modal — the fields (#rAsset/#rWant) are filled by paint() once they exist
+function openOfferModal() {
+  if ($('#modal')) return;
+  const m = document.createElement('div'); m.id = 'modal';
+  m.innerHTML = `<div class="review">
+    <div class="row" style="justify-content:space-between;align-items:center;margin:0"><b>${tr('Post an offer')}</b><button id="offerClose" class="icon">✕</button></div>
+    <div class="row"><label>${tr('I sell')}<select id="rAsset"></select></label><label>${tr('Quantity')}<input id="rQty" type="text" inputmode="decimal"></label></div>
+    <div class="row"><label>${tr('I want')}<select id="rWant"></select></label><label>${tr('Price (want per unit)')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
+    <button id="rOfferBtn">${tr('Post offer')}</button>
+    <p class="sub" style="font-size:12px">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p></div>`;
+  document.body.appendChild(m);
+  m.onclick = e => { if (e.target === m) m.remove(); };   // tap outside the card = close
+  m.querySelector('#offerClose').onclick = () => m.remove();
+  m.querySelector('#rOfferBtn').onclick = postRangedOffer;
+  paint();                                 // populate #rAsset / #rWant now
 }
 
 // build + broadcast a partial fill of a ranged offer, in EITHER direction. The ranged bundle's
@@ -465,11 +483,7 @@ function render() {
     </section>
 
     <section id="tab-dex"${on('dex')}>
-      <p class="label">${tr('Post an offer')}</p>
-      <div class="row"><label>${tr('I sell')}<select id="rAsset"></select></label><label>${tr('Quantity')}<input id="rQty" type="text" inputmode="decimal"></label></div>
-      <div class="row"><label>${tr('I want')}<select id="rWant"></select></label><label>${tr('Price (want per unit)')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
-      <div class="row"><button id="rOfferBtn">${tr('Post offer')}</button></div>
-      <p class="sub" style="font-size:12px">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p>
+      <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>
 
       <p class="label" style="margin-top:14px">${tr('Order book')}</p>
       <div class="row">
@@ -498,7 +512,7 @@ function render() {
   $('#statusBtn').onclick = () => { const pop = $('#statusPop'); pop.hidden = !pop.hidden; if (!pop.hidden) renderStatusPop(); };
   $('#faucetBtn').onclick = faucet;
   $('#issueBtn').onclick = issue;
-  $('#rOfferBtn').onclick = postRangedOffer;
+  $('#openOffer').onclick = openOfferModal;
   ['#fGive', '#fWant', '#fOpen'].forEach(s => { const el = $(s); if (el) el.onchange = paint; });
   $('#langSel').onchange = () => { setLang($('#langSel').value); render(); };
   $('#themeSel').onchange = () => { const t = $('#themeSel').value; localStorage.setItem('fw_theme_mode', t); applyTheme(t); };
