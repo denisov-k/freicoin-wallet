@@ -380,20 +380,17 @@ function keyPanel() {
     <p class="sub" style="margin:0 0 10px">Хранится только в этом браузере. Цепь экспериментальная — монеты без ценности.</p>
     <label>Ваша фраза<textarea id="kpPhrase" rows="2" readonly style="filter:blur(4px)">${cur}</textarea></label>
     <div class="row"><button id="kpReveal" class="ghost">Показать</button><button id="kpCopy" class="ghost">Копировать</button></div>
-    <p class="label" style="margin-top:12px">Войти другой фразой:</p>
-    <textarea id="kpRestore" rows="2" placeholder="12 слов"></textarea>
-    <div class="row"><button id="kpSwitch">Сменить ключ</button><button id="kpClose" class="ghost">Закрыть</button></div>
-    <p id="kpErr" class="err"></p></div>`;
+    <div class="row" style="margin-top:12px"><button id="kpLogout">Выйти из аккаунта</button><button id="kpClose" class="ghost">Закрыть</button></div></div>`;
   document.body.appendChild(box);
   const close = () => box.remove();
   box.onclick = e => { if (e.target === box) close(); };
   $('#kpClose').onclick = close;
   $('#kpReveal').onclick = () => { $('#kpPhrase').style.filter = 'none'; };
   $('#kpCopy').onclick = async () => { try { await navigator.clipboard.writeText(cur); toast('Фраза скопирована', 'ok'); } catch { $('#kpPhrase').style.filter = 'none'; } };
-  $('#kpSwitch').onclick = () => {
-    const nm = $('#kpRestore').value.trim();
-    if (!isMnemonic(nm)) { $('#kpErr').textContent = 'неверная фраза'; return; }
-    localStorage.setItem('fw_seed', nm); location.reload();
+  $('#kpLogout').onclick = () => {
+    if (!confirm('Выйти из аккаунта? Без сохранённой фразы восстановить его будет нельзя.')) return;
+    localStorage.removeItem('fw_seed'); localStorage.removeItem('fw_vault');
+    location.reload();
   };
 }
 
