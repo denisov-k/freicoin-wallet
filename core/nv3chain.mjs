@@ -78,6 +78,15 @@ export class Nv3State {
       if (!fromInput && o.assetId !== mintedId) return { ok: false, err: `token ${t} of ${o.assetId} created from nothing` };
     }
 
+    // Authorizers (KYC / whitelisting / restricted stock): if an asset's definition names an
+    // authorizer, every transfer of it needs that authorizer's approval. (In the model an
+    // "approval" is just the authorizer id in tx.approvals; the node verifies a real signature.)
+    for (const id of new Set([...ins.map(c => c.assetId), ...tx.outputs.map(o => o.assetId)])) {
+      if (id === FRC || id === mintedId) continue;
+      const auth = this.assets.get(id)?.authorizer;
+      if (auth && !(tx.approvals || []).includes(auth)) return { ok: false, err: `asset ${id} requires authorizer approval` };
+    }
+
     return { ok: true, fee };
   }
 
@@ -85,7 +94,7 @@ export class Nv3State {
   apply(tx, atHeight = tx.lockHeight) {
     const v = this.check(tx, atHeight);
     if (!v.ok) return v;
-    if (tx.def) this.assets.set(assetIdOf(tx.def), { k: tx.def.k, interest: tx.def.interest, granularity: tx.def.granularity });
+    if (tx.def) this.assets.set(assetIdOf(tx.def), { k: tx.def.k, interest: tx.def.interest, granularity: tx.def.granularity, authorizer: tx.def.authorizer });
     for (const op of tx.inputs) this.utxos.delete(op);
     tx.outputs.forEach((o, i) => this.utxos.set(opkey(tx.txid, i), {
       assetId: o.assetId, value: o.value, refheight: tx.lockHeight, scriptPubKey: o.scriptPubKey, coinbase: false,

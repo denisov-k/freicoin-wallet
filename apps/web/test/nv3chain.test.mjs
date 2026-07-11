@@ -106,4 +106,20 @@ const badExp = st5.check({ txid: 'e2', lockHeight: 1000, nExpireTime: 1005, inpu
 check('nExpireTime: valid before expiry', okExp.ok);
 check('nExpireTime: rejected after expiry', !badExp.ok);
 
+// 11. authorizers: a transfer of an authorized asset needs the authorizer's approval
+const st6 = new Nv3State();
+const fA = st6.seed('cbA', 0, { assetId: FRC, value: 10000000n, refheight: 1000, scriptPubKey: spk('11') });
+const AUTH = '02' + 'ab'.repeat(32);   // an authorizer pubkey
+const stock = { k: 20, interest: false, granularity: 1, authorizer: AUTH };
+const idS = assetIdOf(stock);
+st6.apply({ txid: 'defstock', lockHeight: 1000, def: stock, inputs: [fA],
+  outputs: [{ assetId: idS, value: 1000n, scriptPubKey: spk('c1') }, { assetId: FRC, value: 9998000n, scriptPubKey: spk('11') }] });
+const noApproval = st6.check({ txid: 's1', lockHeight: 1000, inputs: ['defstock:0'],
+  outputs: [{ assetId: idS, value: 1000n, scriptPubKey: spk('c2') }] });
+const withApproval = st6.check({ txid: 's2', lockHeight: 1000, approvals: [AUTH], inputs: ['defstock:0'],
+  outputs: [{ assetId: idS, value: 1000n, scriptPubKey: spk('c2') }] });
+check('authorizer: transfer rejected without approval', !noApproval.ok);
+check('authorizer: transfer accepted with approval', withApproval.ok);
+check('authorizer is committed in the asset id', idS !== assetIdOf({ k: 20, interest: false, granularity: 1 }));
+
 finish();

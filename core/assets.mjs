@@ -65,9 +65,11 @@ export const _demurragePV = demurragePV;
 export const FRC = 'frc';   // sentinel tag for the host currency in this model
 export function serializeAssetDef(def) {
   // fields fixed & ordered so the id is canonical: shift(1) | flags(1) | granularity(8) | contractHash(32)
-  const flags = (def.interest ? 1 : 0);
+  // | optional authorizer pubkey (appended only when present, so authorizer-less defs are unchanged).
+  const flags = (def.interest ? 1 : 0) | (def.authorizer ? 2 : 0);
   const gran = []; let g = BigInt(def.granularity ?? 1); for (let i = 0; i < 8; i++) { gran.push(Number(g & 0xffn)); g >>= 8n; }
-  return bytesToHex(Uint8Array.from([def.k & 0xff, flags, ...gran, ...hexToBytes((def.contractHash ?? '').padEnd(64, '0'))]));
+  const base = [def.k & 0xff, flags, ...gran, ...hexToBytes((def.contractHash ?? '').padEnd(64, '0'))];
+  return bytesToHex(Uint8Array.from(def.authorizer ? [...base, ...hexToBytes(def.authorizer)] : base));
 }
 export function assetIdOf(def) {
   return bytesToHex(ripemd160(sha256(hexToBytes(serializeAssetDef(def)))));
