@@ -33,7 +33,14 @@ function compactSize(n) {
 }
 const serString = hex => { const b = hexToBytes(hex); return [...compactSize(b.length), ...b]; };
 const serPrevout = i => [...hexToBytes(i.prevout.txid), ...u32le(i.prevout.vout)];
-const serOutput = o => [...i64le(o.value), ...serString(o.scriptPubKey)];
+// nVersion=3-lite: a v3 signature commits each output's 20-byte asset tag (zeros = the host
+// currency) and its token set right after the classic (value, spk) — mirrors the node's
+// GetOutputsSHA256, closing tag-swap malleability. Non-v3 outputs serialize as before.
+const HOST_TAG_HEX = '00'.repeat(20);
+const serTokens = toks => [...compactSize(toks.length), ...toks.flatMap(t => serString(t))];
+const serOutput = (o, version) => version === 3
+  ? [...i64le(o.value), ...serString(o.scriptPubKey), ...hexToBytes(o.assetTag ?? HOST_TAG_HEX), ...serTokens(o.tokens ?? [])]
+  : [...i64le(o.value), ...serString(o.scriptPubKey)];
 
 /**
  * Build the Freicoin SegwitV0 signature-hash preimage (returns hex).
@@ -57,9 +64,9 @@ export function segwitV0SighashPreimage(tx, inIdx, scriptCodeHex, amount, refhei
     hashSequence = [...hash256(tx.vin.flatMap(i => u32le(i.sequence)))];
   }
   if (base !== SIGHASH_SINGLE && base !== SIGHASH_NONE) {
-    hashOutputs = [...hash256(tx.vout.flatMap(serOutput))];
+    hashOutputs = [...hash256(tx.vout.flatMap(o => serOutput(o, tx.version)))];
   } else if (base === SIGHASH_SINGLE && inIdx < tx.vout.length) {
-    hashOutputs = [...hash256(serOutput(tx.vout[inIdx]))];
+    hashOutputs = [...hash256(serOutput(tx.vout[inIdx], tx.version))];
   }
 
   const ss = [
