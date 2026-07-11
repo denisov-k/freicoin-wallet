@@ -33,8 +33,8 @@ const RU = {
   'wallet secured 🔒': 'кошелёк защищён 🔒', 'saved': 'сохранено',
   'Unlock wallet': 'Разблокировать кошелёк', 'Unlock': 'Разблокировать',
   'unlocking…': 'разблокировка…', 'wrong passphrase': 'неверный пароль',
-  'Money, like a river, lives while it flows. Only you hold the keys.': 'Деньги — как река: живут, пока текут. И ключи от них — только у вас.',
-  'Sign up': 'Зарегистрироваться', 'Log in': 'Войти',
+  'Only money that goes out of date like a newspaper, rots like potatoes, rusts like iron, is fit to be a medium of exchange.': 'Лишь деньги, что устаревают, как газета, гниют, как картофель, ржавеют, как железо, — годятся быть средством обмена.',
+  'Silvio Gesell': 'Сильвио Гезелль', 'Sign up': 'Зарегистрироваться', 'Log in': 'Войти',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Запишите эти 12 слов. Это ЕДИНСТВЕННЫЙ ключ к вашим деньгам — восстановить его за вас не сможет никто.',
   'I wrote them down': 'Я записал(а) слова', 'Recovery phrase or hex seed': 'Фраза восстановления или hex-сид',
@@ -152,7 +152,7 @@ const ES = {
   'wallet secured 🔒': 'monedero protegido 🔒', 'saved': 'guardado',
   'Unlock wallet': 'Desbloquear monedero', 'Unlock': 'Desbloquear',
   'unlocking…': 'desbloqueando…', 'wrong passphrase': 'contraseña incorrecta',
-  'Money, like a river, lives while it flows. Only you hold the keys.': 'El dinero, como un río, vive mientras fluye. Solo usted tiene las llaves.',
+  'Only money that goes out of date like a newspaper, rots like potatoes, rusts like iron, is fit to be a medium of exchange.': 'Solo el dinero que envejece como un periódico, se pudre como las patatas y se oxida como el hierro sirve como medio de cambio.',
   'Sign up': 'Registrarse', 'Log in': 'Iniciar sesión',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Anote estas 12 palabras. Son la ÚNICA llave de su dinero — nadie puede recuperarlas por usted.',
@@ -210,7 +210,7 @@ const DE = {
   'wallet secured 🔒': 'Wallet geschützt 🔒', 'saved': 'gespeichert',
   'Unlock wallet': 'Wallet entsperren', 'Unlock': 'Entsperren',
   'unlocking…': 'entsperre…', 'wrong passphrase': 'falsches Passwort',
-  'Money, like a river, lives while it flows. Only you hold the keys.': 'Geld lebt wie ein Fluss, solange es fließt. Die Schlüssel haben nur Sie.',
+  'Only money that goes out of date like a newspaper, rots like potatoes, rusts like iron, is fit to be a medium of exchange.': 'Nur Geld, das veraltet wie eine Zeitung, verfault wie Kartoffeln, verrostet wie Eisen, taugt als Tauschmittel.',
   'Sign up': 'Registrieren', 'Log in': 'Anmelden',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Schreiben Sie diese 12 Wörter auf. Sie sind der EINZIGE Schlüssel zu Ihrem Geld — niemand kann sie für Sie wiederherstellen.',
@@ -268,7 +268,7 @@ const FR = {
   'wallet secured 🔒': 'portefeuille protégé 🔒', 'saved': 'enregistré',
   'Unlock wallet': 'Déverrouiller le portefeuille', 'Unlock': 'Déverrouiller',
   'unlocking…': 'déverrouillage…', 'wrong passphrase': 'mot de passe incorrect',
-  'Money, like a river, lives while it flows. Only you hold the keys.': "L'argent, comme une rivière, vit tant qu'il coule. Vous seul en détenez les clés.",
+  'Only money that goes out of date like a newspaper, rots like potatoes, rusts like iron, is fit to be a medium of exchange.': "Seul l'argent qui vieillit comme un journal, pourrit comme les pommes de terre, rouille comme le fer, peut servir de moyen d'échange.",
   'Sign up': "S'inscrire", 'Log in': 'Se connecter',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Notez ces 12 mots. Ils sont la SEULE clé de votre argent — personne ne peut les récupérer à votre place.',
@@ -326,7 +326,7 @@ const PT = {
   'wallet secured 🔒': 'carteira protegida 🔒', 'saved': 'salvo',
   'Unlock wallet': 'Desbloquear carteira', 'Unlock': 'Desbloquear',
   'unlocking…': 'desbloqueando…', 'wrong passphrase': 'senha incorreta',
-  'Money, like a river, lives while it flows. Only you hold the keys.': 'O dinheiro, como um rio, vive enquanto flui. Só você tem as chaves.',
+  'Only money that goes out of date like a newspaper, rots like potatoes, rusts like iron, is fit to be a medium of exchange.': 'Só o dinheiro que envelhece como um jornal, apodrece como as batatas e enferruja como o ferro serve como meio de troca.',
   'Sign up': 'Cadastrar-se', 'Log in': 'Entrar',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Anote estas 12 palavras. Elas são a ÚNICA chave do seu dinheiro — ninguém pode recuperá-las por você.',
@@ -384,8 +384,8 @@ const ZH = {
   'wallet secured 🔒': '钱包已加密 🔒', 'saved': '已保存',
   'Unlock wallet': '解锁钱包', 'Unlock': '解锁',
   'unlocking…': '解锁中…', 'wrong passphrase': '密码错误',
-  'Money, like a river, lives while it flows. Only you hold the keys.': '钱如流水，流动方有生命。钥匙只在您手中。',
-  'Sign up': '注册', 'Log in': '登录',
+  'Only money that goes out of date like a newspaper, rots like potatoes, rusts like iron, is fit to be a medium of exchange.': '唯有像报纸一样过时、像土豆一样腐烂、像铁一样生锈的钱，才配作交换的媒介。',
+  'Silvio Gesell': '西尔维奥·格塞尔', 'Sign up': '注册', 'Log in': '登录',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ 请抄写这 12 个单词。它们是您资金的唯一钥匙 — 没有任何人能替您找回。',
   'I wrote them down': '我已抄写', 'Recovery phrase or hex seed': '助记词或十六进制种子',

@@ -217,7 +217,7 @@ function welcomePassStep(sec, doneToast) {
 function renderWelcome() {
   $('#app').innerHTML = `<div class="lock"><div class="lockcard">
     <div class="lockicon fmark" aria-hidden="true">ƒ</div><h2>Freicoin</h2>
-    <p class="sub">${tr('Money, like a river, lives while it flows. Only you hold the keys.')}</p>
+    <p class="sub">${tr('Only money that goes out of date like a newspaper, rots like potatoes, rusts like iron, is fit to be a medium of exchange.')}<br><span class="cite">— ${tr('Silvio Gesell')}</span></p>
     <button id="wCreate">${tr('Sign up')}</button>
     <button id="wRestore" class="ghost">${tr('Log in')}</button>
     <div id="wBody"></div>
