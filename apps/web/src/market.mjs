@@ -221,7 +221,7 @@ function render() {
   <header><h1>Freimarkets</h1>
     <button id="keyBtn" class="ghost" style="padding:4px 10px">🔑</button></header>
   <main><section>
-    <p class="sub">Экспериментальная цепь: активы с демерреджем/процентом и p2p-биржа. Ключи — только в этом браузере
+    <p class="sub">Активы с демерреджем/процентом и p2p-биржа. Ключи — только в этом браузере
       (та же фраза, что в кошельке). Монеты цепи ценности не имеют. <a href="/">← кошелёк</a></p>
 
     <h2 style="font-size:15px;margin:8px 0 0">Балансы</h2>
@@ -283,8 +283,7 @@ function boot() {
   }
   // no key on this origin — offer "log in with wallet" (primary) or a fresh/restored key.
   $('#app').innerHTML = `<header><h1>Freimarkets</h1></header><main><section>
-    <p class="sub">Экспериментальная биржа с пользовательскими активами. Ключ хранится только в этом браузере;
-      монеты цепи ценности не имеют.</p>
+    <p class="sub">Биржа пользовательских активов с демерреджем и процентом. Ключ хранится только в этом браузере.</p>
     <div class="row"><button id="walletBtn">Войти через кошелёк</button></div>
     <p class="sub" style="font-size:12px">Откроется кошелёк во всплывающем окне; после разблокировки он передаст сессию сюда напрямую (минуя сервер).</p>
     <p class="label" style="margin-top:16px">…или завести отдельный ключ здесь:</p>
@@ -329,7 +328,7 @@ function keyPanel() {
   box.id = 'keyModal';
   box.innerHTML = `<div class="kp">
     <h3 style="margin:0 0 4px">Ключ маркета</h3>
-    <p class="sub" style="margin:0 0 10px">Хранится только в этом браузере. Цепь экспериментальная — монеты без ценности.</p>
+    <p class="sub" style="margin:0 0 10px">Хранится только в этом браузере.</p>
     <label>Ваша фраза<textarea id="kpPhrase" rows="2" readonly style="filter:blur(4px)">${cur}</textarea></label>
     <div class="row"><button id="kpReveal" class="ghost">Показать</button><button id="kpCopy" class="ghost">Копировать</button></div>
     <div class="row" style="margin-top:12px"><button id="kpLogout">Выйти из аккаунта</button><button id="kpClose" class="ghost">Закрыть</button></div></div>`;
