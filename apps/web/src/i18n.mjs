@@ -68,6 +68,9 @@ const RU = {
   'Order book': 'Книга офферов', 'Give': 'Отдают', 'Want': 'Хотят', 'mine': 'мой', 'no offers yet': 'офферов пока нет', 'empty so far': 'пока пусто',
   'Ranged offer (sell part, buyers fill any amount)': 'Диапазонный оффер (продать часть, берут любой объём)',
   'I give (coin)': 'Отдаю (монету)', 'Price (want per unit)': 'Цена (хочу за единицу)', 'no coins yet': 'монет пока нет',
+  'enter a price': 'укажите цену',
+  'Buyers fill any amount; the remainder keeps trading while you are online.':
+    'Покупатели берут любой объём; остаток продолжает торговаться, пока вы онлайн.',
   'give and want must be different assets': 'отдаю и хочу должны быть разными активами',
   'you need enough of the requested asset to pay for this fill': 'нужно достаточно запрошенного актива для оплаты',
   'you need an FRC coin (tap Faucet) for the network fee': 'нужна монета FRC (нажмите Кран) на комиссию сети',

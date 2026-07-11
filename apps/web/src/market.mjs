@@ -259,11 +259,12 @@ async function postRangedOffer() {
     const giveTag = u.assetTag ?? HOST_TAG;
     const wantTag = $('#rWant').value === 'FRC' ? HOST_TAG : $('#rWant').value;
     if (giveTag === wantTag) throw new Error(tr('give and want must be different assets'));
-    const P = parseFloat($('#rPrice').value), minU = parseFloat($('#rMin').value), maxU = parseFloat($('#rMax').value);
-    if (!(P > 0) || !(minU >= 0) || !(maxU >= minU)) throw new Error(tr('bad price or amount range'));
+    const P = parseFloat($('#rPrice').value);
+    if (!(P > 0)) throw new Error(tr('enter a price'));
     const priceNum = BigInt(Math.round(P * 1e8)), priceDen = UNIT;   // payout-kria = fill-kria * P (want per give)
-    const minFill = BigInt(Math.round(minU * 1e8)), maxFill = BigInt(Math.round(maxU * 1e8));
     const L = state.mine.height;
+    // no range: buyers may fill any amount, up to the whole coin's present value at L
+    const minFill = 0n, maxFill = assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(u.assetTag));
     const desc = { payoutAsset: wantTag, payoutScript: u.spk, priceNum, priceDen, changeScript: u.spk, minFill, maxFill };
     const witness = signRangedGive(desc, giveOp, u, L);
     await api('rangedOffer', { makerSpk: u.spk, giveOutpoint: giveOp, desc, nExpireTime: 0, lockHeight: L, witness });
@@ -387,18 +388,9 @@ function render() {
 
     <section id="tab-dex"${on('dex')}>
       <p class="label">${tr('Post an offer')}</p>
-      <div class="row">
-        <label>${tr('I give')}<select id="oGive"></select></label>
-        <label>${tr('I want')}<select id="oWant"></select></label>
-      </div>
-      <div class="row"><label>${tr('How much I want')}<input id="oAmt" type="text" inputmode="decimal"></label><button id="offerBtn">${tr('Post offer')}</button></div>
-      <div id="matchRow"></div>
-
-      <p class="label" style="margin-top:14px">${tr('Ranged offer (sell part, buyers fill any amount)')}</p>
       <div class="row"><label>${tr('I give (coin)')}<select id="rGive"></select></label><label>${tr('I want')}<select id="rWant"></select></label></div>
-      <div class="row"><label>${tr('Price (want per unit)')}<input id="rPrice" type="text" inputmode="decimal"></label><label>${tr('Min units')}<input id="rMin" type="text" inputmode="decimal"></label><label>${tr('Max units')}<input id="rMax" type="text" inputmode="decimal"></label></div>
-      <div class="row"><button id="rOfferBtn">${tr('Post ranged offer')}</button></div>
-      <p class="sub" style="font-size:12px">${tr('Buyers fill any amount in range; the remainder keeps trading while you are online.')}</p>
+      <div class="row"><label>${tr('Price (want per unit)')}<input id="rPrice" type="text" inputmode="decimal"></label><button id="rOfferBtn">${tr('Post offer')}</button></div>
+      <p class="sub" style="font-size:12px">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p>
 
       <p class="label" style="margin-top:14px">${tr('Order book')}</p>
       <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>
@@ -423,7 +415,6 @@ function render() {
   $('#statusBtn').onclick = () => { const pop = $('#statusPop'); pop.hidden = !pop.hidden; if (!pop.hidden) renderStatusPop(); };
   $('#faucetBtn').onclick = faucet;
   $('#issueBtn').onclick = issue;
-  $('#offerBtn').onclick = postOffer;
   $('#rOfferBtn').onclick = postRangedOffer;
   $('#langSel').onchange = () => { setLang($('#langSel').value); render(); };
   $('#themeSel').onchange = () => { const t = $('#themeSel').value; localStorage.setItem('fw_theme_mode', t); applyTheme(t); };
@@ -459,10 +450,6 @@ function paint() {
       <td class="${melt ? 'melt' : grow ? 'grow' : ''}">${fmtA(tag, e.pv)}</td></tr>`;
   }).join('') || `<tr><td colspan="3" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
 
-  setOptions('#oGive', state.mine.utxos.map(u =>
-    `<option value="${u.outpoint}">${fmtA(u.assetTag ?? 'FRC', pvU(u))} (${u.outpoint.slice(0, 8)}…)</option>`).join(''));
-  setOptions('#oWant', ['FRC', ...state.info.assets.map(a => a.tag)]
-    .map(t => `<option value="${t}">${t === 'FRC' ? 'FRC' : assetName(t)}</option>`).join(''));
   setOptions('#rGive', state.mine.utxos.map(u =>
     `<option value="${u.outpoint}">${fmtA(u.assetTag ?? 'FRC', pvU(u))} (${u.outpoint.slice(0, 8)}…)</option>`).join('')
     || `<option value="">${tr('no coins yet')}</option>`);
@@ -499,13 +486,6 @@ function paint() {
   }
 
   $('#mlog').innerHTML = state.info.events.map(e => `<div>${new Date(e.t).toLocaleTimeString(getLang())} — ${e.m}</div>`).join('') || `<div class="sub">${tr('empty so far')}</div>`;
-
-  const mr = $('#matchRow');
-  if (findMatch()) {
-    mr.innerHTML = `<div class="row"><button id="matchBtn">${tr('⚡ Match crossing offers and take the spread')}</button></div>
-      <p class="sub">${tr('Matching is done by any participant with their own fee coin — there is no privileged matcher.')}</p>`;
-    $('#matchBtn').onclick = matchNow;
-  } else mr.innerHTML = '';
 }
 function showTab(t) {
   curTab = t;
