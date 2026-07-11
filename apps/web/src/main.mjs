@@ -281,14 +281,9 @@ function renderLock() {
 // On the Freimarkets (nv3) network the wallet grows two extra tabs (Issue + Exchange); on every
 // other network it stays a plain wallet. The title reads "Freimarkets" (the unified product).
 const MKT = () => curNet() === 'nv3';
-// the ƒ coin mark (matches the favicon) — a small brand glyph before the wordmark
-const COIN_MARK = `<svg width="24" height="24" viewBox="0 0 72 72" aria-hidden="true" style="flex:none">
-  <defs><linearGradient id="fcg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#63bbff"/><stop offset="1" stop-color="#1565c0"/></linearGradient></defs>
-  <circle cx="36" cy="36" r="34" fill="url(#fcg)"/>
-  <text x="35" y="50" text-anchor="middle" font-family="Georgia,serif" font-style="italic" font-size="44" fill="#fff">ƒ</text></svg>`;
 function renderApp() {
   $('#app').innerHTML = `
-    <header><h1 style="display:flex;align-items:center;gap:9px">${COIN_MARK}Freimarkets</h1>
+    <header><h1>Freimarkets</h1>
       <div class="hbtns"><button id="statusBtn" class="icon statusbtn st-sync" title="sync status">●</button></div></header>
     <div id="statusPop" hidden></div>
     <nav>
