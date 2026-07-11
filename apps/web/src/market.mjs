@@ -542,9 +542,12 @@ function paint() {
   setOptions('#rWant', ['FRC', ...state.info.assets.map(a => a.tag)]
     .map(t => `<option value="${t}">${t === 'FRC' ? 'FRC' : assetName(t)}</option>`).join(''));
 
-  // order-book filters: by give asset, by want asset, and open-only (selection preserved)
-  const fopt = `<option value="">${tr('all')}</option>` + ['FRC', ...state.info.assets.map(a => a.tag)]
-    .map(t => `<option value="${t}">${t === 'FRC' ? 'FRC' : assetName(t)}</option>`).join('');
+  // order-book filters: by give asset, by want asset, and open-only (selection preserved). The
+  // asset options are grouped — the host currency apart from user-issued assets.
+  const assetOpts = state.info.assets.map(a => `<option value="${a.tag}">${assetName(a.tag)}</option>`).join('');
+  const fopt = `<option value="">${tr('all')}</option>`
+    + `<optgroup label="${tr('Currency')}"><option value="FRC">FRC</option></optgroup>`
+    + (assetOpts ? `<optgroup label="${tr('Assets')}">${assetOpts}</optgroup>` : '');
   setOptions('#fGive', fopt); setOptions('#fWant', fopt);
 
   // skip repainting the book while a fill amount is being typed into it (else the 15s refresh
