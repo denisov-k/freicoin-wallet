@@ -64,7 +64,10 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     return {
       stale, tipHeight: tip,
       balance: kriaToFrc(r.balance),
-      utxos: r.utxos.map(u => ({
+      // FRC-money view: the plain wallet only counts/spends host-currency coins. On mainnet
+      // every coin is host (no assetTag); on the nV3 chain this hides user-issued asset coins
+      // (those live in the market UI). The market reads utxos via Neutrino directly, unaffected.
+      utxos: r.utxos.filter(u => !u.assetTag || u.assetTag === '0'.repeat(40)).map(u => ({
         txid: u.txid, vout: u.vout, refheight: u.refheight,
         nominal: kriaToFrc(u.value),
         amount: kriaToFrc(timeAdjustValue(u.value, tip + 1 - u.refheight)),

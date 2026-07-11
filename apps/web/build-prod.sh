@@ -23,6 +23,7 @@ else
 fi
 
 VITE_BRIDGE=wss://wallet.testtty.ru/ws/regtest \
+VITE_BRIDGE_NV3=wss://wallet.testtty.ru/ws/nv3 \
 VITE_BRIDGE_MAIN=wss://wallet.testtty.ru/ws/main \
 VITE_SNAP_MAIN=https://wallet.testtty.ru/snap/main-headers.bin \
 VITE_SNAP_MAIN_FILTERS=https://wallet.testtty.ru/snap/main-filters.bin \

@@ -14,6 +14,8 @@ import { parseTx, txid as txidOf } from '../../../../core/tx.mjs';
 import { timeAdjustValue } from '../../../../core/demurrage.mjs';
 import { sha256d } from '../../../../core/crypto.mjs';
 
+const HOST20 = '0'.repeat(40);
+const isHostCoin = u => !u.assetTag || u.assetTag === HOST20;
 const PROTO = 70016;
 const CFILTERS_BATCH = 1000;    // node's MAX_GETCFILTERS_SIZE — larger requests are ignored
 const CFHEADERS_BATCH = 2000;   // node's MAX_GETCFHEADERS_SIZE
@@ -450,7 +452,7 @@ export class Neutrino {
    */
   /** Result shape at height `at` (present values evaluated at at+1). */
   _result(at = this.chain.length - 1) {
-    let balance = 0n; for (const u of this.utxos.values()) balance += timeAdjustValue(u.value, at + 1 - u.refheight);
+    let balance = 0n; for (const u of this.utxos.values()) if (isHostCoin(u)) balance += timeAdjustValue(u.value, at + 1 - u.refheight);
     return { tipHeight: at, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()], assetDefs: Object.fromEntries(this.assetDefs) };
   }
 
@@ -559,7 +561,7 @@ export class Neutrino {
    *  IndexedDB) while the real sync catches up. */
   snapshot() {
     const tip = this.chain.length - 1;
-    let balance = 0n; for (const u of this.utxos.values()) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
+    let balance = 0n; for (const u of this.utxos.values()) if (isHostCoin(u)) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
     return { tipHeight: tip, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()], assetDefs: Object.fromEntries(this.assetDefs) };
   }
 
@@ -688,7 +690,7 @@ export class NeutrinoPool {
       if (primary.history.some(h => h.txid === id)) p.mempool.delete(id);
       else pending.set(id, e);
     }
-    let balance = 0n; for (const u of primary.utxos.values()) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
+    let balance = 0n; for (const u of primary.utxos.values()) if (isHostCoin(u)) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
     return { tipHeight: tip, balance, utxos: [...primary.utxos.values()], history: [...primary.history].reverse(), pending: [...pending.values()], agreement: this.lastAgreement, assetDefs: Object.fromEntries(primary.assetDefs) };
   }
 

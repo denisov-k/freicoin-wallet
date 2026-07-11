@@ -6,6 +6,10 @@ export const NETWORKS = {
   main:    { label: 'Mainnet', hrp: 'fc',   coinType: 0, genesis: '000000005b1e3d23ecfd2dd4a6e1a35238aa0392c0a8528c40df52376d7efe2c' },
   test:    { label: 'Testnet', hrp: 'tf',   coinType: 1, genesis: '000000003b5183593282fd30d3d7e79243eb883d6c2d8670f69811c6b9a76585' },
   regtest: { label: 'Regtest', hrp: 'fcrt', coinType: 1, genesis: '67756db06265141574ff8e7c3f97ebd57c443791e0ca27ee8b03758d6056edb8' },
+  // Freimarkets: the experimental nVersion=3 chain that backs market.testtty.ru. Regtest
+  // genesis + fcrt addresses, so the same key resolves to the same coins the market shows;
+  // a distinct net key keeps its light-client state separate from the plain regtest demo.
+  nv3:     { label: 'Freimarkets', hrp: 'fcrt', coinType: 1, genesis: '67756db06265141574ff8e7c3f97ebd57c443791e0ca27ee8b03758d6056edb8' },
 };
 
 export const DEFAULT_NET = 'main';
@@ -37,4 +41,5 @@ export const DEFAULT_BRIDGE = {
   main:    import.meta.env?.VITE_BRIDGE_MAIN || 'ws://127.0.0.1:3041',
   test:    import.meta.env?.VITE_BRIDGE_TEST || 'ws://127.0.0.1:3042',
   regtest: import.meta.env?.VITE_BRIDGE || 'ws://127.0.0.1:3040',
+  nv3:     import.meta.env?.VITE_BRIDGE_NV3 || 'ws://127.0.0.1:3055',
 };
