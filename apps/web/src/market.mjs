@@ -251,10 +251,16 @@ function signRangedGive(desc, giveOp, coin, L) {
   return [signEcdsa(sec, dg) + HT.toString(16).padStart(2, '0'), '00' + code, ''];
 }
 
-// my spendable coins of one asset (null tag = FRC), present-valued at height L
-function myCoinsOf(tag, L) {
+// outpoints that back my own OPEN ranged offers — reserved, so coin selection (new offers, fills,
+// fees, cancels) never spends a coin out from under a live offer and orphans it.
+const committedOutpoints = () => new Set((state?.info?.book || [])
+  .filter(o => o.ranged && o.status === 'open' && spks.includes(o.makerSpk) && o.giveOutpoint)
+  .map(o => o.giveOutpoint));
+
+// my spendable coins of one asset (null tag = FRC), present-valued at height L, minus reserved ones
+function myCoinsOf(tag, L, reserved = committedOutpoints()) {
   const norm = tag === HOST_TAG ? null : tag;
-  return state.mine.utxos.filter(u => (u.assetTag ?? null) === norm && u.refheight <= L)
+  return state.mine.utxos.filter(u => (u.assetTag ?? null) === norm && u.refheight <= L && !reserved.has(u.outpoint))
     .map(u => ({ outpoint: u.outpoint, spk: u.spk, value: BigInt(u.value), refheight: u.refheight,
                  pv: assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(norm)) }));
 }
@@ -277,7 +283,8 @@ async function prepareGiveCoin(giveTag, Q, L, coins) {
     if (rest > 0n) vout.push({ value: rest, scriptPubKey: changeSpk, assetTag: HOST_TAG });
   } else {
     if (S - Q > 0n) vout.push({ value: S - Q, scriptPubKey: changeSpk, assetTag: giveTag });   // asset conserves exactly
-    const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && x.refheight <= L && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
+    const reserved = committedOutpoints();
+    const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && x.refheight <= L && !reserved.has(x.outpoint) && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
     if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
     const feePv = assetPresentValue(BigInt(feeCoin.value), L - feeCoin.refheight, { k: 20, interest: false });
     inputs.push({ outpoint: feeCoin.outpoint, spk: feeCoin.spk, value: BigInt(feeCoin.value), refheight: feeCoin.refheight });
@@ -366,7 +373,8 @@ async function fillRangedNow(offer, fillUnits) {
     const payRate = isFrcPayout ? { k: 20, interest: false } : rateOf(payoutTag);
     const payTagNorm = isFrcPayout ? null : payoutTag;
     const need = payout + (isFrcPayout ? fee : 0n);
-    const { got: payCoins, sum: payPv } = gather(payTagNorm, payRate, need, new Set());
+    const reserved = committedOutpoints();   // don't spend coins backing my own open offers
+    const { got: payCoins, sum: payPv } = gather(payTagNorm, payRate, need, reserved);
     if (payPv < need) throw new Error(isFrcPayout ? tr('you need more FRC (tap Faucet) to pay for this fill') : tr('you need more of the requested asset to pay for this fill'));
     const vin = [{ prevout: prevout(offer.giveOutpoint), scriptSig: '', sequence: 0xffffffff, witness: offer.witness }];
     const takerInputs = [];
@@ -380,7 +388,7 @@ async function fillRangedNow(offer, fillUnits) {
     if (payChange > 0n) vout.push({ value: payChange, scriptPubKey: spks[0], assetTag: payoutTag });
     // when the want asset isn't FRC, add FRC coin(s) for the network fee
     if (!isFrcPayout) {
-      const { got: feeCoins, sum: feePv } = gather(null, { k: 20, interest: false }, fee, new Set(payCoins.map(c => c.outpoint)));
+      const { got: feeCoins, sum: feePv } = gather(null, { k: 20, interest: false }, fee, new Set([...reserved, ...payCoins.map(c => c.outpoint)]));
       if (feePv < fee) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
       for (const c of feeCoins) { vin.push({ prevout: prevout(c.outpoint), scriptSig: '', sequence: 0xffffffff, witness: [] }); takerInputs.push(c); }
       if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: spks[0], assetTag: HOST_TAG });
@@ -412,7 +420,8 @@ async function cancelRanged(offer) {
         vout.push({ value: givePv - fee, scriptPubKey: spks[0], assetTag: HOST_TAG });
       } else {
         vout.push({ value: givePv, scriptPubKey: spks[0], assetTag: giveTag });
-        const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && x.refheight <= L && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
+        const reserved = committedOutpoints();   // don't grab a coin backing another open offer
+        const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && x.refheight <= L && !reserved.has(x.outpoint) && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
         if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) to cancel'));
         const feePv = assetPresentValue(BigInt(feeCoin.value), L - feeCoin.refheight, { k: 20, interest: false });
         vin.push({ prevout: prevout(feeCoin.outpoint), scriptSig: '', sequence: 0xffffffff, witness: [] });

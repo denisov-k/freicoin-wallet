@@ -119,10 +119,12 @@ const pvOf = (u, h) => assetPresentValue(u.value, h - u.refheight, rateOf(u.asse
 const book = [];
 let offerSeq = 1;
 
-// mark offers filled once their give-coin leaves the UTXO set (someone matched them). Ranged
-// offers are re-pointed at their change coin inside the tx handler instead, so skip them here.
+// Mark an offer done once its give coin leaves the UTXO set. A ranged fill re-points the offer
+// at its change coin FIRST (in the tx handler, before this runs), so a ranged offer only trips
+// this if its coin was spent by something else (another offer, a manual spend) — it is then
+// orphaned and unfillable, so retire it instead of leaving a dead "open" row.
 function reconcileBook() {
-  for (const o of book) if (o.status === 'open' && !o.ranged && !utxos.has(o.giveOutpoint)) o.status = 'filled';
+  for (const o of book) if (o.status === 'open' && !utxos.has(o.giveOutpoint)) o.status = 'filled';
 }
 
 // ---- lifecycle ----
@@ -224,11 +226,10 @@ const api = {
     const parsed = parseTx(rawtx);            // sanity: it parses
     await rpc('generateblock', mineAddr, [rawtx]);
     await catchUp();
-    reconcileBook();                          // any phase-1 offers this tx consumed are now filled
     const txid = computeTxid(parsed);
     // a ranged partial fill: re-point the offer at its change coin (the ranged bundle's 2nd
-    // output). The maker's give coin is spent; the change coin needs a fresh maker signature to
-    // stay tradeable, so flag it for re-sign. Exhausted (change below minFill) ⇒ done.
+    // output) FIRST, so reconcileBook below sees the live change coin and doesn't retire it. The
+    // change coin needs a fresh maker signature to stay tradeable; exhausted (< minFill) ⇒ done.
     if (kind === 'rangedfill' && offerId != null) {
       const o = book.find(x => x.id === Number(offerId) && x.ranged);
       if (o) {
@@ -240,6 +241,7 @@ const api = {
         } else { o.status = 'filled'; }
       }
     }
+    reconcileBook();                          // retire any offer whose give coin this tx consumed
     say(kind === 'match' ? `сделка сведена участником (${txid.slice(0, 12)}…)`
       : kind === 'rangedfill' ? `частичный филл ranged-оффера #${offerId} (${txid.slice(0, 12)}…)`
       : `транзакция пользователя замайнена (${txid.slice(0, 12)}…)`);
