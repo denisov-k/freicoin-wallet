@@ -66,7 +66,9 @@ async function indexBlock(h) {
   const blk = await rpc('getblock', hash, 2);
   for (const tx of blk.tx) {
     for (const vin of tx.vin) if (vin.txid) delU(`${vin.txid}:${vin.vout}`);
-    // asset definitions (OP_RETURN 'FRA1' + def) -> registry
+    // asset definitions (OP_RETURN 'FRA1' + def) -> registry, plus a companion 'FRAN' name
+    // OP_RETURN in the same tx (consensus ignores it; re-read here so names survive restarts).
+    let definedTag = null, declaredName = null;
     for (const o of tx.vout) {
       const spk = o.scriptPubKey.hex;
       if (spk.startsWith('6a') && spk.includes('46524131')) {
@@ -74,13 +76,17 @@ async function indexBlock(h) {
         const def = Buffer.from(defHex, 'hex');
         if (def.length >= 42) {
           const tag = hash160(def.subarray(0, def.length)).toString('hex');
+          definedTag = tag;
           if (!assets.has(tag)) assets.set(tag, {
             shift: def[0], interest: (def[1] & 1) !== 0, granularity: 1,
             name: null, supply: 0n, issuedAt: tx.lockheight,
           });
         }
+      } else if (spk.startsWith('6a') && spk.includes('4652414e')) {
+        try { declaredName = Buffer.from(spk.slice(spk.indexOf('4652414e') + 8), 'hex').toString('utf8').replace(/[<>&"'\x00-\x1f\x7f]/g, '').slice(0, 32).trim(); } catch { /* not a name */ }
       }
     }
+    if (definedTag && declaredName && assets.has(definedTag)) assets.get(definedTag).name = declaredName;
     tx.vout.forEach((o, n) => {
       if (o.scriptPubKey.hex.startsWith('6a')) return;   // OP_RETURN: unspendable
       const tag = o.assetTag ? rev(o.assetTag) : null;   // RPC shows uint160 hex reversed
@@ -182,7 +188,10 @@ const api = {
     const amt = BigInt(amount);
     if (amt <= 0n || amt > 9007199254740991n) throw new Error('bad amount');
     if (!/^[0-9a-f]{4,140}$/.test(spk)) throw new Error('bad spk');
-    const def = Buffer.concat([Buffer.from([shift, interest ? 1 : 0]), Buffer.alloc(8), sha256(Buffer.from(String(name ?? 'asset')))]);
+    // the human name, sanitized once and used everywhere: its sha256 goes in the def (so the tag
+    // commits it) AND the raw string goes in a companion 'FRAN' OP_RETURN (so indexers recover it).
+    const nm = String(name ?? 'asset').replace(/[<>&"'\x00-\x1f\x7f]/g, '').slice(0, 32).trim() || 'asset';
+    const def = Buffer.concat([Buffer.from([shift, interest ? 1 : 0]), Buffer.alloc(8), sha256(Buffer.from(nm, 'utf8'))]);
     def.writeUInt8(1, 2);
     const tag = hash160(def).toString('hex');
     if (assets.has(tag)) throw new Error('актив с таким именем и параметрами уже существует');
@@ -201,10 +210,14 @@ const api = {
         { value: fval - 100000n, scriptPubKey: TRUE_SPK },
       ],
     };
+    // companion 'FRAN' name OP_RETURN (consensus ignores it; indexers read it from-chain). Its
+    // sha256 is committed in the def above, so a reader can verify the name against the tag.
+    const nmeta = Buffer.from(nm, 'utf8');
+    tx.vout.push({ value: 0n, scriptPubKey: '6a' + (4 + nmeta.length).toString(16).padStart(2, '0') + '4652414e' + nmeta.toString('hex') });
     await rpc('generateblock', mineAddr, [serializeTx(tx)]);
     await catchUp();
-    assets.get(tag).name = String(name ?? 'asset');
-    say(`выпуск: «${name}» ×${amount} (shift ${shift}${interest ? ', растёт' : ''})`);
+    assets.get(tag).name = nm;
+    say(`выпуск: «${nm}» ×${amount} (shift ${shift}${interest ? ', растёт' : ''})`);
     return { tag, txid: computeTxid(tx) };
   },
   async tx({ rawtx, kind, offerId }) {

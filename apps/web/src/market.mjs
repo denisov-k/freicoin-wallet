@@ -104,7 +104,10 @@ const signInput = (tx, i, spk, value, refheight, hashtype) => {
 // ---- data ----
 // asset RATES come from the light client's self-certified defs (tag = Hash160(def)); the
 // relay's names are cosmetic (a lie only mislabels, it can't misprice).
-const assetName = tag => tag === null || tag === HOST_TAG ? 'FRC' : (state?.info.assets.find(a => a.tag === tag)?.name ?? tag.slice(0, 8) + '…');
+// name preference: the light client's from-chain name (trustless, read from the defining block)
+// first, then the relay's (untrusted, cosmetic), then the tag prefix. A name only ever mislabels.
+const assetName = tag => tag === null || tag === HOST_TAG ? 'FRC'
+  : (state?.defs?.[tag]?.name ?? state?.info.assets.find(a => a.tag === tag)?.name ?? tag.slice(0, 8) + '…');
 const rateOf = tag => {
   if (tag === null || tag === HOST_TAG) return { k: 20, interest: false };
   const d = state?.defs?.[tag];                       // self-certified by the light client
