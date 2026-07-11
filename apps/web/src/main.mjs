@@ -262,6 +262,9 @@ function renderLock() {
 
 // ---------- main app ----------
 function renderApp() {
+  // opened as the market's login popup: a secret is now available → hand it back and close,
+  // instead of rendering the full wallet in the popup.
+  if (authMode && unlockedSecret) { respondAuth(); return; }
   $('#app').innerHTML = `
     <header><h1>Freicoin Wallet</h1>
       <div class="hbtns"><button id="statusBtn" class="icon statusbtn st-sync" title="sync status">●</button></div></header>
@@ -531,6 +534,17 @@ function secure(sec, pass, wasVault) {
   toast(wasVault ? tr('passphrase changed') : tr('wallet secured 🔒')); render.settings();
 }
 function lock() { unlockedSecret = null; unlockedPass = null; clearInterval(pollTimer); renderLock(); }
+
+// "Log in with wallet": the MARKET opens this wallet as a popup at #market-auth. Once a secret
+// is available (already unlocked, or after the user unlocks/creates here), we post it back to
+// the opener — targeting the market origin ONLY, never a URL or the server — and close.
+const MARKET_ORIGIN = 'https://market.testtty.ru';
+const authMode = location.hash.includes('market-auth') && !!window.opener;
+function respondAuth() {
+  try { window.opener.postMessage({ type: 'fw-session', secret: unlockedSecret }, MARKET_ORIGIN); } catch {}
+  document.body.innerHTML = `<main style="padding:48px 20px;text-align:center"><p>${tr('Signed in — you can return to the market.')}</p></main>`;
+  setTimeout(() => { try { window.close(); } catch {} }, 400);
+}
 
 function logout() {
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }

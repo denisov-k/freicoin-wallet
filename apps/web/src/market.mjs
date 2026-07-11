@@ -259,7 +259,7 @@ function render() {
 
   $('#app').innerHTML = `
   <header><h1>Freimarkets <span class="sub">маркет · эксперимент</span></h1>
-    <span class="pill">блок <b>${h}</b></span></header>
+    <span style="display:flex;gap:8px;align-items:center"><span class="pill">блок <b>${h}</b></span><button id="keyBtn" class="ghost" style="padding:4px 10px">🔑</button></span></header>
   <main><section>
     <p class="sub">Экспериментальная цепь: активы с демерреджем/процентом и p2p-биржа. Ключи — только в этом браузере
       (та же фраза, что в кошельке). Монеты цепи ценности не имеют. <a href="/">← кошелёк</a></p>
@@ -306,6 +306,7 @@ function render() {
   $('#sendBtn').onclick = send;
   $('#offerBtn').onclick = postOffer;
   if ($('#matchBtn')) $('#matchBtn').onclick = matchNow;
+  $('#keyBtn').onclick = keyPanel;
 }
 
 // ---- key gate. Same origin as the wallet (wallet.testtty.ru/market.html) ⇒ shared vault,
@@ -328,24 +329,71 @@ function boot() {
     };
     return;
   }
-  // no key on this origin — onboard (create/restore). Experimental chain: seed stored plainly.
+  // no key on this origin — offer "log in with wallet" (primary) or a fresh/restored key.
   $('#app').innerHTML = `<header><h1>Freimarkets <span class="sub">маркет · эксперимент</span></h1></header><main><section>
     <p class="sub">Экспериментальная биржа с пользовательскими активами. Ключ хранится только в этом браузере;
-      монеты цепи ценности не имеют. Создайте ключ или восстановите фразой.</p>
-    <button id="genBtn">Создать ключ</button>
-    <p class="label" style="margin-top:14px">…или восстановить существующей фразой:</p>
-    <textarea id="restore" rows="2" placeholder="12 слов"></textarea>
+      монеты цепи ценности не имеют.</p>
+    <div class="row"><button id="walletBtn">Войти через кошелёк</button></div>
+    <p class="sub" style="font-size:12px">Откроется кошелёк во всплывающем окне; после разблокировки он передаст сессию сюда напрямую (минуя сервер).</p>
+    <p class="label" style="margin-top:16px">…или завести отдельный ключ здесь:</p>
+    <div class="row"><button id="genBtn" class="ghost">Создать</button></div>
+    <textarea id="restore" rows="2" placeholder="или войти 12 словами"></textarea>
     <button id="restoreBtn" class="ghost">Восстановить</button>
     <p id="oerr" class="err"></p></section></main>`;
-  $('#genBtn').onclick = () => {
-    const m = generateMnemonic();
-    if (!confirm('Ваша фраза (сохраните её):\n\n' + m + '\n\nПродолжить?')) return;
-    localStorage.setItem('fw_seed', m); seed = resolveSecret(m); start();
-  };
+  $('#walletBtn').onclick = loginViaWallet;
+  $('#genBtn').onclick = () => { const m = generateMnemonic(); localStorage.setItem('fw_seed', m); seed = resolveSecret(m); start(); toast('Ключ создан — сохраните фразу в 🔑', 'ok'); };
   $('#restoreBtn').onclick = () => {
     const m = $('#restore').value.trim();
     if (!isMnemonic(m)) { $('#oerr').textContent = 'неверная фраза'; return; }
     localStorage.setItem('fw_seed', m); seed = resolveSecret(m); start();
+  };
+}
+
+// "Log in with wallet": open the wallet as a popup in auth mode; it posts its session back to
+// THIS origin (strict origin check) once unlocked. The secret never touches a server or a URL.
+const WALLET_ORIGIN = 'https://wallet.testtty.ru';
+function loginViaWallet() {
+  const w = window.open(WALLET_ORIGIN + '/#market-auth', 'fw-wallet-auth', 'width=460,height=680');
+  if (!w) { toast('Разрешите всплывающие окна', 'err'); return; }
+  const onMsg = e => {
+    if (e.origin !== WALLET_ORIGIN || e.source !== w) return;
+    if (e.data && e.data.type === 'fw-session' && typeof e.data.secret === 'string') {
+      window.removeEventListener('message', onMsg);
+      localStorage.setItem('fw_seed', e.data.secret);
+      seed = resolveSecret(e.data.secret);
+      try { w.close(); } catch {}
+      toast('Вошли через кошелёк', 'ok');
+      start();
+    }
+  };
+  window.addEventListener('message', onMsg);
+  setTimeout(() => window.removeEventListener('message', onMsg), 180000);
+}
+
+// ---- 🔑 key panel: reveal/copy the phrase, or switch to another ----
+function keyPanel() {
+  const cur = localStorage.getItem('fw_seed') || '';
+  const box = document.createElement('div');
+  box.id = 'keyModal';
+  box.innerHTML = `<div class="kp">
+    <h3 style="margin:0 0 4px">Ключ маркета</h3>
+    <p class="sub" style="margin:0 0 10px">Хранится только в этом браузере. Цепь экспериментальная — монеты без ценности.</p>
+    <label>Ваша фраза<textarea id="kpPhrase" rows="2" readonly style="filter:blur(4px)">${cur}</textarea></label>
+    <div class="row"><button id="kpReveal" class="ghost">Показать</button><button id="kpCopy" class="ghost">Копировать</button></div>
+    <p class="label" style="margin-top:12px">Войти другой фразой:</p>
+    <textarea id="kpRestore" rows="2" placeholder="12 слов"></textarea>
+    <div class="row"><button id="kpSwitch">Сменить ключ</button><button id="kpClose" class="ghost">Закрыть</button></div>
+    <p id="kpErr" class="err"></p></div>`;
+  document.body.appendChild(box);
+  const close = () => box.remove();
+  box.onclick = e => { if (e.target === box) close(); };
+  $('#kpClose').onclick = close;
+  $('#kpReveal').onclick = () => { $('#kpPhrase').style.filter = 'none'; };
+  $('#kpCopy').onclick = async () => { try { await navigator.clipboard.writeText(cur); toast('Фраза скопирована', 'ok'); } catch { $('#kpPhrase').style.filter = 'none'; } };
+  $('#kpSwitch').onclick = () => {
+    const nm = $('#kpRestore').value.trim();
+    if (!isMnemonic(nm)) { $('#kpErr').textContent = 'неверная фраза'; return; }
+    localStorage.setItem('fw_seed', nm); location.reload();
   };
 }
 
@@ -357,6 +405,9 @@ style.textContent = `
   table.mkt td{padding:5px 8px;border-bottom:1px solid var(--line);font-family:ui-monospace,monospace}
   .melt{color:var(--warn)} .grow{color:var(--ok)} .filled{opacity:.45}
   #mlog div{font-size:12.5px;color:var(--sub);padding:2px 0;border-bottom:1px dashed var(--line)}
-  h1 .sub{font-size:13px;font-weight:400}`;
+  h1 .sub{font-size:13px;font-weight:400}
+  #keyModal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+  #keyModal .kp{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;max-width:420px;width:100%;display:flex;flex-direction:column;gap:8px}
+  #keyModal textarea{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--fg);font:14px ui-monospace,monospace;width:100%}`;
 document.head.appendChild(style);
 boot();
