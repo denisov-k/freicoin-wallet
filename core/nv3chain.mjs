@@ -38,6 +38,8 @@ export class Nv3State {
       ins.push(c);
     }
     const mintedId = tx.def ? assetIdOf(tx.def) : null;
+    // the kernels are only defined for 1 <= k <= 64 (mirrors ParseAssetDefinition in the node)
+    if (tx.def && (tx.def.k < 1 || tx.def.k > 64)) return { ok: false, err: 'bad asset shift' };
     if (tx.def && this.assets.has(mintedId)) return { ok: false, err: 'asset already defined' };
     if (tx.def && tx.outputs.every(o => o.assetId !== mintedId)) return { ok: false, err: 'definition mints nothing' };
 
