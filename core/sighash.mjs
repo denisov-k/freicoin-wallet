@@ -81,6 +81,9 @@ export function segwitV0SighashPreimage(tx, inIdx, scriptCodeHex, amount, refhei
     ...hashOutputs,
     ...u32le(tx.nLockTime),
     ...u32le(tx.lockHeight),                                // Freicoin
+    // nVersion=3-lite: commit nExpireTime (the mirror of nLockTime) — else a third party
+    // could impose an expiry on a signed tx without breaking any signature.
+    ...(tx.version === 3 ? u32le(tx.nExpireTime ?? 0) : []),
     ...u32le(hashtype & ~SIGHASH_NO_LOCK_HEIGHT),           // Freicoin: mask NO_LOCK_HEIGHT
   ];
   return bytesToHex(ss);

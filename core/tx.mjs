@@ -40,14 +40,29 @@ export function parseTx(hex) {
   const nvout = r.varint();
   const vout = [];
   for (let i = 0; i < nvout; i++) vout.push({ value: r.u64(), scriptPubKey: r.varbytes() });
+  // nVersion=3-lite: parallel tag + token blocks right after vout (see transaction.h)
+  if (version === 3) {
+    for (const o of vout) o.assetTag = r.hex(20);
+    for (const o of vout) {
+      const n = r.varint(); o.tokens = [];
+      for (let j = 0; j < n; j++) o.tokens.push(r.varbytes());
+    }
+  }
   if (hasWitness) for (let i = 0; i < nvin; i++) {
     const items = r.varint(); const w = [];
     for (let j = 0; j < items; j++) w.push(r.varbytes());
     vin[i].witness = w;
   }
+  // nVersion=3-lite: authorizer approvals, witness-side (flag bit 2)
+  let approvals = [];
+  if (version === 3 && (flags & 2) !== 0) {
+    const n = r.varint();
+    for (let i = 0; i < n; i++) approvals.push({ assetTag: r.hex(20), sig: r.varbytes() });
+  }
   const nLockTime = r.u32();
   const lockHeight = r.u32();          // <-- Freicoin
-  return { version, hasWitness, flags, vin, vout, nLockTime, lockHeight, nvin, nvout };
+  const nExpireTime = version === 3 ? r.u32() : 0;   // nVersion=3-lite
+  return { version, hasWitness, flags, vin, vout, nLockTime, lockHeight, nExpireTime, approvals, nvin, nvout };
 }
 
 // --- serializer (for round-trip parity) ---
@@ -60,10 +75,14 @@ function pushVarint(a, n) {
 }
 function pushVarbytes(a, hex) { const b = hex.match(/../g)?.map(h => parseInt(h, 16)) ?? []; pushVarint(a, b.length); a.push(...b); }
 
+const HOST_TAG = '00'.repeat(20);   // null tag = the host currency
+
 export function serializeTx(tx) {
   const a = [];
+  const approvals = tx.approvals ?? [];
+  const withApprovals = tx.version === 3 && approvals.length > 0 && tx.hasWitness !== false;
   pushU32(a, tx.version);
-  if (tx.hasWitness) a.push(MARKER, tx.flags);
+  if (tx.hasWitness || withApprovals) a.push(MARKER, (tx.hasWitness ? 1 : 0) | (withApprovals ? 2 : 0));
   pushVarint(a, tx.vin.length);
   for (const i of tx.vin) {
     a.push(...i.prevout.txid.match(/../g).map(h => parseInt(h, 16)));
@@ -73,12 +92,26 @@ export function serializeTx(tx) {
   }
   pushVarint(a, tx.vout.length);
   for (const o of tx.vout) { pushU64(a, o.value); pushVarbytes(a, o.scriptPubKey); }
+  // nVersion=3-lite: tag + token blocks (in the txid), then witness, then approvals (not in it)
+  if (tx.version === 3) {
+    for (const o of tx.vout) a.push(...(o.assetTag ?? HOST_TAG).match(/../g).map(h => parseInt(h, 16)));
+    for (const o of tx.vout) {
+      const toks = o.tokens ?? [];
+      pushVarint(a, toks.length);
+      for (const t of toks) pushVarbytes(a, t);
+    }
+  }
   if (tx.hasWitness) for (const i of tx.vin) {
     pushVarint(a, i.witness.length);
     for (const w of i.witness) pushVarbytes(a, w);
   }
+  if (withApprovals) {
+    pushVarint(a, approvals.length);
+    for (const ap of approvals) { a.push(...ap.assetTag.match(/../g).map(h => parseInt(h, 16))); pushVarbytes(a, ap.sig); }
+  }
   pushU32(a, tx.nLockTime);
   pushU32(a, tx.lockHeight);
+  if (tx.version === 3) pushU32(a, tx.nExpireTime ?? 0);
   return a.map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
