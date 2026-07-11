@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Freimarkets — песочница nV3</title>
+<style>
+:root {
+  --bg:#0f1115; --card:#181b22; --fg:#e8eaed; --sub:#9aa0aa; --accent:#3ea6ff;
+  --accent-fg:#04121f; --ok:#4caf50; --err:#ef5350; --warn:#e0a030; --line:#262a33;
+}
+* { box-sizing:border-box; }
+body { margin:0; font:15px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--fg); }
+#app { max-width:760px; margin:0 auto; padding:0 16px 60px; }
+header { display:flex; align-items:baseline; justify-content:space-between; padding:18px 4px; border-bottom:1px solid var(--line); margin-bottom:18px; flex-wrap:wrap; gap:8px; }
+h1 { font-size:19px; margin:0; } h2 { font-size:15px; margin:18px 0 8px; color:var(--sub); font-weight:600; }
+.pill { font-size:12px; color:var(--sub); border:1px solid var(--line); border-radius:99px; padding:2px 10px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:10px; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th { text-align:left; color:var(--sub); font-weight:500; padding:4px 8px; border-bottom:1px solid var(--line); }
+td { padding:5px 8px; border-bottom:1px solid var(--line); font-family:ui-monospace,monospace; }
+tr:last-child td { border-bottom:0; }
+label { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--sub); flex:1; min-width:110px; }
+input, select { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:9px; color:var(--fg); font-size:14px; width:100%; }
+button { background:var(--accent); color:var(--accent-fg); border:0; border-radius:8px; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; }
+button.ghost { background:transparent; border:1px solid var(--line); color:var(--fg); font-weight:400; }
+button:disabled { opacity:.5; cursor:default; }
+.row { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
+.melt { color:var(--warn); } .grow { color:var(--ok); } .muted { color:var(--sub); }
+#log div { font-size:12.5px; color:var(--sub); padding:2px 0; border-bottom:1px dashed var(--line); }
+#log div:first-child { color:var(--fg); }
+#msg { min-height:18px; font-size:13px; padding:6px 2px; } .ok{color:var(--ok);} .err{color:var(--err);}
+.tag { color:var(--sub); font-size:11px; }
+.filled { opacity:.45; }
+.note { font-size:12.5px; color:var(--sub); }
+</style>
+</head>
+<body>
+<div id="app">
+<header>
+  <h1>Freimarkets <span class="muted">· песочница nVersion=3</span></h1>
+  <span class="pill">regtest · блок <b id="height">…</b></span>
+</header>
+
+<div class="note">Живая цепь с пользовательскими активами: каждый актив плавится (или растёт) по своей ставке
+на уровне консенсуса. Офферы подписываются SIGHASH_SINGLE|ANYONECANPAY — матчер сшивает встречные и забирает спред.
+Демо-акторы: alice, bob, carol (по 1 FRC) и matcher.</div>
+<div id="msg"></div>
+
+<h2>Выпустить актив</h2>
+<div class="card"><div class="row">
+  <label>Название<input id="iName" value="часы-труда" maxlength="24"></label>
+  <label>Shift k (ставка 2⁻ᵏ/блок)<input id="iShift" type="number" value="16" min="1" max="64"></label>
+  <label>Тип<select id="iKind"><option value="d">демерредж (плавится)</option><option value="i">процентный (растёт)</option></select></label>
+  <label>Количество (kria)<input id="iAmt" type="number" value="1000000000"></label>
+  <label>Кому<select id="iTo"><option>alice</option><option>bob</option><option>carol</option></select></label>
+  <button onclick="issue()">Выпустить</button>
+</div></div>
+
+<h2>Балансы <span class="tag">(номинал → текущая стоимость: демерредж съедает, процент добавляет)</span></h2>
+<div class="card"><table id="bal"><thead><tr><th>Актор</th><th>Актив</th><th>Номинал</th><th>Сейчас стоит</th><th>Монета</th></tr></thead><tbody></tbody></table></div>
+<div class="row">
+  <button class="ghost" onclick="mine(1)">+1 блок</button>
+  <button class="ghost" onclick="mine(10)">+10 блоков</button>
+  <button class="ghost" onclick="mine(50)">+50 блоков (посмотреть, как плавится)</button>
+</div>
+
+<h2>Создать оффер</h2>
+<div class="card"><div class="row">
+  <label>Мейкер<select id="oActor"><option>alice</option><option>bob</option><option>carol</option></select></label>
+  <label>Отдаёт монету<select id="oGive"></select></label>
+  <label>Хочет актив<select id="oWant"></select></label>
+  <label>Хочет количество<input id="oAmt" type="number" value="0"></label>
+  <button onclick="offer()">Подписать оффер</button>
+</div><div class="note">Подпись мейкера коммитит ровно пару «моя монета ↔ этот выход». Остальное — дело матчера.</div></div>
+
+<h2>Книга офферов</h2>
+<div class="card"><table id="bookT"><thead><tr><th>#</th><th>Мейкер</th><th>Отдаёт (тек. стоимость)</th><th>Хочет</th><th>Высота</th><th></th></tr></thead><tbody></tbody></table>
+<div class="row" style="margin-top:8px">
+  <label>Смэтчить #<input id="mI" type="number" style="width:80px"></label>
+  <label>с #<input id="mJ" type="number" style="width:80px"></label>
+  <button onclick="doMatch()">Матчер: сшить и замайнить</button>
+</div></div>
+
+<h2>Журнал</h2>
+<div class="card" id="log"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const msg = (t, cls) => { $('msg').textContent = t; $('msg').className = cls || ''; };
+const fmt = v => { v = BigInt(v); return v >= 1000000n ? (Number(v) / 1e8).toFixed(8).replace(/0+$/, '').replace(/\.$/, '') + ' ед.' : v + ' kria'; };
+let S = null;
+const assetName = tag => tag === '00'.repeat(20) ? 'FRC' : (S?.assets.find(a => a.tag === tag)?.name ?? tag.slice(0, 8) + '…');
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: 'POST', body: JSON.stringify(body) } : undefined);
+  const j = await r.json();
+  if (j.error) throw new Error(j.error);
+  return j;
+}
+
+async function refresh() {
+  try { S = await api('/api/status'); } catch (e) { msg('нода недоступна: ' + e.message, 'err'); return; }
+  $('height').textContent = S.height;
+  // balances
+  const tb = $('bal').tBodies[0]; tb.innerHTML = '';
+  for (const [actor, coins] of Object.entries(S.balances)) for (const c of coins) {
+    const melt = BigInt(c.pv) < BigInt(c.nominal), grow = BigInt(c.pv) > BigInt(c.nominal);
+    tb.insertAdjacentHTML('beforeend', `<tr><td>${actor}</td><td>${assetName(c.asset)}</td><td>${fmt(c.nominal)}</td>
+      <td class="${melt ? 'melt' : grow ? 'grow' : ''}">${fmt(c.pv)}</td><td class="tag">${c.outpoint.slice(0, 10)}…:${c.outpoint.split(':')[1]}</td></tr>`);
+  }
+  // offer form selects
+  const actor = $('oActor').value;
+  $('oGive').innerHTML = (S.balances[actor] ?? []).map(c => `<option value="${c.outpoint}">${assetName(c.asset)} · ${fmt(c.pv)}</option>`).join('');
+  $('oWant').innerHTML = [`<option value="${'00'.repeat(20)}">FRC</option>`, ...S.assets.map(a => `<option value="${a.tag}">${a.name}</option>`)].join('');
+  // book
+  const bb = $('bookT').tBodies[0]; bb.innerHTML = '';
+  for (const o of S.book) bb.insertAdjacentHTML('beforeend',
+    `<tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td><td>${o.actor}</td>
+     <td>${fmt(o.give.pv)} ${assetName(o.give.asset)}</td><td>${fmt(o.want.value)} ${assetName(o.want.asset)}</td>
+     <td>${o.lockHeight}</td><td>${o.status}</td></tr>`);
+  // log
+  $('log').innerHTML = S.log.map(l => `<div>${new Date(l.t).toLocaleTimeString()} — ${l.m}</div>`).join('');
+}
+$('oActor').onchange = refresh;
+
+async function issue() {
+  try {
+    msg('выпускаю…');
+    await api('/api/issue', { name: $('iName').value, shift: $('iShift').value, interest: $('iKind').value === 'i', amount: $('iAmt').value, to: $('iTo').value });
+    msg('актив выпущен и замайнен ✓', 'ok'); refresh();
+  } catch (e) { msg(e.message, 'err'); }
+}
+async function offer() {
+  try {
+    await api('/api/offer', { actor: $('oActor').value, giveOutpoint: $('oGive').value, wantAsset: $('oWant').value, wantValue: $('oAmt').value });
+    msg('оффер подписан (SINGLE|ANYONECANPAY) и добавлен в книгу ✓', 'ok'); refresh();
+  } catch (e) { msg(e.message, 'err'); }
+}
+async function doMatch() {
+  try {
+    msg('сшиваю…');
+    const r = await api('/api/match', { i: $('mI').value, j: $('mJ').value });
+    msg('смэтчено и замайнено: ' + r.txid.slice(0, 16) + '… ✓', 'ok'); refresh();
+  } catch (e) { msg(e.message, 'err'); }
+}
+async function mine(n) { try { await api('/api/mine', { n }); refresh(); } catch (e) { msg(e.message, 'err'); } }
+
+refresh(); setInterval(refresh, 5000);
+</script>
+</body>
+</html>
