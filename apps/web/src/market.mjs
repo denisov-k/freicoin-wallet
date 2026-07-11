@@ -7,7 +7,7 @@ import { Buffer } from 'buffer';
 globalThis.Buffer = globalThis.Buffer || Buffer;
 
 import { decryptSecret } from './vault.mjs';
-import { configureNetwork, resolveSecret, deriveAddress, isValidAddress, generateMnemonic, isMnemonic } from './wallet.mjs';
+import { configureNetwork, resolveSecret, deriveAddress, generateMnemonic, isMnemonic } from './wallet.mjs';
 import { derivePath, ckdPriv, wpkProgramHex } from '../../../core/hd.mjs';
 import { pubkeyCompressed, signEcdsa } from '../../../core/ecdsa.mjs';
 import { segwitV0Sighash, SIGHASH_ALL, SIGHASH_SINGLE, SIGHASH_ANYONECANPAY } from '../../../core/sighash.mjs';
@@ -57,7 +57,6 @@ const signInput = (tx, i, spk, value, refheight, hashtype) => {
   const sh = segwitV0Sighash(tx, i, code, BigInt(value), BigInt(refheight), hashtype);
   tx.vin[i].witness = [signEcdsa(sec, sh) + hashtype.toString(16).padStart(2, '0'), '00' + code, ''];
 };
-const addrToSpk = a => { const { version, programHex } = decodeWitness(a.trim()); return version.toString(16).padStart(2, '0') + (programHex.length / 2).toString(16).padStart(2, '0') + programHex; };
 
 // ---- data ----
 // asset RATES come from the light client's self-certified defs (tag = Hash160(def)); the
@@ -107,43 +106,6 @@ async function issue() {
     const name = $('#iName').value.trim() || 'актив';
     await api('issue', { name, shift: $('#iShift').value, interest: $('#iKind').value === 'i', amount: $('#iAmt').value, spk: spks[0] });
     toast(`«${name}» выпущен на ваш адрес`, 'ok'); refresh();
-  } catch (e) { toast(e.message, 'err'); }
-}
-
-async function send() {
-  try {
-    const tag = $('#sAsset').value === 'FRC' ? null : $('#sAsset').value;
-    const addr = $('#sAddr').value.trim();
-    if (!isValidAddress(addr)) throw new Error('неверный адрес (нужен fcrt1…)');
-    const toSpk = addrToSpk(addr);
-    const amount = tag === null ? BigInt(Math.round(parseFloat($('#sAmt').value) * 1e8)) : BigInt($('#sAmt').value);
-    const L = state.mine.height;
-    const fee = 10000n;
-    const pv = u => assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(u.assetTag));
-    const pick = (want, sum, coins) => { const sel = []; let s = 0n; for (const u of coins) { sel.push(u); s += pv(u); if (s >= sum) break; } if (s < sum) throw new Error('недостаточно средств'); return [sel, s]; };
-    const myCoins = state.mine.utxos;
-    const vin = [], vout = [];
-    if (tag === null) {
-      const [sel, s] = pick(null, amount + fee, myCoins.filter(u => u.assetTag === null));
-      sel.forEach(u => vin.push(u));
-      vout.push({ value: amount, scriptPubKey: toSpk, assetTag: HOST_TAG });
-      if (s - amount - fee > 0n) vout.push({ value: s - amount - fee, scriptPubKey: spks[12], assetTag: HOST_TAG });
-    } else {
-      const [selA, sA] = pick(null, amount, myCoins.filter(u => u.assetTag === tag));
-      const [selF, sF] = pick(null, fee, myCoins.filter(u => u.assetTag === null));
-      [...selA, ...selF].forEach(u => vin.push(u));
-      vout.push({ value: amount, scriptPubKey: toSpk, assetTag: tag });
-      if (sA - amount > 0n) vout.push({ value: sA - amount, scriptPubKey: spks[12], assetTag: tag });   // точная консервация
-      if (sF - fee > 0n) vout.push({ value: sF - fee, scriptPubKey: spks[12], assetTag: HOST_TAG });
-    }
-    const tx = {
-      version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0,
-      vin: vin.map(u => ({ prevout: { txid: rev(u.outpoint.split(':')[0]), vout: +u.outpoint.split(':')[1] }, scriptSig: '', sequence: 0xffffffff, witness: [] })),
-      vout,
-    };
-    vin.forEach((u, i) => signInput(tx, i, u.spk, u.value, u.refheight, SIGHASH_ALL));
-    await api('tx', { rawtx: serializeTx(tx) });
-    toast('Отправлено и замайнено', 'ok'); refresh();
   } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -243,8 +205,6 @@ function render() {
       <td class="${melt ? 'melt' : grow ? 'grow' : ''}">${fmt(tag, e.pv)}</td></tr>`;
   }).join('') || `<tr><td colspan="3" class="sub">пусто — нажмите «Кран»</td></tr>`;
 
-  const myAssetOpts = ['FRC', ...new Set(state.mine.utxos.filter(u => u.assetTag).map(u => u.assetTag))]
-    .map(t => `<option value="${t}">${t === 'FRC' ? 'FRC' : assetName(t)}</option>`).join('');
   const allAssetOpts = ['FRC', ...state.info.assets.map(a => a.tag)]
     .map(t => `<option value="${t}">${t === 'FRC' ? 'FRC' : assetName(t)}</option>`).join('');
   const giveOpts = state.mine.utxos.map(u =>
@@ -258,8 +218,8 @@ function render() {
     || `<tr><td colspan="4" class="sub">офферов пока нет</td></tr>`;
 
   $('#app').innerHTML = `
-  <header><h1>Freimarkets <span class="sub">маркет · эксперимент</span></h1>
-    <span style="display:flex;gap:8px;align-items:center"><span class="pill">блок <b>${h}</b></span><button id="keyBtn" class="ghost" style="padding:4px 10px">🔑</button></span></header>
+  <header><h1>Freimarkets</h1>
+    <button id="keyBtn" class="ghost" style="padding:4px 10px">🔑</button></header>
   <main><section>
     <p class="sub">Экспериментальная цепь: активы с демерреджем/процентом и p2p-биржа. Ключи — только в этом браузере
       (та же фраза, что в кошельке). Монеты цепи ценности не имеют. <a href="/">← кошелёк</a></p>
@@ -280,13 +240,6 @@ function render() {
       <button id="issueBtn">Выпустить</button>
     </div>
 
-    <h2 style="font-size:15px;margin:14px 0 0">Отправить</h2>
-    <div class="row">
-      <label>Актив<select id="sAsset">${myAssetOpts}</select></label>
-      <label>Кому (fcrt1…)<input id="sAddr" placeholder="fcrt1…"></label>
-    </div>
-    <div class="row"><label>Сколько<input id="sAmt" type="text" inputmode="decimal"></label><button id="sendBtn">Отправить</button></div>
-
     <h2 style="font-size:15px;margin:14px 0 0">Биржа</h2>
     <div class="row">
       <label>Отдаю монету<select id="oGive">${giveOpts}</select></label>
@@ -303,7 +256,6 @@ function render() {
   $('#faucetBtn').onclick = faucet;
   $('#refreshBtn').onclick = refresh;
   $('#issueBtn').onclick = issue;
-  $('#sendBtn').onclick = send;
   $('#offerBtn').onclick = postOffer;
   if ($('#matchBtn')) $('#matchBtn').onclick = matchNow;
   $('#keyBtn').onclick = keyPanel;
@@ -330,7 +282,7 @@ function boot() {
     return;
   }
   // no key on this origin — offer "log in with wallet" (primary) or a fresh/restored key.
-  $('#app').innerHTML = `<header><h1>Freimarkets <span class="sub">маркет · эксперимент</span></h1></header><main><section>
+  $('#app').innerHTML = `<header><h1>Freimarkets</h1></header><main><section>
     <p class="sub">Экспериментальная биржа с пользовательскими активами. Ключ хранится только в этом браузере;
       монеты цепи ценности не имеют.</p>
     <div class="row"><button id="walletBtn">Войти через кошелёк</button></div>
