@@ -30,6 +30,10 @@ const langSelect = id => `<select id="${id}" class="wlang">${Object.entries(LANG
 const HTTPS = location.protocol === 'https:';
 const API = HTTPS ? `${location.origin}/api` : `http://${location.hostname}:5181/api`;
 const HOST_TAG = '00'.repeat(20);
+// kria per DISPLAY unit: FRC has 8 decimals (1 FRC = 1e8 kria); user assets are indivisible
+// integer tokens (granularity 1 ⇒ 1 unit = 1 kria). Amounts/prices convert through this so a
+// user asset shown as 1 000 000 in the balance is also 1 000 000 in the offer form, not 0.01.
+const scaleOf = tag => (tag == null || tag === HOST_TAG || tag === 'FRC') ? 100000000 : 1;
 const ACCOUNT = "m/84'/1'/0'";              // regtest coin type (as the wallet's testnets)
 const $ = s => document.querySelector(s);
 const rev = h => h.match(/../g).reverse().join('');
@@ -237,8 +241,8 @@ async function postOffer() {
 // ---- DEX phase 2b: RANGED offers (partial fills). The maker signs a DESCRIPTOR (a price ratio
 // + fill bounds) over one give coin, NOT amounts; a taker fills any amount in range and the
 // remainder returns as change, which the maker re-signs to keep trading. Any direction: give and
-// want are any two DIFFERENT assets (FRC↔asset, asset↔asset). Amounts in whole units (1e8 kria).
-const UNIT = 100000000n;   // 1 asset/FRC unit = 1e8 kria (both have 8 decimals here)
+// want are any two DIFFERENT assets (FRC↔asset, asset↔asset). Amounts are in each asset's own
+// units via scaleOf() (FRC = 1e8 kria/unit; user assets = 1 kria/unit).
 // sign a ranged give input over the descriptor (SIGHASH_BUNDLE ⇒ the digest commits the
 // descriptor, not the fill — one signature serves every admissible fill).
 function signRangedGive(desc, giveOp, coin, L) {
@@ -308,11 +312,12 @@ async function postRangedOffer() {
     const coins = myCoinsOf(giveTag, L);
     const total = coins.reduce((a, c) => a + c.pv, 0n);
     if (total <= 0n) throw new Error(tr('no coins of that asset'));
-    let Q = BigInt(Math.round(parseFloat($('#rQty').value) * 1e8));
+    let Q = BigInt(Math.round(parseFloat($('#rQty').value) * scaleOf(giveTag)));   // quantity in give units
     if (!(Q > 0n)) throw new Error(tr('enter a quantity'));
     if (Q > total) Q = total;                                             // cap at the whole balance
     const give = await prepareGiveCoin(giveTag, Q, L, coins);
-    const priceNum = BigInt(Math.round(P * 1e8)), priceDen = UNIT;
+    // price = want units per give unit ⇒ payout-kria / give-kria = P·wantScale / giveScale
+    const priceNum = BigInt(Math.round(P * scaleOf(wantTag))), priceDen = BigInt(scaleOf(giveTag));
     const desc = { payoutAsset: wantTag, payoutScript: give.spk, priceNum, priceDen, changeScript: give.spk, minFill: 0n, maxFill: Q };
     const witness = signRangedGive(desc, give.outpoint, give, give.L);
     await api('rangedOffer', { makerSpk: give.spk, giveOutpoint: give.outpoint, desc, nExpireTime: 0, lockHeight: give.L, witness });
@@ -353,7 +358,7 @@ async function fillRangedNow(offer, fillUnits) {
     const isFrcPayout = payoutTag === HOST_TAG;
     const givePv = assetPresentValue(BigInt(offer.give.value), L - offer.give.refheight, rateOf(offer.give.assetTag));
     const priceNum = BigInt(d.priceNum), priceDen = BigInt(d.priceDen), minFill = BigInt(d.minFill), maxFill = BigInt(d.maxFill);
-    let fill = BigInt(Math.round(fillUnits * 1e8));
+    let fill = BigInt(Math.round(fillUnits * scaleOf(giveTag)));   // amount to buy, in give units
     const cap = givePv < maxFill ? givePv : maxFill;
     if (fill > cap) fill = cap;
     if (fill < minFill) throw new Error(tr('amount is below the offer minimum'));
@@ -399,7 +404,7 @@ async function fillRangedNow(offer, fillUnits) {
     };
     takerInputs.forEach((c, i) => signInput(tx, i + 1, c.spk, c.value, c.refheight, SIGHASH_ALL));   // maker give at 0 already signed
     await api('tx', { rawtx: serializeTx(tx), kind: 'rangedfill', offerId: offer.id });
-    toast(`${tr('Bought')} ${(Number(fill) / 1e8).toLocaleString(getLang())} ${assetName(offer.give.assetTag)}`, 'ok'); refresh();
+    toast(`${tr('Bought')} ${(Number(fill) / scaleOf(giveTag)).toLocaleString(getLang())} ${assetName(offer.give.assetTag)}`, 'ok'); refresh();
   } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -565,7 +570,7 @@ function paint() {
     + (assetOpts ? `<optgroup label="${tr('Assets')}">${assetOpts}</optgroup>` : '');
 
   // "I sell": only the assets I actually hold, with my balance (present value, in units)
-  const sellOpt = ([k, e]) => `<option value="${k}">${assetName(k === 'FRC' ? null : k)} (${(Number(e.pv) / 1e8).toLocaleString(getLang())})</option>`;
+  const sellOpt = ([k, e]) => `<option value="${k}">${assetName(k === 'FRC' ? null : k)} (${(Number(e.pv) / scaleOf(k)).toLocaleString(getLang())})</option>`;
   const frcHeld = byAsset.get('FRC'), heldAssets = [...byAsset.entries()].filter(([k]) => k !== 'FRC');
   setOptions('#rAsset', ((frcHeld ? `<optgroup label="${tr('Currency')}">${sellOpt(['FRC', frcHeld])}</optgroup>` : '')
     + (heldAssets.length ? `<optgroup label="${tr('Assets')}">${heldAssets.map(sellOpt).join('')}</optgroup>` : ''))
@@ -586,9 +591,11 @@ function paint() {
       const mine = spks.includes(o.makerSpk);
       const give = o.give ? fmtA(o.give.assetTag ?? 'FRC', BigInt(o.give.pv)) : '—';
       if (o.ranged) {
-        const price = Number(BigInt(o.desc.priceNum)) / Number(BigInt(o.desc.priceDen));
         const wantTag = (o.desc.payoutAsset && o.desc.payoutAsset !== HOST_TAG) ? o.desc.payoutAsset : null;
-        const maxU = o.give ? Number(BigInt(o.give.pv)) / 1e8 : 0;
+        const giveTag = o.give ? (o.give.assetTag ?? null) : null;
+        // desc price is a kria/kria ratio; convert to want-units per give-unit for display
+        const price = Number(BigInt(o.desc.priceNum)) / Number(BigInt(o.desc.priceDen)) * scaleOf(giveTag) / scaleOf(wantTag);
+        const maxU = o.give ? Number(BigInt(o.give.pv)) / scaleOf(giveTag) : 0;
         const act = mine
           ? (o.status === 'open' ? `${tr('mine')} <button class="rcancel" data-id="${o.id}">${tr('Cancel')}</button>` : `${tr('mine')} ${o.status}`)
           : (o.status === 'open' && o.give && !o.needsResign)
