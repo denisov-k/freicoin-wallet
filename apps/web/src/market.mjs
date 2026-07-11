@@ -29,6 +29,23 @@ const toast = (m, cls = '') => { const t = $('#toast'); t.textContent = m; t.cla
 
 let seed = null, km = {}, spks = [], myAddress = '', state = null, curTab = 'bal';
 
+// ---- theme (system / dark / light), mirrors the wallet ----
+const themeMode = () => localStorage.getItem('fw_theme_mode') || 'system';
+function applyTheme(mode) {
+  const dark = mode === 'dark' || (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (themeMode() === 'system') applyTheme('system'); });
+
+// ---- sync indicator: a header dot pulses while a light-client sync is in flight ----
+const setSync = on => { const d = $('#syncDot'); if (d) d.classList.toggle('on', on); };
+function renderLoading() {
+  $('#app').innerHTML = `<header><h1>Freimarkets</h1></header>
+    <main><section style="align-items:center;text-align:center;padding-top:60px;gap:12px">
+      <div class="spin"></div><p class="sub">Синхронизация цепи…</p>
+      <p class="sub" style="font-size:12px">Свет-клиент проверяет заголовки и фильтры</p></section></main>`;
+}
+
 async function api(path, body) {
   const r = await fetch(`${API}/${path}`, body ? { method: 'POST', body: JSON.stringify(body, (k, v) => typeof v === 'bigint' ? String(v) : v) } : undefined);
   const j = await r.json();
@@ -84,7 +101,8 @@ async function ensureLc() {
 }
 function refresh() {                              // serialized: one sync at a time (concurrent
   if (inflight) return inflight;                 // syncWallet calls on one client deadlock)
-  inflight = doRefresh().catch(e => toast('синхронизация: ' + e.message, 'err')).finally(() => { inflight = null; });
+  setSync(true);
+  inflight = doRefresh().catch(e => toast('синхронизация: ' + e.message, 'err')).finally(() => { inflight = null; setSync(false); });
   return inflight;
 }
 async function doRefresh() {
@@ -221,12 +239,13 @@ function render() {
   const act = t => curTab === t ? ' class="active"' : '';
   $('#app').innerHTML = `
   <header><h1>Freimarkets</h1>
-    <button id="keyBtn" class="ghost" style="padding:4px 10px">🔑</button></header>
+    <span id="syncDot" class="dot" title="синхронизация"></span></header>
   <nav>
     <button data-tab="bal"${act('bal')}>Баланс</button>
     <button data-tab="issue"${act('issue')}>Выпуск</button>
     <button data-tab="dex"${act('dex')}>Биржа</button>
     <button data-tab="log"${act('log')}>Журнал</button>
+    <button data-tab="set"${act('set')}>⚙</button>
   </nav>
   <main>
     <section id="tab-bal"${on('bal')}>
@@ -263,6 +282,18 @@ function render() {
     <section id="tab-log"${on('log')}>
       <div id="mlog">${state.info.events.map(e => `<div>${new Date(e.t).toLocaleTimeString('ru-RU')} — ${e.m}</div>`).join('') || '<div class="sub">пока пусто</div>'}</div>
     </section>
+
+    <section id="tab-set"${on('set')}>
+      <label>Тема<select id="themeSel">
+        <option value="system"${themeMode() === 'system' ? ' selected' : ''}>Системная</option>
+        <option value="dark"${themeMode() === 'dark' ? ' selected' : ''}>Тёмная</option>
+        <option value="light"${themeMode() === 'light' ? ' selected' : ''}>Светлая</option></select></label>
+      <p class="label" style="margin-top:14px">Аккаунт</p>
+      <label>Секретная фраза<textarea id="setPhrase" rows="2" readonly style="filter:blur(4px)">${localStorage.getItem('fw_seed') || ''}</textarea></label>
+      <div class="row"><button id="setReveal" class="ghost">Показать</button><button id="setCopy" class="ghost">Копировать</button></div>
+      <p class="sub" style="font-size:12px">Хранится только в этом браузере.</p>
+      <div class="row" style="margin-top:10px"><button id="setLogout">Выйти из аккаунта</button></div>
+    </section>
   </main>`;
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
   $('#faucetBtn').onclick = faucet;
@@ -270,19 +301,26 @@ function render() {
   $('#issueBtn').onclick = issue;
   $('#offerBtn').onclick = postOffer;
   if ($('#matchBtn')) $('#matchBtn').onclick = matchNow;
-  $('#keyBtn').onclick = keyPanel;
+  $('#themeSel').onchange = () => { const t = $('#themeSel').value; localStorage.setItem('fw_theme_mode', t); applyTheme(t); };
+  $('#setReveal').onclick = () => { $('#setPhrase').style.filter = 'none'; };
+  $('#setCopy').onclick = async () => { try { await navigator.clipboard.writeText(localStorage.getItem('fw_seed') || ''); toast('Фраза скопирована', 'ok'); } catch { $('#setPhrase').style.filter = 'none'; } };
+  $('#setLogout').onclick = () => {
+    if (!confirm('Выйти из аккаунта? Без сохранённой фразы восстановить его будет нельзя.')) return;
+    localStorage.removeItem('fw_seed'); localStorage.removeItem('fw_vault'); location.reload();
+  };
 }
 function showTab(t) {
   curTab = t;
-  ['bal', 'issue', 'dex', 'log'].forEach(x => { const s = $(`#tab-${x}`); if (s) s.hidden = x !== t; });
+  ['bal', 'issue', 'dex', 'log', 'set'].forEach(x => { const s = $(`#tab-${x}`); if (s) s.hidden = x !== t; });
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
 }
 
 // ---- key gate. Same origin as the wallet (wallet.testtty.ru/market.html) ⇒ shared vault,
 // one unlock. Standalone origin (market.testtty.ru) ⇒ its own key: this is an EXPERIMENTAL
 // chain, coins have no value, so we let the page create/restore a throwaway seed here. ----
-function start() { deriveKeys(); refresh(); setInterval(refresh, 15000); }
+function start() { deriveKeys(); renderLoading(); refresh(); setInterval(refresh, 15000); }
 function boot() {
+  applyTheme(themeMode());
   configureNetwork('regtest');
   const vault = localStorage.getItem('fw_vault');
   const plain = localStorage.getItem('fw_seed');
@@ -338,30 +376,6 @@ function loginViaWallet() {
   setTimeout(() => window.removeEventListener('message', onMsg), 180000);
 }
 
-// ---- 🔑 key panel: reveal/copy the phrase, or switch to another ----
-function keyPanel() {
-  const cur = localStorage.getItem('fw_seed') || '';
-  const box = document.createElement('div');
-  box.id = 'keyModal';
-  box.innerHTML = `<div class="kp">
-    <h3 style="margin:0 0 4px">Ключ маркета</h3>
-    <p class="sub" style="margin:0 0 10px">Хранится только в этом браузере.</p>
-    <label>Ваша фраза<textarea id="kpPhrase" rows="2" readonly style="filter:blur(4px)">${cur}</textarea></label>
-    <div class="row"><button id="kpReveal" class="ghost">Показать</button><button id="kpCopy" class="ghost">Копировать</button></div>
-    <div class="row" style="margin-top:12px"><button id="kpLogout">Выйти из аккаунта</button><button id="kpClose" class="ghost">Закрыть</button></div></div>`;
-  document.body.appendChild(box);
-  const close = () => box.remove();
-  box.onclick = e => { if (e.target === box) close(); };
-  $('#kpClose').onclick = close;
-  $('#kpReveal').onclick = () => { $('#kpPhrase').style.filter = 'none'; };
-  $('#kpCopy').onclick = async () => { try { await navigator.clipboard.writeText(cur); toast('Фраза скопирована', 'ok'); } catch { $('#kpPhrase').style.filter = 'none'; } };
-  $('#kpLogout').onclick = () => {
-    if (!confirm('Выйти из аккаунта? Без сохранённой фразы восстановить его будет нельзя.')) return;
-    localStorage.removeItem('fw_seed'); localStorage.removeItem('fw_vault');
-    location.reload();
-  };
-}
-
 const style = document.createElement('style');
 style.textContent = `
   #app{max-width:640px;margin:0 auto} main{overflow-y:auto;padding-top:14px}
@@ -375,8 +389,11 @@ style.textContent = `
   .melt{color:var(--warn)} .grow{color:var(--ok)} .filled{opacity:.45}
   #mlog div{font-size:12.5px;color:var(--sub);padding:2px 0;border-bottom:1px dashed var(--line)}
   h1 .sub{font-size:13px;font-weight:400}
-  #keyModal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
-  #keyModal .kp{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;max-width:420px;width:100%;display:flex;flex-direction:column;gap:8px}
-  #keyModal textarea{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--fg);font:14px ui-monospace,monospace;width:100%}`;
+  #tab-set textarea{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--fg);font:14px ui-monospace,monospace;width:100%}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--line)}
+  .dot.on{background:var(--accent);animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+  .spin{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp 0.8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}`;
 document.head.appendChild(style);
 boot();
