@@ -251,24 +251,65 @@ function signRangedGive(desc, giveOp, coin, L) {
   return [signEcdsa(sec, dg) + HT.toString(16).padStart(2, '0'), '00' + code, ''];
 }
 
+// my spendable coins of one asset (null tag = FRC), present-valued at height L
+function myCoinsOf(tag, L) {
+  const norm = tag === HOST_TAG ? null : tag;
+  return state.mine.utxos.filter(u => (u.assetTag ?? null) === norm && u.refheight <= L)
+    .map(u => ({ outpoint: u.outpoint, spk: u.spk, value: BigInt(u.value), refheight: u.refheight,
+                 pv: assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(norm)) }));
+}
+
+// Produce a single coin worth exactly Q of `giveTag` at height L to back an offer, so the sale is
+// capped at Q and the rest stays the maker's (a separate coin, never in the offer). If one coin
+// already IS the whole sale, use it; otherwise self-send the needed coins into [Q, rest, feeChange]
+// and return the fresh Q-coin. Afterwards the tested single-input offer path is reused unchanged.
+async function prepareGiveCoin(giveTag, Q, L, coins) {
+  const isFrc = giveTag === HOST_TAG, fee = 10000n, changeSpk = spks[0];
+  if (coins.length === 1 && coins[0].pv === Q) return { ...coins[0], L };   // sell one whole coin
+  const picked = []; let S = 0n;                                            // greedy: largest first
+  for (const c of [...coins].sort((a, b) => (b.pv > a.pv ? 1 : b.pv < a.pv ? -1 : 0))) { picked.push(c); S += c.pv; if (S >= Q) break; }
+  const opIn = c => ({ prevout: { txid: rev(c.outpoint.split(':')[0]), vout: +c.outpoint.split(':')[1] }, scriptSig: '', sequence: 0xffffffff, witness: [] });
+  const inputs = [...picked];                                              // signing order == vin order
+  const vout = [{ value: Q, scriptPubKey: changeSpk, assetTag: giveTag }];  // vout[0] = the Q-coin
+  if (isFrc) {
+    const rest = S - Q - fee;                                              // FRC pays its own fee from surplus
+    if (rest < 0n) throw new Error(tr('need a little more FRC to cover the fee'));
+    if (rest > 0n) vout.push({ value: rest, scriptPubKey: changeSpk, assetTag: HOST_TAG });
+  } else {
+    if (S - Q > 0n) vout.push({ value: S - Q, scriptPubKey: changeSpk, assetTag: giveTag });   // asset conserves exactly
+    const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && x.refheight <= L && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
+    if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
+    const feePv = assetPresentValue(BigInt(feeCoin.value), L - feeCoin.refheight, { k: 20, interest: false });
+    inputs.push({ outpoint: feeCoin.outpoint, spk: feeCoin.spk, value: BigInt(feeCoin.value), refheight: feeCoin.refheight });
+    if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: changeSpk, assetTag: HOST_TAG });
+  }
+  const tx = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(opIn), vout };
+  inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
+  const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'consolidate' });
+  return { outpoint: `${txid}:0`, spk: changeSpk, value: Q, refheight: L, L };
+}
+
 async function postRangedOffer() {
   try {
-    const giveOp = $('#rGive').value;
-    const u = state.mine.utxos.find(x => x.outpoint === giveOp);
-    if (!u) throw new Error(tr('coin not found'));
-    const giveTag = u.assetTag ?? HOST_TAG;
+    const giveTag = $('#rAsset').value === 'FRC' ? HOST_TAG : $('#rAsset').value;
     const wantTag = $('#rWant').value === 'FRC' ? HOST_TAG : $('#rWant').value;
+    if (!giveTag) throw new Error(tr('no coins yet'));
     if (giveTag === wantTag) throw new Error(tr('give and want must be different assets'));
     const P = parseFloat($('#rPrice').value);
     if (!(P > 0)) throw new Error(tr('enter a price'));
-    const priceNum = BigInt(Math.round(P * 1e8)), priceDen = UNIT;   // payout-kria = fill-kria * P (want per give)
     const L = state.mine.height;
-    // no range: buyers may fill any amount, up to the whole coin's present value at L
-    const minFill = 0n, maxFill = assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(u.assetTag));
-    const desc = { payoutAsset: wantTag, payoutScript: u.spk, priceNum, priceDen, changeScript: u.spk, minFill, maxFill };
-    const witness = signRangedGive(desc, giveOp, u, L);
-    await api('rangedOffer', { makerSpk: u.spk, giveOutpoint: giveOp, desc, nExpireTime: 0, lockHeight: L, witness });
-    toast(tr('Ranged offer signed and posted'), 'ok'); refresh();
+    const coins = myCoinsOf(giveTag, L);
+    const total = coins.reduce((a, c) => a + c.pv, 0n);
+    if (total <= 0n) throw new Error(tr('no coins of that asset'));
+    let Q = BigInt(Math.round(parseFloat($('#rQty').value) * 1e8));
+    if (!(Q > 0n)) throw new Error(tr('enter a quantity'));
+    if (Q > total) Q = total;                                             // cap at the whole balance
+    const give = await prepareGiveCoin(giveTag, Q, L, coins);
+    const priceNum = BigInt(Math.round(P * 1e8)), priceDen = UNIT;
+    const desc = { payoutAsset: wantTag, payoutScript: give.spk, priceNum, priceDen, changeScript: give.spk, minFill: 0n, maxFill: Q };
+    const witness = signRangedGive(desc, give.outpoint, give, give.L);
+    await api('rangedOffer', { makerSpk: give.spk, giveOutpoint: give.outpoint, desc, nExpireTime: 0, lockHeight: give.L, witness });
+    toast(tr('Offer signed and posted'), 'ok'); refresh();
   } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -294,16 +335,24 @@ async function fillRangedNow(offer, fillUnits) {
     const payout = (fill * priceNum + priceDen - 1n) / priceDen;   // rounded up (never short the maker)
     const change = givePv - fill;
     const pvAt = (c, rate) => assetPresentValue(BigInt(c.value), L - c.refheight, rate);
-    // the coin the taker pays with, in the want asset (covers the fee too when want = FRC)
+    const gather = (norm, rate, need, exclude) => {   // pick coins of one asset (largest first) covering `need`
+      const pool = state.mine.utxos.filter(x => (x.assetTag ?? null) === norm && x.refheight <= L && !exclude.has(x.outpoint))
+        .map(x => ({ outpoint: x.outpoint, spk: x.spk, value: BigInt(x.value), refheight: x.refheight, pv: pvAt(x, rate) }))
+        .sort((a, b) => (b.pv > a.pv ? 1 : b.pv < a.pv ? -1 : 0));
+      const got = []; let sum = 0n;
+      for (const c of pool) { got.push(c); sum += c.pv; if (sum >= need) break; }
+      return { got, sum };
+    };
+    // pay the maker in the want asset — combine as many of my coins as needed (covers the fee too
+    // when want = FRC). No single "banknote" has to be big enough.
     const payRate = isFrcPayout ? { k: 20, interest: false } : rateOf(payoutTag);
     const payTagNorm = isFrcPayout ? null : payoutTag;
-    const payCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === payTagNorm && x.refheight <= L && pvAt(x, payRate) >= payout + (isFrcPayout ? fee : 0n) + 1000n);
-    if (!payCoin) throw new Error(isFrcPayout ? tr('you need an FRC coin (tap Faucet) to pay for this fill') : tr('you need enough of the requested asset to pay for this fill'));
-    const payPv = pvAt(payCoin, payRate);
-    const vin = [
-      { prevout: prevout(offer.giveOutpoint), scriptSig: '', sequence: 0xffffffff, witness: offer.witness },
-      { prevout: prevout(payCoin.outpoint), scriptSig: '', sequence: 0xffffffff, witness: [] },
-    ];
+    const need = payout + (isFrcPayout ? fee : 0n);
+    const { got: payCoins, sum: payPv } = gather(payTagNorm, payRate, need, new Set());
+    if (payPv < need) throw new Error(isFrcPayout ? tr('you need more FRC (tap Faucet) to pay for this fill') : tr('you need more of the requested asset to pay for this fill'));
+    const vin = [{ prevout: prevout(offer.giveOutpoint), scriptSig: '', sequence: 0xffffffff, witness: offer.witness }];
+    const takerInputs = [];
+    for (const c of payCoins) { vin.push({ prevout: prevout(c.outpoint), scriptSig: '', sequence: 0xffffffff, witness: [] }); takerInputs.push(c); }
     const vout = [
       { value: payout, scriptPubKey: d.payoutScript, assetTag: payoutTag },   // [payout] to maker
       { value: change, scriptPubKey: d.changeScript, assetTag: giveTag },     // [change] to maker
@@ -311,21 +360,18 @@ async function fillRangedNow(offer, fillUnits) {
     ];
     const payChange = payPv - payout - (isFrcPayout ? fee : 0n);   // my want-asset change (fee taken here iff want=FRC)
     if (payChange > 0n) vout.push({ value: payChange, scriptPubKey: spks[0], assetTag: payoutTag });
-    // when the want asset isn't FRC, add a separate FRC coin for the network fee
-    let feeCoin = null;
+    // when the want asset isn't FRC, add FRC coin(s) for the network fee
     if (!isFrcPayout) {
-      feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && x.refheight <= L && x.outpoint !== payCoin.outpoint && pvAt(x, { k: 20, interest: false }) >= fee + 1000n);
-      if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
-      const feePv = pvAt(feeCoin, { k: 20, interest: false });
-      vin.push({ prevout: prevout(feeCoin.outpoint), scriptSig: '', sequence: 0xffffffff, witness: [] });
+      const { got: feeCoins, sum: feePv } = gather(null, { k: 20, interest: false }, fee, new Set(payCoins.map(c => c.outpoint)));
+      if (feePv < fee) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
+      for (const c of feeCoins) { vin.push({ prevout: prevout(c.outpoint), scriptSig: '', sequence: 0xffffffff, witness: [] }); takerInputs.push(c); }
       if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: spks[0], assetTag: HOST_TAG });
     }
     const tx = {
       version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin, vout,
       ranged: [{ nIn: 1, payoutAsset: payoutTag, payoutScript: d.payoutScript, priceNum, priceDen, changeScript: d.changeScript, minFill, maxFill, nExpireTime: offer.nExpireTime ?? 0 }],
     };
-    signInput(tx, 1, payCoin.spk, payCoin.value, payCoin.refheight, SIGHASH_ALL);
-    if (feeCoin) signInput(tx, 2, feeCoin.spk, feeCoin.value, feeCoin.refheight, SIGHASH_ALL);
+    takerInputs.forEach((c, i) => signInput(tx, i + 1, c.spk, c.value, c.refheight, SIGHASH_ALL));   // maker give at 0 already signed
     await api('tx', { rawtx: serializeTx(tx), kind: 'rangedfill', offerId: offer.id });
     toast(`${tr('Bought')} ${(Number(fill) / 1e8).toLocaleString(getLang())} ${assetName(offer.give.assetTag)}`, 'ok'); refresh();
   } catch (e) { toast(e.message, 'err'); }
@@ -388,8 +434,9 @@ function render() {
 
     <section id="tab-dex"${on('dex')}>
       <p class="label">${tr('Post an offer')}</p>
-      <div class="row"><label>${tr('I give (coin)')}<select id="rGive"></select></label><label>${tr('I want')}<select id="rWant"></select></label></div>
-      <div class="row"><label>${tr('Price (want per unit)')}<input id="rPrice" type="text" inputmode="decimal"></label><button id="rOfferBtn">${tr('Post offer')}</button></div>
+      <div class="row"><label>${tr('I sell')}<select id="rAsset"></select></label><label>${tr('Quantity')}<input id="rQty" type="text" inputmode="decimal"></label></div>
+      <div class="row"><label>${tr('I want')}<select id="rWant"></select></label><label>${tr('Price (want per unit)')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
+      <div class="row"><button id="rOfferBtn">${tr('Post offer')}</button></div>
       <p class="sub" style="font-size:12px">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p>
 
       <p class="label" style="margin-top:14px">${tr('Order book')}</p>
@@ -450,8 +497,9 @@ function paint() {
       <td class="${melt ? 'melt' : grow ? 'grow' : ''}">${fmtA(tag, e.pv)}</td></tr>`;
   }).join('') || `<tr><td colspan="3" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
 
-  setOptions('#rGive', state.mine.utxos.map(u =>
-    `<option value="${u.outpoint}">${fmtA(u.assetTag ?? 'FRC', pvU(u))} (${u.outpoint.slice(0, 8)}…)</option>`).join('')
+  // "I sell": the assets I actually hold, with my balance (present value, in units)
+  setOptions('#rAsset', [...byAsset.entries()].map(([k, e]) =>
+    `<option value="${k}">${assetName(k === 'FRC' ? null : k)} (${(Number(e.pv) / 1e8).toLocaleString(getLang())})</option>`).join('')
     || `<option value="">${tr('no coins yet')}</option>`);
   setOptions('#rWant', ['FRC', ...state.info.assets.map(a => a.tag)]
     .map(t => `<option value="${t}">${t === 'FRC' ? 'FRC' : assetName(t)}</option>`).join(''));
