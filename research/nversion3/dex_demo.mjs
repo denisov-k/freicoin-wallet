@@ -176,6 +176,101 @@ const main = async () => {
     console.log(`4. tampered match (Bob shortchanged by 1000 kria) REJECTED by consensus ✅`);
   }
 
-  console.log('\nDEX PHASE 1 LIVE ✅ — offline makers, trustless miner-matched settlement, real demurrage.');
+  // ================= ACT 2: a 3-way RING — transitive payments, no pair crosses =================
+  // Carol enters. New world: Alice holds coop (from act 1's spread? no — issue fresh),
+  // Carol holds a BOND (interest asset, k=18, grows), Bob holds FRC.
+  //   Alice: gives coop,  wants bonds
+  //   Carol: gives bonds, wants FRC
+  //   Bob:   gives FRC,   wants coop
+  // No two of these cross; the cycle does. One transaction settles all three.
+  const carol = key('d4');
+  const bondDef = Buffer.concat([Buffer.from([18, 1]), Buffer.alloc(8), Buffer.alloc(32)]);
+  bondDef.writeUInt8(1, 2);
+  const bondTag = hash160(bondDef).toString('hex');
+  const fundB = await fundSpk(TRUE_SPK, '2.0', mine);
+  const opretB = '6a' + (4 + bondDef.length).toString(16).padStart(2, '0') + '46524131' + bondDef.toString('hex');
+  const issueB = {
+    version: 3, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: fundB.refheight, nExpireTime: 0,
+    vin: [{ prevout: { txid: rev(fundB.txid), vout: fundB.vout }, scriptSig: '', sequence: 0xffffffff, witness: TRUE_WITNESS }],
+    vout: [
+      { value: 2_000_000n, scriptPubKey: carol.spk, assetTag: bondTag },   // bonds -> Carol
+      { value: 0n, scriptPubKey: opretB },
+      { value: fundB.value - 100000n, scriptPubKey: TRUE_SPK },
+    ],
+  };
+  await rpc('generateblock', mine, [serializeTx(issueB)]);
+  const issueBTxid = computeTxid(issueB);
+  const bob2 = await fundSpk(bob.spk, '0.40', mine);
+  const matCoin2 = await fundSpk(matcher.spk, '0.02', mine);   // matcher refuels BEFORE the book height
+  await rpc('generatetoaddress', 3, mine);
+  const H2 = await rpc('getblockcount');
+
+  // Alice's coop from act 1's… she spent it. Use the matcher's coop spread? It's tiny.
+  // Simplest: Bob's want from act 1 gave BOB the coop — Bob plays two seats? No: let CAROL's
+  // counterparty ring be Alice(coop) = act-1 Bob's coop coin re-labeled… keep the cast honest:
+  // act 1 left Bob holding the coop. So the ring is: BOB gives coop wants bonds, CAROL gives
+  // bonds wants FRC, ALICE gives FRC (her act-1 proceeds) wants coop.
+  const bobCoopCoin = { value: bobWantCoop, refheight: H };                 // match1:1 (Bob's)
+  const bobCoopPv = pv(bobCoopCoin.value, H2 - H, 18);
+  const aliceFrcCoin = { value: aliceWantFrc, refheight: H };               // match1:0 (Alice's)
+  const aliceFrcPv = pv(aliceFrcCoin.value, H2 - H, 20);
+  const bondPv = assetPresentValue(2_000_000n, H2 - fundB.refheight, { k: 18, interest: true });   // the bond GROWS
+
+  const ringOffers = [
+    { // #0 BOB: gives his coop coin, wants 1.9e6 bond-kria
+      input: { prevout: { txid: rev(matchTxid), vout: 1 }, scriptSig: '', sequence: 0xffffffff, witness: [] },
+      output: { value: 1_900_000n, scriptPubKey: bob.spk, assetTag: bondTag },
+      k: bob, coin: bobCoopCoin,
+    },
+    { // #1 CAROL: gives her bonds, wants 0.3 FRC
+      input: { prevout: { txid: rev(issueBTxid), vout: 0 }, scriptSig: '', sequence: 0xffffffff, witness: [] },
+      output: { value: 30_000_000n, scriptPubKey: carol.spk, assetTag: HOST },
+      k: carol, coin: { value: 2_000_000n, refheight: fundB.refheight },
+    },
+    { // #2 ALICE: gives her act-1 FRC, wants most of Bob's coop
+      input: { prevout: { txid: rev(matchTxid), vout: 0 }, scriptSig: '', sequence: 0xffffffff, witness: [] },
+      output: { value: bobCoopPv - 3_000n, scriptPubKey: alice.spk, assetTag: coopTag },
+      k: alice, coin: aliceFrcCoin,
+    },
+  ];
+  ringOffers.forEach((o, i) => {
+    const skel = { version: 3, nLockTime: 0, lockHeight: H2, nExpireTime: 0,
+      vin: Array(i + 1).fill(o.input), vout: [...Array(i).fill(o.output), o.output] };
+    o.witness = signP2wpkhInput(skel, i, o.k, o.coin.value, o.coin.refheight, SINGLE_ACP);
+  });
+  console.log(`5. RING OFFERS signed: Bob coop→bond, Carol bond→FRC, Alice FRC→coop (no pair crosses).`);
+
+  // matcher balances the ring; mine a couple of EXTRA blocks first — offers signed at H2
+  // stay matchable later (consensus only needs lock_height <= mining height)
+  await rpc('generatetoaddress', 2, mine);
+  const H3 = await rpc('getblockcount');
+  console.log(`   chain moved on to ${H3}; the book was signed at ${H2} — still matchable.`);
+  const bondSpread = bondPv - 1_900_000n;
+  const coopSpread2 = bobCoopPv - (bobCoopPv - 3_000n);
+  const mat2Pv = pv(matCoin2.value, H2 - matCoin2.refheight, 20);
+  const frcChange2 = aliceFrcPv + mat2Pv - 30_000_000n - fee;
+  const ring = {
+    version: 3, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: H2, nExpireTime: 0,
+    vin: [
+      { ...ringOffers[0].input, witness: ringOffers[0].witness },
+      { ...ringOffers[1].input, witness: ringOffers[1].witness },
+      { ...ringOffers[2].input, witness: ringOffers[2].witness },
+      { prevout: { txid: rev(matCoin2.txid), vout: matCoin2.vout }, scriptSig: '', sequence: 0xffffffff, witness: [] },
+    ],
+    vout: [
+      ringOffers[0].output, ringOffers[1].output, ringOffers[2].output,
+      { value: bondSpread, scriptPubKey: matcher.spk, assetTag: bondTag },
+      { value: coopSpread2, scriptPubKey: matcher.spk, assetTag: coopTag },
+      { value: frcChange2, scriptPubKey: matcher.spk, assetTag: HOST },
+    ],
+  };
+  ring.vin[3].witness = signP2wpkhInput(ring, 3, matcher, matCoin2.value, matCoin2.refheight, SIGHASH_ALL);
+  await rpc('generateblock', mine, [serializeTx(ring)]);
+  const ringTxid = computeTxid(ring);
+  const confR = await rpc('getrawtransaction', ringTxid, true);
+  console.log(`6. RING MATCHED & MINED ${ringTxid.slice(0, 12)}… (conf ${confR.confirmations}): three trades, one tx.`);
+  console.log(`   Bob got bonds, Carol got FRC, Alice got coop; matcher spread: ${bondSpread} bond + ${coopSpread2} coop + ${frcChange2 - mat2Pv} FRC-kria.`);
+
+  console.log('\nDEX PHASE 1 LIVE ✅ — pair + 3-way ring (transitive payments), offline makers, real demurrage AND interest.');
 };
 main().catch(e => { console.error('FAIL:', e.message); process.exit(1); });
