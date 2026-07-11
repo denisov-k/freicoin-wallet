@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { pubkeyCompressed, signEcdsa } from '../../core/ecdsa.mjs';
 import { segwitV0Sighash, SIGHASH_ALL, SIGHASH_SINGLE, SIGHASH_ANYONECANPAY } from '../../core/sighash.mjs';
-import { serializeTx, txid as computeTxid } from '../../core/tx.mjs';
+import { serializeTx, txid as computeTxid , NV3_TX_VERSION } from '../../core/tx.mjs';
 
 const DATADIR = process.env.NV3_DATADIR ?? '/tmp/claude-0/-root-free-money/e555c6c3-1be8-497c-bfab-7ed5f9628ddf/scratchpad/nv3reg';
 const PORT = 19660;
@@ -89,7 +89,7 @@ const main = async () => {
   const H0 = fundI.refheight;
   const opret = '6a' + (4 + defBytes.length).toString(16).padStart(2, '0') + '46524131' + defBytes.toString('hex');
   const issue = {
-    version: 3, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: H0, nExpireTime: 0,
+    version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: H0, nExpireTime: 0,
     vin: [{ prevout: { txid: rev(fundI.txid), vout: fundI.vout }, scriptSig: '', sequence: 0xffffffff, witness: TRUE_WITNESS }],
     vout: [
       { value: 5_000_000_000n, scriptPubKey: alice.spk, assetTag: coopTag },   // 50 coop -> Alice
@@ -127,7 +127,7 @@ const main = async () => {
   };
 
   // each maker signs against a skeleton holding ONLY their pair at their index
-  const skeleton = (inputs, outputs) => ({ version: 3, nLockTime: 0, lockHeight: H, nExpireTime: 0, vin: inputs, vout: outputs });
+  const skeleton = (inputs, outputs) => ({ version: NV3_TX_VERSION, nLockTime: 0, lockHeight: H, nExpireTime: 0, vin: inputs, vout: outputs });
   const SINGLE_ACP = SIGHASH_SINGLE | SIGHASH_ANYONECANPAY;
   aliceOffer.witness = signP2wpkhInput(skeleton([aliceOffer.input], [aliceOffer.output]), 0,
                                        alice, aliceCoop.value, H0, SINGLE_ACP);
@@ -143,7 +143,7 @@ const main = async () => {
   const coopSpread = alicePv - bobWantCoop;                       // 5000 kria coop
   const frcChange = bobPv + matPv - aliceWantFrc - fee;           // FRC spread net of fee
   const match = {
-    version: 3, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: H, nExpireTime: 0,
+    version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: H, nExpireTime: 0,
     vin: [
       { ...aliceOffer.input, witness: aliceOffer.witness },
       { ...bobOffer.input, witness: bobOffer.witness },
@@ -190,7 +190,7 @@ const main = async () => {
   const fundB = await fundSpk(TRUE_SPK, '2.0', mine);
   const opretB = '6a' + (4 + bondDef.length).toString(16).padStart(2, '0') + '46524131' + bondDef.toString('hex');
   const issueB = {
-    version: 3, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: fundB.refheight, nExpireTime: 0,
+    version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: fundB.refheight, nExpireTime: 0,
     vin: [{ prevout: { txid: rev(fundB.txid), vout: fundB.vout }, scriptSig: '', sequence: 0xffffffff, witness: TRUE_WITNESS }],
     vout: [
       { value: 2_000_000n, scriptPubKey: carol.spk, assetTag: bondTag },   // bonds -> Carol
@@ -234,7 +234,7 @@ const main = async () => {
     },
   ];
   ringOffers.forEach((o, i) => {
-    const skel = { version: 3, nLockTime: 0, lockHeight: H2, nExpireTime: 0,
+    const skel = { version: NV3_TX_VERSION, nLockTime: 0, lockHeight: H2, nExpireTime: 0,
       vin: Array(i + 1).fill(o.input), vout: [...Array(i).fill(o.output), o.output] };
     o.witness = signP2wpkhInput(skel, i, o.k, o.coin.value, o.coin.refheight, SINGLE_ACP);
   });
@@ -250,7 +250,7 @@ const main = async () => {
   const mat2Pv = pv(matCoin2.value, H2 - matCoin2.refheight, 20);
   const frcChange2 = aliceFrcPv + mat2Pv - 30_000_000n - fee;
   const ring = {
-    version: 3, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: H2, nExpireTime: 0,
+    version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: H2, nExpireTime: 0,
     vin: [
       { ...ringOffers[0].input, witness: ringOffers[0].witness },
       { ...ringOffers[1].input, witness: ringOffers[1].witness },

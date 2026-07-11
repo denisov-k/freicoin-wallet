@@ -22,6 +22,11 @@ class Reader {
 
 const MARKER = 0xff; // Freicoin segwit marker
 
+// nV3-lite transaction version. The whitepaper said nVersion=3, but upstream took tx v3 for
+// TRUC (BIP431); the top bit is the Freicoin extension namespace (upstream keeps versions
+// small non-negative ints), the low bits keep the whitepaper's 3. Checked by EXACT equality.
+export const NV3_TX_VERSION = 0x80000003;
+
 export function parseTx(hex) {
   const r = new Reader(hex);
   const version = r.u32();
@@ -41,7 +46,7 @@ export function parseTx(hex) {
   const vout = [];
   for (let i = 0; i < nvout; i++) vout.push({ value: r.u64(), scriptPubKey: r.varbytes() });
   // nVersion=3-lite: parallel tag + token blocks right after vout (see transaction.h)
-  if (version === 3) {
+  if (version === NV3_TX_VERSION) {
     for (const o of vout) o.assetTag = r.hex(20);
     for (const o of vout) {
       const n = r.varint(); o.tokens = [];
@@ -55,19 +60,19 @@ export function parseTx(hex) {
   }
   // nVersion=3-lite: authorizer approvals, witness-side (flag bit 2)
   let approvals = [];
-  if (version === 3 && (flags & 2) !== 0) {
+  if (version === NV3_TX_VERSION && (flags & 2) !== 0) {
     const n = r.varint();
     for (let i = 0; i < n; i++) approvals.push({ assetTag: r.hex(20), sig: r.varbytes() });
   }
   // nVersion=3 DEX: the bundle partition, witness-side (flag bit 4)
   let bundles = [];
-  if (version === 3 && (flags & 4) !== 0) {
+  if (version === NV3_TX_VERSION && (flags & 4) !== 0) {
     const n = r.varint();
     for (let i = 0; i < n; i++) bundles.push({ nIn: r.u32(), nOut: r.u32(), nExpireTime: r.u32() });
   }
   const nLockTime = r.u32();
   const lockHeight = r.u32();          // <-- Freicoin
-  const nExpireTime = version === 3 ? r.u32() : 0;   // nVersion=3-lite
+  const nExpireTime = version === NV3_TX_VERSION ? r.u32() : 0;   // nVersion=3-lite
   return { version, hasWitness, flags, vin, vout, nLockTime, lockHeight, nExpireTime, approvals, bundles, nvin, nvout };
 }
 
@@ -87,8 +92,8 @@ export function serializeTx(tx) {
   const a = [];
   const approvals = tx.approvals ?? [];
   const bundles = tx.bundles ?? [];
-  const withApprovals = tx.version === 3 && approvals.length > 0 && tx.hasWitness !== false;
-  const withBundles = tx.version === 3 && bundles.length > 0 && tx.hasWitness !== false;
+  const withApprovals = tx.version === NV3_TX_VERSION && approvals.length > 0 && tx.hasWitness !== false;
+  const withBundles = tx.version === NV3_TX_VERSION && bundles.length > 0 && tx.hasWitness !== false;
   pushU32(a, tx.version);
   if (tx.hasWitness || withApprovals || withBundles)
     a.push(MARKER, (tx.hasWitness ? 1 : 0) | (withApprovals ? 2 : 0) | (withBundles ? 4 : 0));
@@ -102,7 +107,7 @@ export function serializeTx(tx) {
   pushVarint(a, tx.vout.length);
   for (const o of tx.vout) { pushU64(a, o.value); pushVarbytes(a, o.scriptPubKey); }
   // nVersion=3-lite: tag + token blocks (in the txid), then witness, then approvals (not in it)
-  if (tx.version === 3) {
+  if (tx.version === NV3_TX_VERSION) {
     for (const o of tx.vout) a.push(...(o.assetTag ?? HOST_TAG).match(/../g).map(h => parseInt(h, 16)));
     for (const o of tx.vout) {
       const toks = o.tokens ?? [];
@@ -124,7 +129,7 @@ export function serializeTx(tx) {
   }
   pushU32(a, tx.nLockTime);
   pushU32(a, tx.lockHeight);
-  if (tx.version === 3) pushU32(a, tx.nExpireTime ?? 0);
+  if (tx.version === NV3_TX_VERSION) pushU32(a, tx.nExpireTime ?? 0);
   return a.map(b => b.toString(16).padStart(2, "0")).join("");
 }
 

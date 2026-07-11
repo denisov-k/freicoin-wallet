@@ -37,7 +37,7 @@ def ser_v3(vin, vout, tags, witnesses, lock_height, nlock=0, tokens=None, expire
     v3 wire: ver | (ff,flags) | vin | vout | tagblock | tokenblock | witness | nLockTime |
     lock_height | nExpireTime — the tag/token blocks ride between vout and witness, the
     expiry is the final field (both only for version==3)."""
-    ver = (3).to_bytes(4, "little")
+    ver = (0x80000003).to_bytes(4, "little")   # NV3_TX_VERSION (top bit: Freicoin extension namespace)
     vins = cs(len(vin))
     for txid, n in vin:
         vins += bytes.fromhex(txid)[::-1] + n.to_bytes(4, "little") + varstr(b"") + b"\xff\xff\xff\xff"

@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { pubkeyCompressed, signEcdsa } from '../../core/ecdsa.mjs';
 import { segwitV0Sighash, SIGHASH_ALL, SIGHASH_SINGLE, SIGHASH_ANYONECANPAY } from '../../core/sighash.mjs';
-import { serializeTx, txid as computeTxid } from '../../core/tx.mjs';
+import { serializeTx, txid as computeTxid , NV3_TX_VERSION } from '../../core/tx.mjs';
 import { assetPresentValue } from '../../core/assets.mjs';
 
 const DATADIR = process.env.NV3_DATADIR ?? '/root/nv3-playground/chain';
@@ -129,7 +129,7 @@ async function apiIssue({ name, shift, interest, amount, to }) {
   })();
   const opret = '6a' + (4 + def.length).toString(16).padStart(2, '0') + '46524131' + def.toString('hex');
   const tx = {
-    version: 3, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: fund.refheight, nExpireTime: 0,
+    version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: fund.refheight, nExpireTime: 0,
     vin: [{ prevout: { txid: rev(fund.txid), vout: fund.vout }, scriptSig: '', sequence: 0xffffffff, witness: TRUE_WITNESS }],
     vout: [
       { value: amt, scriptPubKey: ACTORS[who].spk, assetTag: tag },
@@ -158,7 +158,7 @@ async function apiOffer({ actor, giveOutpoint, wantAsset, wantValue }) {
   };
   const input = { prevout: { txid: rev(giveOutpoint.split(':')[0]), vout: Number(giveOutpoint.split(':')[1]) }, scriptSig: '', sequence: 0xffffffff, witness: [] };
   const output = { value: offer.want.value, scriptPubKey: k.spk, assetTag: wantAsset };
-  const skeleton = { version: 3, nLockTime: 0, lockHeight: H, nExpireTime: 0, vin: [input], vout: [output] };
+  const skeleton = { version: NV3_TX_VERSION, nLockTime: 0, lockHeight: H, nExpireTime: 0, vin: [input], vout: [output] };
   offer.input = input; offer.output = output;
   offer.witness = signInput(skeleton, 0, k, give.value, give.refheight, SIGHASH_SINGLE | SIGHASH_ANYONECANPAY);
   book.push(offer);
@@ -197,7 +197,7 @@ async function apiMatch({ i, j }) {
   if (change < 0n) throw new Error('матчеру не хватает на комиссию');
   if (change > 0n) { vout.push({ value: change, scriptPubKey: ACTORS.matcher.spk, assetTag: HOST_TAG }); spread.push(`${change - matPv} FRC-kria`); }
   const tx = {
-    version: 3, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: H, nExpireTime: 0,
+    version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: H, nExpireTime: 0,
     vin: [
       { ...a.input, witness: a.witness },
       { ...b.input, witness: b.witness },

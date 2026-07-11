@@ -8,6 +8,7 @@
 //      0x100 NO_LOCK_HEIGHT flag never enters the preimage      <-- Freicoin
 // Reference: test/functional/test_framework/script.py SegwitV0SignatureMsg.
 import { sha256 } from './crypto.mjs';
+import { NV3_TX_VERSION } from './tx.mjs';
 
 export const SIGHASH_ALL = 1;
 export const SIGHASH_NONE = 2;
@@ -39,7 +40,7 @@ const serPrevout = i => [...hexToBytes(i.prevout.txid), ...u32le(i.prevout.vout)
 // GetOutputsSHA256, closing tag-swap malleability. Non-v3 outputs serialize as before.
 const HOST_TAG_HEX = '00'.repeat(20);
 const serTokens = toks => [...compactSize(toks.length), ...toks.flatMap(t => serString(t))];
-const serOutput = (o, version) => version === 3
+const serOutput = (o, version) => version === NV3_TX_VERSION
   ? [...i64le(o.value), ...serString(o.scriptPubKey), ...hexToBytes(o.assetTag ?? HOST_TAG_HEX), ...serTokens(o.tokens ?? [])]
   : [...i64le(o.value), ...serString(o.scriptPubKey)];
 
@@ -84,7 +85,7 @@ export function segwitV0SighashPreimage(tx, inIdx, scriptCodeHex, amount, refhei
     ...u32le(tx.lockHeight),                                // Freicoin
     // nVersion=3-lite: commit nExpireTime (the mirror of nLockTime) — else a third party
     // could impose an expiry on a signed tx without breaking any signature.
-    ...(tx.version === 3 ? u32le(tx.nExpireTime ?? 0) : []),
+    ...(tx.version === NV3_TX_VERSION ? u32le(tx.nExpireTime ?? 0) : []),
     ...u32le(hashtype & ~SIGHASH_NO_LOCK_HEIGHT),           // Freicoin: mask NO_LOCK_HEIGHT
   ];
   return bytesToHex(ss);
@@ -104,7 +105,7 @@ export function segwitV0Sighash(tx, inIdx, scriptCodeHex, amount, refheight, has
  *  outside, which is what makes bundles splice-safe. A signer needs only their own bundle:
  *  `bundle` = {vin:[...], vout:[...], nExpireTime}, `inIdx` indexes INTO THE BUNDLE. */
 export function bundleSighash(bundle, inIdx, scriptCodeHex, amount, refheight,
-                              { version = 3, nLockTime = 0, lockHeight, hashtype = SIGHASH_ALL | SIGHASH_BUNDLE }) {
+                              { version = NV3_TX_VERSION, nLockTime = 0, lockHeight, hashtype = SIGHASH_ALL | SIGHASH_BUNDLE }) {
   const hashPrevouts = [...hash256(bundle.vin.flatMap(serPrevout))];
   const hashSequence = [...hash256(bundle.vin.flatMap(i => u32le(i.sequence)))];
   const hashOutputs = [...hash256(bundle.vout.flatMap(o => serOutput(o, version)))];
@@ -121,6 +122,40 @@ export function bundleSighash(bundle, inIdx, scriptCodeHex, amount, refheight,
     ...u32le(nLockTime),
     ...u32le(lockHeight),                                   // the fuzzer-mandated pin
     ...u32le(bundle.nExpireTime ?? 0),                      // bundle expiry (0 = never)
+    ...u32le(hashtype & ~SIGHASH_NO_LOCK_HEIGHT),
+  ];
+  return bytesToHex(hash256(ss));
+}
+
+/** nV3 DEX phase 2b — the RANGED digest: same shape as bundleSighash, but the outputs hash
+ *  is replaced by the hash of the maker-signed DESCRIPTOR (payout asset+script, price ratio,
+ *  change script, fill bounds). The fill amount is deliberately absent — one signature serves
+ *  every fill the constraint admits; consensus checks the miner's materialized outputs
+ *  against the descriptor. desc = {payoutAsset(hex20), payoutScript, priceNum, priceDen,
+ *  changeScript, minFill, maxFill}. */
+export function rangedSighash(bundle, inIdx, scriptCodeHex, amount, refheight,
+                              { version = NV3_TX_VERSION, nLockTime = 0, lockHeight, hashtype = SIGHASH_ALL | SIGHASH_BUNDLE }) {
+  const d = bundle.desc;
+  const descBytes = [
+    ...hexToBytes(d.payoutAsset ?? HOST_TAG_HEX),
+    ...serString(d.payoutScript),
+    ...i64le(d.priceNum), ...i64le(d.priceDen),
+    ...serString(d.changeScript),
+    ...i64le(d.minFill), ...i64le(d.maxFill),
+  ];
+  const ss = [
+    ...u32le(version),
+    ...hash256(bundle.vin.flatMap(serPrevout)),
+    ...hash256(bundle.vin.flatMap(i => u32le(i.sequence))),
+    ...serPrevout(bundle.vin[inIdx]),
+    ...serString(scriptCodeHex),
+    ...i64le(amount),
+    ...i64le(refheight),
+    ...u32le(bundle.vin[inIdx].sequence),
+    ...hash256(descBytes),                                  // the descriptor, NOT the outputs
+    ...u32le(nLockTime),
+    ...u32le(lockHeight),
+    ...u32le(bundle.nExpireTime ?? 0),
     ...u32le(hashtype & ~SIGHASH_NO_LOCK_HEIGHT),
   ];
   return bytesToHex(hash256(ss));

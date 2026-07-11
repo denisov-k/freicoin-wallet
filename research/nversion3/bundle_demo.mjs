@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import { pubkeyCompressed, signEcdsa } from '../../core/ecdsa.mjs';
 import { bundleSighash, SIGHASH_ALL, SIGHASH_BUNDLE } from '../../core/sighash.mjs';
 import { segwitV0Sighash } from '../../core/sighash.mjs';
-import { serializeTx, txid as computeTxid } from '../../core/tx.mjs';
+import { serializeTx, txid as computeTxid , NV3_TX_VERSION } from '../../core/tx.mjs';
 import { assetPresentValue } from '../../core/assets.mjs';
 
 const DATADIR = process.env.NV3_DATADIR ?? '/tmp/claude-0/-root-free-money/e555c6c3-1be8-497c-bfab-7ed5f9628ddf/scratchpad/nv3reg';
@@ -68,7 +68,7 @@ const main = async () => {
   const coopTag = hash160(def).toString('hex');
   const fund = await fundSpk(TRUE_SPK, '5.0', mine);
   const issue = {
-    version: 3, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: fund.refheight, nExpireTime: 0,
+    version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: fund.refheight, nExpireTime: 0,
     vin: [{ prevout: { txid: rev(fund.txid), vout: fund.vout }, scriptSig: '', sequence: 0xffffffff, witness: TRUE_WITNESS }],
     vout: [
       { value: 5_000_000_000n, scriptPubKey: alice.spk, assetTag: coopTag },
@@ -121,7 +121,7 @@ const main = async () => {
   const coopSpread = 3_000_000_000n - 2_999_000_000n;                       // 1e6
   const frcChange = bobPv + matPv - 30_000_000n - 15_000_000n - fee;
   const comp = {
-    version: 3, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: H, nExpireTime: 0,
+    version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: H, nExpireTime: 0,
     vin: [
       { ...aliceBundle.vin[0], scriptSig: '', witness: aliceWit },
       { ...bobBundle.vin[0], scriptSig: '', witness: bobWit },
