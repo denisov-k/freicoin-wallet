@@ -368,8 +368,8 @@ function paintActivity(txs) {
   const html = txs.length ? txs.map((t, i) =>
     `<div class="act" data-i="${i}">
        <div class="act-i ${t.category}">${CAT[t.category] || '•'}</div>
-       <div class="act-m"><b>${tr(t.category)}</b><span class="sub">${t.confirmations > 0 ? t.confirmations + ' ' + tr('conf') : tr('pending')} · ${timeAgo(t.time)}</span></div>
-       <div class="act-a ${(+t.amount) < 0 ? 'neg' : 'pos'}">${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)}</div>
+       <div class="act-m"><b>${tr(t.category)}</b>${t.confirmations > 0 ? '' : `<span class="sub">${tr('pending')}</span>`}</div>
+       <div class="act-a ${(+t.amount) < 0 ? 'neg' : 'pos'}">${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)}<span class="sub">${timeAgo(t.time)}</span></div>
      </div>`).join('') : `<div class="sub">${tr('no transactions yet')}</div>`;
   if (html === actLastHtml) return true;   // identical content — skip the rewrite (no blink)
   actLastHtml = html;
@@ -384,7 +384,7 @@ function paintActivity(txs) {
     if (sameRow) return;
     const d = document.createElement('div');
     d.id = 'actDetail'; d.dataset.txid = t.txid;
-    d.innerHTML = `<div class="detail"><span class="sub">txid</span><div class="txid">${t.txid}</div><button id="copyTxid" class="ghost">${tr('Copy txid')}</button></div>`;
+    d.innerHTML = `<div class="detail"><span class="sub">${t.confirmations > 0 ? t.confirmations + ' ' + tr('conf') : tr('pending')} · ${new Date(t.time * 1000).toLocaleString(getLang())}</span><span class="sub">txid</span><div class="txid">${t.txid}</div><button id="copyTxid" class="ghost">${tr('Copy txid')}</button></div>`;
     el.insertAdjacentElement('afterend', d);
     $('#copyTxid').onclick = e => copy(t.txid, e.target);
   });
