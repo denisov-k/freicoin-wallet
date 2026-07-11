@@ -365,10 +365,10 @@ export function renderExchange(el) {
 }
 // per-asset balance table (FRC + user assets) — the wallet's Balance tab shows this on nv3
 const skelRows = n => Array.from({ length: n }, () =>
-  '<tr><td><div class="skel-line" style="height:16px;width:70%;margin:4px 0"></div></td><td><div class="skel-line" style="height:16px;width:45%;margin:4px 0"></div></td></tr>').join('');
+  '<tr><td><div class="skel-line" style="height:16px;width:70%;margin:4px 0"></div></td><td><div class="skel-line" style="height:16px;width:45%;margin:4px 0 4px auto"></div></td></tr>').join('');
 export function renderAssetBalance(el) {
   el.innerHTML = `
-    <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th>${tr('Quantity')}</th></tr></thead><tbody id="assetBalBody">${skelRows(3)}</tbody></table>`;
+    <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="assetBalBody">${skelRows(3)}</tbody></table>`;
   const f = $('#faucetBtn'); if (f) f.onclick = faucet;   // the button itself lives with the other Balance actions
   if (state) paintAssetBalance(); else mvRefresh();
 }
@@ -381,7 +381,7 @@ function paintAssetBalance() {
   const amt = (tag, v) => tag === 'FRC' ? frc(v) : String(v);
   body.innerHTML = [...byAsset.entries()].map(([tag, e]) => {
     const melt = e.pv < e.nominal, grow = e.pv > e.nominal;
-    return `<tr><td>${assetName(tag === 'FRC' ? null : tag)}</td><td class="${melt ? 'melt' : grow ? 'grow' : ''}">${amt(tag, e.pv)}</td></tr>`;
+    return `<tr><td>${assetName(tag === 'FRC' ? null : tag)}</td><td class="r ${melt ? 'melt' : grow ? 'grow' : ''}">${amt(tag, e.pv)}</td></tr>`;
   }).join('') || `<tr><td colspan="2" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
 }
 

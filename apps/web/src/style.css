@@ -76,6 +76,7 @@ section[hidden] { display:none; }
 table.mkt { width:100%; border-collapse:collapse; font-size:13px; }
 table.mkt th { text-align:left; color:var(--sub); font-weight:500; padding:4px 8px; border-bottom:1px solid var(--line); }
 table.mkt td { padding:5px 8px; border-bottom:1px solid var(--line); font-family:ui-monospace,monospace; }
+table.mkt .r { text-align:right; }
 .melt { color:var(--warn); } .grow { color:var(--ok); } .filled { opacity:.45; }
 .chk { display:inline-flex; flex-direction:row; align-items:center; gap:8px; font-size:14px; color:var(--sub); cursor:pointer; margin:2px 0 4px; width:auto; }
 .chk input { width:18px; height:18px; accent-color:var(--accent); margin:0; flex:none; cursor:pointer; }
