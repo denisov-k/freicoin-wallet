@@ -3,7 +3,8 @@
 // chain of txs, double-spend & inflation rejection, FRC fees, and per-asset demurrage over time.
 import { check, finish } from './helpers.mjs';
 import { FRC, assetIdOf, assetPresentValue } from '../../../core/assets.mjs';
-import { Nv3State } from '../../../core/nv3chain.mjs';
+import { Nv3State, approvalDigest } from '../../../core/nv3chain.mjs';
+import { pubkeyCompressed, signEcdsa } from '../../../core/ecdsa.mjs';
 
 const st = new Nv3State();
 const spk = t => '0014' + t.repeat(20);
@@ -106,20 +107,29 @@ const badExp = st5.check({ txid: 'e2', lockHeight: 1000, nExpireTime: 1005, inpu
 check('nExpireTime: valid before expiry', okExp.ok);
 check('nExpireTime: rejected after expiry', !badExp.ok);
 
-// 11. authorizers: a transfer of an authorized asset needs the authorizer's approval
+// 11. authorizers: moving an authorized asset requires the authorizer's REAL ECDSA signature
+// over approvalDigest(txid, tag); a wrong key or a sig for another tx must be rejected.
 const st6 = new Nv3State();
 const fA = st6.seed('cbA', 0, { assetId: FRC, value: 10000000n, refheight: 1000, scriptPubKey: spk('11') });
-const AUTH = '02' + 'ab'.repeat(32);   // an authorizer pubkey
+const AUTH_SECRET = '11'.repeat(32);
+const AUTH = pubkeyCompressed(AUTH_SECRET);
 const stock = { k: 20, interest: false, granularity: 1, authorizer: AUTH };
 const idS = assetIdOf(stock);
 st6.apply({ txid: 'defstock', lockHeight: 1000, def: stock, inputs: [fA],
   outputs: [{ assetId: idS, value: 1000n, scriptPubKey: spk('c1') }, { assetId: FRC, value: 9998000n, scriptPubKey: spk('11') }] });
-const noApproval = st6.check({ txid: 's1', lockHeight: 1000, inputs: ['defstock:0'],
-  outputs: [{ assetId: idS, value: 1000n, scriptPubKey: spk('c2') }] });
-const withApproval = st6.check({ txid: 's2', lockHeight: 1000, approvals: [AUTH], inputs: ['defstock:0'],
-  outputs: [{ assetId: idS, value: 1000n, scriptPubKey: spk('c2') }] });
+const stockOut = [{ assetId: idS, value: 1000n, scriptPubKey: spk('c2') }];
+const noApproval = st6.check({ txid: 's1', lockHeight: 1000, inputs: ['defstock:0'], outputs: stockOut });
+const goodSig = signEcdsa(AUTH_SECRET, approvalDigest('s2', idS));
+const withApproval = st6.check({ txid: 's2', lockHeight: 1000, inputs: ['defstock:0'], outputs: stockOut,
+  approvals: [{ assetId: idS, sig: goodSig }] });
+const wrongTx = st6.check({ txid: 's3', lockHeight: 1000, inputs: ['defstock:0'], outputs: stockOut,
+  approvals: [{ assetId: idS, sig: goodSig }] });   // sig binds txid s2, tx is s3
+const wrongKey = st6.check({ txid: 's4', lockHeight: 1000, inputs: ['defstock:0'], outputs: stockOut,
+  approvals: [{ assetId: idS, sig: signEcdsa('22'.repeat(32), approvalDigest('s4', idS)) }] });
 check('authorizer: transfer rejected without approval', !noApproval.ok);
-check('authorizer: transfer accepted with approval', withApproval.ok);
+check('authorizer: transfer accepted with a valid signature', withApproval.ok);
+check('authorizer: signature for another tx rejected', !wrongTx.ok);
+check('authorizer: signature by another key rejected', !wrongKey.ok);
 check('authorizer is committed in the asset id', idS !== assetIdOf({ k: 20, interest: false, granularity: 1 }));
 
 finish();

@@ -79,9 +79,7 @@ export function signEcdsa(secretHex, msgHashHex) {
   return Buffer.concat([Buffer.from([0x30, der.length]), der]).toString('hex');
 }
 
-/** Verify a DER sig (hex) over msgHash (hex) against a secret (self-check helper). */
-export function verifyEcdsa(secretHex, msgHashHex, derHex) {
-  const Pt = pubkeyPoint(secretHex);
+function verifyWithPoint(Pt, msgHashHex, derHex) {
   const b = Buffer.from(derHex, 'hex');
   // parse DER: 30 len 02 rlen r 02 slen s
   let i = 2; const rlen = b[i + 1]; const r = bytesToBig(b.subarray(i + 2, i + 2 + rlen)); i += 2 + rlen;
@@ -92,4 +90,28 @@ export function verifyEcdsa(secretHex, msgHashHex, derHex) {
   const u1 = mod(z * w, N), u2 = mod(r * w, N);
   const Rp = ptAdd(ptMul(u1, G), ptMul(u2, Pt));
   return Rp !== null && mod(Rp.x, N) === r;
+}
+
+/** Verify a DER sig (hex) over msgHash (hex) against a secret (self-check helper). */
+export function verifyEcdsa(secretHex, msgHashHex, derHex) {
+  return verifyWithPoint(pubkeyPoint(secretHex), msgHashHex, derHex);
+}
+
+/** Decompress a 33-byte compressed pubkey (hex) to an affine point (y^2 = x^3 + 7). */
+export function pointFromCompressed(pubHex) {
+  const prefix = parseInt(pubHex.slice(0, 2), 16);
+  if (prefix !== 2 && prefix !== 3 || pubHex.length !== 66) return null;
+  const x = BigInt('0x' + pubHex.slice(2));
+  if (x >= P) return null;
+  let y = modPow(mod(x * x * x + 7n, P), (P + 1n) >> 2n, P);
+  if (mod(y * y, P) !== mod(x * x * x + 7n, P)) return null;   // x not on the curve
+  if ((y & 1n) !== BigInt(prefix & 1)) y = P - y;
+  return { x, y };
+}
+
+/** Verify a DER sig (hex) over msgHash (hex) against a compressed pubkey (hex) — what a
+ *  consensus validator does (it never has the secret). */
+export function verifyEcdsaPub(pubHex, msgHashHex, derHex) {
+  const Pt = pointFromCompressed(pubHex);
+  return Pt !== null && verifyWithPoint(Pt, msgHashHex, derHex);
 }

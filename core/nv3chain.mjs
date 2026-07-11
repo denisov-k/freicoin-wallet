@@ -9,6 +9,24 @@
 //   `def` present ⇒ an asset-definition (mint) tx: it registers the asset and may create it
 //   from nothing; every other asset in the tx must still balance and FRC still pays the fee.
 import { FRC, assetIdOf, assetPresentValue } from './assets.mjs';
+import { sha256 } from './crypto.mjs';
+import { verifyEcdsaPub } from './ecdsa.mjs';
+
+/** Digest an authorizer signs to approve one asset's movement in one tx:
+ *  SHA256d( "FRAPPROV" || txid (32 bytes, wire/internal order) || asset tag (20 bytes) ).
+ *  Approvals ride OUTSIDE the txid (witness-side in the node), so this is not circular; the
+ *  txid already commits to every output, tag, token and the expiry. In the model a txid that
+ *  isn't 64 hex chars (tests use names like 'xfer1') is digested as UTF-8 instead. */
+export function approvalDigest(txid, tagHex) {
+  const txidBytes = /^[0-9a-f]{64}$/i.test(txid)
+    ? Uint8Array.from(txid.match(/../g).map(x => parseInt(x, 16))).reverse()   // wire order
+    : new TextEncoder().encode(txid);
+  const tag = Uint8Array.from(tagHex.match(/../g).map(x => parseInt(x, 16)));
+  const pre = new Uint8Array(8 + txidBytes.length + tag.length);
+  pre.set(new TextEncoder().encode('FRAPPROV'), 0); pre.set(txidBytes, 8); pre.set(tag, 8 + txidBytes.length);
+  const d = sha256(sha256(pre));
+  return [...d].map(x => x.toString(16).padStart(2, '0')).join('');
+}
 
 const opkey = (txid, vout) => `${txid}:${vout}`;
 const groupSum = (items, key, val) => items.reduce((m, x) => (m.set(key(x), (m.get(key(x)) || 0n) + val(x)), m), new Map());
@@ -81,12 +99,18 @@ export class Nv3State {
     }
 
     // Authorizers (KYC / whitelisting / restricted stock): if an asset's definition names an
-    // authorizer, every transfer of it needs that authorizer's approval. (In the model an
-    // "approval" is just the authorizer id in tx.approvals; the node verifies a real signature.)
+    // authorizer (a 33-byte compressed pubkey), every movement of that asset requires the
+    // authorizer's REAL ECDSA signature over approvalDigest(txid, tag) — carried witness-side
+    // (tx.approvals = [{assetId, sig}]), so it is outside the txid and not circular. Minting
+    // is exempt (the issuer chooses the authorizer in the definition itself).
     for (const id of new Set([...ins.map(c => c.assetId), ...tx.outputs.map(o => o.assetId)])) {
       if (id === FRC || id === mintedId) continue;
       const auth = this.assets.get(id)?.authorizer;
-      if (auth && !(tx.approvals || []).includes(auth)) return { ok: false, err: `asset ${id} requires authorizer approval` };
+      if (!auth) continue;
+      const appr = (tx.approvals || []).find(a => a.assetId === id);
+      if (!appr) return { ok: false, err: `asset ${id} requires authorizer approval` };
+      if (!verifyEcdsaPub(auth, approvalDigest(tx.txid, id), appr.sig))
+        return { ok: false, err: `asset ${id} authorizer signature invalid` };
     }
 
     return { ok: true, fee };
