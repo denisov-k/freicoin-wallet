@@ -105,12 +105,18 @@ const pvOf = (u, h) => assetPresentValue(u.value, h - u.refheight, rateOf(u.asse
 // design; that signature only completes against a crossing counter-offer) and lists them.
 // ANY client splices two crossing offers with its OWN fee coin, keeps the spread, and
 // broadcasts the composite via /api/tx — permissionless matching, no privileged house.
-const book = [];   // {id, giveOutpoint, makerSpk, want, lockHeight, sequence, witness, status}
+// phase-1: {id, giveOutpoint, makerSpk, want, lockHeight, sequence, witness, status}
+// phase-2b ranged: {id, ranged:true, makerSpk, giveOutpoint, desc, nExpireTime, lockHeight,
+//   witness, needsResign, status} — a signed CONSTRAINT (price ratio + fill bounds) whose give
+//   coin partially fills. Each fill spends the give coin and returns a smaller change coin, which
+//   the maker's client re-signs (resignRanged) to keep the remainder tradeable.
+const book = [];
 let offerSeq = 1;
 
-// mark offers filled once their give-coin leaves the UTXO set (someone matched them)
+// mark offers filled once their give-coin leaves the UTXO set (someone matched them). Ranged
+// offers are re-pointed at their change coin inside the tx handler instead, so skip them here.
 function reconcileBook() {
-  for (const o of book) if (o.status === 'open' && !utxos.has(o.giveOutpoint)) o.status = 'filled';
+  for (const o of book) if (o.status === 'open' && !o.ranged && !utxos.has(o.giveOutpoint)) o.status = 'filled';
 }
 
 // ---- lifecycle ----
@@ -146,10 +152,11 @@ const api = {
       // a crossing counter-offer completes the balance.
       book: book.slice(-80).map(o => {
         const g = utxos.get(o.giveOutpoint);
-        return { id: o.id, status: o.status, makerSpk: o.makerSpk, lockHeight: o.lockHeight,
-          giveOutpoint: o.giveOutpoint, sequence: o.sequence, witness: o.witness,
-          give: g ? { assetTag: g.assetTag, value: String(g.value), refheight: g.refheight, pv: String(pvOf(g, h)) } : null,
-          want: { assetTag: o.want.assetTag, value: String(o.want.value) } };
+        const give = g ? { assetTag: g.assetTag, value: String(g.value), refheight: g.refheight, pv: String(pvOf(g, h)) } : null;
+        const base = { id: o.id, status: o.status, makerSpk: o.makerSpk, lockHeight: o.lockHeight, giveOutpoint: o.giveOutpoint, witness: o.witness, give };
+        return o.ranged
+          ? { ...base, ranged: true, desc: o.desc, nExpireTime: o.nExpireTime, needsResign: !!o.needsResign }
+          : { ...base, sequence: o.sequence, want: { assetTag: o.want.assetTag, value: String(o.want.value) } };
       }),
       events: events.slice(0, 30),
     };
@@ -200,14 +207,30 @@ const api = {
     say(`выпуск: «${name}» ×${amount} (shift ${shift}${interest ? ', растёт' : ''})`);
     return { tag, txid: computeTxid(tx) };
   },
-  async tx({ rawtx, kind }) {
+  async tx({ rawtx, kind, offerId }) {
     const parsed = parseTx(rawtx);            // sanity: it parses
     await rpc('generateblock', mineAddr, [rawtx]);
     await catchUp();
-    reconcileBook();                          // any offers this tx consumed are now filled
-    say(kind === 'match' ? `сделка сведена участником (${computeTxid(parsed).slice(0, 12)}…)`
-                         : `транзакция пользователя замайнена (${computeTxid(parsed).slice(0, 12)}…)`);
-    return { txid: computeTxid(parsed) };
+    reconcileBook();                          // any phase-1 offers this tx consumed are now filled
+    const txid = computeTxid(parsed);
+    // a ranged partial fill: re-point the offer at its change coin (the ranged bundle's 2nd
+    // output). The maker's give coin is spent; the change coin needs a fresh maker signature to
+    // stay tradeable, so flag it for re-sign. Exhausted (change below minFill) ⇒ done.
+    if (kind === 'rangedfill' && offerId != null) {
+      const o = book.find(x => x.id === Number(offerId) && x.ranged);
+      if (o) {
+        const h = await rpc('getblockcount');
+        const changeOp = `${txid}:1`;
+        const c = utxos.get(changeOp);
+        if (c && c.spk === o.desc.changeScript && pvOf(c, h) >= BigInt(o.desc.minFill)) {
+          o.giveOutpoint = changeOp; o.witness = null; o.needsResign = true; o.status = 'open';
+        } else { o.status = 'filled'; }
+      }
+    }
+    say(kind === 'match' ? `сделка сведена участником (${txid.slice(0, 12)}…)`
+      : kind === 'rangedfill' ? `частичный филл ranged-оффера #${offerId} (${txid.slice(0, 12)}…)`
+      : `транзакция пользователя замайнена (${txid.slice(0, 12)}…)`);
+    return { txid };
   },
   async offer({ giveOutpoint, makerSpk, want, lockHeight, sequence, witness }) {
     const g = utxos.get(giveOutpoint);
@@ -219,6 +242,34 @@ const api = {
       want: { assetTag: want.assetTag ?? null, value: BigInt(want.value) }, witness, status: 'open' };
     book.push(o);
     say(`новый оффер #${o.id} (ждёт, пока любой участник сведёт)`);
+    return { id: o.id };
+  },
+  // phase-2b: a ranged (partial-fill) offer. The maker signs a descriptor (price ratio + fill
+  // bounds) over ONE give coin; the server only relays it, exactly like phase-1 offers.
+  async rangedOffer({ makerSpk, giveOutpoint, desc, nExpireTime, lockHeight, witness }) {
+    const g = utxos.get(giveOutpoint);
+    if (!g) throw new Error('монета не найдена/уже потрачена');
+    if (g.spk !== makerSpk) throw new Error('монета не принадлежит этому ключу');
+    if (!desc || desc.payoutScript == null || desc.changeScript == null) throw new Error('плохой дескриптор');
+    if (!Array.isArray(witness) || witness.length < 2) throw new Error('нет подписи');
+    const o = { id: offerSeq++, ranged: true, makerSpk, giveOutpoint,
+      desc: { payoutAsset: desc.payoutAsset ?? '00'.repeat(20), payoutScript: desc.payoutScript,
+        priceNum: String(desc.priceNum), priceDen: String(desc.priceDen), changeScript: desc.changeScript,
+        minFill: String(desc.minFill), maxFill: String(desc.maxFill) },
+      nExpireTime: Number(nExpireTime ?? 0), lockHeight: Number(lockHeight), witness, needsResign: false, status: 'open' };
+    book.push(o);
+    say(`новый ranged-оффер #${o.id} (частичные филлы)`);
+    return { id: o.id };
+  },
+  // the maker's client re-signs its change coin after a partial fill (only it holds the key).
+  async resignRanged({ id, giveOutpoint, lockHeight, witness }) {
+    const o = book.find(x => x.id === Number(id) && x.ranged);
+    if (!o) throw new Error('нет такого ranged-оффера');
+    if (giveOutpoint && giveOutpoint !== o.giveOutpoint) throw new Error('оффер указывает на другую монету');
+    const g = utxos.get(o.giveOutpoint);
+    if (!g || g.spk !== o.makerSpk) throw new Error('монета остатка недоступна');
+    if (!Array.isArray(witness) || witness.length < 2) throw new Error('нет подписи');
+    o.witness = witness; o.lockHeight = Number(lockHeight); o.needsResign = false; o.status = 'open';
     return { id: o.id };
   },
   async cancel({ id, makerSpk }) {

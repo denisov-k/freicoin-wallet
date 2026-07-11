@@ -10,7 +10,7 @@ import { decryptSecret } from './vault.mjs';
 import { configureNetwork, resolveSecret, deriveAddress, generateMnemonic, isMnemonic } from './wallet.mjs';
 import { derivePath, ckdPriv, wpkProgramHex } from '../../../core/hd.mjs';
 import { pubkeyCompressed, signEcdsa } from '../../../core/ecdsa.mjs';
-import { segwitV0Sighash, SIGHASH_ALL, SIGHASH_SINGLE, SIGHASH_ANYONECANPAY } from '../../../core/sighash.mjs';
+import { segwitV0Sighash, rangedSighash, SIGHASH_ALL, SIGHASH_SINGLE, SIGHASH_ANYONECANPAY, SIGHASH_BUNDLE } from '../../../core/sighash.mjs';
 import { serializeTx, NV3_TX_VERSION } from '../../../core/tx.mjs';
 import { assetPresentValue } from '../../../core/assets.mjs';
 import { decodeWitness } from '../../../core/address.mjs';
@@ -140,6 +140,7 @@ async function doRefresh() {
   }));
   state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos } }; syncTip = r.tipHeight;
   if ($('#balBody')) paint(); else render();   // shell built once; refreshes only repaint data
+  maybeResignRanged();                          // keep my ranged offers alive after partial fills
 }
 
 // ---- actions ----
@@ -156,7 +157,7 @@ async function issue() {
 // ---- permissionless matching: I splice two crossing offers with MY fee coin, keep the
 // spread, broadcast. No privileged matcher — any participant can do exactly this. ----
 function findMatch() {
-  const open = state.info.book.filter(o => o.status === 'open' && o.give);
+  const open = state.info.book.filter(o => o.status === 'open' && o.give && !o.ranged);
   const h = state.mine.height;
   const pv = (v, tag, refh) => assetPresentValue(BigInt(v), h - refh, rateOf(tag));
   for (let i = 0; i < open.length; i++) for (let j = i + 1; j < open.length; j++) {
@@ -230,6 +231,99 @@ async function postOffer() {
   } catch (e) { toast(e.message, 'err'); }
 }
 
+// ---- DEX phase 2b: RANGED offers (partial fills). The maker signs a DESCRIPTOR (a price ratio
+// + fill bounds) over one give coin, NOT amounts; a taker fills any amount in range and the
+// remainder returns as change, which the maker re-signs to keep trading. First cut: give = a
+// user asset, payout = FRC ("sell part of my asset for FRC"). Amounts in whole units (1e8 kria).
+const UNIT = 100000000n;   // 1 asset/FRC unit = 1e8 kria (both have 8 decimals here)
+// sign a ranged give input over the descriptor (SIGHASH_BUNDLE ⇒ the digest commits the
+// descriptor, not the fill — one signature serves every admissible fill).
+function signRangedGive(desc, giveOp, coin, L) {
+  const node = km[coin.spk];
+  const sec = node.priv.toString(16).padStart(64, '0');
+  const code = '21' + pubkeyCompressed(sec) + 'ac';
+  const give = { prevout: { txid: rev(giveOp.split(':')[0]), vout: +giveOp.split(':')[1] }, sequence: 0xffffffff };
+  const HT = SIGHASH_ALL | SIGHASH_BUNDLE;
+  const dg = rangedSighash({ vin: [give], desc, nExpireTime: desc.nExpireTime ?? 0 }, 0, code, BigInt(coin.value), BigInt(coin.refheight), { lockHeight: L, hashtype: HT });
+  return [signEcdsa(sec, dg) + HT.toString(16).padStart(2, '0'), '00' + code, ''];
+}
+
+async function postRangedOffer() {
+  try {
+    const giveOp = $('#rGive').value;
+    const u = state.mine.utxos.find(x => x.outpoint === giveOp);
+    if (!u) throw new Error(tr('coin not found'));
+    if ((u.assetTag ?? null) === null) throw new Error(tr('Ranged: pick a user-asset coin to sell for FRC.'));
+    const P = parseFloat($('#rPrice').value), minU = parseFloat($('#rMin').value), maxU = parseFloat($('#rMax').value);
+    if (!(P > 0) || !(minU >= 0) || !(maxU >= minU)) throw new Error(tr('bad price or amount range'));
+    const priceNum = BigInt(Math.round(P * 1e8)), priceDen = UNIT;   // payout = fill * P (FRC-kria per asset-kria)
+    const minFill = BigInt(Math.round(minU * 1e8)), maxFill = BigInt(Math.round(maxU * 1e8));
+    const L = state.mine.height;
+    const desc = { payoutAsset: HOST_TAG, payoutScript: u.spk, priceNum, priceDen, changeScript: u.spk, minFill, maxFill };
+    const witness = signRangedGive(desc, giveOp, u, L);
+    await api('rangedOffer', { makerSpk: u.spk, giveOutpoint: giveOp, desc, nExpireTime: 0, lockHeight: L, witness });
+    toast(tr('Ranged offer signed and posted'), 'ok'); refresh();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+// build + broadcast a partial fill of a ranged offer. The ranged bundle's [payout, change] are
+// the first two outputs; the taker's fill + FRC change follow. The maker's give input keeps its
+// (fill-independent) SIGHASH_BUNDLE signature; the taker signs only its own FRC input.
+async function fillRangedNow(offer, fillUnits) {
+  try {
+    const d = offer.desc;
+    if ((d.payoutAsset ?? HOST_TAG) !== HOST_TAG) throw new Error(tr('this offer pays a non-FRC asset (not supported yet)'));
+    if (!offer.give) throw new Error(tr('offer coin is gone'));
+    const L = offer.lockHeight, fee = 10000n;
+    const giveTag = offer.give.assetTag ?? HOST_TAG;
+    const givePv = assetPresentValue(BigInt(offer.give.value), L - offer.give.refheight, rateOf(offer.give.assetTag));
+    const priceNum = BigInt(d.priceNum), priceDen = BigInt(d.priceDen), minFill = BigInt(d.minFill), maxFill = BigInt(d.maxFill);
+    let fill = BigInt(Math.round(fillUnits * 1e8));
+    const cap = givePv < maxFill ? givePv : maxFill;
+    if (fill > cap) fill = cap;
+    if (fill < minFill) throw new Error(tr('amount is below the offer minimum'));
+    const payout = (fill * priceNum + priceDen - 1n) / priceDen;   // rounded up (never short the maker)
+    const change = givePv - fill;
+    const payCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && x.refheight <= L && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= payout + fee + 1000n);
+    if (!payCoin) throw new Error(tr('you need an FRC coin (tap Faucet) to pay for this fill'));
+    const payPv = assetPresentValue(BigInt(payCoin.value), L - payCoin.refheight, { k: 20, interest: false });
+    const tx = {
+      version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0,
+      vin: [
+        { prevout: { txid: rev(offer.giveOutpoint.split(':')[0]), vout: +offer.giveOutpoint.split(':')[1] }, scriptSig: '', sequence: 0xffffffff, witness: offer.witness },
+        { prevout: { txid: rev(payCoin.outpoint.split(':')[0]), vout: +payCoin.outpoint.split(':')[1] }, scriptSig: '', sequence: 0xffffffff, witness: [] },
+      ],
+      vout: [
+        { value: payout, scriptPubKey: d.payoutScript, assetTag: HOST_TAG },   // [payout] to maker
+        { value: change, scriptPubKey: d.changeScript, assetTag: giveTag },    // [change] to maker
+        { value: fill, scriptPubKey: spks[0], assetTag: giveTag },             // fill to me
+        { value: payPv - payout - fee, scriptPubKey: spks[0], assetTag: HOST_TAG },   // my FRC change
+      ],
+      ranged: [{ nIn: 1, payoutAsset: d.payoutAsset ?? HOST_TAG, payoutScript: d.payoutScript, priceNum, priceDen, changeScript: d.changeScript, minFill, maxFill, nExpireTime: offer.nExpireTime ?? 0 }],
+    };
+    signInput(tx, 1, payCoin.spk, payCoin.value, payCoin.refheight, SIGHASH_ALL);
+    await api('tx', { rawtx: serializeTx(tx), kind: 'rangedfill', offerId: offer.id });
+    toast(`${tr('Bought')} ${(Number(fill) / 1e8).toLocaleString(getLang())} ${assetName(offer.give.assetTag)}`, 'ok'); refresh();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+// keep my own ranged offers alive: after a partial fill the relay re-points the offer at my
+// change coin and flags it; I re-sign the descriptor over that coin (only I hold the key).
+async function maybeResignRanged() {
+  if (!state?.info?.book) return;
+  for (const o of state.info.book) {
+    if (!o.ranged || !o.needsResign || !spks.includes(o.makerSpk)) continue;
+    const u = state.mine.utxos.find(x => x.outpoint === o.giveOutpoint);
+    if (!u) continue;                    // the change coin isn't in my verified set yet
+    const d = o.desc, L = state.mine.height;
+    const desc = { payoutAsset: d.payoutAsset ?? HOST_TAG, payoutScript: d.payoutScript, priceNum: BigInt(d.priceNum), priceDen: BigInt(d.priceDen), changeScript: d.changeScript, minFill: BigInt(d.minFill), maxFill: BigInt(d.maxFill) };
+    try {
+      const witness = signRangedGive(desc, o.giveOutpoint, u, L);
+      await api('resignRanged', { id: o.id, giveOutpoint: o.giveOutpoint, lockHeight: L, witness });
+    } catch { /* next sync retries */ }
+  }
+}
+
 // ---- UI ----
 // render() builds the STATIC shell (nav, inputs, buttons) ONCE and wires handlers; paint()
 // refreshes only the data regions (balances, order book, log, offer selects) every sync — so
@@ -276,6 +370,12 @@ function render() {
       </div>
       <div class="row"><label>${tr('How much I want')}<input id="oAmt" type="text" inputmode="decimal"></label><button id="offerBtn">${tr('Post offer')}</button></div>
       <div id="matchRow"></div>
+
+      <p class="label" style="margin-top:14px">${tr('Ranged offer (sell part of an asset for FRC)')}</p>
+      <div class="row"><label>${tr('Asset to sell')}<select id="rGive"></select></label><label>${tr('Price (FRC per unit)')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
+      <div class="row"><label>${tr('Min units')}<input id="rMin" type="text" inputmode="decimal"></label><label>${tr('Max units')}<input id="rMax" type="text" inputmode="decimal"></label><button id="rOfferBtn">${tr('Post ranged offer')}</button></div>
+      <p class="sub" style="font-size:12px">${tr('Buyers fill any amount in range; the remainder keeps trading while you are online.')}</p>
+
       <p class="label" style="margin-top:14px">${tr('Order book')}</p>
       <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>
     </section>
@@ -300,6 +400,7 @@ function render() {
   $('#faucetBtn').onclick = faucet;
   $('#issueBtn').onclick = issue;
   $('#offerBtn').onclick = postOffer;
+  $('#rOfferBtn').onclick = postRangedOffer;
   $('#langSel').onchange = () => { setLang($('#langSel').value); render(); };
   $('#themeSel').onchange = () => { const t = $('#themeSel').value; localStorage.setItem('fw_theme_mode', t); applyTheme(t); };
   $('#setReveal').onclick = () => { $('#setPhrase').style.filter = 'none'; };
@@ -338,13 +439,37 @@ function paint() {
     `<option value="${u.outpoint}">${fmtA(u.assetTag ?? 'FRC', pvU(u))} (${u.outpoint.slice(0, 8)}…)</option>`).join(''));
   setOptions('#oWant', ['FRC', ...state.info.assets.map(a => a.tag)]
     .map(t => `<option value="${t}">${t === 'FRC' ? 'FRC' : assetName(t)}</option>`).join(''));
+  setOptions('#rGive', state.mine.utxos.filter(u => (u.assetTag ?? null) !== null).map(u =>
+    `<option value="${u.outpoint}">${fmtA(u.assetTag, pvU(u))} (${u.outpoint.slice(0, 8)}…)</option>`).join('')
+    || `<option value="">${tr('no user-asset coins')}</option>`);
 
-  $('#bookBody').innerHTML = state.info.book.slice().reverse().map(o => `
-    <tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td>
-      <td>${o.give ? fmtA(o.give.assetTag ?? 'FRC', BigInt(o.give.pv)) : '—'}</td>
-      <td>${fmtA(o.want.assetTag ?? 'FRC', BigInt(o.want.value))}</td>
-      <td>${spks.includes(o.makerSpk) ? tr('mine') : ''} ${o.status}</td></tr>`).join('')
-    || `<tr><td colspan="4" class="sub">${tr('no offers yet')}</td></tr>`;
+  // skip repainting the book while a fill amount is being typed into it (else the 15s refresh
+  // wipes the input) — same reason the offer selects are preserved.
+  if (!$('#bookBody').contains(document.activeElement)) {
+    const bookRow = o => {
+      const mine = spks.includes(o.makerSpk);
+      const give = o.give ? fmtA(o.give.assetTag ?? 'FRC', BigInt(o.give.pv)) : '—';
+      if (o.ranged) {
+        const price = Number(BigInt(o.desc.priceNum)) / Number(BigInt(o.desc.priceDen));
+        const maxU = o.give ? Number(BigInt(o.give.pv)) / 1e8 : 0;
+        const act = mine ? `${tr('mine')} ${o.status}`
+          : (o.status === 'open' && o.give && !o.needsResign)
+            ? `<input class="rfill" data-id="${o.id}" type="text" inputmode="decimal" style="width:64px" placeholder="${maxU}"><button class="rbtn" data-id="${o.id}">${tr('Buy')}</button>`
+            : o.status;
+        return `<tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td><td>${give}</td>
+          <td>@ ${price.toLocaleString(getLang(), { maximumFractionDigits: 8 })} FRC</td><td>${act}</td></tr>`;
+      }
+      return `<tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td><td>${give}</td>
+        <td>${fmtA(o.want.assetTag ?? 'FRC', BigInt(o.want.value))}</td><td>${mine ? tr('mine') : ''} ${o.status}</td></tr>`;
+    };
+    $('#bookBody').innerHTML = state.info.book.slice().reverse().map(bookRow).join('')
+      || `<tr><td colspan="4" class="sub">${tr('no offers yet')}</td></tr>`;
+    $('#bookBody').querySelectorAll('.rbtn').forEach(b => b.onclick = () => {
+      const id = +b.dataset.id, offer = state.info.book.find(o => o.id === id);
+      const inp = $(`.rfill[data-id="${id}"]`), amt = parseFloat(inp?.value || inp?.placeholder || '0');
+      if (offer && amt > 0) fillRangedNow(offer, amt);
+    });
+  }
 
   $('#mlog').innerHTML = state.info.events.map(e => `<div>${new Date(e.t).toLocaleTimeString(getLang())} — ${e.m}</div>`).join('') || `<div class="sub">${tr('empty so far')}</div>`;
 

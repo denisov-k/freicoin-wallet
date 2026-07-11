@@ -66,6 +66,18 @@ const RU = {
   'Matching is done by any participant with their own fee coin — there is no privileged matcher.':
     'Сведение делает любой участник своей монетой на комиссию — привилегированного матчера нет.',
   'Order book': 'Книга офферов', 'Give': 'Отдают', 'Want': 'Хотят', 'mine': 'мой', 'no offers yet': 'офферов пока нет', 'empty so far': 'пока пусто',
+  'Ranged offer (sell part of an asset for FRC)': 'Диапазонный оффер (продать часть актива за FRC)',
+  'Asset to sell': 'Актив на продажу', 'Price (FRC per unit)': 'Цена (FRC за единицу)',
+  'Min units': 'Мин. единиц', 'Max units': 'Макс. единиц', 'Post ranged offer': 'Выставить диапазонный',
+  'Buyers fill any amount in range; the remainder keeps trading while you are online.':
+    'Покупатели берут любой объём в диапазоне; остаток продолжает торговаться, пока вы онлайн.',
+  'Ranged offer signed and posted': 'Диапазонный оффер подписан и выставлен',
+  'Ranged: pick a user-asset coin to sell for FRC.': 'Диапазонный: выберите монету актива для продажи за FRC.',
+  'bad price or amount range': 'неверная цена или диапазон объёма',
+  'this offer pays a non-FRC asset (not supported yet)': 'этот оффер платит не-FRC активом (пока не поддерживается)',
+  'offer coin is gone': 'монета оффера уже потрачена', 'amount is below the offer minimum': 'объём меньше минимума оффера',
+  'you need an FRC coin (tap Faucet) to pay for this fill': 'нужна монета FRC (нажмите Кран), чтобы оплатить покупку',
+  'no user-asset coins': 'нет монет активов', 'Buy': 'Купить', 'Bought': 'Куплено',
   'Account': 'Аккаунт', 'Secret phrase': 'Секретная фраза', 'Copy': 'Копировать', 'Stored only in this browser.': 'Хранится только в этом браузере.',
   'Log out of account': 'Выйти из аккаунта', 'Restore': 'Восстановить', 'Create': 'Создать',
   'A non-custodial exchange for user-issued Freicoin assets.': 'Некастодиальная биржа пользовательских активов Freicoin.',
