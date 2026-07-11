@@ -7,7 +7,7 @@ import { Buffer } from 'buffer';
 globalThis.Buffer = globalThis.Buffer || Buffer;
 
 import { decryptSecret } from './vault.mjs';
-import { configureNetwork, resolveSecret, deriveAddress, isValidAddress } from './wallet.mjs';
+import { configureNetwork, resolveSecret, deriveAddress, isValidAddress, generateMnemonic, isMnemonic } from './wallet.mjs';
 import { derivePath, ckdPriv, wpkProgramHex } from '../../../core/hd.mjs';
 import { pubkeyCompressed, signEcdsa } from '../../../core/ecdsa.mjs';
 import { segwitV0Sighash, SIGHASH_ALL, SIGHASH_SINGLE, SIGHASH_ANYONECANPAY } from '../../../core/sighash.mjs';
@@ -16,7 +16,10 @@ import { assetPresentValue } from '../../../core/assets.mjs';
 import { decodeWitness } from '../../../core/address.mjs';
 import { Neutrino } from './net/client.mjs';
 
-const API = `${location.protocol}//${location.hostname}:5181/api`;
+// origin-aware endpoints: on the TLS domain (market.testtty.ru) nginx proxies /api and /ws,
+// so we stay same-origin (no mixed content); on plain http we hit the raw ports directly.
+const HTTPS = location.protocol === 'https:';
+const API = HTTPS ? `${location.origin}/api` : `http://${location.hostname}:5181/api`;
 const HOST_TAG = '00'.repeat(20);
 const ACCOUNT = "m/84'/1'/0'";              // regtest coin type (as the wallet's testnets)
 const $ = s => document.querySelector(s);
@@ -72,7 +75,7 @@ const rateOf = tag => {
 // Balances, asset tags and rates are VERIFIED client-side (headers PoW-checked, BIP158
 // filters, block scan, defs self-certified). The relay is used only for the order book,
 // faucet, issuance funding, tx broadcast and mining — the inherently-external roles.
-const BRIDGE = `ws://${location.hostname}:3055`;
+const BRIDGE = HTTPS ? `wss://${location.host}/ws` : `ws://${location.hostname}:3055`;
 const GENESIS = '67756db06265141574ff8e7c3f97ebd57c443791e0ca27ee8b03758d6056edb8';   // regtest
 let lc = null, lcReady = null, inflight = null;
 const norm = tag => (!tag || tag === HOST_TAG) ? null : tag;
@@ -305,27 +308,44 @@ function render() {
   if ($('#matchBtn')) $('#matchBtn').onclick = matchNow;
 }
 
-// ---- unlock gate (the wallet's own vault, same origin = same session) ----
+// ---- key gate. Same origin as the wallet (wallet.testtty.ru/market.html) ⇒ shared vault,
+// one unlock. Standalone origin (market.testtty.ru) ⇒ its own key: this is an EXPERIMENTAL
+// chain, coins have no value, so we let the page create/restore a throwaway seed here. ----
+function start() { deriveKeys(); refresh(); setInterval(refresh, 15000); }
 function boot() {
   configureNetwork('regtest');
   const vault = localStorage.getItem('fw_vault');
   const plain = localStorage.getItem('fw_seed');
-  if (!vault && !plain) {
+  if (plain) { seed = resolveSecret(plain); return start(); }
+  if (vault) {
     $('#app').innerHTML = `<header><h1>Freimarkets</h1></header><main><section>
-      <p>Сначала создайте кошелёк — маркет использует ту же секретную фразу.</p>
-      <div class="row"><a href="/"><button>Открыть кошелёк</button></a></div></section></main>`;
+      <p class="sub">Введите парольную фразу кошелька этого домена.</p>
+      <label>Парольная фраза<input id="pw" type="password"></label>
+      <button id="unlockBtn">Разблокировать</button><p id="lerr" class="err"></p></section></main>`;
+    $('#unlockBtn').onclick = () => {
+      try { seed = resolveSecret(decryptSecret(JSON.parse(vault), $('#pw').value)); start(); }
+      catch { $('#lerr').textContent = 'неверная фраза'; }
+    };
     return;
   }
-  if (plain) { seed = resolveSecret(plain); deriveKeys(); refresh(); setInterval(refresh, 15000); return; }
-  $('#app').innerHTML = `<header><h1>Freimarkets</h1></header><main><section>
-    <p class="sub">Один кошелёк — одна сессия: введите ту же парольную фразу, что и в кошельке.</p>
-    <label>Парольная фраза<input id="pw" type="password"></label>
-    <button id="unlockBtn">Разблокировать</button><p id="lerr" class="err"></p></section></main>`;
-  $('#unlockBtn').onclick = () => {
-    try {
-      seed = resolveSecret(decryptSecret(JSON.parse(vault), $('#pw').value));
-      deriveKeys(); refresh(); setInterval(refresh, 15000);
-    } catch { $('#lerr').textContent = 'неверная фраза'; }
+  // no key on this origin — onboard (create/restore). Experimental chain: seed stored plainly.
+  $('#app').innerHTML = `<header><h1>Freimarkets <span class="sub">маркет · эксперимент</span></h1></header><main><section>
+    <p class="sub">Экспериментальная биржа с пользовательскими активами. Ключ хранится только в этом браузере;
+      монеты цепи ценности не имеют. Создайте ключ или восстановите фразой.</p>
+    <button id="genBtn">Создать ключ</button>
+    <p class="label" style="margin-top:14px">…или восстановить существующей фразой:</p>
+    <textarea id="restore" rows="2" placeholder="12 слов"></textarea>
+    <button id="restoreBtn" class="ghost">Восстановить</button>
+    <p id="oerr" class="err"></p></section></main>`;
+  $('#genBtn').onclick = () => {
+    const m = generateMnemonic();
+    if (!confirm('Ваша фраза (сохраните её):\n\n' + m + '\n\nПродолжить?')) return;
+    localStorage.setItem('fw_seed', m); seed = resolveSecret(m); start();
+  };
+  $('#restoreBtn').onclick = () => {
+    const m = $('#restore').value.trim();
+    if (!isMnemonic(m)) { $('#oerr').textContent = 'неверная фраза'; return; }
+    localStorage.setItem('fw_seed', m); seed = resolveSecret(m); start();
   };
 }
 

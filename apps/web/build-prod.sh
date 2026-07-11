@@ -11,7 +11,7 @@ cd "$(dirname "$0")"
 
 # fresh mainnet checkpoint (tip-100) from the filter node, so new wallets fast-sync
 MD=/root/fw-mainnet-filter
-RPC=$(grep -oE 'rpcport=[0-9]+' /etc/systemd/system/freicoind-filter.service 2>/dev/null | head -1 | cut -d= -f2)
+RPC=$( (grep -oE 'rpcport=[0-9]+' /etc/systemd/system/freicoind-filter.service 2>/dev/null || true) | head -1 | cut -d= -f2)
 RPC=${RPC:-18951}
 if H=$(curl -fs --user "$(cat $MD/.cookie)" -d '{"method":"getblockcount"}' "http://127.0.0.1:$RPC/" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["result"])' 2>/dev/null); then
   CPH=$((H-100))
