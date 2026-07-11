@@ -69,3 +69,15 @@ select { background:var(--card); border:1px solid var(--line); border-radius:10p
   padding:12px 14px; box-shadow:0 8px 24px rgba(0,0,0,.25); font-size:13px; }
 #statusPop .rrow { display:flex; justify-content:space-between; gap:12px; padding:2px 0; }
 #statusPop .sub { margin-top:6px; }
+
+/* Freimarkets (Issue/Exchange tabs) — order book, offer controls, per-asset balance */
+section[hidden] { display:none; }
+table.mkt { width:100%; border-collapse:collapse; font-size:13px; }
+table.mkt th { text-align:left; color:var(--sub); font-weight:500; padding:4px 8px; border-bottom:1px solid var(--line); }
+table.mkt td { padding:5px 8px; border-bottom:1px solid var(--line); font-family:ui-monospace,monospace; }
+.melt { color:var(--warn); } .grow { color:var(--ok); } .filled { opacity:.45; }
+.chk { display:inline-flex; flex-direction:row; align-items:center; gap:8px; font-size:14px; color:var(--sub); cursor:pointer; margin:2px 0 4px; width:auto; }
+.chk input { width:18px; height:18px; accent-color:var(--accent); margin:0; flex:none; cursor:pointer; }
+.fillbox { display:inline-flex; align-items:center; gap:6px; }
+.fillbox input.rfill { width:60px; padding:7px 8px; font-size:14px; text-align:right; border-radius:8px; }
+.fillbox .rbtn { padding:7px 12px; font-size:13px; font-weight:600; border-radius:8px; white-space:nowrap; }

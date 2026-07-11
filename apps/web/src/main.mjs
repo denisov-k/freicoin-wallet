@@ -6,6 +6,8 @@ import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidA
 import { encryptSecret, decryptSecret } from './vault.mjs';
 import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS, CHECKPOINT } from './netparams.mjs';
 import { tr, getLang, setLang, LANGS } from './i18n.mjs';
+// Freimarkets (Issue + Exchange) — mounted as extra tabs only on the nv3 network.
+import { initMarketView, mvSetSeed, mvRefresh, renderIssue, renderExchange, renderAssetBalance } from './market-view.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
@@ -127,6 +129,7 @@ function ds() {
     lightSrc = {
       health: () => wcall('health'), balance: () => wcall('balance'), utxos: () => wcall('utxos'),
       history: () => wcall('history'), refresh: () => wcall('refresh'), preview: () => wcall('preview'),
+      assets: () => wcall('assets'),   // nV3 asset-aware view for the Issue/Exchange tabs
       reset: () => wcall('reset'), broadcast: rawtx => wcall('broadcast', rawtx),
       close() {
         const w = worker; worker = null;
@@ -138,6 +141,7 @@ function ds() {
   }
   return lightSrc;
 }
+initMarketView(ds);   // give the Freimarkets tabs the wallet's light source (ds().assets())
 
 const $ = s => document.querySelector(s);
 const store = { get: k => localStorage.getItem(k), set: (k, v) => localStorage.setItem(k, v), del: k => localStorage.removeItem(k) };
@@ -261,12 +265,12 @@ function renderLock() {
 }
 
 // ---------- main app ----------
+// On the Freimarkets (nv3) network the wallet grows two extra tabs (Issue + Exchange); on every
+// other network it stays a plain wallet. The title reads "Freimarkets" (the unified product).
+const MKT = () => curNet() === 'nv3';
 function renderApp() {
-  // opened as the market's login popup: a secret is now available → hand it back and close,
-  // instead of rendering the full wallet in the popup.
-  if (authMode && unlockedSecret) { respondAuth(); return; }
   $('#app').innerHTML = `
-    <header><h1>Freicoin Wallet</h1>
+    <header><h1>Freimarkets</h1>
       <div class="hbtns"><button id="statusBtn" class="icon statusbtn st-sync" title="sync status">●</button></div></header>
     <div id="statusPop" hidden></div>
     <nav>
@@ -274,14 +278,17 @@ function renderApp() {
       <button data-tab="receive">${tr('Receive')}</button>
       <button data-tab="send">${tr('Send')}</button>
       <button data-tab="activity">${tr('Activity')}</button>
+      ${MKT() ? `<button data-tab="issue">${tr('Issue')}</button><button data-tab="exchange">${tr('Exchange')}</button>` : ''}
       <button data-tab="settings">⚙</button>
     </nav>
     <main>
       <section id="balance"></section><section id="receive" hidden></section>
       <section id="send" hidden></section><section id="activity" hidden></section>
+      ${MKT() ? `<section id="issue" hidden></section><section id="exchange" hidden></section>` : ''}
       <section id="settings" hidden></section>
     </main>
     <div id="toast"></div>`;
+  if (MKT() && unlockedSecret) mvSetSeed(hexSeed());   // hand the Freimarkets tabs the unlocked seed
   applyTheme(themeMode());
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.tab));
   $('#statusBtn').onclick = () => { const pop = $('#statusPop'); pop.hidden = !pop.hidden; if (!pop.hidden) renderStatusPop(); };
@@ -296,25 +303,29 @@ function renderApp() {
       const st = await getState(true);
       paintBalance(st);                                   // sets status ok; skips DOM when hidden
       if (!$('#activity').hidden) { const { txs } = await ds().history(); paintActivity(txs); }
+      if (MKT()) mvRefresh();                             // keep the order book + asset balance fresh on nv3
     } catch { setStatus('off', 'bridge unreachable — retrying'); }
   }, 6000);
-  const fromHash = authMode ? '' : location.hash.slice(1);
+  const fromHash = location.hash.slice(1);
   const saved = store.get('fw_tab');
-  const initial = TABS.includes(fromHash) ? fromHash : (TABS.includes(saved) ? saved : 'balance');
-  if (!authMode) history.replaceState(null, '', '#' + initial);   // normalize the URL without a spurious history entry
+  const tabs = visibleTabs();
+  const initial = tabs.includes(fromHash) ? fromHash : (tabs.includes(saved) ? saved : 'balance');
+  history.replaceState(null, '', '#' + initial);   // normalize the URL without a spurious history entry
   show(initial);
 }
 
 const TABS = ['balance', 'receive', 'send', 'activity', 'settings'];
+// the market tabs exist only on nv3; membership + which sections to hide are network-aware
+const visibleTabs = () => MKT() ? ['balance', 'receive', 'send', 'activity', 'issue', 'exchange', 'settings'] : TABS;
 const show = tab => {
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  TABS.forEach(s => $('#' + s).hidden = s !== tab);
+  visibleTabs().forEach(s => { const el = $('#' + s); if (el) el.hidden = s !== tab; });
   toast(''); render[tab]?.();
-  store.set('fw_tab', tab);                                                // fallback when the URL has no tab
-  if (!authMode && location.hash.slice(1) !== tab) location.hash = tab;    // hash routing: survives reload + back/forward
+  store.set('fw_tab', tab);                                        // fallback when the URL has no tab
+  if (location.hash.slice(1) !== tab) location.hash = tab;         // hash routing: survives reload + back/forward
 };
-// back/forward or an external #tab link switches the tab; #market-auth stays reserved for the login popup
-window.addEventListener('hashchange', () => { if (authMode) return; const t = location.hash.slice(1); if (TABS.includes(t) && $('#' + t)?.hidden) show(t); });
+// back/forward or an external #tab link switches the tab
+window.addEventListener('hashchange', () => { const t = location.hash.slice(1); if (visibleTabs().includes(t) && $('#' + t)?.hidden) show(t); });
 
 const getState = async force => {
   if (!force && cache) return cache;
@@ -383,6 +394,7 @@ let balPainted = false;
 function paintBalance(s) {
   if (!s.stale) setStatus('ok', '', s.tipHeight);
   else setStatus('sync', undefined, s.tipHeight);
+  if (MKT()) return;   // Freimarkets balance is a per-asset table owned by market-view; only sync the status here
   if ($('#balance').hidden) return;
   balPainted = true;
   // build the card once; update fields in place afterwards (a full innerHTML rewrite per
@@ -403,6 +415,18 @@ function paintBalance(s) {
 
 const render = {
   async balance() {
+    // Freimarkets (nv3): show per-asset holdings (FRC + user assets) + receiving address, not the
+    // plain FRC number. market-view owns the table; the host-currency sync still drives the status.
+    if (MKT()) {
+      if (!$('#assetBalBody')) {
+        let addr = ''; try { addr = deriveAddress(hexSeed(), 0, 0); } catch {}
+        $('#balance').innerHTML = `<p class="label">${tr('Your receiving address')}</p><div class="addr">${addr}</div><div id="mktBal"></div>`;
+        renderAssetBalance($('#mktBal'));
+      }
+      mvRefresh();
+      try { paintBalance(await getState(true)); } catch { setStatus('off', 'bridge unreachable — retrying'); }
+      return;
+    }
     const gen = ++renderGen;
     // First sync (nothing persisted yet): an honest placeholder — the balance is genuinely
     // unknown until the filter scan completes, so show that instead of a bare skeleton.
@@ -433,6 +457,8 @@ const render = {
       setStatus('off', 'bridge unreachable — retrying');
     }
   },
+  issue() { renderIssue($('#issue')); },          // Freimarkets: mint a user asset
+  exchange() { renderExchange($('#exchange')); }, // Freimarkets: the ranged-offer order book
   async receive() {
     let addr; try { addr = deriveAddress(hexSeed(), recvIndex, 0); } catch (e) { return toast(e.message, 'err'); }
     $('#receive').innerHTML =
@@ -549,17 +575,6 @@ function secure(sec, pass, wasVault) {
 }
 function lock() { unlockedSecret = null; unlockedPass = null; clearInterval(pollTimer); renderLock(); }
 
-// "Log in with wallet": the MARKET opens this wallet as a popup at #market-auth. Once a secret
-// is available (already unlocked, or after the user unlocks/creates here), we post it back to
-// the opener — targeting the market origin ONLY, never a URL or the server — and close.
-const MARKET_ORIGIN = 'https://market.testtty.ru';
-const authMode = location.hash.includes('market-auth') && !!window.opener;
-function respondAuth() {
-  try { window.opener.postMessage({ type: 'fw-session', secret: unlockedSecret }, MARKET_ORIGIN); } catch {}
-  document.body.innerHTML = `<main style="padding:48px 20px;text-align:center"><p>${tr('Signed in — you can return to the market.')}</p></main>`;
-  setTimeout(() => { try { window.close(); } catch {} }, 400);
-}
-
 function logout() {
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
   // "Removes the wallet from this device" includes the synced history/UTXO cache —
@@ -579,13 +594,11 @@ function applyNetSettings() {
   const br = $('#br').value.trim();
   if (br && br !== DEFAULT_BRIDGE[net]) store.set('fw_bridge', br); else store.del('fw_bridge');   // keep the net default unless overridden
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
-  cache = null; liveState = null;   // same wallet — keep the receive index
-  // Reset the UI to the new source's reality — the old network's numbers must not
-  // linger on screen while the new one syncs (nor its download counters in the popover).
-  $('#balance').innerHTML = ''; $('#activity').innerHTML = ''; actLastHtml = '';
-  const av = $('#avail'); if (av) av.textContent = tr('available…');
+  cache = null; liveState = null; actLastHtml = '';   // same wallet — keep the receive index
   status.progress = {}; status.rx = 0; status.rxAt = 0; status.mbps = 0; status.utxos = null; status.tip = null;
-  setStatus('sync', 'connecting…');
+  // Full rebuild: the old network's numbers must not linger, and the Freimarkets (Issue/Exchange)
+  // tabs must appear or disappear as the network gains/loses nv3.
+  renderApp();
   toast(tr('saved'));
 }
 

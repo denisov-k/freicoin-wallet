@@ -73,6 +73,10 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
         amount: kriaToFrc(timeAdjustValue(u.value, tip + 1 - u.refheight)),
         coinbase: u.coinbase, scriptPubKey: u.script,
       })),
+      // nV3 asset-aware view (all coins incl. user assets, + self-certified defs) — kept for the
+      // merged wallet's Issue/Exchange tabs, which the plain host-only `utxos` above hides.
+      assetDefs: r.assetDefs || {},
+      assetUtxos: r.utxos.map(u => ({ outpoint: `${u.txid}:${u.vout}`, spk: u.script, assetTag: (!u.assetTag || u.assetTag === '0'.repeat(40)) ? null : u.assetTag, value: String(u.value), refheight: u.refheight })),
       history: r.history.map(h => ({
         txid: h.txid, category: h.category,
         amount: kriaToFrc(h.amount < 0n ? -h.amount : h.amount) * (h.amount < 0n ? -1 : 1),
@@ -142,6 +146,8 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     async balance() { const c = await ensure(); return { balance: c.balance, tipHeight: c.tipHeight, unit: 'present-value', pending: c.pending, agreement: c.agreement, birthAuto: c.birthAuto }; },
     async utxos() { const c = await sync(); return { balance: c.balance, tipHeight: c.tipHeight, utxos: c.utxos, pending: c.pending, agreement: c.agreement, birthAuto: c.birthAuto, birthAnchor: c.birthAnchor }; },
     async history() { const c = await ensure(); return { txs: [...c.pending, ...c.history] }; },
+    // nV3 asset-aware snapshot for the Issue/Exchange tabs (per-asset utxos + self-certified defs)
+    async assets() { const c = await ensure(); return { tipHeight: c.tipHeight, assetUtxos: c.assetUtxos || [], assetDefs: c.assetDefs || {} }; },
     preview,
     async broadcast(rawtx) { if (!n) await sync(); n.broadcast(rawtx); return { txid: txidOf(parseTx(rawtx)) }; },
     refresh: sync,
