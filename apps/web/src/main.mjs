@@ -381,7 +381,9 @@ function paintActivity(txs) {
     const open = $('#actDetail');
     const sameRow = open?.dataset.txid === t.txid;
     open?.remove();
+    document.querySelector('.act.open')?.classList.remove('open');
     if (sameRow) return;
+    el.classList.add('open');   // suppress the row's own rule — the detail carries the divider
     const d = document.createElement('div');
     d.id = 'actDetail'; d.dataset.txid = t.txid;
     d.innerHTML = `<div class="detail"><span class="sub">${t.confirmations > 0 ? t.confirmations + ' ' + tr('conf') : tr('pending')} · ${new Date(t.time * 1000).toLocaleString(getLang())}</span><span class="sub">txid</span><div class="txid">${t.txid}</div><button id="copyTxid" class="ghost">${tr('Copy txid')}</button></div>`;
