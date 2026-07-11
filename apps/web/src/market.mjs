@@ -123,7 +123,7 @@ async function doRefresh() {
     value: String(u.value), refheight: u.refheight,
   }));
   state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos } };
-  render();
+  if ($('#balBody')) paint(); else render();   // shell built once; refreshes only repaint data
 }
 
 // ---- actions ----
@@ -215,36 +215,12 @@ async function postOffer() {
 }
 
 // ---- UI ----
+// render() builds the STATIC shell (nav, inputs, buttons) ONCE and wires handlers; paint()
+// refreshes only the data regions (balances, order book, log, offer selects) every sync — so
+// a periodic refresh never wipes what the user is typing.
+const fmtA = (tag, v) => tag === 'FRC' ? frc(v) + ' FRC' : String(v) + ' ' + assetName(tag);
 function render() {
   if (!state) return;
-  const h = state.mine.height;
-  const pvU = u => assetPresentValue(BigInt(u.value), h - u.refheight, rateOf(u.assetTag));
-  const byAsset = new Map();
-  for (const u of state.mine.utxos) {
-    const k = u.assetTag ?? 'FRC';
-    const e = byAsset.get(k) ?? { nominal: 0n, pv: 0n };
-    e.nominal += BigInt(u.value); e.pv += pvU(u);
-    byAsset.set(k, e);
-  }
-  const fmt = (tag, v) => tag === 'FRC' ? frc(v) + ' FRC' : String(v) + ' ' + assetName(tag);
-  const balRows = [...byAsset.entries()].map(([tag, e]) => {
-    const melt = e.pv < e.nominal, grow = e.pv > e.nominal;
-    return `<tr><td>${assetName(tag === 'FRC' ? null : tag)}</td><td>${fmt(tag, e.nominal)}</td>
-      <td class="${melt ? 'melt' : grow ? 'grow' : ''}">${fmt(tag, e.pv)}</td></tr>`;
-  }).join('') || `<tr><td colspan="3" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
-
-  const allAssetOpts = ['FRC', ...state.info.assets.map(a => a.tag)]
-    .map(t => `<option value="${t}">${t === 'FRC' ? 'FRC' : assetName(t)}</option>`).join('');
-  const giveOpts = state.mine.utxos.map(u =>
-    `<option value="${u.outpoint}">${fmt(u.assetTag ?? 'FRC', pvU(u))} (${u.outpoint.slice(0, 8)}…)</option>`).join('');
-
-  const bookRows = state.info.book.slice().reverse().map(o => `
-    <tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td>
-      <td>${o.give ? fmt(o.give.assetTag ?? 'FRC', BigInt(o.give.pv)) : '—'}</td>
-      <td>${fmt(o.want.assetTag ?? 'FRC', BigInt(o.want.value))}</td>
-      <td>${spks.includes(o.makerSpk) ? tr('mine') : ''} ${o.status}</td></tr>`).join('')
-    || `<tr><td colspan="4" class="sub">${tr('no offers yet')}</td></tr>`;
-
   const on = t => curTab === t ? '' : ' hidden';
   const act = t => curTab === t ? ' class="active"' : '';
   $('#app').innerHTML = `
@@ -261,7 +237,7 @@ function render() {
     <section id="tab-bal"${on('bal')}>
       <p class="label">${tr('Your receiving address')}</p>
       <div class="addr">${myAddress}</div>
-      <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th>${tr('Nominal')}</th><th>${tr('Present value')}</th></tr></thead><tbody>${balRows}</tbody></table>
+      <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th>${tr('Nominal')}</th><th>${tr('Present value')}</th></tr></thead><tbody id="balBody"></tbody></table>
       <div class="row"><button id="faucetBtn" class="ghost">${tr('Faucet (+1 FRC)')}</button><button id="refreshBtn" class="ghost">${tr('Refresh')}</button></div>
     </section>
 
@@ -279,19 +255,16 @@ function render() {
     <section id="tab-dex"${on('dex')}>
       <p class="label">${tr('Post an offer')}</p>
       <div class="row">
-        <label>${tr('I give')}<select id="oGive">${giveOpts}</select></label>
-        <label>${tr('I want')}<select id="oWant">${allAssetOpts}</select></label>
+        <label>${tr('I give')}<select id="oGive"></select></label>
+        <label>${tr('I want')}<select id="oWant"></select></label>
       </div>
       <div class="row"><label>${tr('How much I want')}<input id="oAmt" type="text" inputmode="decimal"></label><button id="offerBtn">${tr('Post offer')}</button></div>
-      ${findMatch() ? `<div class="row"><button id="matchBtn">${tr('⚡ Match crossing offers and take the spread')}</button></div>
-        <p class="sub">${tr('Matching is done by any participant with their own fee coin — there is no privileged matcher.')}</p>` : ''}
+      <div id="matchRow"></div>
       <p class="label" style="margin-top:14px">${tr('Order book')}</p>
-      <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody>${bookRows}</tbody></table>
+      <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"></tbody></table>
     </section>
 
-    <section id="tab-log"${on('log')}>
-      <div id="mlog">${state.info.events.map(e => `<div>${new Date(e.t).toLocaleTimeString(getLang())} — ${e.m}</div>`).join('') || `<div class="sub">${tr('empty so far')}</div>`}</div>
-    </section>
+    <section id="tab-log"${on('log')}><div id="mlog"></div></section>
 
     <section id="tab-set"${on('set')}>
       <label>${tr('Language')}<select id="langSel">${Object.entries(LANGS).map(([k, v]) => `<option value="${k}"${getLang() === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
@@ -311,7 +284,6 @@ function render() {
   $('#refreshBtn').onclick = refresh;
   $('#issueBtn').onclick = issue;
   $('#offerBtn').onclick = postOffer;
-  if ($('#matchBtn')) $('#matchBtn').onclick = matchNow;
   $('#langSel').onchange = () => { setLang($('#langSel').value); render(); };
   $('#themeSel').onchange = () => { const t = $('#themeSel').value; localStorage.setItem('fw_theme_mode', t); applyTheme(t); };
   $('#setReveal').onclick = () => { $('#setPhrase').style.filter = 'none'; };
@@ -320,6 +292,52 @@ function render() {
     if (!confirm(tr('Log out of account? Without the saved phrase it cannot be recovered.'))) return;
     localStorage.removeItem('fw_seed'); localStorage.removeItem('fw_vault'); location.reload();
   };
+  paint();
+}
+
+// fill a <select> preserving the current selection (so a refresh doesn't reset it)
+function setOptions(sel, html) {
+  const el = $(sel); if (!el) return;
+  const cur = el.value; el.innerHTML = html;
+  if ([...el.options].some(o => o.value === cur)) el.value = cur;
+}
+function paint() {
+  if (!state || !$('#balBody')) return;
+  const h = state.mine.height;
+  const pvU = u => assetPresentValue(BigInt(u.value), h - u.refheight, rateOf(u.assetTag));
+  const byAsset = new Map();
+  for (const u of state.mine.utxos) {
+    const k = u.assetTag ?? 'FRC';
+    const e = byAsset.get(k) ?? { nominal: 0n, pv: 0n };
+    e.nominal += BigInt(u.value); e.pv += pvU(u);
+    byAsset.set(k, e);
+  }
+  $('#balBody').innerHTML = [...byAsset.entries()].map(([tag, e]) => {
+    const melt = e.pv < e.nominal, grow = e.pv > e.nominal;
+    return `<tr><td>${assetName(tag === 'FRC' ? null : tag)}</td><td>${fmtA(tag, e.nominal)}</td>
+      <td class="${melt ? 'melt' : grow ? 'grow' : ''}">${fmtA(tag, e.pv)}</td></tr>`;
+  }).join('') || `<tr><td colspan="3" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
+
+  setOptions('#oGive', state.mine.utxos.map(u =>
+    `<option value="${u.outpoint}">${fmtA(u.assetTag ?? 'FRC', pvU(u))} (${u.outpoint.slice(0, 8)}…)</option>`).join(''));
+  setOptions('#oWant', ['FRC', ...state.info.assets.map(a => a.tag)]
+    .map(t => `<option value="${t}">${t === 'FRC' ? 'FRC' : assetName(t)}</option>`).join(''));
+
+  $('#bookBody').innerHTML = state.info.book.slice().reverse().map(o => `
+    <tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td>
+      <td>${o.give ? fmtA(o.give.assetTag ?? 'FRC', BigInt(o.give.pv)) : '—'}</td>
+      <td>${fmtA(o.want.assetTag ?? 'FRC', BigInt(o.want.value))}</td>
+      <td>${spks.includes(o.makerSpk) ? tr('mine') : ''} ${o.status}</td></tr>`).join('')
+    || `<tr><td colspan="4" class="sub">${tr('no offers yet')}</td></tr>`;
+
+  $('#mlog').innerHTML = state.info.events.map(e => `<div>${new Date(e.t).toLocaleTimeString(getLang())} — ${e.m}</div>`).join('') || `<div class="sub">${tr('empty so far')}</div>`;
+
+  const mr = $('#matchRow');
+  if (findMatch()) {
+    mr.innerHTML = `<div class="row"><button id="matchBtn">${tr('⚡ Match crossing offers and take the spread')}</button></div>
+      <p class="sub">${tr('Matching is done by any participant with their own fee coin — there is no privileged matcher.')}</p>`;
+    $('#matchBtn').onclick = matchNow;
+  } else mr.innerHTML = '';
 }
 function showTab(t) {
   curTab = t;
