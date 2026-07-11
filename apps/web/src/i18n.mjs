@@ -34,7 +34,7 @@ const RU = {
   'Unlock wallet': 'Разблокировать кошелёк', 'Unlock': 'Разблокировать',
   'unlocking…': 'разблокировка…', 'wrong passphrase': 'неверный пароль',
   'A trustless light wallet — keys never leave your device.': 'Лёгкий кошелёк без доверия — ключи не покидают ваше устройство.',
-  'Create a new wallet': 'Создать новый кошелёк', 'Restore from recovery phrase': 'Восстановить из фразы',
+  'Sign up': 'Зарегистрироваться', 'Log in': 'Войти',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Запишите эти 12 слов. Это ЕДИНСТВЕННЫЙ ключ к вашим деньгам — восстановить его за вас не сможет никто.',
   'I wrote them down': 'Я записал(а) слова', 'Recovery phrase or hex seed': 'Фраза восстановления или hex-сид',
@@ -153,7 +153,7 @@ const ES = {
   'Unlock wallet': 'Desbloquear monedero', 'Unlock': 'Desbloquear',
   'unlocking…': 'desbloqueando…', 'wrong passphrase': 'contraseña incorrecta',
   'A trustless light wallet — keys never leave your device.': 'Un monedero ligero sin confianza — las claves nunca salen de su dispositivo.',
-  'Create a new wallet': 'Crear un monedero nuevo', 'Restore from recovery phrase': 'Restaurar desde la frase',
+  'Sign up': 'Registrarse', 'Log in': 'Iniciar sesión',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Anote estas 12 palabras. Son la ÚNICA llave de su dinero — nadie puede recuperarlas por usted.',
   'I wrote them down': 'Las he anotado', 'Recovery phrase or hex seed': 'Frase de recuperación o semilla hex',
@@ -211,7 +211,7 @@ const DE = {
   'Unlock wallet': 'Wallet entsperren', 'Unlock': 'Entsperren',
   'unlocking…': 'entsperre…', 'wrong passphrase': 'falsches Passwort',
   'A trustless light wallet — keys never leave your device.': 'Ein vertrauensloses Light-Wallet — Schlüssel verlassen nie Ihr Gerät.',
-  'Create a new wallet': 'Neues Wallet erstellen', 'Restore from recovery phrase': 'Aus Phrase wiederherstellen',
+  'Sign up': 'Registrieren', 'Log in': 'Anmelden',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Schreiben Sie diese 12 Wörter auf. Sie sind der EINZIGE Schlüssel zu Ihrem Geld — niemand kann sie für Sie wiederherstellen.',
   'I wrote them down': 'Ich habe sie notiert', 'Recovery phrase or hex seed': 'Wiederherstellungsphrase oder Hex-Seed',
@@ -269,7 +269,7 @@ const FR = {
   'Unlock wallet': 'Déverrouiller le portefeuille', 'Unlock': 'Déverrouiller',
   'unlocking…': 'déverrouillage…', 'wrong passphrase': 'mot de passe incorrect',
   'A trustless light wallet — keys never leave your device.': 'Un portefeuille léger sans tiers de confiance — les clés ne quittent jamais votre appareil.',
-  'Create a new wallet': 'Créer un nouveau portefeuille', 'Restore from recovery phrase': 'Restaurer depuis la phrase',
+  'Sign up': "S'inscrire", 'Log in': 'Se connecter',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Notez ces 12 mots. Ils sont la SEULE clé de votre argent — personne ne peut les récupérer à votre place.',
   'I wrote them down': 'Je les ai notés', 'Recovery phrase or hex seed': 'Phrase de récupération ou graine hex',
@@ -327,7 +327,7 @@ const PT = {
   'Unlock wallet': 'Desbloquear carteira', 'Unlock': 'Desbloquear',
   'unlocking…': 'desbloqueando…', 'wrong passphrase': 'senha incorreta',
   'A trustless light wallet — keys never leave your device.': 'Uma carteira leve sem confiança — as chaves nunca saem do seu dispositivo.',
-  'Create a new wallet': 'Criar nova carteira', 'Restore from recovery phrase': 'Restaurar pela frase',
+  'Sign up': 'Cadastrar-se', 'Log in': 'Entrar',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Anote estas 12 palavras. Elas são a ÚNICA chave do seu dinheiro — ninguém pode recuperá-las por você.',
   'I wrote them down': 'Eu as anotei', 'Recovery phrase or hex seed': 'Frase de recuperação ou semente hex',
@@ -385,7 +385,7 @@ const ZH = {
   'Unlock wallet': '解锁钱包', 'Unlock': '解锁',
   'unlocking…': '解锁中…', 'wrong passphrase': '密码错误',
   'A trustless light wallet — keys never leave your device.': '无需信任的轻钱包 — 密钥永不离开您的设备。',
-  'Create a new wallet': '创建新钱包', 'Restore from recovery phrase': '通过助记词恢复',
+  'Sign up': '注册', 'Log in': '登录',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ 请抄写这 12 个单词。它们是您资金的唯一钥匙 — 没有任何人能替您找回。',
   'I wrote them down': '我已抄写', 'Recovery phrase or hex seed': '助记词或十六进制种子',

@@ -218,8 +218,8 @@ function renderWelcome() {
   $('#app').innerHTML = `<div class="lock"><div class="lockcard">
     <div class="lockicon fmark" aria-hidden="true">ƒ</div><h2>Freicoin Wallet</h2>
     <p class="sub">${tr('A trustless light wallet — keys never leave your device.')}</p>
-    <button id="wCreate">${tr('Create a new wallet')}</button>
-    <button id="wRestore" class="ghost">${tr('Restore from recovery phrase')}</button>
+    <button id="wCreate">${tr('Sign up')}</button>
+    <button id="wRestore" class="ghost">${tr('Log in')}</button>
     <div id="wBody"></div>
     <select id="wLang" class="wlang">${Object.entries(LANGS).map(([k, v]) => `<option value="${k}"${getLang() === k ? ' selected' : ''}>${v}</option>`).join('')}</select></div></div>`;
   $('#wLang').onchange = () => { setLang($('#wLang').value); renderWelcome(); };
