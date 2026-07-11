@@ -7,7 +7,7 @@ import { encodeMessage, createDecoder, buildVersion, parseVersion, buildGetHeade
          MSG_WITNESS_BLOCK, MSG_WITNESS_TX, MSG_TX } from './p2p.mjs';
 import { filterMatchesAny } from './bip158.mjs';
 import { parseAuxPow, checkAuxPoW } from './auxpow.mjs';
-import { blockHash, parseBlock } from './scan.mjs';
+import { blockHash, parseBlock, extractAssetDefs } from './scan.mjs';
 import { HeaderChain } from './chain.mjs';
 import { makePool } from './verifypool.mjs';
 import { parseTx, txid as txidOf } from '../../../../core/tx.mjs';
@@ -26,7 +26,8 @@ export class Neutrino {
     this._handlers = {};                 // command -> callback (single-shot phases)
     // persistent, incremental state (kept across syncWallet calls / restorable)
     this.chain = new HeaderChain(genesis);   // compact columnar chain (hashAt/timeAt/heightOf)
-    this.utxos = new Map();              // "txid:vout" -> {txid,vout,value,refheight,script,coinbase}
+    this.utxos = new Map();              // "txid:vout" -> {txid,vout,value,refheight,script,coinbase,assetTag}
+    this.assetDefs = new Map();          // nV3: assetTag -> {shift,interest,granularity}, self-certified (tag = Hash160(def))
     this.history = [];                   // {txid,category,amount,height,time}
     this.scannedHeight = 0;              // highest block scanned for wallet activity
     this.scannedOnce = false;            // true once a full filter scan has completed (preview gate)
@@ -403,7 +404,10 @@ export class Neutrino {
     const rev = h => Buffer.from(h, 'hex').reverse().toString('hex');
     for (const { hash, bytes } of blocks) {
       const height = hOf.get(hash); const time = this.chain.timeAt(height);
-      parseBlock(bytes).forEach((tx, txIndex) => {
+      const txsOfBlock = parseBlock(bytes);
+      // nV3: record any asset definitions in this block, self-certified (tag = Hash160(def))
+      for (const [tag, params] of extractAssetDefs(txsOfBlock)) this.assetDefs.set(tag, params);
+      txsOfBlock.forEach((tx, txIndex) => {
         const id = txidOf(tx);
         let recv = 0n, sent = 0n;
         // Value spent coins AT THE TX'S LOCK_HEIGHT: their nominal is written at an older
@@ -415,7 +419,7 @@ export class Neutrino {
         // the block height overvalues the coin by the demurrage of the gap (spends then
         // fail bad-txns-in-belowout). Coinbases have lock_height == height, which is why
         // mining-only wallets never tripped this.
-        tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) { recv += o.value; utxos.set(id + ':' + i, { txid: id, vout: i, value: o.value, refheight: tx.lockHeight, script: o.scriptPubKey, coinbase: txIndex === 0 }); } });
+        tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) { recv += o.value; utxos.set(id + ':' + i, { txid: id, vout: i, value: o.value, refheight: tx.lockHeight, script: o.scriptPubKey, coinbase: txIndex === 0, assetTag: o.assetTag ?? null, tokens: o.tokens ?? [] }); } });
         if (recv > sent) history.push({ txid: id, category: txIndex === 0 ? 'generate' : 'receive', amount: recv - sent, height, time });
         else if (sent > recv) history.push({ txid: id, category: 'send', amount: recv - sent, height, time });
       });
@@ -447,7 +451,7 @@ export class Neutrino {
   /** Result shape at height `at` (present values evaluated at at+1). */
   _result(at = this.chain.length - 1) {
     let balance = 0n; for (const u of this.utxos.values()) balance += timeAdjustValue(u.value, at + 1 - u.refheight);
-    return { tipHeight: at, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()] };
+    return { tipHeight: at, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()], assetDefs: Object.fromEntries(this.assetDefs) };
   }
 
   /** Consume a static cfilter snapshot for a from-genesis scan: filters stream over HTTP
@@ -556,7 +560,7 @@ export class Neutrino {
   snapshot() {
     const tip = this.chain.length - 1;
     let balance = 0n; for (const u of this.utxos.values()) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
-    return { tipHeight: tip, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()] };
+    return { tipHeight: tip, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()], assetDefs: Object.fromEntries(this.assetDefs) };
   }
 
   /** Serialize the incremental state (JSON-safe) for persistence across page reloads.
@@ -685,7 +689,7 @@ export class NeutrinoPool {
       else pending.set(id, e);
     }
     let balance = 0n; for (const u of primary.utxos.values()) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
-    return { tipHeight: tip, balance, utxos: [...primary.utxos.values()], history: [...primary.history].reverse(), pending: [...pending.values()], agreement: this.lastAgreement };
+    return { tipHeight: tip, balance, utxos: [...primary.utxos.values()], history: [...primary.history].reverse(), pending: [...pending.values()], agreement: this.lastAgreement, assetDefs: Object.fromEntries(primary.assetDefs) };
   }
 
   broadcast(rawHex) { for (const p of this.peers) p.broadcast(rawHex); return null; }

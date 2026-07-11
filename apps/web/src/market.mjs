@@ -14,6 +14,7 @@ import { segwitV0Sighash, SIGHASH_ALL, SIGHASH_SINGLE, SIGHASH_ANYONECANPAY } fr
 import { serializeTx, NV3_TX_VERSION } from '../../../core/tx.mjs';
 import { assetPresentValue } from '../../../core/assets.mjs';
 import { decodeWitness } from '../../../core/address.mjs';
+import { Neutrino } from './net/client.mjs';
 
 const API = `${location.protocol}//${location.hostname}:5181/api`;
 const HOST_TAG = '00'.repeat(20);
@@ -56,12 +57,42 @@ const signInput = (tx, i, spk, value, refheight, hashtype) => {
 const addrToSpk = a => { const { version, programHex } = decodeWitness(a.trim()); return version.toString(16).padStart(2, '0') + (programHex.length / 2).toString(16).padStart(2, '0') + programHex; };
 
 // ---- data ----
+// asset RATES come from the light client's self-certified defs (tag = Hash160(def)); the
+// relay's names are cosmetic (a lie only mislabels, it can't misprice).
 const assetName = tag => tag === null || tag === HOST_TAG ? 'FRC' : (state?.info.assets.find(a => a.tag === tag)?.name ?? tag.slice(0, 8) + '…');
-const rateOf = tag => { const a = state?.info.assets.find(x => x.tag === tag); return a ? { k: a.shift, interest: a.interest } : { k: 20, interest: false }; };
+const rateOf = tag => {
+  if (tag === null || tag === HOST_TAG) return { k: 20, interest: false };
+  const d = state?.defs?.[tag];                       // self-certified by the light client
+  if (d) return { k: d.shift, interest: d.interest };
+  const a = state?.info.assets.find(x => x.tag === tag);   // fallback: relay (untrusted, flagged)
+  return a ? { k: a.shift, interest: a.interest } : { k: 20, interest: false };
+};
 
-async function refresh() {
-  const [info, mine] = await Promise.all([api('info'), api('utxos', { spks })]);
-  state = { info, mine };
+// ---- trustless reads: the wallet's own Neutrino light client over the P2P bridge ----
+// Balances, asset tags and rates are VERIFIED client-side (headers PoW-checked, BIP158
+// filters, block scan, defs self-certified). The relay is used only for the order book,
+// faucet, issuance funding, tx broadcast and mining — the inherently-external roles.
+const BRIDGE = `ws://${location.hostname}:3055`;
+const GENESIS = '67756db06265141574ff8e7c3f97ebd57c443791e0ca27ee8b03758d6056edb8';   // regtest
+let lc = null, lcReady = null, inflight = null;
+const norm = tag => (!tag || tag === HOST_TAG) ? null : tag;
+async function ensureLc() {
+  if (!lcReady) lcReady = (async () => { lc = new Neutrino({ url: BRIDGE, net: 'regtest', genesis: GENESIS }); await lc.connect(); })();
+  return lcReady;
+}
+function refresh() {                              // serialized: one sync at a time (concurrent
+  if (inflight) return inflight;                 // syncWallet calls on one client deadlock)
+  inflight = doRefresh().catch(e => toast('синхронизация: ' + e.message, 'err')).finally(() => { inflight = null; });
+  return inflight;
+}
+async function doRefresh() {
+  await ensureLc();
+  const [info, r] = await Promise.all([api('info'), lc.syncWallet(spks)]);
+  const utxos = r.utxos.map(u => ({
+    outpoint: `${u.txid}:${u.vout}`, spk: u.script, assetTag: norm(u.assetTag),
+    value: String(u.value), refheight: u.refheight,
+  }));
+  state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos } };
   render();
 }
 
