@@ -483,14 +483,19 @@ const render = {
   },
   exchange() { renderExchange($('#exchange')); }, // Freimarkets: the ranged-offer order book
   async receive() {
-    let addr; try { addr = deriveAddress(hexSeed(), recvIndex, 0); } catch (e) { return toast(e.message, 'err'); }
-    openModal(`${tr('Receive')} #${recvIndex}`,
-      `<img id="qr" class="qr" alt="qr"/>
-       <div class="addr" id="addr">${addr}</div>
-       <div class="row"><button id="copyAddr" class="ghost">⧉ ${tr('Copy')}</button></div>
+    // Open in a loading state (shimmering QR + address placeholders), then fill in — the
+    // same skeleton the tables use, so "get new address" visibly loads the fresh one.
+    openModal(tr('Receive'),
+      `<div id="qrBox" class="qr skel" style="margin:0 auto;height:220px"></div>
+       <div class="addr" id="addr"><div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div></div>
+       <div class="row"><button id="copyAddr" class="ghost" disabled>⧉ ${tr('Copy')}</button></div>
        <div class="row"><button id="newAddr" class="ghost">${tr('Get new address')}</button></div>`);
-    $('#qr').src = await QRCode.toDataURL(addr.toUpperCase(), { margin: 1, width: 220 });
-    $('#copyAddr').onclick = e => copy(addr, e.target);
+    let addr; try { addr = deriveAddress(hexSeed(), recvIndex, 0); } catch (e) { return toast(e.message, 'err'); }
+    const qr = await QRCode.toDataURL(addr.toUpperCase(), { margin: 1, width: 220 });
+    const box = $('#qrBox'); if (!box) return;   // modal was closed mid-load
+    box.className = 'qr'; box.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`;
+    $('#addr').textContent = addr;
+    const cp = $('#copyAddr'); cp.disabled = false; cp.onclick = e => copy(addr, e.target);
     // Unbounded fresh addresses: the watch window is recvIndex+20 (watchGap). Before handing
     // out the next index, copy each network's birth record onto the grown fingerprint (a fresh
     // address has no history — the birth stays valid, no rescan), then restart the light
