@@ -46,14 +46,11 @@ function applyTheme(mode) {
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (themeMode() === 'system') applyTheme('system'); });
 
-// ---- sync indicator: a header dot pulses while a light-client sync is in flight ----
-const setSync = on => { const d = $('#syncDot'); if (d) d.classList.toggle('on', on); };
-function renderLoading() {
-  $('#app').innerHTML = `<div class="lock"><div class="lockcard">
-    <div class="lockicon">${COIN_SVG}</div><h2>Freimarkets</h2>
-    <div class="spin" style="align-self:center"></div>
-    <p class="sub">${tr('Syncing the chain…')}</p>
-    <p class="sub" style="font-size:12px">${tr('The light client verifies headers and filters')}</p></div></div>`;
+// ---- sync indicator: the wallet's header status button (● amber=syncing / green=ok / red=off) ----
+let syncTip = 0;
+function setStatus(state) {
+  const b = $('#statusBtn');
+  if (b) { b.className = 'icon statusbtn st-' + state; b.title = state === 'ok' ? `${tr('synced ✓ (verified)')} · ${syncTip}` : state === 'off' ? tr('offline') : tr('syncing…'); }
 }
 
 async function api(path, body) {
@@ -111,8 +108,8 @@ async function ensureLc() {
 }
 function refresh() {                              // serialized: one sync at a time (concurrent
   if (inflight) return inflight;                 // syncWallet calls on one client deadlock)
-  setSync(true);
-  inflight = doRefresh().catch(e => toast(tr('sync') + ': ' + e.message, 'err')).finally(() => { inflight = null; setSync(false); });
+  setStatus('sync');
+  inflight = doRefresh().then(() => setStatus('ok')).catch(e => { setStatus('off'); toast(tr('sync') + ': ' + e.message, 'err'); }).finally(() => { inflight = null; });
   return inflight;
 }
 async function doRefresh() {
@@ -122,7 +119,7 @@ async function doRefresh() {
     outpoint: `${u.txid}:${u.vout}`, spk: u.script, assetTag: norm(u.assetTag),
     value: String(u.value), refheight: u.refheight,
   }));
-  state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos } };
+  state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos } }; syncTip = r.tipHeight;
   if ($('#balBody')) paint(); else render();   // shell built once; refreshes only repaint data
 }
 
@@ -220,12 +217,11 @@ async function postOffer() {
 // a periodic refresh never wipes what the user is typing.
 const fmtA = (tag, v) => tag === 'FRC' ? frc(v) + ' FRC' : String(v) + ' ' + assetName(tag);
 function render() {
-  if (!state) return;
   const on = t => curTab === t ? '' : ' hidden';
   const act = t => curTab === t ? ' class="active"' : '';
   $('#app').innerHTML = `
   <header><h1>Freimarkets</h1>
-    <span id="syncDot" class="dot" title="sync"></span></header>
+    <div class="hbtns"><button id="statusBtn" class="icon statusbtn st-sync" title="${tr('syncing…')}">●</button></div></header>
   <nav>
     <button data-tab="bal"${act('bal')}>${tr('Balance')}</button>
     <button data-tab="issue"${act('issue')}>${tr('Issue')}</button>
@@ -237,7 +233,7 @@ function render() {
     <section id="tab-bal"${on('bal')}>
       <p class="label">${tr('Your receiving address')}</p>
       <div class="addr">${myAddress}</div>
-      <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th>${tr('Nominal')}</th><th>${tr('Present value')}</th></tr></thead><tbody id="balBody"></tbody></table>
+      <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th>${tr('Nominal')}</th><th>${tr('Present value')}</th></tr></thead><tbody id="balBody"><tr><td colspan="3" class="sub">${tr('first sync…')}</td></tr></tbody></table>
       <div class="row"><button id="faucetBtn" class="ghost">${tr('Faucet (+1 FRC)')}</button><button id="refreshBtn" class="ghost">${tr('Refresh')}</button></div>
     </section>
 
@@ -261,10 +257,10 @@ function render() {
       <div class="row"><label>${tr('How much I want')}<input id="oAmt" type="text" inputmode="decimal"></label><button id="offerBtn">${tr('Post offer')}</button></div>
       <div id="matchRow"></div>
       <p class="label" style="margin-top:14px">${tr('Order book')}</p>
-      <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"></tbody></table>
+      <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>
     </section>
 
-    <section id="tab-log"${on('log')}><div id="mlog"></div></section>
+    <section id="tab-log"${on('log')}><div id="mlog"><div class="sub">${tr('first sync…')}</div></div></section>
 
     <section id="tab-set"${on('set')}>
       <label>${tr('Language')}<select id="langSel">${Object.entries(LANGS).map(([k, v]) => `<option value="${k}"${getLang() === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
@@ -348,7 +344,7 @@ function showTab(t) {
 // ---- key gate. Same origin as the wallet (wallet.testtty.ru/market.html) ⇒ shared vault,
 // one unlock. Standalone origin (market.testtty.ru) ⇒ its own key: this is an EXPERIMENTAL
 // chain, coins have no value, so we let the page create/restore a throwaway seed here. ----
-function start() { deriveKeys(); renderLoading(); refresh(); setInterval(refresh, 15000); }
+function start() { deriveKeys(); render(); refresh(); setInterval(refresh, 15000); }
 function boot() {
   applyTheme(themeMode());
   configureNetwork('regtest');
@@ -427,10 +423,6 @@ style.textContent = `
   #mlog div{font-size:12.5px;color:var(--sub);padding:2px 0;border-bottom:1px dashed var(--line)}
   h1 .sub{font-size:13px;font-weight:400}
   #tab-set textarea{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--fg);font:14px ui-monospace,monospace;width:100%}
-  .dot{width:9px;height:9px;border-radius:50%;background:var(--line)}
-  .dot.on{background:var(--accent);animation:pulse 1s infinite}
-  @keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
-  .spin{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp 0.8s linear infinite}
-  @keyframes sp{to{transform:rotate(360deg)}}`;
+`;
 document.head.appendChild(style);
 boot();
