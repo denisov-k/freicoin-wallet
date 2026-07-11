@@ -66,14 +66,14 @@ export function derivePath(seedHex, path) {
 
 /** Serialize a node as xprv (base58check), Freicoin/Bitcoin version bytes. */
 export function toXprv(node, net = 'main') {
-  const v = VERSIONS[net].priv;
+  const v = (VERSIONS[net] || VERSIONS.test).priv;   // regtest/nv3/signet share testnet version bytes
   const payload = Buffer.concat([ser32(v).subarray(0, 4), Buffer.from([node.depth]),
     node.parentFp, ser32(node.index), node.chain, Buffer.concat([Buffer.from([0]), priv32(node.priv)])]);
   return base58check(payload);
 }
 /** Serialize a node's public half as xpub (base58check). */
 export function toXpub(node, net = 'main') {
-  const v = VERSIONS[net].pub;
+  const v = (VERSIONS[net] || VERSIONS.test).pub;
   const payload = Buffer.concat([ser32(v).subarray(0, 4), Buffer.from([node.depth]),
     node.parentFp, ser32(node.index), node.chain, pubkey(node)]);
   return base58check(payload);
