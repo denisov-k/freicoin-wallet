@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# build-prod.sh — the CANONICAL production build for wallet.testtty.ru.
+# build-prod.sh — the CANONICAL production build for fm.testtty.ru (the unified Freimarkets app).
 #
 # A bare `vite build` bakes the DEFAULT_BRIDGE fallbacks (ws://127.0.0.1:304x), which are
-# unreachable from a remote browser — the deployed wallet then fails with "bridge/ws error".
+# unreachable from a remote browser — the deployed app then fails with "bridge/ws error".
 # ALWAYS build the deployed dist through this script so the wss bridge URLs, the header/filter
-# snapshots and a FRESH mainnet checkpoint (tip-100, fast first sync) are baked in. It also
-# emits market.html via the multipage vite config.
+# snapshots and a FRESH mainnet checkpoint (tip-100, fast first sync) are baked in. Single entry
+# (index.html) — wallet + market are one app now.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -22,12 +22,12 @@ else
   CP=""; echo "WARNING: mainnet node unreachable — building WITHOUT a fresh checkpoint (slower first sync, still correct)"
 fi
 
-VITE_BRIDGE=wss://wallet.testtty.ru/ws/regtest \
-VITE_BRIDGE_NV3=wss://wallet.testtty.ru/ws/nv3 \
-VITE_BRIDGE_MAIN=wss://wallet.testtty.ru/ws/main \
-VITE_SNAP_MAIN=https://wallet.testtty.ru/snap/main-headers.bin \
-VITE_SNAP_MAIN_FILTERS=https://wallet.testtty.ru/snap/main-filters.bin \
+VITE_BRIDGE=wss://fm.testtty.ru/ws/regtest \
+VITE_BRIDGE_NV3=wss://fm.testtty.ru/ws/nv3 \
+VITE_BRIDGE_MAIN=wss://fm.testtty.ru/ws/main \
+VITE_SNAP_MAIN=https://fm.testtty.ru/snap/main-headers.bin \
+VITE_SNAP_MAIN_FILTERS=https://fm.testtty.ru/snap/main-filters.bin \
 VITE_CHECKPOINT_MAIN="$CP" \
 npx vite build
 
-echo "built dist/ — bridge=wss://wallet.testtty.ru/ws/*  checkpoint=${CP:-none}"
+echo "built dist/ — bridge=wss://fm.testtty.ru/ws/*  checkpoint=${CP:-none}"

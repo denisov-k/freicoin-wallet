@@ -50,6 +50,12 @@ server {
         proxy_set_header Range $http_range;
     }
 
+    # Freimarkets relay (order book, issuance, broadcast) — the merged app hits same-origin /api
+    location /api/ {
+        proxy_pass http://127.0.0.1:5181/api/;
+        proxy_set_header Host $host;
+    }
+
     # mini block explorer
     location /explorer {
         proxy_pass http://127.0.0.1:3060;
@@ -59,9 +65,9 @@ server {
     location = /mine { alias /var/www/fw-mine/index.html; default_type text/html; }
     location = /about { alias /var/www/fw-landing/index.html; default_type text/html; }
 
-    # the wallet app
+    # the app has moved to the unified Freimarkets origin
     location / {
-        proxy_pass http://127.0.0.1:5173;
+        return 301 https://fm.testtty.ru$request_uri;
     }
 
 }
