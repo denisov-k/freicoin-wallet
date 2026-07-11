@@ -503,8 +503,8 @@ function render() {
       <div class="row">
         <label>${tr('Selling')}<select id="fGive"></select></label>
         <label>${tr('Wants')}<select id="fWant"></select></label>
-        <label style="display:flex;flex-direction:row;align-items:center;gap:6px;flex:0 0 auto"><input type="checkbox" id="fOpen" checked>${tr('open only')}</label>
       </div>
+      <label class="chk"><input type="checkbox" id="fOpen" checked>${tr('open only')}</label>
       <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>
     </section>
 
@@ -599,7 +599,7 @@ function paint() {
         const act = mine
           ? (o.status === 'open' ? `${tr('mine')} <button class="rcancel" data-id="${o.id}">${tr('Cancel')}</button>` : `${tr('mine')} ${o.status}`)
           : (o.status === 'open' && o.give && !o.needsResign)
-            ? `<input class="rfill" data-id="${o.id}" type="text" inputmode="decimal" style="width:64px" placeholder="${maxU}"><button class="rbtn" data-id="${o.id}">${tr('Buy')}</button>`
+            ? `<span class="fillbox"><input class="rfill" data-id="${o.id}" type="text" inputmode="decimal" placeholder="${maxU}"><button class="rbtn" data-id="${o.id}">${tr('Buy')}</button></span>`
             : o.status;
         return `<tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td><td>${give}</td>
           <td>@ ${price.toLocaleString(getLang(), { maximumFractionDigits: 8 })} ${assetName(wantTag)}</td><td>${act}</td></tr>`;
@@ -703,6 +703,11 @@ style.textContent = `
   table.mkt th{text-align:left;color:var(--sub);font-weight:500;padding:4px 8px;border-bottom:1px solid var(--line)}
   table.mkt td{padding:5px 8px;border-bottom:1px solid var(--line);font-family:ui-monospace,monospace}
   .melt{color:var(--warn)} .grow{color:var(--ok)} .filled{opacity:.45}
+  .chk{display:inline-flex;flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--sub);cursor:pointer;margin:2px 0 4px;width:auto}
+  .chk input{width:18px;height:18px;accent-color:var(--accent);margin:0;flex:none;cursor:pointer}
+  .fillbox{display:inline-flex;align-items:center;gap:6px}
+  .fillbox input.rfill{width:60px;padding:7px 8px;font-size:14px;text-align:right;border-radius:8px}
+  .fillbox .rbtn{padding:7px 12px;font-size:13px;font-weight:600;border-radius:8px;white-space:nowrap}
   h1 .sub{font-size:13px;font-weight:400}
   #tab-set textarea{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--fg);font:14px ui-monospace,monospace;width:100%}
 `;
