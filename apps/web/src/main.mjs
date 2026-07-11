@@ -283,7 +283,7 @@ function renderLock() {
 const MKT = () => curNet() === 'nv3';
 function renderApp() {
   $('#app').innerHTML = `
-    <header><h1 style="font-weight:400;font-size:17px;letter-spacing:.04em">freimarkets</h1>
+    <header><h1 style="font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:600;font-size:26px;line-height:1;margin:0" title="Freimarkets">ƒ</h1>
       <div class="hbtns"><button id="statusBtn" class="icon statusbtn st-sync" title="sync status">●</button></div></header>
     <div id="statusPop" hidden></div>
     <nav>
