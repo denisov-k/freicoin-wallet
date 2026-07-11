@@ -84,7 +84,7 @@ const RU = {
   'you need an FRC coin older than the book height (tap Faucet earlier)': 'нужна ваша FRC-монета старше высоты книги (нажмите Кран пораньше)',
   'Log out of account? Without the saved phrase it cannot be recovered.': 'Выйти из аккаунта? Без сохранённой фразы восстановить его будет нельзя.',
   'issued to your address': 'выпущен на ваш адрес',
-  'Matched': 'Свёл офферы', 'sync': 'синхронизация',
+  'Matched': 'Свёл офферы', 'sync': 'синхронизация', 'Block': 'Блок', 'Assets': 'Активы',
   'This removes the wallet from this device. Without the recovery phrase the funds are UNRECOVERABLE.':
     'Кошелёк будет удалён с этого устройства. Без фразы восстановления средства ВОССТАНОВИТЬ НЕВОЗМОЖНО.',
   'Log out & wipe': 'Выйти и удалить',

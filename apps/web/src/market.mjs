@@ -47,11 +47,30 @@ function applyTheme(mode) {
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (themeMode() === 'system') applyTheme('system'); });
 
 // ---- sync indicator: the wallet's header status button (● amber=syncing / green=ok / red=off) ----
-let syncTip = 0;
-function setStatus(state) {
+// Clicking it opens a details popover (#statusPop), same as the wallet.
+let syncTip = 0, lastStatus = 'sync';
+function setStatus(s) {
+  lastStatus = s;
   const b = $('#statusBtn');
-  if (b) { b.className = 'icon statusbtn st-' + state; b.title = state === 'ok' ? `${tr('synced ✓ (verified)')} · ${syncTip}` : state === 'off' ? tr('offline') : tr('syncing…'); }
+  if (b) { b.className = 'icon statusbtn st-' + s; b.title = tr({ ok: 'synced ✓ (verified)', off: 'offline' }[s] || 'syncing…'); }
+  const pop = $('#statusPop'); if (pop && !pop.hidden) renderStatusPop();
 }
+function renderStatusPop() {
+  const pop = $('#statusPop'); if (!pop) return;
+  const label = tr({ ok: 'synced ✓ (verified)', off: 'offline' }[lastStatus] || 'syncing…');
+  const rx = lc && lc._rx ? (lc._rx / 1e6).toFixed(2) + ' MB' : '';
+  pop.innerHTML =
+    `<div class="rrow"><span>${tr('Network')}</span><b>Freimarkets · nV3</b></div>
+     <div class="rrow"><span>${tr('Status')}</span><b>${label}</b></div>
+     <div class="rrow"><span>${tr('Block')}</span><b>${syncTip.toLocaleString(getLang())}</b></div>
+     <div class="rrow"><span>UTXO</span><b>${state ? state.mine.utxos.length : 0}</b></div>
+     <div class="rrow"><span>${tr('Assets')}</span><b>${state ? state.info.assets.length : 0}</b></div>
+     ${rx ? `<div class="rrow"><span>${tr('Downloaded')}</span><b>${rx}</b></div>` : ''}`;
+}
+document.addEventListener('click', e => {
+  const pop = $('#statusPop');
+  if (pop && !pop.hidden && !pop.contains(e.target) && e.target.id !== 'statusBtn') pop.hidden = true;
+});
 
 async function api(path, body) {
   const r = await fetch(`${API}/${path}`, body ? { method: 'POST', body: JSON.stringify(body, (k, v) => typeof v === 'bigint' ? String(v) : v) } : undefined);
@@ -222,6 +241,7 @@ function render() {
   $('#app').innerHTML = `
   <header><h1>Freimarkets</h1>
     <div class="hbtns"><button id="statusBtn" class="icon statusbtn st-sync" title="${tr('syncing…')}">●</button></div></header>
+  <div id="statusPop" hidden></div>
   <nav>
     <button data-tab="bal"${act('bal')}>${tr('Balance')}</button>
     <button data-tab="issue"${act('issue')}>${tr('Issue')}</button>
@@ -276,6 +296,7 @@ function render() {
     </section>
   </main>`;
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+  $('#statusBtn').onclick = () => { const pop = $('#statusPop'); pop.hidden = !pop.hidden; if (!pop.hidden) renderStatusPop(); };
   $('#faucetBtn').onclick = faucet;
   $('#refreshBtn').onclick = refresh;
   $('#issueBtn').onclick = issue;
