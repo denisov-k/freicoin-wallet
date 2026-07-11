@@ -4,7 +4,8 @@
 import { check, finish } from './helpers.mjs';
 import { FRC, assetIdOf, assetPresentValue } from '../../../core/assets.mjs';
 import { Nv3State } from '../../../core/nv3chain.mjs';
-import { makeOffer, offersCross, matchOffers, matchMany, findCross, findRing, offerPrice } from '../../../core/dex.mjs';
+import { makeOffer, offersCross, matchOffers, matchMany, findCross, findRing, offerPrice,
+         makeBundle, bundleId, bundleDelta, composeBundles } from '../../../core/dex.mjs';
 
 const spk = t => '0014' + t.repeat(20);
 const st = new Nv3State();
@@ -97,5 +98,67 @@ let ringThrew = false;
 try { matchMany(st, [oX, oY, oZbad], { lockHeight: H, txid: 'ring2', matcher: { funds: [], script: spk('c9'), fee: 0n } }); }
 catch { ringThrew = true; }
 check('short ring refused', ringThrew);
+
+// ---- phase 2a: BUNDLES (sub-transactions, all-or-nothing, with CHANGE) ----
+const st2 = new Nv3State();
+st2.apply({ txid: 'iss2', lockHeight: 2000, def: coop,
+  inputs: [st2.seed('cb2', 0, { assetId: FRC, value: 100000000n, refheight: 2000, scriptPubKey: spk('11') })],
+  outputs: [{ assetId: idCoop, value: 150n, scriptPubKey: spk('aa') },      // Alice: 150 coop
+            { assetId: FRC, value: 99000000n, scriptPubKey: spk('11') }] });
+const bobFrc2 = st2.seed('bob2', 0, { assetId: FRC, value: 50000000n, refheight: 2000, scriptPubKey: spk('bb') });
+const mat2 = st2.seed('mat2', 0, { assetId: FRC, value: 1000000n, refheight: 2000, scriptPubKey: spk('cc') });
+
+// Alice sells only 100 of her 150 coop — the other 50 come BACK to her as change.
+// Impossible in phase 1 (one committed output); natural in a bundle.
+const aliceBundle = makeBundle({
+  inputs: [{ outpoint: 'iss2:0', coin: { assetId: idCoop, value: 150n, refheight: 2000 } }],
+  outputs: [{ assetId: FRC, value: 40000000n, scriptPubKey: spk('a2') },     // payout
+            { assetId: idCoop, value: 50n, scriptPubKey: spk('aa') }],       // CHANGE
+});
+const bobBundle = makeBundle({
+  inputs: [{ outpoint: 'bob2:0', coin: { assetId: FRC, value: 50000000n, refheight: 2000 } }],
+  outputs: [{ assetId: idCoop, value: 99n, scriptPubKey: spk('b2') },        // wants 99 coop
+            { assetId: FRC, value: 9000000n, scriptPubKey: spk('bb') }],     // FRC change
+});
+const dA = bundleDelta(st2, aliceBundle, 2000);
+check('bundle delta: alice nets +100 coop, -0.4 FRC', dA.get(idCoop) === 100n && dA.get(FRC) === -40000000n);
+
+const { ctx, spread: sp2 } = composeBundles(st2, [aliceBundle, bobBundle],
+  { lockHeight: 2000, txid: 'comp1', matcher: { funds: [{ outpoint: 'mat2:0', coin: { assetId: FRC, value: 1000000n, refheight: 2000 } }], script: spk('c2'), fee: 10000n } });
+check('composite passes consensus', st2.applyComposite(ctx).ok !== false);
+check('alice got payout AND change', st2.utxos.get('comp1:0')?.value === 40000000n && st2.utxos.get('comp1:1')?.value === 50n && st2.utxos.get('comp1:1')?.assetId === idCoop);
+check('bob got coop and his change', st2.utxos.get('comp1:2')?.value === 99n && st2.utxos.get('comp1:3')?.value === 9000000n);
+check('matcher coop spread = 1 (100 given - 99 taken)', sp2.get(idCoop) === 1n);
+
+// bundle identity: splice-invariant, tamper-sensitive
+check('bundle id survives composition', bundleId(aliceBundle) === aliceBundle.id);
+const tampered2 = { ...aliceBundle, outputs: [{ ...aliceBundle.outputs[0], value: 40000001n }, aliceBundle.outputs[1]] };
+check('tampering a bundle changes its id', bundleId(tampered2) !== aliceBundle.id);
+
+// per-bundle expiry: a stale bundle only spoils a composite that INCLUDES it
+const expiring = makeBundle({
+  inputs: [{ outpoint: 'comp1:1', coin: { assetId: idCoop, value: 50n, refheight: 2000 } }],
+  outputs: [{ assetId: FRC, value: 1000n, scriptPubKey: spk('a2') }],
+  nExpireTime: 2005,
+});
+const freshMat = st2.seed('mat3', 0, { assetId: FRC, value: 500000n, refheight: 2000, scriptPubKey: spk('cc') });
+let expThrew = false;
+try { composeBundles(st2, [expiring], { lockHeight: 2000, atHeight: 2010, txid: 'comp2', matcher: { funds: [{ outpoint: 'mat3:0', coin: { assetId: FRC, value: 500000n, refheight: 2000 } }], script: spk('c2'), fee: 0n } }); }
+catch (e) { expThrew = /expired/.test(e.message); }
+check('expired bundle rejected at mining height', expThrew);
+
+// practical partial fill in 2a: the maker posts denominations; the matcher takes SOME
+const denoms = [25n, 26n, 48n].map((v, n) => makeBundle({
+  inputs: [{ outpoint: `comp1:2`, coin: { assetId: idCoop, value: 99n, refheight: 2000 } }],
+  outputs: [{ assetId: FRC, value: v * 400000n, scriptPubKey: spk('b2') }],
+}));
+check('denomination bundles have distinct ids (outputs differ)', new Set(denoms.map(b => b.id)).size === 3);
+// …but they all spend the SAME coin, so a matcher can take only ONE — taking two is a
+// double-spend the composite check refuses
+const bigMat = st2.seed('mat4', 0, { assetId: FRC, value: 30000000n, refheight: 2000, scriptPubKey: spk('cc') });
+let dblThrew = false;
+try { composeBundles(st2, [denoms[0], denoms[1]], { lockHeight: 2000, txid: 'comp3', matcher: { funds: [{ outpoint: 'mat4:0', coin: { assetId: FRC, value: 30000000n, refheight: 2000 } }], script: spk('c2'), fee: 0n } }); }
+catch (e) { dblThrew = /duplicate input/.test(e.message); }
+check('two bundles spending the same coin refused (duplicate input)', dblThrew);
 
 finish();

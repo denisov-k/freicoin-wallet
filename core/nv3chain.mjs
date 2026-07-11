@@ -138,6 +138,46 @@ export class Nv3State {
     return assetPresentValue(coin.value, height - coin.refheight, this.rate(coin.assetId));
   }
 
+  /** DEX phase 2a — COMPOSITE transaction: N signed sub-transaction bundles (each a maker's
+   *  own inputs + outputs, all-or-nothing, with change!) spliced by a matcher who adds their
+   *  own inputs/outputs. Validation: per-bundle expiry (a stale offer only invalidates if
+   *  included), then GLOBAL per-asset conservation over the flattened whole — which is
+   *  exactly this state machine's ordinary check(), so the composite inherits every rule
+   *  (granularity, tokens, authorizers, unknown assets) for free. Minting inside a
+   *  composite is out of scope for 2a (a definition tx stays a plain tx).
+   *  ctx = { txid, lockHeight, subtxs: [{inputs, outputs, nExpireTime?}], matcher: {inputs, outputs}, approvals? } */
+  checkComposite(ctx, atHeight = ctx.lockHeight) {
+    for (const [i, sub] of ctx.subtxs.entries()) {
+      if (sub.nExpireTime != null && sub.nExpireTime !== 0 && atHeight > sub.nExpireTime)
+        return { ok: false, err: `subtx ${i} expired` };
+      if (sub.def) return { ok: false, err: 'no minting inside a composite (2a)' };
+      if (!sub.inputs?.length || !sub.outputs?.length)
+        return { ok: false, err: `subtx ${i} must have inputs and outputs` };
+    }
+    const seen = new Set();
+    const flatIn = [...ctx.subtxs.flatMap(s => s.inputs), ...(ctx.matcher?.inputs ?? [])];
+    for (const op of flatIn) { if (seen.has(op)) return { ok: false, err: `duplicate input ${op}` }; seen.add(op); }
+    const flat = {
+      txid: ctx.txid, lockHeight: ctx.lockHeight, approvals: ctx.approvals,
+      inputs: flatIn,
+      outputs: [...ctx.subtxs.flatMap(s => s.outputs), ...(ctx.matcher?.outputs ?? [])],
+    };
+    return this.check(flat, atHeight);
+  }
+
+  /** Validate and apply a composite. Output outpoints enumerate bundle-by-bundle, then the
+   *  matcher's — the same order the flat serialization would use. */
+  applyComposite(ctx, atHeight = ctx.lockHeight) {
+    const v = this.checkComposite(ctx, atHeight);
+    if (!v.ok) return v;
+    const flat = {
+      txid: ctx.txid, lockHeight: ctx.lockHeight, approvals: ctx.approvals,
+      inputs: [...ctx.subtxs.flatMap(s => s.inputs), ...(ctx.matcher?.inputs ?? [])],
+      outputs: [...ctx.subtxs.flatMap(s => s.outputs), ...(ctx.matcher?.outputs ?? [])],
+    };
+    return this.apply(flat, atHeight);
+  }
+
   /** Total present value of every UTXO of one asset at a given height (for invariant checks). */
   supplyPresentValue(assetId, height) {
     let s = 0n;

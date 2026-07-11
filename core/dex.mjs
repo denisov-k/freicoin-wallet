@@ -155,3 +155,87 @@ export function findCross(state, book, lockHeight) {
 export function offerPrice(offer) {
   return { num: offer.want.value, den: offer.coin.value, pair: `${offer.want.assetId}/${offer.coin.assetId}` };
 }
+
+// ---------------- phase 2a: sub-transaction BUNDLES (all-or-nothing, with change) ----------
+// A bundle is what phase 1's single-pair offer cannot be: the maker's own inputs AND outputs
+// — payout at any index, CHANGE back to themselves, several outputs. In the node the maker's
+// signatures are scoped to the bundle (a new sighash domain, phase-2 consensus); in the model
+// the scope is captured by the bundle id: any mutation is a different bundle.
+import { sha256 } from './crypto.mjs';
+
+/** Canonical bundle id — hash over everything the maker's signature scopes: their inputs,
+ *  their outputs (asset/value/spk/tokens) and the bundle expiry. Splice-invariant: composing
+ *  bundles into any transaction leaves each id unchanged; tampering changes it. */
+export function bundleId(sub) {
+  const enc = JSON.stringify({
+    in: sub.inputs,
+    out: sub.outputs.map(o => [o.assetId, String(o.value), o.scriptPubKey, o.tokens ?? []]),
+    exp: sub.nExpireTime ?? 0,
+  });
+  return [...sha256(new TextEncoder().encode(enc))].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+/** Make a maker bundle: give coins (their outpoints+data for valuation), take outputs
+ *  (payout + change). All-or-nothing: a matcher includes it whole or not at all. */
+export function makeBundle({ inputs, outputs, nExpireTime }) {
+  if (!inputs?.length || !outputs?.length) throw new Error('bundle needs inputs and outputs');
+  const sub = {
+    inputs: inputs.map(i => i.outpoint),
+    coins: Object.fromEntries(inputs.map(i => [i.outpoint, i.coin])),
+    outputs, nExpireTime: nExpireTime ?? 0,
+  };
+  sub.id = bundleId(sub);
+  return sub;
+}
+
+/** A bundle's per-asset DELTA at lockHeight: positive = it gives more than it takes (surplus
+ *  for the pool), negative = it wants more than it gives. The matcher composes bundles whose
+ *  deltas sum >= 0 per asset (host residual pays the fee + spread). */
+export function bundleDelta(state, sub, lockHeight) {
+  const d = new Map();
+  for (const op of sub.inputs) {
+    const c = sub.coins[op];
+    d.set(c.assetId, (d.get(c.assetId) || 0n) + state.presentValueOf(c, lockHeight));
+  }
+  for (const o of sub.outputs) d.set(o.assetId, (d.get(o.assetId) || 0n) - o.value);
+  return d;
+}
+
+/** Compose bundles + matcher funds into a composite tx context (for Nv3State.checkComposite/
+ *  applyComposite). The matcher absorbs every positive residual (their spread) and must cover
+ *  every negative host residual + the fee from their funds. Non-host assets must net >= 0. */
+export function composeBundles(state, bundles, { lockHeight, matcher, txid, atHeight }) {
+  const total = new Map();
+  for (const sub of bundles)
+    for (const [asset, v] of bundleDelta(state, sub, lockHeight))
+      total.set(asset, (total.get(asset) || 0n) + v);
+  for (const [asset, v] of total)
+    if (asset !== FRC && v < 0n) throw new Error(`bundles do not balance: asset ${asset} short by ${-v}`);
+
+  let hostIn = total.get(FRC) || 0n;
+  const matcherIn = [];
+  for (const f of matcher.funds ?? []) {
+    if (f.coin.assetId !== FRC) throw new Error('matcher funds must be host currency');
+    matcherIn.push(f.outpoint);
+    hostIn += state.presentValueOf(f.coin, lockHeight);
+  }
+  const fee = matcher.fee ?? 0n;
+  const spread = new Map();
+  const matcherOut = [];
+  for (const [asset, v] of total) {
+    if (asset === FRC || v === 0n) continue;
+    matcherOut.push({ assetId: asset, value: v, scriptPubKey: matcher.script });
+    spread.set(asset, v);
+  }
+  const hostChange = hostIn - fee;
+  if (hostChange < 0n) throw new Error('matcher cannot cover the fee');
+  if (hostChange > 0n) {
+    matcherOut.push({ assetId: FRC, value: hostChange, scriptPubKey: matcher.script });
+    spread.set(FRC, hostChange - (matcher.funds ?? []).reduce((a, f) => a + state.presentValueOf(f.coin, lockHeight), 0n));
+  }
+
+  const ctx = { txid, lockHeight, subtxs: bundles, matcher: { inputs: matcherIn, outputs: matcherOut } };
+  const v = state.checkComposite(ctx, atHeight ?? lockHeight);
+  if (!v.ok) throw new Error(`composite invalid: ${v.err}`);
+  return { ctx, spread };
+}
