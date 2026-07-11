@@ -432,10 +432,7 @@ function loginViaWallet() {
 
 const style = document.createElement('style');
 style.textContent = `
-  #app{max-width:640px;margin:0 auto} main{overflow-y:auto;padding-top:14px}
-  nav{display:flex;gap:4px;padding:10px 0 0;border-bottom:1px solid var(--line)}
-  nav button{flex:1;background:none;border:0;color:var(--sub);padding:8px;border-radius:8px;cursor:pointer;font-size:14px}
-  nav button.active{background:var(--card);color:var(--fg)}
+  #app{max-width:640px;margin:0 auto}
   section[hidden]{display:none}
   table.mkt{width:100%;border-collapse:collapse;font-size:13px}
   table.mkt th{text-align:left;color:var(--sub);font-weight:500;padding:4px 8px;border-bottom:1px solid var(--line)}
