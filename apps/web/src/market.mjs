@@ -535,19 +535,22 @@ function paint() {
       <td class="${melt ? 'melt' : grow ? 'grow' : ''}">${amt(tag, e.pv)}</td></tr>`;
   }).join('') || `<tr><td colspan="2" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
 
-  // "I sell": the assets I actually hold, with my balance (present value, in units)
-  setOptions('#rAsset', [...byAsset.entries()].map(([k, e]) =>
-    `<option value="${k}">${assetName(k === 'FRC' ? null : k)} (${(Number(e.pv) / 1e8).toLocaleString(getLang())})</option>`).join('')
-    || `<option value="">${tr('no coins yet')}</option>`);
-  setOptions('#rWant', ['FRC', ...state.info.assets.map(a => a.tag)]
-    .map(t => `<option value="${t}">${t === 'FRC' ? 'FRC' : assetName(t)}</option>`).join(''));
-
-  // order-book filters: by give asset, by want asset, and open-only (selection preserved). The
-  // asset options are grouped — the host currency apart from user-issued assets.
+  // grouped asset options (used by the offer form and the filters): the host currency in a
+  // Currency group, user-issued assets in an Assets group.
   const assetOpts = state.info.assets.map(a => `<option value="${a.tag}">${assetName(a.tag)}</option>`).join('');
-  const fopt = `<option value="">${tr('all')}</option>`
-    + `<optgroup label="${tr('Currency')}"><option value="FRC">FRC</option></optgroup>`
+  const grouped = curOpt => `<optgroup label="${tr('Currency')}">${curOpt}</optgroup>`
     + (assetOpts ? `<optgroup label="${tr('Assets')}">${assetOpts}</optgroup>` : '');
+
+  // "I sell": only the assets I actually hold, with my balance (present value, in units)
+  const sellOpt = ([k, e]) => `<option value="${k}">${assetName(k === 'FRC' ? null : k)} (${(Number(e.pv) / 1e8).toLocaleString(getLang())})</option>`;
+  const frcHeld = byAsset.get('FRC'), heldAssets = [...byAsset.entries()].filter(([k]) => k !== 'FRC');
+  setOptions('#rAsset', ((frcHeld ? `<optgroup label="${tr('Currency')}">${sellOpt(['FRC', frcHeld])}</optgroup>` : '')
+    + (heldAssets.length ? `<optgroup label="${tr('Assets')}">${heldAssets.map(sellOpt).join('')}</optgroup>` : ''))
+    || `<option value="">${tr('no coins yet')}</option>`);
+  setOptions('#rWant', grouped('<option value="FRC">FRC</option>'));
+
+  // order-book filters (grouped the same way; 'all' stays ungrouped at the top)
+  const fopt = `<option value="">${tr('all')}</option>` + grouped('<option value="FRC">FRC</option>');
   setOptions('#fGive', fopt); setOptions('#fWant', fopt);
 
   // skip repainting the book while a fill amount is being typed into it (else the 15s refresh
