@@ -11,8 +11,6 @@
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { pubkeyCompressed, signEcdsa } from '../../core/ecdsa.mjs';
-import { segwitV0Sighash, SIGHASH_ALL } from '../../core/sighash.mjs';
 import { serializeTx, parseTx, txid as computeTxid, NV3_TX_VERSION } from '../../core/tx.mjs';
 import { assetPresentValue } from '../../core/assets.mjs';
 
@@ -47,12 +45,7 @@ async function rpc(method, ...params) {
   }
 }
 
-// house key (fee funding for the matcher) + OP_TRUE leg for issuances
-const HOUSE = (() => {
-  const sec = 'fa'.repeat(32), pub = pubkeyCompressed(sec);
-  const leaf = '21' + pub + 'ac';
-  return { sec, pub, leaf, spk: '0014' + ripemd160(hash256(Buffer.from('00' + leaf, 'hex'))).toString('hex') };
-})();
+// OP_TRUE leg for issuance funding (chain-admin convenience, holds no user value)
 const TRUE_SCRIPT = '51', TRUE_REVEAL = '00' + TRUE_SCRIPT;
 const TRUE_SPK = '0020' + hash256(Buffer.from(TRUE_REVEAL, 'hex')).toString('hex');
 const TRUE_WITNESS = [TRUE_REVEAL, ''];
@@ -107,67 +100,17 @@ const rateOf = tag => tag === null ? { k: 20, interest: false }
   : { k: assets.get(tag)?.shift ?? 20, interest: !!assets.get(tag)?.interest };
 const pvOf = (u, h) => assetPresentValue(u.value, h - u.refheight, rateOf(u.assetTag));
 
-// ---- order book (user-signed SINGLE|ACP offers) ----
-const book = [];   // {id, giveOutpoint, makerSpk, want:{assetTag|null, value}, lockHeight, sequence, witness, status, name?}
+// ---- order book: a PURE RELAY of user-signed SINGLE|ACP offers ----
+// The server never matches. It stores offers (with the maker's partial signature — public by
+// design; that signature only completes against a crossing counter-offer) and lists them.
+// ANY client splices two crossing offers with its OWN fee coin, keeps the spread, and
+// broadcasts the composite via /api/tx — permissionless matching, no privileged house.
+const book = [];   // {id, giveOutpoint, makerSpk, want, lockHeight, sequence, witness, status}
 let offerSeq = 1;
 
-function offersCross(a, b, h) {
-  const ga = utxos.get(a.giveOutpoint), gb = utxos.get(b.giveOutpoint);
-  if (!ga || !gb) return false;
-  if ((ga.assetTag ?? null) !== (b.want.assetTag ?? null) || (gb.assetTag ?? null) !== (a.want.assetTag ?? null)) return false;
-  if (a.lockHeight !== b.lockHeight) return false;
-  return pvOf(ga, a.lockHeight) >= b.want.value && pvOf(gb, b.lockHeight) >= a.want.value;
-}
-
-async function tryMatch() {
-  const h = await rpc('getblockcount');
-  const open = book.filter(o => o.status === 'open' && utxos.has(o.giveOutpoint));
-  for (let i = 0; i < open.length; i++) for (let j = i + 1; j < open.length; j++) {
-    const a = open[i], b = open[j];
-    if (!offersCross(a, b, h)) continue;
-    try { await splice(a, b); return true; } catch (e) { say(`мэтч #${a.id}×#${b.id} не прошёл: ${String(e.message).slice(0, 80)}`); }
-  }
-  return false;
-}
-
-async function splice(a, b) {
-  const ga = utxos.get(a.giveOutpoint), gb = utxos.get(b.giveOutpoint);
-  const L = a.lockHeight;
-  const fee = 10000n;
-  // house fee coin older than L
-  const house = [...(spkIndex.get(HOUSE.spk) ?? [])].map(op => [op, utxos.get(op)])
-    .find(([, u]) => u.assetTag === null && u.refheight <= L && pvOf(u, L) > fee + 1000n);
-  if (!house) throw new Error('у дома нет монеты для комиссии старше высоты книги');
-  const [hop, hcoin] = house;
-  const sA = pvOf(ga, L) - b.want.value;   // surplus of what a gives
-  const sB = pvOf(gb, L) - a.want.value;
-  const vout = [
-    { value: a.want.value, scriptPubKey: a.makerSpk, assetTag: a.want.assetTag ?? HOST_TAG },
-    { value: b.want.value, scriptPubKey: b.makerSpk, assetTag: b.want.assetTag ?? HOST_TAG },
-  ];
-  let hostIn = pvOf(hcoin, L);
-  for (const [tag, s] of [[ga.assetTag, sA], [gb.assetTag, sB]]) {
-    if (tag === null) { hostIn += s; continue; }
-    if (s > 0n) vout.push({ value: s, scriptPubKey: HOUSE.spk, assetTag: tag });
-  }
-  const change = hostIn - fee;
-  if (change < 0n) throw new Error('дом не покрывает комиссию');
-  if (change > 0n) vout.push({ value: change, scriptPubKey: HOUSE.spk, assetTag: HOST_TAG });
-  const tx = {
-    version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0,
-    vin: [
-      { prevout: { txid: rev(a.giveOutpoint.split(':')[0]), vout: +a.giveOutpoint.split(':')[1] }, scriptSig: '', sequence: a.sequence ?? 0xffffffff, witness: a.witness },
-      { prevout: { txid: rev(b.giveOutpoint.split(':')[0]), vout: +b.giveOutpoint.split(':')[1] }, scriptSig: '', sequence: b.sequence ?? 0xffffffff, witness: b.witness },
-      { prevout: { txid: rev(hop.split(':')[0]), vout: +hop.split(':')[1] }, scriptSig: '', sequence: 0xffffffff, witness: [] },
-    ],
-    vout,
-  };
-  const d = segwitV0Sighash(tx, 2, HOUSE.leaf, hcoin.value, BigInt(hcoin.refheight), SIGHASH_ALL);
-  tx.vin[2].witness = [signEcdsa(HOUSE.sec, d) + '01', '00' + HOUSE.leaf, ''];
-  await rpc('generateblock', mineAddr, [serializeTx(tx)]);
-  await catchUp();
-  a.status = b.status = 'filled';
-  say(`сделка: оффер #${a.id} × #${b.id} исполнены (${computeTxid(tx).slice(0, 12)}…)`);
+// mark offers filled once their give-coin leaves the UTXO set (someone matched them)
+function reconcileBook() {
+  for (const o of book) if (o.status === 'open' && !utxos.has(o.giveOutpoint)) o.status = 'filled';
 }
 
 // ---- lifecycle ----
@@ -179,21 +122,14 @@ async function bootstrap() {
   mineAddr = await rpc('getnewaddress');
   if (await rpc('getblockcount') < 120) await rpc('generatetoaddress', 120, mineAddr);
   await catchUp();
-  // ensure the house has fee money
-  const houseFrc = [...(spkIndex.get(HOUSE.spk) ?? [])].length;
-  if (houseFrc < 3) {
-    const dec = await rpc('decodescript', HOUSE.spk);
-    for (let i = 0; i < 3; i++) await rpc('sendtoaddress', dec.address, '0.05');
-    await rpc('generatetoaddress', 1, mineAddr);
-    await catchUp();
-  }
-  say('маркет запущен');
+  say('маркет запущен (релей книги + майнер, без матчинга)');
+  // the miner role only: produce a block on a timer so the chain lives. No matching here.
   setInterval(async () => {
     try {
       await rpc('generatetoaddress', 1, mineAddr);
       await catchUp();
-      await tryMatch();
-    } catch (e) { say('фоновый цикл: ' + String(e.message).slice(0, 80)); }
+      reconcileBook();
+    } catch (e) { say('майнер: ' + String(e.message).slice(0, 80)); }
   }, MINE_EVERY_MS);
 }
 
@@ -204,10 +140,15 @@ const api = {
     return {
       height: h, mineEveryMs: MINE_EVERY_MS,
       assets: [...assets.entries()].map(([tag, a]) => ({ tag, ...a, supply: String(a.supply) })),
-      book: book.slice(-50).map(o => {
+      // the book exposes EVERYTHING a client needs to splice a cross itself: the give
+      // outpoint, the maker's partial witness, terms. The witness is a SINGLE|ACP signature —
+      // public by design, it binds only "my coin ↔ this exact output" and does nothing until
+      // a crossing counter-offer completes the balance.
+      book: book.slice(-80).map(o => {
         const g = utxos.get(o.giveOutpoint);
         return { id: o.id, status: o.status, makerSpk: o.makerSpk, lockHeight: o.lockHeight,
-          give: g ? { assetTag: g.assetTag, pv: String(pvOf(g, h)) } : null,
+          giveOutpoint: o.giveOutpoint, sequence: o.sequence, witness: o.witness,
+          give: g ? { assetTag: g.assetTag, value: String(g.value), refheight: g.refheight, pv: String(pvOf(g, h)) } : null,
           want: { assetTag: o.want.assetTag, value: String(o.want.value) } };
       }),
       events: events.slice(0, 30),
@@ -259,11 +200,13 @@ const api = {
     say(`выпуск: «${name}» ×${amount} (shift ${shift}${interest ? ', растёт' : ''})`);
     return { tag, txid: computeTxid(tx) };
   },
-  async tx({ rawtx }) {
+  async tx({ rawtx, kind }) {
     const parsed = parseTx(rawtx);            // sanity: it parses
     await rpc('generateblock', mineAddr, [rawtx]);
     await catchUp();
-    say(`транзакция пользователя замайнена (${computeTxid(parsed).slice(0, 12)}…)`);
+    reconcileBook();                          // any offers this tx consumed are now filled
+    say(kind === 'match' ? `сделка сведена участником (${computeTxid(parsed).slice(0, 12)}…)`
+                         : `транзакция пользователя замайнена (${computeTxid(parsed).slice(0, 12)}…)`);
     return { txid: computeTxid(parsed) };
   },
   async offer({ giveOutpoint, makerSpk, want, lockHeight, sequence, witness }) {
@@ -275,8 +218,7 @@ const api = {
       sequence: Number(sequence ?? 0xffffffff),
       want: { assetTag: want.assetTag ?? null, value: BigInt(want.value) }, witness, status: 'open' };
     book.push(o);
-    say(`новый оффер #${o.id}`);
-    setTimeout(() => tryMatch().catch(() => {}), 100);
+    say(`новый оффер #${o.id} (ждёт, пока любой участник сведёт)`);
     return { id: o.id };
   },
   async cancel({ id, makerSpk }) {

@@ -113,6 +113,63 @@ async function send() {
   } catch (e) { toast(e.message, 'err'); }
 }
 
+// ---- permissionless matching: I splice two crossing offers with MY fee coin, keep the
+// spread, broadcast. No privileged matcher — any participant can do exactly this. ----
+function findMatch() {
+  const open = state.info.book.filter(o => o.status === 'open' && o.give);
+  const h = state.mine.height;
+  const pv = (v, tag, refh) => assetPresentValue(BigInt(v), h - refh, rateOf(tag));
+  for (let i = 0; i < open.length; i++) for (let j = i + 1; j < open.length; j++) {
+    const a = open[i], b = open[j];
+    if (a.lockHeight !== b.lockHeight) continue;
+    const at = a.give.assetTag ?? null, bt = b.give.assetTag ?? null;
+    const aw = a.want.assetTag ?? null, bw = b.want.assetTag ?? null;
+    if (at !== bw || bt !== aw) continue;                       // must be the same pair, opposite sides
+    const apv = pv(a.give.value, at, a.give.refheight), bpv = pv(b.give.value, bt, b.give.refheight);
+    if (apv < BigInt(b.want.value) || bpv < BigInt(a.want.value)) continue;   // must cross
+    return { a, b, apv, bpv };
+  }
+  return null;
+}
+
+async function matchNow() {
+  try {
+    const m = findMatch();
+    if (!m) { toast('нет пересекающихся офферов для сведения', ''); return; }
+    const { a, b, apv, bpv } = m;
+    const L = a.lockHeight, fee = 10000n;
+    // my fee coin: host currency, older than the offers' lock height (monotonic lock_height)
+    const myFee = state.mine.utxos.find(u => u.assetTag === null && u.refheight <= L && assetPresentValue(BigInt(u.value), L - u.refheight, { k: 20, interest: false }) > fee + 1000n);
+    if (!myFee) throw new Error('нужна ваша FRC-монета старше высоты книги (нажмите Кран пораньше)');
+    const at = a.give.assetTag ?? null, bt = b.give.assetTag ?? null;
+    const sA = apv - BigInt(b.want.value);   // surplus of asset A gives -> me
+    const sB = bpv - BigInt(a.want.value);
+    const vout = [
+      { value: BigInt(a.want.value), scriptPubKey: a.makerSpk, assetTag: a.want.assetTag ?? HOST_TAG },
+      { value: BigInt(b.want.value), scriptPubKey: b.makerSpk, assetTag: b.want.assetTag ?? HOST_TAG },
+    ];
+    let hostIn = assetPresentValue(BigInt(myFee.value), L - myFee.refheight, { k: 20, interest: false });
+    for (const [tag, s] of [[at, sA], [bt, sB]]) {
+      if (tag === null) { hostIn += s; continue; }
+      if (s > 0n) vout.push({ value: s, scriptPubKey: spks[0], assetTag: tag });   // spread -> me
+    }
+    const change = hostIn - fee;
+    if (change > 0n) vout.push({ value: change, scriptPubKey: spks[0], assetTag: HOST_TAG });
+    const tx = {
+      version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0,
+      vin: [
+        { prevout: { txid: rev(a.giveOutpoint.split(':')[0]), vout: +a.giveOutpoint.split(':')[1] }, scriptSig: '', sequence: a.sequence, witness: a.witness },
+        { prevout: { txid: rev(b.giveOutpoint.split(':')[0]), vout: +b.giveOutpoint.split(':')[1] }, scriptSig: '', sequence: b.sequence, witness: b.witness },
+        { prevout: { txid: rev(myFee.outpoint.split(':')[0]), vout: +myFee.outpoint.split(':')[1] }, scriptSig: '', sequence: 0xffffffff, witness: [] },
+      ],
+      vout,
+    };
+    signInput(tx, 2, myFee.spk, myFee.value, myFee.refheight, SIGHASH_ALL);   // I sign only MY input
+    await api('tx', { rawtx: serializeTx(tx), kind: 'match' });
+    toast(`Свёл офферы #${a.id}×#${b.id}, спред ваш`, 'ok'); refresh();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
 async function postOffer() {
   try {
     const giveOp = $('#oGive').value;
@@ -202,6 +259,8 @@ function render() {
       <label>Хочу<select id="oWant">${allAssetOpts}</select></label>
     </div>
     <div class="row"><label>Сколько хочу<input id="oAmt" type="text" inputmode="decimal"></label><button id="offerBtn">Выставить оффер</button></div>
+    ${findMatch() ? `<div class="row"><button id="matchBtn">⚡ Свести встречные офферы и забрать спред</button></div>
+      <p class="sub">Сведение делает любой участник своей монетой на комиссию — привилегированного матчера нет.</p>` : ''}
     <table class="mkt"><thead><tr><th>#</th><th>Отдают</th><th>Хотят</th><th></th></tr></thead><tbody>${bookRows}</tbody></table>
 
     <h2 style="font-size:15px;margin:14px 0 0">События</h2>
@@ -212,6 +271,7 @@ function render() {
   $('#issueBtn').onclick = issue;
   $('#sendBtn').onclick = send;
   $('#offerBtn').onclick = postOffer;
+  if ($('#matchBtn')) $('#matchBtn').onclick = matchNow;
 }
 
 // ---- unlock gate (the wallet's own vault, same origin = same session) ----
