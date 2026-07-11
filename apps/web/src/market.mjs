@@ -319,7 +319,7 @@ function openOfferModal() {
   if ($('#modal')) return;
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
-    <div class="row" style="justify-content:space-between;align-items:center;margin:0"><b>${tr('Post an offer')}</b><button id="offerClose" class="icon">✕</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Post an offer')}</b><button id="offerClose" class="icon">✕</button></div>
     <div class="row"><label>${tr('I sell')}<select id="rAsset"></select></label><label>${tr('Quantity')}<input id="rQty" type="text" inputmode="decimal"></label></div>
     <div class="row"><label>${tr('I want')}<select id="rWant"></select></label><label>${tr('Price (want per unit)')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
     <button id="rOfferBtn">${tr('Post offer')}</button>
