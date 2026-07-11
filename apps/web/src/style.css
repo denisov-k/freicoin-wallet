@@ -50,7 +50,7 @@ textarea { background:var(--card); border:1px solid var(--line); border-radius:1
 .lockcard { display:flex; flex-direction:column; gap:14px; width:100%; max-width:320px; text-align:center; }
 .lockcard input { text-align:center; }
 #wBody { display:flex; flex-direction:column; gap:14px; } #wBody:empty { display:none; }
-.wlang { width:auto; align-self:center; margin-top:6px; padding:6px 12px; font-size:13px; color:var(--sub); background:transparent; border:1px solid var(--line); border-radius:8px; } .lockicon { font-size:44px; } .lockcard h2 { margin:0; font-size:20px; }
+.wlang { width:auto; align-self:center; margin-top:6px; padding:6px 12px; font-size:13px; color:var(--sub); background:transparent; border:1px solid var(--line); border-radius:8px; } .lockicon { font-size:44px; } .fmark { font-family:Georgia,'Times New Roman',serif; font-style:italic; font-weight:600; font-size:56px; line-height:1; }   /* the ƒ mark, same face as the header */ .lockcard h2 { margin:0; font-size:20px; }
 .detail { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:8px; }
 #secForm { margin-top:4px; } #secForm:empty { display:none; }   /* empty placeholder must not eat a flex-gap slot */
 #modal { position:fixed; inset:0; z-index:30; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; padding:24px; }

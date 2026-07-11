@@ -216,15 +216,7 @@ function welcomePassStep(sec, doneToast) {
 }
 function renderWelcome() {
   $('#app').innerHTML = `<div class="lock"><div class="lockcard">
-    <div class="lockicon"><svg width="72" height="72" viewBox="0 0 72 72" aria-hidden="true">
-      <defs><linearGradient id="coinG" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#63bbff"/><stop offset="1" stop-color="#1565c0"/>
-      </linearGradient></defs>
-      <circle cx="36" cy="36" r="34" fill="url(#coinG)"/>
-      <circle cx="36" cy="36" r="34" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/>
-      <circle cx="36" cy="36" r="27.5" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.5" stroke-dasharray="2.5 3.5"/>
-      <text x="35" y="49" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-style="italic" font-size="40" fill="#fff">ƒ</text>
-    </svg></div><h2>Freicoin Wallet</h2>
+    <div class="lockicon fmark" aria-hidden="true">ƒ</div><h2>Freicoin Wallet</h2>
     <p class="sub">${tr('A trustless light wallet — keys never leave your device.')}</p>
     <button id="wCreate">${tr('Create a new wallet')}</button>
     <button id="wRestore" class="ghost">${tr('Restore from recovery phrase')}</button>
