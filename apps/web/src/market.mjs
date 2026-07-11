@@ -377,6 +377,39 @@ async function fillRangedNow(offer, fillUnits) {
   } catch (e) { toast(e.message, 'err'); }
 }
 
+// Cancel my ranged offer. A real cancel SPENDS the give coin back to me — the maker's descriptor
+// signature is public, so only spending the coin makes the offer truly unfillable; then delist it.
+async function cancelRanged(offer) {
+  try {
+    if (!spks.includes(offer.makerSpk)) throw new Error(tr('not your offer'));
+    if (offer.give) {
+      const L = state.mine.height, fee = 10000n, prevout = op => ({ txid: rev(op.split(':')[0]), vout: +op.split(':')[1] });
+      const giveTag = offer.give.assetTag ?? HOST_TAG, isFrc = giveTag === HOST_TAG;
+      const givePv = assetPresentValue(BigInt(offer.give.value), L - offer.give.refheight, isFrc ? { k: 20, interest: false } : rateOf(giveTag));
+      const vin = [{ prevout: prevout(offer.giveOutpoint), scriptSig: '', sequence: 0xffffffff, witness: [] }];
+      const inputs = [{ spk: offer.makerSpk, value: BigInt(offer.give.value), refheight: offer.give.refheight }];
+      const vout = [];
+      if (isFrc) {
+        if (givePv <= fee) throw new Error(tr('coin too small to cancel on-chain'));
+        vout.push({ value: givePv - fee, scriptPubKey: spks[0], assetTag: HOST_TAG });
+      } else {
+        vout.push({ value: givePv, scriptPubKey: spks[0], assetTag: giveTag });
+        const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && x.refheight <= L && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
+        if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) to cancel'));
+        const feePv = assetPresentValue(BigInt(feeCoin.value), L - feeCoin.refheight, { k: 20, interest: false });
+        vin.push({ prevout: prevout(feeCoin.outpoint), scriptSig: '', sequence: 0xffffffff, witness: [] });
+        inputs.push({ spk: feeCoin.spk, value: BigInt(feeCoin.value), refheight: feeCoin.refheight });
+        if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: spks[0], assetTag: HOST_TAG });
+      }
+      const tx = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin, vout };
+      inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
+      await api('tx', { rawtx: serializeTx(tx), kind: 'cancel' });
+    }
+    try { await api('cancel', { id: offer.id, makerSpk: offer.makerSpk }); } catch {}
+    toast(tr('Offer cancelled'), 'ok'); refresh();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
 // keep my own ranged offers alive: after a partial fill the relay re-points the offer at my
 // change coin and flags it; I re-sign the descriptor over that coin (only I hold the key).
 async function maybeResignRanged() {
@@ -513,7 +546,8 @@ function paint() {
         const price = Number(BigInt(o.desc.priceNum)) / Number(BigInt(o.desc.priceDen));
         const wantTag = (o.desc.payoutAsset && o.desc.payoutAsset !== HOST_TAG) ? o.desc.payoutAsset : null;
         const maxU = o.give ? Number(BigInt(o.give.pv)) / 1e8 : 0;
-        const act = mine ? `${tr('mine')} ${o.status}`
+        const act = mine
+          ? (o.status === 'open' ? `${tr('mine')} <button class="rcancel" data-id="${o.id}">${tr('Cancel')}</button>` : `${tr('mine')} ${o.status}`)
           : (o.status === 'open' && o.give && !o.needsResign)
             ? `<input class="rfill" data-id="${o.id}" type="text" inputmode="decimal" style="width:64px" placeholder="${maxU}"><button class="rbtn" data-id="${o.id}">${tr('Buy')}</button>`
             : o.status;
@@ -529,6 +563,10 @@ function paint() {
       const id = +b.dataset.id, offer = state.info.book.find(o => o.id === id);
       const inp = $(`.rfill[data-id="${id}"]`), amt = parseFloat(inp?.value || inp?.placeholder || '0');
       if (offer && amt > 0) fillRangedNow(offer, amt);
+    });
+    $('#bookBody').querySelectorAll('.rcancel').forEach(b => b.onclick = () => {
+      const offer = state.info.book.find(o => o.id === +b.dataset.id);
+      if (offer) cancelRanged(offer);
     });
   }
 }
