@@ -298,17 +298,23 @@ function renderApp() {
       if (!$('#activity').hidden) { const { txs } = await ds().history(); paintActivity(txs); }
     } catch { setStatus('off', 'bridge unreachable — retrying'); }
   }, 6000);
+  const fromHash = authMode ? '' : location.hash.slice(1);
   const saved = store.get('fw_tab');
-  show(TABS.includes(saved) ? saved : 'balance');
+  const initial = TABS.includes(fromHash) ? fromHash : (TABS.includes(saved) ? saved : 'balance');
+  if (!authMode) history.replaceState(null, '', '#' + initial);   // normalize the URL without a spurious history entry
+  show(initial);
 }
 
 const TABS = ['balance', 'receive', 'send', 'activity', 'settings'];
 const show = tab => {
-  store.set('fw_tab', tab);   // restore the active tab across reloads
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   TABS.forEach(s => $('#' + s).hidden = s !== tab);
   toast(''); render[tab]?.();
+  store.set('fw_tab', tab);                                                // fallback when the URL has no tab
+  if (!authMode && location.hash.slice(1) !== tab) location.hash = tab;    // hash routing: survives reload + back/forward
 };
+// back/forward or an external #tab link switches the tab; #market-auth stays reserved for the login popup
+window.addEventListener('hashchange', () => { if (authMode) return; const t = location.hash.slice(1); if (TABS.includes(t) && $('#' + t)?.hidden) show(t); });
 
 const getState = async force => {
   if (!force && cache) return cache;

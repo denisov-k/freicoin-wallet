@@ -621,16 +621,28 @@ function paint() {
     });
   }
 }
+// ---- hash routing: the active tab lives in the URL (#exchange), so it survives reload and
+// back/forward, and links are shareable. Internal ids (bal/dex/set) map to readable slugs.
+const TAB_SLUG = { bal: 'balance', issue: 'issue', dex: 'exchange', set: 'settings' };
+const SLUG_TAB = Object.fromEntries(Object.entries(TAB_SLUG).map(([t, s]) => [s, t]));
+const tabFromHash = () => SLUG_TAB[location.hash.slice(1)] || 'bal';
 function showTab(t) {
   curTab = t;
   ['bal', 'issue', 'dex', 'set'].forEach(x => { const s = $(`#tab-${x}`); if (s) s.hidden = x !== t; });
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+  const slug = TAB_SLUG[t];
+  if (slug && location.hash.slice(1) !== slug) location.hash = slug;   // reflect in URL (new history entry)
 }
+window.addEventListener('hashchange', () => { const t = tabFromHash(); if (t !== curTab && $(`#tab-${t}`)) showTab(t); });
 
 // ---- key gate. Same origin as the wallet (wallet.testtty.ru/market.html) ⇒ shared vault,
 // one unlock. Standalone origin (market.testtty.ru) ⇒ its own key: this is an EXPERIMENTAL
 // chain, coins have no value, so we let the page create/restore a throwaway seed here. ----
-function start() { deriveKeys(); render(); refresh(); setInterval(refresh, 15000); }
+function start() {
+  curTab = tabFromHash();                                   // restore the tab from the URL
+  history.replaceState(null, '', '#' + TAB_SLUG[curTab]);   // normalize without a spurious entry
+  deriveKeys(); render(); refresh(); setInterval(refresh, 15000);
+}
 function boot() {
   applyTheme(themeMode());
   configureNetwork('regtest');
