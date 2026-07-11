@@ -115,7 +115,7 @@ function ds() {
       m.error ? c.rej(new Error(m.error)) : c.res(m.result);
     };
     worker.onerror = () => { wCalls.forEach(c => c.rej(new Error('worker error'))); wCalls.clear(); };
-    const scripts = walletScripts(hexSeed());
+    const scripts = myScripts();
     const rec = birthRec(walletFp(scripts));
     wcall('init', {
       url: curBridge(), net, genesis: NETWORKS[net].genesis, scripts,
@@ -159,6 +159,10 @@ let unlockedSecret = null, unlockedPass = null;
 let recvIndex = +(store.get('fw_recv') || 0), pending = null, pollTimer = null, toastTimer = null, cache = null;
 const secret = () => unlockedSecret;
 const hexSeed = () => resolveSecret(unlockedSecret);
+// Watch window: always 20 unused addresses beyond the highest handed-out receive index, so
+// "get new address" works indefinitely without ever handing out an unwatched address.
+const watchGap = () => recvIndex + 20;
+const myScripts = () => walletScripts(hexSeed(), watchGap());
 
 // theme lives on <html>, survives #app re-renders. Mode 'system' (default) follows the
 // OS preference — the OS flips it on its own schedule (e.g. dark after sunset), and the
@@ -342,7 +346,7 @@ const getState = async force => {
   // Learn the wallet's birth height from the first completed scan (write-once per wallet):
   // a future rescan (e.g. the browser evicted IndexedDB) then skips straight to it.
   try {
-    const fp = walletFp(walletScripts(hexSeed()));
+    const fp = walletFp(myScripts());
     const cur = birthRec(fp);
     if (cache.birthAuto && (!cur || !cur.anchorH))   // learn once; upgrade legacy height-only records
       store.set('fw_ab:' + fp, JSON.stringify({ birth: cache.birthAuto, anchorH: cache.birthAnchor?.height, anchorHash: cache.birthAnchor?.hash }));
@@ -461,7 +465,7 @@ const render = {
       if (gen !== renderGen) return;   // stale render (source was replaced) — ignore
       if (String(e.message).includes('below the checkpoint')) {
         // the anchor was reorged out (very deep reorg): drop it and resync from scratch
-        try { store.del('fw_ab:' + walletFp(walletScripts(hexSeed()))); } catch {}
+        try { store.del('fw_ab:' + walletFp(myScripts())); } catch {}
         if (lightSrc) { lightSrc.close?.(); lightSrc = null; } cache = null; liveState = null;
         render.balance(); return;
       }
@@ -469,7 +473,7 @@ const render = {
         // the persisted header chain diverged from the node (an experimental chain was
         // rewound): wipe the stored chain and re-sync from genesis.
         try { await ds().reset(); } catch {}
-        try { store.del('fw_ab:' + walletFp(walletScripts(hexSeed()))); } catch {}
+        try { store.del('fw_ab:' + walletFp(myScripts())); } catch {}
         cache = null; liveState = null;
         render.balance(); return;
       }
@@ -484,13 +488,27 @@ const render = {
       `<img id="qr" class="qr" alt="qr"/>
        <div class="addr" id="addr">${addr}</div>
        <div class="row"><button id="copyAddr" class="ghost">⧉ ${tr('Copy')}</button></div>
-       <div class="row"><button id="prevAddr" class="ghost"${recvIndex === 0 ? ' disabled' : ''}>${tr('← Prev')}</button><button id="nextAddr" class="ghost"${recvIndex >= 19 ? ' disabled' : ''}>${tr('→ Next')}</button></div>`);
+       <div class="row"><button id="newAddr" class="ghost">${tr('Get new address')}</button></div>`);
     $('#qr').src = await QRCode.toDataURL(addr.toUpperCase(), { margin: 1, width: 220 });
     $('#copyAddr').onclick = e => copy(addr, e.target);
-    // the wallet watches the first 20 receive addresses (gap limit) — don't hand out
-    // addresses it wouldn't see payments on
-    $('#nextAddr').onclick = () => { if (recvIndex < 19) { recvIndex++; store.set('fw_recv', recvIndex); render.receive(); } };
-    $('#prevAddr').onclick = () => { if (recvIndex > 0) { recvIndex--; store.set('fw_recv', recvIndex); render.receive(); } };
+    // Unbounded fresh addresses: the watch window is recvIndex+20 (watchGap). Before handing
+    // out the next index, copy each network's birth record onto the grown fingerprint (a fresh
+    // address has no history — the birth stays valid, no rescan), then restart the light
+    // client on the wider script set.
+    $('#newAddr').onclick = () => {
+      const seed = hexSeed(), cur = curNet();
+      try {
+        for (const netK of Object.keys(NETWORKS)) {
+          configureNetwork(netK);
+          const rec = store.get('fw_ab:' + walletFp(walletScripts(seed, watchGap())));
+          if (rec) store.set('fw_ab:' + walletFp(walletScripts(seed, watchGap() + 1)), rec);
+        }
+      } finally { configureNetwork(cur); }
+      recvIndex++; store.set('fw_recv', recvIndex);
+      if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
+      cache = null; ds();
+      render.receive();
+    };
   },
   async send() {
     pending = null;
