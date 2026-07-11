@@ -490,8 +490,12 @@ const render = {
        <div class="addr" id="addr"><div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div></div>
        <div class="row"><button id="copyAddr" class="ghost" disabled>⧉ ${tr('Copy')}</button></div>
        <div class="row"><button id="newAddr" class="ghost">${tr('Get new address')}</button></div>`);
+    // derive+QR complete faster than a frame — without the floor the shimmer never paints
+    // and consecutive "get new address" clicks look like nothing happened
+    const t0 = performance.now();
     let addr; try { addr = deriveAddress(hexSeed(), recvIndex, 0); } catch (e) { return toast(e.message, 'err'); }
     const qr = await QRCode.toDataURL(addr.toUpperCase(), { margin: 1, width: 220 });
+    await new Promise(r => setTimeout(r, Math.max(0, 350 - (performance.now() - t0))));
     const box = $('#qrBox'); if (!box) return;   // modal was closed mid-load
     box.className = 'qr'; box.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`;
     $('#addr').textContent = addr;
