@@ -485,7 +485,7 @@ const render = {
   async receive() {
     // Open in a loading state (shimmering QR + address placeholders), then fill in — the
     // same skeleton the tables use, so "get new address" visibly loads the fresh one.
-    openModal(tr('Receive'),
+    openModal(tr('Receiving'),
       `<div id="qrBox" class="qr skel" style="margin:0 auto;height:220px"></div>
        <div class="addr" id="addr"><div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div></div>
        <div class="row"><button id="copyAddr" class="ghost" disabled>⧉ ${tr('Copy')}</button></div>
