@@ -4,7 +4,7 @@ import { check, finish } from './helpers.mjs';
 import { timeAdjustValue } from '../../../core/demurrage.mjs';
 import {
   FRC, assetIdOf, serializeAssetDef, assetPresentValue, validateTransfer, validateIssuance, _demurragePV,
-  serializeNv3Outputs, parseNv3Outputs, FRC_WIRE_TAG, nv3HashOutputs,
+  serializeNv3Outputs, parseNv3Outputs, FRC_WIRE_TAG, nv3HashOutputs, MAX_MONEY,
 } from '../../../core/assets.mjs';
 
 const FRC_RATE = { k: 20, interest: false };
@@ -28,6 +28,15 @@ check('faster-shift asset melts more than FRC', meltCoop > meltFrc, `coop −${m
 
 // interest asset GROWS: present value exceeds nominal
 check('interest (bond) asset grows over time', assetPresentValue(1000000000n, 5000, bond) > 1000000000n);
+
+// interest overflow semantics (pinned for the C++ port): PV saturates at MAX_MONEY.
+// k=18 over 2^25 blocks is a factor of e^128 — astronomically past the cap.
+check('interest PV saturates at MAX_MONEY', assetPresentValue(1000000000n, 1 << 25, bond) === MAX_MONEY);
+check('even 1 kria saturates once the factor caps', assetPresentValue(1n, 1 << 25, bond) === MAX_MONEY);
+check('zero nominal stays zero under interest', assetPresentValue(0n, 1 << 25, bond) === 0n);
+// sanity: a realistic horizon stays FAR from the cap and strictly grows
+const bondPv1e6 = assetPresentValue(100000000n, 1000000, bond);   // k=18, ~1M blocks: ×~45
+check('realistic interest stays below cap and grows', bondPv1e6 > 100000000n && bondPv1e6 < MAX_MONEY);
 
 const assets = { [idCoop]: coop, [idBond]: bond };
 

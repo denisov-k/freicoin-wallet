@@ -44,10 +44,25 @@ function demurragePV(nominal, distance, k) {     // exact structural port of Tim
   if (w === null) return nominal;
   return sign * ((v * w) >> 64n);
 }
-function interestPV(nominal, distance, k) {      // model-only: growth needs a >1.0 representation
-  const P = 96n; let acc = 1n << P, base = (1n << P) + (1n << (P - BigInt(k))), e = BigInt(distance);
-  while (e > 0n) { if (e & 1n) acc = (acc * base) >> P; base = (base * base) >> P; e >>= 1n; }
-  return (nominal * acc) >> P;
+// Interest (a growing bond): factor (1 + 2^-k)^distance in 64.64 fixed point, square-and-
+// multiply with truncation after every multiply — the EXACT operation sequence the C++ port
+// performs with 128-bit halves, so JS and C++ agree bit-for-bit. The factor is unbounded but a
+// node's amounts are not: the present value SATURATES at MAX_MONEY (2^53−1). The running
+// product and the squared base are capped the moment their integer part reaches MAX_MONEY —
+// past that every positive nominal is worth MAX_MONEY. (The cap is a far edge: k=18 over a
+// million blocks is only a factor of ~45.)
+export const MAX_MONEY = 9007199254740991n;      // 2^53 - 1, matches consensus/amount.h
+function interestPV(nominal, distance, k) {
+  if (nominal === 0n) return 0n;
+  const P = 64n, CAP = MAX_MONEY << P;
+  let acc = 1n << P, base = (1n << P) + (1n << (P - BigInt(k))), e = BigInt(distance);
+  while (e > 0n) {
+    if (e & 1n) { acc = (acc * base) >> P; if (acc >= CAP) return nominal > 0n ? MAX_MONEY : 0n; }
+    e >>= 1n;
+    if (e > 0n) { base = (base * base) >> P; if (base >= CAP) base = CAP; }
+  }
+  const pv = (nominal * acc) >> P;
+  return pv > MAX_MONEY ? MAX_MONEY : pv;
 }
 export function assetPresentValue(nominal, distance, { k, interest }) {
   if (distance === 0) return nominal;

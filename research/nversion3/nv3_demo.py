@@ -31,9 +31,12 @@ class RPC:
 def cs(n):  # compact size
     return bytes([n]) if n < 0xfd else b"\xfd" + n.to_bytes(2, "little")
 def varstr(b): return cs(len(b)) + b
-def ser_v3(vin, vout, tags, witnesses, lock_height, nlock=0):
-    """vin=[(txid_hex, vout)], vout=[(value, spk_bytes)], tags=[20b], witnesses=[[items]]."""
-    body_novin_wit = b""  # for txid: version, vin, vout, tags, nlock, lock_height (no marker/witness)
+def ser_v3(vin, vout, tags, witnesses, lock_height, nlock=0, tokens=None, expire=0):
+    """vin=[(txid_hex, vout)], vout=[(value, spk_bytes)], tags=[20b], witnesses=[[items]],
+    tokens=[[bytes,...] per output] (unique smart-property tokens), expire=nExpireTime.
+    v3 wire: ver | (ff,flags) | vin | vout | tagblock | tokenblock | witness | nLockTime |
+    lock_height | nExpireTime — the tag/token blocks ride between vout and witness, the
+    expiry is the final field (both only for version==3)."""
     ver = (3).to_bytes(4, "little")
     vins = cs(len(vin))
     for txid, n in vin:
@@ -42,15 +45,17 @@ def ser_v3(vin, vout, tags, witnesses, lock_height, nlock=0):
     for value, spk in vout:
         vouts += value.to_bytes(8, "little") + varstr(spk)
     tagblock = b"".join(tags)
-    tail = nlock.to_bytes(4, "little") + lock_height.to_bytes(4, "little")
+    toks = tokens or [[] for _ in vout]
+    tokenblock = b"".join(cs(len(ts)) + b"".join(varstr(t) for t in ts) for ts in toks)
+    tail = nlock.to_bytes(4, "little") + lock_height.to_bytes(4, "little") + expire.to_bytes(4, "little")
     # non-witness serialization -> txid
-    nowit = ver + vins + vouts + tagblock + tail
+    nowit = ver + vins + vouts + tagblock + tokenblock + tail
     txid = hash256(nowit)[::-1].hex()
     # full serialization (with marker 0xff + flags + witness)
     wit = b""
     for w in witnesses:
         wit += cs(len(w)) + b"".join(varstr(x) for x in w)
-    full = ver + b"\xff\x01" + vins + vouts + tagblock + wit + tail
+    full = ver + b"\xff\x01" + vins + vouts + tagblock + tokenblock + wit + tail
     return full.hex(), txid
 
 # P2WSH(OP_TRUE): witnessScript = OP_TRUE (0x51); MAST program = hash256(0x00||script)
