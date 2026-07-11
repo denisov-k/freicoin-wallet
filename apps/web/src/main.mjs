@@ -194,8 +194,6 @@ const openModal = (title, inner) => {
 // Onboarding passphrase step: encrypting the secret is the default path; skipping is an
 // explicit (discouraged) choice — a mainnet wallet should not sit in plaintext storage.
 function welcomePassStep(sec, doneToast) {
-  // The wallet choice is made — the create/restore buttons have no business on this step.
-  $('#wCreate').style.display = 'none'; $('#wRestore').style.display = 'none';
   $('#wBody').innerHTML = `
     <p class="sub">${tr('Protect your wallet with a passphrase — it encrypts the phrase on this device.')}</p>
     <input id="p1" type="password" placeholder="${tr('passphrase')}">
@@ -220,32 +218,41 @@ function renderWelcome() {
     <p class="sub">${tr('Only money that goes out of date like a newspaper, rots like potatoes, rusts like iron, is fit to be a medium of exchange.')}<br><span class="cite">— ${tr('Silvio Gesell')}</span></p>
     <button id="wCreate">${tr('Sign up')}</button>
     <button id="wRestore" class="ghost">${tr('Log in')}</button>
-    <div id="wBody"></div>
     <select id="wLang" class="wlang">${Object.entries(LANGS).map(([k, v]) => `<option value="${k}"${getLang() === k ? ' selected' : ''}>${v}</option>`).join('')}</select></div></div>`;
   $('#wLang').onchange = () => { setLang($('#wLang').value); renderWelcome(); };
-  $('#wCreate').onclick = () => {
-    const m = generateMnemonic();
-    $('#wBody').innerHTML = `
-      <div class="addr">${m}</div>
-      <p class="warn">${tr('⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.')}</p>
-      <div class="row"><button id="wCopy" class="ghost">⧉ ${tr('Copy')}</button><button id="wDone">${tr('I wrote them down')}</button></div>`;
-    $('#wCopy').onclick = e => copy(m, e.target);
-    $('#wDone').onclick = () => {
-      recordNewWalletBirth(m);
-      welcomePassStep(m, tr('wallet created — you can add a passphrase in Settings 🔒').split(' — ')[0]);
-    };
+  $('#wCreate').onclick = renderSignup;
+  $('#wRestore').onclick = renderLogin;
+}
+// Sign-up and log-in live on their own screens; ← returns to the welcome card.
+const authScreen = (title, body) => {
+  $('#app').innerHTML = `<div class="lock"><div class="lockcard">
+    <div class="lockicon fmark" aria-hidden="true">ƒ</div><h2>${title}</h2>
+    <div id="wBody">${body}</div>
+    <button id="wBack" class="ghost">← ${tr('Back')}</button></div></div>`;
+  $('#wBack').onclick = renderWelcome;
+};
+function renderSignup() {
+  const m = generateMnemonic();
+  authScreen(tr('Sign up'), `
+    <div class="addr">${m}</div>
+    <p class="warn">${tr('⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.')}</p>
+    <div class="row"><button id="wCopy" class="ghost">⧉ ${tr('Copy')}</button><button id="wDone">${tr('I wrote them down')}</button></div>`);
+  $('#wCopy').onclick = e => copy(m, e.target);
+  $('#wDone').onclick = () => {
+    recordNewWalletBirth(m);
+    welcomePassStep(m, tr('wallet created — you can add a passphrase in Settings 🔒').split(' — ')[0]);
   };
-  $('#wRestore').onclick = () => {
-    $('#wBody').innerHTML = `
-      <label>${tr('Recovery phrase or hex seed')}<textarea id="wSeed" rows="2"></textarea></label>
-      <p class="sub">${tr('Restoring an existing wallet scans its whole history once — this can take a minute.')}</p>
-      <div class="row"><button id="wGo">${tr('Restore')}</button></div>`;
-    $('#wGo').onclick = () => {
-      const sec = $('#wSeed').value.trim();
-      try { resolveSecret(sec); } catch (e) { return toast(e.message, 'err'); }
-      store.set('fw_seed', sec); unlockedSecret = sec;
-      renderApp(); toast(tr('wallet restored — scanning its history…'));
-    };
+}
+function renderLogin() {
+  authScreen(tr('Log in'), `
+    <label>${tr('Recovery phrase or hex seed')}<textarea id="wSeed" rows="2"></textarea></label>
+    <p class="sub">${tr('Restoring an existing wallet scans its whole history once — this can take a minute.')}</p>
+    <div class="row"><button id="wGo">${tr('Log in')}</button></div>`);
+  $('#wGo').onclick = () => {
+    const sec = $('#wSeed').value.trim();
+    try { resolveSecret(sec); } catch (e) { return toast(e.message, 'err'); }
+    store.set('fw_seed', sec); unlockedSecret = sec;
+    renderApp(); toast(tr('wallet restored — scanning its history…'));
   };
 }
 

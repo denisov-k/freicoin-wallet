@@ -34,7 +34,7 @@ const RU = {
   'Unlock wallet': 'Разблокировать кошелёк', 'Unlock': 'Разблокировать',
   'unlocking…': 'разблокировка…', 'wrong passphrase': 'неверный пароль',
   'Only money that goes out of date like a newspaper, rots like potatoes, rusts like iron, is fit to be a medium of exchange.': 'Лишь деньги, что устаревают, как газета, гниют, как картофель, ржавеют, как железо, — годятся быть средством обмена.',
-  'Silvio Gesell': 'Сильвио Гезелль', 'Sign up': 'Зарегистрироваться', 'Log in': 'Войти',
+  'Silvio Gesell': 'Сильвио Гезелль', 'Sign up': 'Зарегистрироваться', 'Log in': 'Войти', 'Back': 'Назад',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Запишите эти 12 слов. Это ЕДИНСТВЕННЫЙ ключ к вашим деньгам — восстановить его за вас не сможет никто.',
   'I wrote them down': 'Я записал(а) слова', 'Recovery phrase or hex seed': 'Фраза восстановления или hex-сид',
@@ -153,7 +153,7 @@ const ES = {
   'Unlock wallet': 'Desbloquear monedero', 'Unlock': 'Desbloquear',
   'unlocking…': 'desbloqueando…', 'wrong passphrase': 'contraseña incorrecta',
   'Only money that goes out of date like a newspaper, rots like potatoes, rusts like iron, is fit to be a medium of exchange.': 'Solo el dinero que envejece como un periódico, se pudre como las patatas y se oxida como el hierro sirve como medio de cambio.',
-  'Sign up': 'Registrarse', 'Log in': 'Iniciar sesión',
+  'Sign up': 'Registrarse', 'Log in': 'Iniciar sesión', 'Back': 'Atrás',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Anote estas 12 palabras. Son la ÚNICA llave de su dinero — nadie puede recuperarlas por usted.',
   'I wrote them down': 'Las he anotado', 'Recovery phrase or hex seed': 'Frase de recuperación o semilla hex',
@@ -211,7 +211,7 @@ const DE = {
   'Unlock wallet': 'Wallet entsperren', 'Unlock': 'Entsperren',
   'unlocking…': 'entsperre…', 'wrong passphrase': 'falsches Passwort',
   'Only money that goes out of date like a newspaper, rots like potatoes, rusts like iron, is fit to be a medium of exchange.': 'Nur Geld, das veraltet wie eine Zeitung, verfault wie Kartoffeln, verrostet wie Eisen, taugt als Tauschmittel.',
-  'Sign up': 'Registrieren', 'Log in': 'Anmelden',
+  'Sign up': 'Registrieren', 'Log in': 'Anmelden', 'Back': 'Zurück',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Schreiben Sie diese 12 Wörter auf. Sie sind der EINZIGE Schlüssel zu Ihrem Geld — niemand kann sie für Sie wiederherstellen.',
   'I wrote them down': 'Ich habe sie notiert', 'Recovery phrase or hex seed': 'Wiederherstellungsphrase oder Hex-Seed',
@@ -269,7 +269,7 @@ const FR = {
   'Unlock wallet': 'Déverrouiller le portefeuille', 'Unlock': 'Déverrouiller',
   'unlocking…': 'déverrouillage…', 'wrong passphrase': 'mot de passe incorrect',
   'Only money that goes out of date like a newspaper, rots like potatoes, rusts like iron, is fit to be a medium of exchange.': "Seul l'argent qui vieillit comme un journal, pourrit comme les pommes de terre, rouille comme le fer, peut servir de moyen d'échange.",
-  'Sign up': "S'inscrire", 'Log in': 'Se connecter',
+  'Sign up': "S'inscrire", 'Log in': 'Se connecter', 'Back': 'Retour',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Notez ces 12 mots. Ils sont la SEULE clé de votre argent — personne ne peut les récupérer à votre place.',
   'I wrote them down': 'Je les ai notés', 'Recovery phrase or hex seed': 'Phrase de récupération ou graine hex',
@@ -327,7 +327,7 @@ const PT = {
   'Unlock wallet': 'Desbloquear carteira', 'Unlock': 'Desbloquear',
   'unlocking…': 'desbloqueando…', 'wrong passphrase': 'senha incorreta',
   'Only money that goes out of date like a newspaper, rots like potatoes, rusts like iron, is fit to be a medium of exchange.': 'Só o dinheiro que envelhece como um jornal, apodrece como as batatas e enferruja como o ferro serve como meio de troca.',
-  'Sign up': 'Cadastrar-se', 'Log in': 'Entrar',
+  'Sign up': 'Cadastrar-se', 'Log in': 'Entrar', 'Back': 'Voltar',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Anote estas 12 palavras. Elas são a ÚNICA chave do seu dinheiro — ninguém pode recuperá-las por você.',
   'I wrote them down': 'Eu as anotei', 'Recovery phrase or hex seed': 'Frase de recuperação ou semente hex',
@@ -385,7 +385,7 @@ const ZH = {
   'Unlock wallet': '解锁钱包', 'Unlock': '解锁',
   'unlocking…': '解锁中…', 'wrong passphrase': '密码错误',
   'Only money that goes out of date like a newspaper, rots like potatoes, rusts like iron, is fit to be a medium of exchange.': '唯有像报纸一样过时、像土豆一样腐烂、像铁一样生锈的钱，才配作交换的媒介。',
-  'Silvio Gesell': '西尔维奥·格塞尔', 'Sign up': '注册', 'Log in': '登录',
+  'Silvio Gesell': '西尔维奥·格塞尔', 'Sign up': '注册', 'Log in': '登录', 'Back': '返回',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ 请抄写这 12 个单词。它们是您资金的唯一钥匙 — 没有任何人能替您找回。',
   'I wrote them down': '我已抄写', 'Recovery phrase or hex seed': '助记词或十六进制种子',
