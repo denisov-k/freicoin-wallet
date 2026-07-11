@@ -96,4 +96,14 @@ const dup = st4.check({ txid: 'dup', lockHeight: 1002, inputs: ['movtok:0'],
   outputs: [{ assetId: idC, value: 0n, scriptPubKey: spk('a4'), tokens: ['deadbeef'] }, { assetId: idC, value: 0n, scriptPubKey: spk('a5'), tokens: ['deadbeef'] }] });
 check('cannot output the same token twice (uniqueness)', !dup.ok);
 
+// 10. nExpireTime: a tx is rejected once the chain passes its expiry height
+const st5 = new Nv3State();
+const fE = st5.seed('cbE', 0, { assetId: FRC, value: 10000000n, refheight: 1000, scriptPubKey: spk('11') });
+const okExp = st5.check({ txid: 'e1', lockHeight: 1000, nExpireTime: 1005, inputs: ['cbE:0'],
+  outputs: [{ assetId: FRC, value: 9998000n, scriptPubKey: spk('22') }] }, 1004);
+const badExp = st5.check({ txid: 'e2', lockHeight: 1000, nExpireTime: 1005, inputs: ['cbE:0'],
+  outputs: [{ assetId: FRC, value: 9998000n, scriptPubKey: spk('22') }] }, 1006);
+check('nExpireTime: valid before expiry', okExp.ok);
+check('nExpireTime: rejected after expiry', !badExp.ok);
+
 finish();

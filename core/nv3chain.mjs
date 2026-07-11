@@ -26,8 +26,11 @@ export class Nv3State {
     return this.assets.get(id) || null;
   }
 
-  /** Validate a tx against the current UTXO set + asset registry. Returns {ok, fee} or {ok:false, err}. */
-  check(tx) {
+  /** Validate a tx against the current UTXO set + asset registry. Returns {ok, fee} or {ok:false, err}.
+   *  `atHeight` is the height the tx is being mined at (for nExpireTime); defaults to its lock height. */
+  check(tx, atHeight = tx.lockHeight) {
+    // nExpireTime: a tx (e.g. an expiring offer) is invalid once the chain passes this height.
+    if (tx.nExpireTime != null && atHeight > tx.nExpireTime) return { ok: false, err: 'tx expired' };
     const ins = [];
     for (const op of tx.inputs) {
       const c = this.utxos.get(op);
@@ -79,8 +82,8 @@ export class Nv3State {
   }
 
   /** Validate and apply a tx: register any new asset, spend inputs, create outputs. */
-  apply(tx) {
-    const v = this.check(tx);
+  apply(tx, atHeight = tx.lockHeight) {
+    const v = this.check(tx, atHeight);
     if (!v.ok) return v;
     if (tx.def) this.assets.set(assetIdOf(tx.def), { k: tx.def.k, interest: tx.def.interest, granularity: tx.def.granularity });
     for (const op of tx.inputs) this.utxos.delete(op);
