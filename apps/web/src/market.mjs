@@ -416,7 +416,7 @@ function render() {
     <section id="tab-bal"${on('bal')}>
       <p class="label">${tr('Your receiving address')}</p>
       <div class="addr">${myAddress}</div>
-      <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th>${tr('Present value')}</th></tr></thead><tbody id="balBody"><tr><td colspan="2" class="sub">${tr('first sync…')}</td></tr></tbody></table>
+      <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th>${tr('Quantity')}</th></tr></thead><tbody id="balBody"><tr><td colspan="2" class="sub">${tr('first sync…')}</td></tr></tbody></table>
       <div class="row"><button id="faucetBtn" class="ghost">${tr('Faucet (+1 FRC)')}</button></div>
     </section>
 
