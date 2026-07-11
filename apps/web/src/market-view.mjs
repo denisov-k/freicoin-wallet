@@ -335,7 +335,7 @@ export function openIssueModal() {
   if ($('#modal')) return;
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
-    <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><b>${tr('Issue asset')}</b><button id="issClose" class="icon">✕</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Issue asset')}</b><button id="issClose" class="icon">✕</button></div>
     <p class="sub">${tr('Issue an asset that lives on the chain with its own demurrage (melts) or interest (grows) rate.')}</p>
     <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="часы-труда"></label>
     <div class="row">

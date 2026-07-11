@@ -182,7 +182,7 @@ const openModal = (title, inner) => {
   $('#modal')?.remove();
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
-    <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><b>${title}</b><button id="mClose" class="icon">✕</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${title}</b><button id="mClose" class="icon">✕</button></div>
     ${inner}</div>`;
   document.body.appendChild(m);
   m.onclick = e => { if (e.target === m) m.remove(); };
