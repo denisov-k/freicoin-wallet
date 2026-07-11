@@ -1,0 +1,31 @@
+# Freimarkets — unified app on one origin (app + WS bridges + snapshots + /api relay).
+server {
+    server_name f.testtty.ru;
+
+    location /ws/main    { proxy_pass http://127.0.0.1:3041; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 1h; proxy_send_timeout 1h; }
+    location /ws/regtest { proxy_pass http://127.0.0.1:3040; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 1h; proxy_send_timeout 1h; }
+    location /ws/nv3     { proxy_pass http://127.0.0.1:3055; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 1h; proxy_send_timeout 1h; }
+    location /snap/      { proxy_pass http://127.0.0.1:3050/; proxy_set_header Range $http_range; }
+    location /api/       { proxy_pass http://127.0.0.1:5181/api/; proxy_set_header Host $host; }
+    location /           { proxy_pass http://127.0.0.1:5173; }
+
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/f.testtty.ru/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/f.testtty.ru/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+
+server {
+    if ($host = f.testtty.ru) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    server_name f.testtty.ru;
+    return 404; # managed by Certbot
+
+
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build-prod.sh — the CANONICAL production build for fm.testtty.ru (the unified Freimarkets app).
+# build-prod.sh — the CANONICAL production build for f.testtty.ru (the unified Freimarkets app).
 #
 # A bare `vite build` bakes the DEFAULT_BRIDGE fallbacks (ws://127.0.0.1:304x), which are
 # unreachable from a remote browser — the deployed app then fails with "bridge/ws error".
@@ -22,12 +22,12 @@ else
   CP=""; echo "WARNING: mainnet node unreachable — building WITHOUT a fresh checkpoint (slower first sync, still correct)"
 fi
 
-VITE_BRIDGE=wss://fm.testtty.ru/ws/regtest \
-VITE_BRIDGE_NV3=wss://fm.testtty.ru/ws/nv3 \
-VITE_BRIDGE_MAIN=wss://fm.testtty.ru/ws/main \
-VITE_SNAP_MAIN=https://fm.testtty.ru/snap/main-headers.bin \
-VITE_SNAP_MAIN_FILTERS=https://fm.testtty.ru/snap/main-filters.bin \
+VITE_BRIDGE=wss://f.testtty.ru/ws/regtest \
+VITE_BRIDGE_NV3=wss://f.testtty.ru/ws/nv3 \
+VITE_BRIDGE_MAIN=wss://f.testtty.ru/ws/main \
+VITE_SNAP_MAIN=https://f.testtty.ru/snap/main-headers.bin \
+VITE_SNAP_MAIN_FILTERS=https://f.testtty.ru/snap/main-filters.bin \
 VITE_CHECKPOINT_MAIN="$CP" \
 npx vite build
 
-echo "built dist/ — bridge=wss://fm.testtty.ru/ws/*  checkpoint=${CP:-none}"
+echo "built dist/ — bridge=wss://f.testtty.ru/ws/*  checkpoint=${CP:-none}"

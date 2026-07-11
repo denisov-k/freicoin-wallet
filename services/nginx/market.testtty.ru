@@ -35,6 +35,6 @@ server {
         proxy_set_header Host $host;
     }
     # the market page: '/' serves market.html from the same dist fw-web hosts
-    location / { return 301 https://fm.testtty.ru$request_uri; }
+    location / { return 301 https://f.testtty.ru$request_uri; }
 
 }

@@ -67,7 +67,7 @@ server {
 
     # the app has moved to the unified Freimarkets origin
     location / {
-        return 301 https://fm.testtty.ru$request_uri;
+        return 301 https://f.testtty.ru$request_uri;
     }
 
 }

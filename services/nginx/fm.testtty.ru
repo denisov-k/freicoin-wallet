@@ -41,10 +41,7 @@ server {
         proxy_set_header Host $host;
     }
 
-    # the unified app (single index.html)
-    location / {
-        proxy_pass http://127.0.0.1:5173;
-    }
+    location / { return 301 https://f.testtty.ru$request_uri; }
 
     listen 443 ssl; # managed by Certbot
     ssl_certificate /etc/letsencrypt/live/fm.testtty.ru/fullchain.pem; # managed by Certbot
