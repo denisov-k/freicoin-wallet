@@ -7,7 +7,7 @@ import { encryptSecret, decryptSecret } from './vault.mjs';
 import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS, CHECKPOINT } from './netparams.mjs';
 import { tr, getLang, setLang, LANGS } from './i18n.mjs';
 // Freimarkets (Issue + Exchange) — mounted as extra tabs only on the nv3 network.
-import { initMarketView, mvSetSeed, mvRefresh, renderIssue, renderExchange, renderAssetBalance } from './market-view.mjs';
+import { initMarketView, mvSetSeed, mvRefresh, openIssueModal, renderExchange, renderAssetBalance } from './market-view.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
@@ -176,6 +176,19 @@ applyTheme(themeMode());
 const toast = (t, type = 'ok') => { const el = $('#toast'); if (!el) return; clearTimeout(toastTimer);
   if (!t) { el.className = ''; el.textContent = ''; return; }
   el.textContent = t; el.className = 'show ' + type; toastTimer = setTimeout(() => el.className = '', 2800); };
+// reusable modal: a .review card in the #modal overlay, tap-outside or ✕ to close. `title` gets a
+// header row with a close button; returns the overlay so callers can wire and later remove it.
+const openModal = (title, inner) => {
+  $('#modal')?.remove();
+  const m = document.createElement('div'); m.id = 'modal';
+  m.innerHTML = `<div class="review">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><b>${title}</b><button id="mClose" class="icon">✕</button></div>
+    ${inner}</div>`;
+  document.body.appendChild(m);
+  m.onclick = e => { if (e.target === m) m.remove(); };
+  m.querySelector('#mClose').onclick = () => m.remove();
+  return m;
+};
 
 // ---------- first-run welcome ----------
 // Onboarding passphrase step: encrypting the secret is the default path; skipping is an
@@ -275,16 +288,13 @@ function renderApp() {
     <div id="statusPop" hidden></div>
     <nav>
       <button data-tab="balance" class="active">${tr('Balance')}</button>
-      <button data-tab="receive">${tr('Receive')}</button>
-      <button data-tab="send">${tr('Send')}</button>
       <button data-tab="activity">${tr('Activity')}</button>
-      ${MKT() ? `<button data-tab="issue">${tr('Issue')}</button><button data-tab="exchange">${tr('Exchange')}</button>` : ''}
+      ${MKT() ? `<button data-tab="exchange">${tr('Exchange')}</button>` : ''}
       <button data-tab="settings">⚙</button>
     </nav>
     <main>
-      <section id="balance"></section><section id="receive" hidden></section>
-      <section id="send" hidden></section><section id="activity" hidden></section>
-      ${MKT() ? `<section id="issue" hidden></section><section id="exchange" hidden></section>` : ''}
+      <section id="balance"></section><section id="activity" hidden></section>
+      ${MKT() ? `<section id="exchange" hidden></section>` : ''}
       <section id="settings" hidden></section>
     </main>
     <div id="toast"></div>`;
@@ -314,9 +324,9 @@ function renderApp() {
   show(initial);
 }
 
-const TABS = ['balance', 'receive', 'send', 'activity', 'settings'];
-// the market tabs exist only on nv3; membership + which sections to hide are network-aware
-const visibleTabs = () => MKT() ? ['balance', 'receive', 'send', 'activity', 'issue', 'exchange', 'settings'] : TABS;
+const TABS = ['balance', 'activity', 'settings'];   // Receive/Send/Issue are modals now, not tabs
+// the Exchange tab exists only on nv3; membership + which sections to hide are network-aware
+const visibleTabs = () => MKT() ? ['balance', 'activity', 'exchange', 'settings'] : TABS;
 const show = tab => {
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   visibleTabs().forEach(s => { const el = $('#' + s); if (el) el.hidden = s !== tab; });
@@ -391,6 +401,15 @@ let renderGen = 0;
 // Balance card painter — module-level so the worker's provisional events can repaint
 // the visible balance screen outside a render.balance() call.
 let balPainted = false;
+// action buttons under the balance: Receive + Send (all networks), Issue asset (nv3 only) — each
+// opens a modal instead of a tab.
+const balActions = () => `<div class="row" style="margin-top:12px"><button id="rcvBtn">${tr('Receive')}</button><button id="sndBtn">${tr('Send')}</button></div>`
+  + (MKT() ? `<div class="row"><button id="issBtn" class="ghost">${tr('Issue asset')}</button></div>` : '');
+function wireBalActions() {
+  const r = $('#rcvBtn'); if (r) r.onclick = () => render.receive();
+  const s = $('#sndBtn'); if (s) s.onclick = () => render.send();
+  const i = $('#issBtn'); if (i) i.onclick = openIssueModal;
+}
 function paintBalance(s) {
   if (!s.stale) setStatus('ok', '', s.tipHeight);
   else setStatus('sync', undefined, s.tipHeight);
@@ -402,7 +421,8 @@ function paintBalance(s) {
   if (!$('#balBig')) {
     $('#balance').innerHTML =
       `<div class="big" id="balBig"></div>
-       <div class="sub" id="balPend"></div>`;
+       <div class="sub" id="balPend"></div>` + balActions();
+    wireBalActions();
   }
   // no qualifier line: the header dot carries the state (amber = syncing/unverified,
   // green = verified) and the popover the details
@@ -419,9 +439,9 @@ const render = {
     // plain FRC number. market-view owns the table; the host-currency sync still drives the status.
     if (MKT()) {
       if (!$('#assetBalBody')) {
-        let addr = ''; try { addr = deriveAddress(hexSeed(), 0, 0); } catch {}
-        $('#balance').innerHTML = `<p class="label">${tr('Your receiving address')}</p><div class="addr">${addr}</div><div id="mktBal"></div>`;
-        renderAssetBalance($('#mktBal'));
+        $('#balance').innerHTML = `<div id="mktBal"></div>` + balActions();
+        renderAssetBalance($('#mktBal'));   // per-asset table (+ dev faucet); the address lives in the Receive modal
+        wireBalActions();
       }
       mvRefresh();
       try { paintBalance(await getState(true)); } catch { setStatus('off', 'bridge unreachable — retrying'); }
@@ -457,15 +477,13 @@ const render = {
       setStatus('off', 'bridge unreachable — retrying');
     }
   },
-  issue() { renderIssue($('#issue')); },          // Freimarkets: mint a user asset
   exchange() { renderExchange($('#exchange')); }, // Freimarkets: the ranged-offer order book
   async receive() {
     let addr; try { addr = deriveAddress(hexSeed(), recvIndex, 0); } catch (e) { return toast(e.message, 'err'); }
-    $('#receive').innerHTML =
-      `<div class="label">${tr('Receive address')} #${recvIndex}</div>
-       <img id="qr" class="qr" alt="qr"/>
+    openModal(`${tr('Receive')} #${recvIndex}`,
+      `<img id="qr" class="qr" alt="qr"/>
        <div class="addr" id="addr">${addr}</div>
-       <div class="row"><button id="copyAddr" class="ghost">⧉ ${tr('Copy')}</button><button id="prevAddr" class="ghost"${recvIndex === 0 ? ' disabled' : ''}>${tr('← Prev')}</button><button id="nextAddr" class="ghost"${recvIndex >= 19 ? ' disabled' : ''}>${tr('→ Next')}</button></div>`;
+       <div class="row"><button id="copyAddr" class="ghost">⧉ ${tr('Copy')}</button><button id="prevAddr" class="ghost"${recvIndex === 0 ? ' disabled' : ''}>${tr('← Prev')}</button><button id="nextAddr" class="ghost"${recvIndex >= 19 ? ' disabled' : ''}>${tr('→ Next')}</button></div>`);
     $('#qr').src = await QRCode.toDataURL(addr.toUpperCase(), { margin: 1, width: 220 });
     $('#copyAddr').onclick = e => copy(addr, e.target);
     // the wallet watches the first 20 receive addresses (gap limit) — don't hand out
@@ -475,11 +493,11 @@ const render = {
   },
   async send() {
     pending = null;
-    $('#send').innerHTML =
+    openModal(tr('Send'),
       `<div class="sub" id="avail">${tr('available…')}</div>
        <label>${tr('To address')}<input id="to" placeholder="fc1…" autocomplete="off"></label>
        <label>${tr('Amount (FRC)')}<div class="amtrow"><input id="amt" type="number" step="0.00000001" min="0" placeholder="0.0"><button id="maxBtn" class="ghost">${tr('Max')}</button></div></label>
-       <button id="reviewBtn">${tr('Review')}</button><div id="sendResult"></div>`;
+       <button id="reviewBtn">${tr('Review')}</button><div id="sendResult"></div>`);
     $('#reviewBtn').onclick = doReview;
     $('#amt').addEventListener('keydown', e => { if (e.key === 'Enter') doReview(); });
     // Instant: approximate available (verified cache > streamed partial > preview); live

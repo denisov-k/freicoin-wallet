@@ -98,6 +98,7 @@ async function issue() {
   try {
     const name = $('#iName').value.trim() || 'актив';
     await api('issue', { name, shift: $('#iShift').value, interest: $('#iKind').value === 'i', amount: $('#iAmt').value, spk: spks[0] });
+    $('#modal')?.remove();
     toast(`«${name}» ${tr('issued to your address')}`, 'ok'); mvRefresh();
   } catch (e) { toast(e.message, 'err'); }
 }
@@ -330,8 +331,11 @@ async function maybeResignRanged() {
 const fmtA = (tag, v) => tag === 'FRC' ? frc(v) + ' FRC' : String(v) + ' ' + assetName(tag);
 // The three Freimarkets surfaces mounted into the wallet's own tab sections (called by main.mjs
 // on the nv3 network). Each builds its section and wires its handlers; data arrives via mvRefresh.
-export function renderIssue(el) {
-  el.innerHTML = `
+export function openIssueModal() {
+  if ($('#modal')) return;
+  const m = document.createElement('div'); m.id = 'modal';
+  m.innerHTML = `<div class="review">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><b>${tr('Issue asset')}</b><button id="issClose" class="icon">✕</button></div>
     <p class="sub">${tr('Issue an asset that lives on the chain with its own demurrage (melts) or interest (grows) rate.')}</p>
     <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="часы-труда"></label>
     <div class="row">
@@ -339,8 +343,11 @@ export function renderIssue(el) {
       <label>${tr('Type')}<select id="iKind"><option value="d">${tr('melts')}</option><option value="i">${tr('grows')}</option></select></label>
     </div>
     <label>${tr('Quantity')}<input id="iAmt" type="number" value="1000000"></label>
-    <div class="row"><button id="issueBtn">${tr('Issue')}</button></div>`;
-  $('#issueBtn').onclick = issue;
+    <button id="issueBtn">${tr('Issue asset')}</button></div>`;
+  document.body.appendChild(m);
+  m.onclick = e => { if (e.target === m) m.remove(); };
+  m.querySelector('#issClose').onclick = () => m.remove();
+  m.querySelector('#issueBtn').onclick = issue;
 }
 export function renderExchange(el) {
   el.innerHTML = `
