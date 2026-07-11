@@ -489,10 +489,11 @@ function paint() {
     e.nominal += BigInt(u.value); e.pv += pvU(u);
     byAsset.set(k, e);
   }
+  const amt = (tag, v) => tag === 'FRC' ? frc(v) : String(v);   // number only — the Asset column names it
   $('#balBody').innerHTML = [...byAsset.entries()].map(([tag, e]) => {
     const melt = e.pv < e.nominal, grow = e.pv > e.nominal;
-    return `<tr><td>${assetName(tag === 'FRC' ? null : tag)}</td><td>${fmtA(tag, e.nominal)}</td>
-      <td class="${melt ? 'melt' : grow ? 'grow' : ''}">${fmtA(tag, e.pv)}</td></tr>`;
+    return `<tr><td>${assetName(tag === 'FRC' ? null : tag)}</td><td>${amt(tag, e.nominal)}</td>
+      <td class="${melt ? 'melt' : grow ? 'grow' : ''}">${amt(tag, e.pv)}</td></tr>`;
   }).join('') || `<tr><td colspan="3" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
 
   // "I sell": the assets I actually hold, with my balance (present value, in units)
