@@ -145,6 +145,14 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     preview,
     async broadcast(rawtx) { if (!n) await sync(); n.broadcast(rawtx); return { txid: txidOf(parseTx(rawtx)) }; },
     refresh: sync,
+    // Wipe persisted chain/UTXO state and re-sync from genesis. For a throwaway experimental
+    // chain that was rewound, the stored header chain no longer connects to the node ('headers
+    // do not connect'); a full reset recovers (base=0 ⇒ from-genesis is always possible).
+    async reset() {
+      try { await initClient(); n.stateClient._resetState(); } catch {}
+      try { if (await store.open()) await store.clear(); } catch {}
+      cache = null; connected = false; return { ok: true };
+    },
     close() { if (n) { n.close(); n = null; cache = null; } store.close(); },
   };
 }

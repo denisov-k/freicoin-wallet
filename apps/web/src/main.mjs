@@ -127,7 +127,7 @@ function ds() {
     lightSrc = {
       health: () => wcall('health'), balance: () => wcall('balance'), utxos: () => wcall('utxos'),
       history: () => wcall('history'), refresh: () => wcall('refresh'), preview: () => wcall('preview'),
-      broadcast: rawtx => wcall('broadcast', rawtx),
+      reset: () => wcall('reset'), broadcast: rawtx => wcall('broadcast', rawtx),
       close() {
         const w = worker; worker = null;
         wCalls.forEach(c => c.rej(new Error('closed'))); wCalls.clear();
@@ -413,6 +413,14 @@ const render = {
         // the anchor was reorged out (very deep reorg): drop it and resync from scratch
         try { store.del('fw_ab:' + walletFp(walletScripts(hexSeed()))); } catch {}
         if (lightSrc) { lightSrc.close?.(); lightSrc = null; } cache = null; liveState = null;
+        render.balance(); return;
+      }
+      if (/do not connect|deep reorg/.test(String(e.message))) {
+        // the persisted header chain diverged from the node (an experimental chain was
+        // rewound): wipe the stored chain and re-sync from genesis.
+        try { await ds().reset(); } catch {}
+        try { store.del('fw_ab:' + walletFp(walletScripts(hexSeed()))); } catch {}
+        cache = null; liveState = null;
         render.balance(); return;
       }
       if (!balPainted) { setStatus('off', e.message); $('#balance').innerHTML = `<div class="err">${tr('sync failed — ')}${e.message}</div><button id="refresh" class="ghost">${tr('↻ Retry')}</button>`; $('#refresh').onclick = render.balance; return; }
