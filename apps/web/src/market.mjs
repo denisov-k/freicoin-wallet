@@ -416,7 +416,7 @@ function render() {
     <section id="tab-bal"${on('bal')}>
       <p class="label">${tr('Your receiving address')}</p>
       <div class="addr">${myAddress}</div>
-      <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th>${tr('Nominal')}</th><th>${tr('Present value')}</th></tr></thead><tbody id="balBody"><tr><td colspan="3" class="sub">${tr('first sync…')}</td></tr></tbody></table>
+      <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th>${tr('Present value')}</th></tr></thead><tbody id="balBody"><tr><td colspan="2" class="sub">${tr('first sync…')}</td></tr></tbody></table>
       <div class="row"><button id="faucetBtn" class="ghost">${tr('Faucet (+1 FRC)')}</button></div>
     </section>
 
@@ -492,9 +492,9 @@ function paint() {
   const amt = (tag, v) => tag === 'FRC' ? frc(v) : String(v);   // number only — the Asset column names it
   $('#balBody').innerHTML = [...byAsset.entries()].map(([tag, e]) => {
     const melt = e.pv < e.nominal, grow = e.pv > e.nominal;
-    return `<tr><td>${assetName(tag === 'FRC' ? null : tag)}</td><td>${amt(tag, e.nominal)}</td>
+    return `<tr><td>${assetName(tag === 'FRC' ? null : tag)}</td>
       <td class="${melt ? 'melt' : grow ? 'grow' : ''}">${amt(tag, e.pv)}</td></tr>`;
-  }).join('') || `<tr><td colspan="3" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
+  }).join('') || `<tr><td colspan="2" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
 
   // "I sell": the assets I actually hold, with my balance (present value, in units)
   setOptions('#rAsset', [...byAsset.entries()].map(([k, e]) =>
