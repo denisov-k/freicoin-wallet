@@ -66,6 +66,11 @@ const RU = {
   'Matching is done by any participant with their own fee coin — there is no privileged matcher.':
     'Сведение делает любой участник своей монетой на комиссию — привилегированного матчера нет.',
   'Order book': 'Книга офферов', 'Give': 'Отдают', 'Want': 'Хотят', 'mine': 'мой', 'no offers yet': 'офферов пока нет', 'empty so far': 'пока пусто',
+  'Ranged offer (sell part, buyers fill any amount)': 'Диапазонный оффер (продать часть, берут любой объём)',
+  'I give (coin)': 'Отдаю (монету)', 'Price (want per unit)': 'Цена (хочу за единицу)', 'no coins yet': 'монет пока нет',
+  'give and want must be different assets': 'отдаю и хочу должны быть разными активами',
+  'you need enough of the requested asset to pay for this fill': 'нужно достаточно запрошенного актива для оплаты',
+  'you need an FRC coin (tap Faucet) for the network fee': 'нужна монета FRC (нажмите Кран) на комиссию сети',
   'Ranged offer (sell part of an asset for FRC)': 'Диапазонный оффер (продать часть актива за FRC)',
   'Asset to sell': 'Актив на продажу', 'Price (FRC per unit)': 'Цена (FRC за единицу)',
   'Min units': 'Мин. единиц', 'Max units': 'Макс. единиц', 'Post ranged offer': 'Выставить диапазонный',
