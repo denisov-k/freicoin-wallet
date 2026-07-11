@@ -27,7 +27,7 @@ const rev = h => h.match(/../g).reverse().join('');
 const frc = v => (Number(BigInt(v)) / 1e8).toLocaleString('ru-RU', { maximumFractionDigits: 8 });
 const toast = (m, cls = '') => { const t = $('#toast'); t.textContent = m; t.className = 'show ' + cls; setTimeout(() => t.className = '', 3500); };
 
-let seed = null, km = {}, spks = [], myAddress = '', state = null;
+let seed = null, km = {}, spks = [], myAddress = '', state = null, curTab = 'bal';
 
 async function api(path, body) {
   const r = await fetch(`${API}/${path}`, body ? { method: 'POST', body: JSON.stringify(body, (k, v) => typeof v === 'bigint' ? String(v) : v) } : undefined);
@@ -217,48 +217,65 @@ function render() {
       <td>${o.makerSpk === spks[0] || spks.includes(o.makerSpk) ? 'мой' : ''} ${o.status}</td></tr>`).join('')
     || `<tr><td colspan="4" class="sub">офферов пока нет</td></tr>`;
 
+  const on = t => curTab === t ? '' : ' hidden';
+  const act = t => curTab === t ? ' class="active"' : '';
   $('#app').innerHTML = `
   <header><h1>Freimarkets</h1>
     <button id="keyBtn" class="ghost" style="padding:4px 10px">🔑</button></header>
-  <main><section>
-    <p class="sub">Активы с демерреджем/процентом и p2p-биржа. Ключи — только в этом браузере
-      (та же фраза, что в кошельке). Монеты цепи ценности не имеют. <a href="/">← кошелёк</a></p>
+  <nav>
+    <button data-tab="bal"${act('bal')}>Баланс</button>
+    <button data-tab="issue"${act('issue')}>Выпуск</button>
+    <button data-tab="dex"${act('dex')}>Биржа</button>
+    <button data-tab="log"${act('log')}>Журнал</button>
+  </nav>
+  <main>
+    <section id="tab-bal"${on('bal')}>
+      <p class="label">Ваш адрес для получения</p>
+      <div class="addr">${myAddress}</div>
+      <table class="mkt"><thead><tr><th>Актив</th><th>Номинал</th><th>Сейчас стоит</th></tr></thead><tbody>${balRows}</tbody></table>
+      <div class="row"><button id="faucetBtn" class="ghost">Кран (+1 FRC)</button><button id="refreshBtn" class="ghost">Обновить</button></div>
+    </section>
 
-    <h2 style="font-size:15px;margin:8px 0 0">Балансы</h2>
-    <div class="addr">${myAddress}</div>
-    <table class="mkt"><thead><tr><th>Актив</th><th>Номинал</th><th>Сейчас стоит</th></tr></thead><tbody>${balRows}</tbody></table>
-    <div class="row"><button id="faucetBtn" class="ghost">Кран (+1 FRC)</button><button id="refreshBtn" class="ghost">Обновить</button></div>
-
-    <h2 style="font-size:15px;margin:14px 0 0">Выпустить актив</h2>
-    <div class="row">
+    <section id="tab-issue"${on('issue')}>
+      <p class="sub">Выпустите свой актив: он живёт в цепи со своей ставкой демерреджа (плавится) или процента (растёт).</p>
       <label>Название<input id="iName" maxlength="24" placeholder="часы-труда"></label>
-      <label>Ставка k<input id="iShift" type="number" value="16" min="1" max="64"></label>
-    </div>
-    <div class="row">
-      <label>Тип<select id="iKind"><option value="d">плавится</option><option value="i">растёт</option></select></label>
+      <div class="row">
+        <label>Ставка k<input id="iShift" type="number" value="16" min="1" max="64"></label>
+        <label>Тип<select id="iKind"><option value="d">плавится</option><option value="i">растёт</option></select></label>
+      </div>
       <label>Количество<input id="iAmt" type="number" value="1000000"></label>
-      <button id="issueBtn">Выпустить</button>
-    </div>
+      <div class="row"><button id="issueBtn">Выпустить</button></div>
+    </section>
 
-    <h2 style="font-size:15px;margin:14px 0 0">Биржа</h2>
-    <div class="row">
-      <label>Отдаю монету<select id="oGive">${giveOpts}</select></label>
-      <label>Хочу<select id="oWant">${allAssetOpts}</select></label>
-    </div>
-    <div class="row"><label>Сколько хочу<input id="oAmt" type="text" inputmode="decimal"></label><button id="offerBtn">Выставить оффер</button></div>
-    ${findMatch() ? `<div class="row"><button id="matchBtn">⚡ Свести встречные офферы и забрать спред</button></div>
-      <p class="sub">Сведение делает любой участник своей монетой на комиссию — привилегированного матчера нет.</p>` : ''}
-    <table class="mkt"><thead><tr><th>#</th><th>Отдают</th><th>Хотят</th><th></th></tr></thead><tbody>${bookRows}</tbody></table>
+    <section id="tab-dex"${on('dex')}>
+      <p class="label">Выставить оффер</p>
+      <div class="row">
+        <label>Отдаю монету<select id="oGive">${giveOpts}</select></label>
+        <label>Хочу<select id="oWant">${allAssetOpts}</select></label>
+      </div>
+      <div class="row"><label>Сколько хочу<input id="oAmt" type="text" inputmode="decimal"></label><button id="offerBtn">Выставить оффер</button></div>
+      ${findMatch() ? `<div class="row"><button id="matchBtn">⚡ Свести встречные офферы и забрать спред</button></div>
+        <p class="sub">Сведение делает любой участник своей монетой на комиссию — привилегированного матчера нет.</p>` : ''}
+      <p class="label" style="margin-top:14px">Книга офферов</p>
+      <table class="mkt"><thead><tr><th>#</th><th>Отдают</th><th>Хотят</th><th></th></tr></thead><tbody>${bookRows}</tbody></table>
+    </section>
 
-    <h2 style="font-size:15px;margin:14px 0 0">События</h2>
-    <div id="mlog">${state.info.events.map(e => `<div>${new Date(e.t).toLocaleTimeString('ru-RU')} — ${e.m}</div>`).join('')}</div>
-  </section></main>`;
+    <section id="tab-log"${on('log')}>
+      <div id="mlog">${state.info.events.map(e => `<div>${new Date(e.t).toLocaleTimeString('ru-RU')} — ${e.m}</div>`).join('') || '<div class="sub">пока пусто</div>'}</div>
+    </section>
+  </main>`;
+  document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
   $('#faucetBtn').onclick = faucet;
   $('#refreshBtn').onclick = refresh;
   $('#issueBtn').onclick = issue;
   $('#offerBtn').onclick = postOffer;
   if ($('#matchBtn')) $('#matchBtn').onclick = matchNow;
   $('#keyBtn').onclick = keyPanel;
+}
+function showTab(t) {
+  curTab = t;
+  ['bal', 'issue', 'dex', 'log'].forEach(x => { const s = $(`#tab-${x}`); if (s) s.hidden = x !== t; });
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
 }
 
 // ---- key gate. Same origin as the wallet (wallet.testtty.ru/market.html) ⇒ shared vault,
@@ -347,7 +364,11 @@ function keyPanel() {
 
 const style = document.createElement('style');
 style.textContent = `
-  #app{max-width:640px} main{overflow-y:auto}
+  #app{max-width:640px;margin:0 auto} main{overflow-y:auto;padding-top:14px}
+  nav{display:flex;gap:4px;padding:10px 0 0;border-bottom:1px solid var(--line)}
+  nav button{flex:1;background:none;border:0;color:var(--sub);padding:8px;border-radius:8px;cursor:pointer;font-size:14px}
+  nav button.active{background:var(--card);color:var(--fg)}
+  section[hidden]{display:none}
   table.mkt{width:100%;border-collapse:collapse;font-size:13px}
   table.mkt th{text-align:left;color:var(--sub);font-weight:500;padding:4px 8px;border-bottom:1px solid var(--line)}
   table.mkt td{padding:5px 8px;border-bottom:1px solid var(--line);font-family:ui-monospace,monospace}
