@@ -449,6 +449,7 @@ export function openIssueModal() {
       <label>${tr('Type')}<select id="iKind"><option value="c">${tr('constant')}</option><option value="d">${tr('melts')}</option><option value="i">${tr('grows')}</option></select></label>
       <label id="iRateLbl" hidden>${tr('Rate k')}<input id="iShift" type="number" value="16" min="1" max="63"></label>
     </div>
+    <p class="sub" id="iRateHint" style="font-size:12px" hidden></p>
     <div class="row">
       <label>${tr('Quantity')}<input id="iAmt" type="number" value="1000000"></label>
       <label>${tr('Decimals')}<select id="iDec"><option value="2">0,01</option><option value="3">0,001</option><option value="0">${tr('whole only')}</option></select></label>
@@ -459,6 +460,19 @@ export function openIssueModal() {
   m.onclick = e => { if (e.target === m) m.remove(); };
   m.querySelector('#issClose').onclick = () => m.remove();
   m.querySelector('#issueBtn').onclick = issue;
+  // live human units for the 2^-k rate: % per block and % per day at THIS chain's cadence
+  const rateHint = () => {
+    const kind = $('#iKind').value, el = $('#iRateHint');
+    el.hidden = kind === 'c';
+    if (el.hidden) return;
+    const k = Math.min(63, Math.max(1, +$('#iShift').value || 16));
+    const perBlock = 2 ** -k;
+    const blocksDay = 86400 / ((state?.info?.mineEveryMs ?? 20000) / 1000);
+    const perDay = kind === 'd' ? 1 - (1 - perBlock) ** blocksDay : (1 + perBlock) ** blocksDay - 1;
+    const f = x => (x * 100).toLocaleString(getLang(), { maximumSignificantDigits: 3 });
+    el.textContent = `≈ ${f(perBlock)}% ${tr('per block')} · ≈ ${f(perDay)}% ${tr('per day on this chain')}`;
+  };
+  m.querySelector('#iShift').oninput = rateHint;
   m.querySelector('#iKind').onchange = e => {
     $('#iRateLbl').hidden = e.target.value === 'c';        // constant has no rate at all
     // rounding hint per type: melting EATS whole units; growth STALLS below a whole unit
@@ -467,6 +481,7 @@ export function openIssueModal() {
     if (!hint.hidden) hint.textContent = e.target.value === 'd'
       ? tr('Melting eats whole units on indivisible assets — decimals let it shave fractions instead.')
       : tr('Growth rounds down — small indivisible holdings stall until a whole unit accrues; decimals make it smooth.');
+    rateHint();
   };
 }
 export function renderExchange(el) {
