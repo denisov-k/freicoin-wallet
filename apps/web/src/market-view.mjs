@@ -471,7 +471,11 @@ export function openIssueModal() {
     const f = x => (x * 100).toLocaleString(getLang(), { maximumSignificantDigits: 3 });
     el.textContent = `≈ ${f(over(1))}% ${tr('per day')} · ≈ ${f(over(30))}% ${tr('per month')} · ≈ ${f(over(365))}% ${tr('per year')}`;
   };
-  m.querySelector('#iShift').oninput = rateHint;
+  m.querySelector('#iShift').oninput = e => {   // hard-clamp typed values (min/max only guard the spinner)
+    const v = e.target.value;
+    if (v !== '') { const c = Math.min(63, Math.max(1, Math.round(+v || 1))); if (String(c) !== v) e.target.value = c; }
+    rateHint();
+  };
   m.querySelector('#iKind').onchange = e => {
     $('#iRateLbl').hidden = e.target.value === 'c';        // constant has no rate at all
     // rounding hint per type: melting EATS whole units; growth STALLS below a whole unit
