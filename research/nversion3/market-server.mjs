@@ -131,6 +131,8 @@ let offerSeq = 1;
 // orphaned and unfillable, so retire it instead of leaving a dead "open" row.
 function reconcileBook() {
   for (const o of book) if (o.status === 'open' && !utxos.has(o.giveOutpoint)) o.status = 'filled';
+  // a give coin that exists but is worth nothing (fully-taken change, or melted away) is done too
+  for (const o of book) if (o.status === 'open') { const c = utxos.get(o.giveOutpoint); if (c && BigInt(c.value) === 0n) o.status = 'filled'; }
 }
 
 // ---- lifecycle ----
@@ -247,7 +249,9 @@ const api = {
         const h = await rpc('getblockcount');
         const changeOp = `${txid}:1`;
         const c = utxos.get(changeOp);
-        if (c && c.spk === o.desc.changeScript && pvOf(c, h) >= BigInt(o.desc.minFill)) {
+        const cpv = c ? pvOf(c, h) : 0n;
+        // a zero-value change means the offer was taken WHOLE — it is done, not resignable
+        if (c && c.spk === o.desc.changeScript && cpv > 0n && cpv >= BigInt(o.desc.minFill)) {
           o.giveOutpoint = changeOp; o.witness = null; o.needsResign = true; o.status = 'open';
         } else { o.status = 'filled'; }
       }
