@@ -469,7 +469,7 @@ export function openIssueModal() {
     const blocksDay = 86400 / ((state?.info?.mineEveryMs ?? 20000) / 1000);
     const over = days => kind === 'd' ? 1 - (1 - perBlock) ** (blocksDay * days) : (1 + perBlock) ** (blocksDay * days) - 1;
     const f = x => (x * 100).toLocaleString(getLang(), { maximumSignificantDigits: 3 });
-    el.textContent = `≈ ${f(over(1))}% ${tr('per day')} · ≈ ${f(over(30))}% ${tr('per month')} · ≈ ${f(over(365))}% ${tr('per year on this chain')}`;
+    el.textContent = `≈ ${f(over(1))}% ${tr('per day')} · ≈ ${f(over(30))}% ${tr('per month')} · ≈ ${f(over(365))}% ${tr('per year')}`;
   };
   m.querySelector('#iShift').oninput = rateHint;
   m.querySelector('#iKind').onchange = e => {
