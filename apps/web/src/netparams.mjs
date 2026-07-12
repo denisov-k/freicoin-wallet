@@ -4,7 +4,9 @@
 // (0 = mainnet, 1 = all test networks); hrp is the bech32m human-readable prefix.
 export const NETWORKS = {
   main:    { label: 'Mainnet', hrp: 'fc',   coinType: 0, genesis: '000000005b1e3d23ecfd2dd4a6e1a35238aa0392c0a8528c40df52376d7efe2c' },
-  test:    { label: 'Testnet', hrp: 'tf',   coinType: 1, genesis: '000000003b5183593282fd30d3d7e79243eb883d6c2d8670f69811c6b9a76585' },
+  // hidden: no public bridge/node infrastructure for it yet — selecting it would just spin
+  // on an unreachable localhost default. Re-enable once a testnet node + /ws/test exist.
+  test:    { label: 'Testnet', hrp: 'tf',   coinType: 1, genesis: '000000003b5183593282fd30d3d7e79243eb883d6c2d8670f69811c6b9a76585', hidden: true },
   regtest: { label: 'Regtest', hrp: 'fcrt', coinType: 1, genesis: '67756db06265141574ff8e7c3f97ebd57c443791e0ca27ee8b03758d6056edb8' },
   // Freimarkets: the experimental nVersion=3 chain that backs market.testtty.ru. Regtest
   // genesis + fcrt addresses, so the same key resolves to the same coins the market shows;
