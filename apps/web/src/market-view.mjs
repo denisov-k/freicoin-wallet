@@ -461,7 +461,12 @@ export function openIssueModal() {
   m.querySelector('#issueBtn').onclick = issue;
   m.querySelector('#iKind').onchange = e => {
     $('#iRateLbl').hidden = e.target.value === 'c';        // constant has no rate at all
-    $('#iMeltHint').hidden = e.target.value !== 'd';       // the decimals hint is about melting
+    // rounding hint per type: melting EATS whole units; growth STALLS below a whole unit
+    const hint = $('#iMeltHint');
+    hint.hidden = e.target.value === 'c';
+    if (!hint.hidden) hint.textContent = e.target.value === 'd'
+      ? tr('Melting eats whole units on indivisible assets — decimals let it shave fractions instead.')
+      : tr('Growth rounds down — small indivisible holdings stall until a whole unit accrues; decimals make it smooth.');
   };
 }
 export function renderExchange(el) {
