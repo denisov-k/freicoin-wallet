@@ -354,7 +354,7 @@ const getState = async force => {
   return cache;
 };
 const timeAgo = t => { const s = Math.max(0, Date.now() / 1000 - t); if (s < 60) return tr('just now'); if (s < 3600) return (s / 60 | 0) + tr('m ago'); if (s < 86400) return (s / 3600 | 0) + tr('h ago'); return new Date(t * 1000).toLocaleDateString(); };
-const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏' };
+const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏', purchase: '⇄', sale: '⇄', swap: '⇄' };
 
 // Latest streamed (partial/provisional) state — lets every tab show live data during a
 // first sync, when there is no cache and nothing persisted to preview.
@@ -369,33 +369,52 @@ function paintActivity(txs) {
   if (!sec || sec.hidden) return false;
   const list = $('#actList') || sec;   // filters live above the list; partials may land before render.activity
   actLastTxs = txs;
-  const shown = txs.filter(t =>
-    (!actFilter.cat || (actFilter.cat === 'generate' ? (t.category === 'generate' || t.category === 'immature') : t.category === actFilter.cat))
-    && (!actFilter.cur || (actFilter.cur === 'FRC' ? !t.assetTag : t.assetTag === actFilter.cur)));
-  const html = shown.length ? shown.map(t =>
-    `<div class="act" data-i="${txs.indexOf(t)}">
-       <div class="act-i ${t.category}">${CAT[t.category] || '•'}</div>
-       <div class="act-m"><b>${tr(t.category)}</b>${t.confirmations > 0 ? '' : `<span class="sub">${tr('pending')}</span>`}</div>
-       <div class="act-a ${(+t.amount) < 0 ? 'neg' : 'pos'}"><span>${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount / (t.assetTag ? 10 ** Number(actDefs[t.assetTag]?.decimals ?? 0) : 1))} <small>${t.assetTag ? actAssetName(t.assetTag) : 'FRC'}</small></span><span class="sub">${timeAgo(t.time)}</span></div>
+  // A tx whose legs move DIFFERENT currencies in opposite directions is a trade — collapse
+  // its legs into one Purchase/Sale/Swap item (display-level; the raw legs stay in history).
+  const byTx = new Map();
+  for (const t of txs) { if (!byTx.has(t.txid)) byTx.set(t.txid, []); byTx.get(t.txid).push(t); }
+  const items = [];
+  for (const legs of byTx.values()) {
+    const pos = legs.filter(l => +l.amount > 0), neg = legs.filter(l => +l.amount < 0);
+    const curs = new Set(legs.map(l => l.assetTag ?? 'FRC'));
+    if (curs.size > 1 && pos.length && neg.length) {
+      const recv = pos[0], paid = neg[0];
+      items.push({ trade: true, txid: recv.txid, recv, paid, time: recv.time,
+        category: (recv.assetTag && !paid.assetTag) ? 'purchase' : (!recv.assetTag && paid.assetTag) ? 'sale' : 'swap',
+        confirmations: Math.min(...legs.map(l => l.confirmations)) });
+    } else items.push(...legs);
+  }
+  const shown = items.filter(i =>
+    (!actFilter.cat || (i.trade ? actFilter.cat === 'trade'
+      : actFilter.cat === 'generate' ? (i.category === 'generate' || i.category === 'immature') : i.category === actFilter.cat))
+    && (!actFilter.cur || ((i.trade ? [i.recv, i.paid] : [i]).some(l => actFilter.cur === 'FRC' ? !l.assetTag : l.assetTag === actFilter.cur))));
+  const amtStr = t => `${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount / (t.assetTag ? 10 ** Number(actDefs[t.assetTag]?.decimals ?? 0) : 1))} <small>${t.assetTag ? actAssetName(t.assetTag) : 'FRC'}</small>`;
+  const html = shown.length ? shown.map(i =>
+    `<div class="act">
+       <div class="act-i ${i.trade ? 'trade' : i.category}">${CAT[i.category] || '•'}</div>
+       <div class="act-m"><b>${tr(i.category)}</b>${i.confirmations > 0 ? '' : `<span class="sub">${tr('pending')}</span>`}</div>
+       ${i.trade
+    ? `<div class="act-a"><span class="pos">${amtStr(i.recv)}</span><span class="neg">${amtStr(i.paid)}</span><span class="sub">${timeAgo(i.time)}</span></div>`
+    : `<div class="act-a ${(+i.amount) < 0 ? 'neg' : 'pos'}"><span>${amtStr(i)}</span><span class="sub">${timeAgo(i.time)}</span></div>`}
      </div>`).join('') : `<div class="sub">${txs.length ? tr('nothing matches the filters') : tr('no transactions yet')}</div>`;
   if (html === actLastHtml) return true;   // identical content — skip the rewrite (no blink)
   actLastHtml = html;
   list.innerHTML = html;
   // detail opens RIGHT UNDER the tapped row (a fixed slot at the list's end scrolled out
   // of view on long histories — taps looked like they did nothing); tap again to close
-  document.querySelectorAll('.act').forEach(el => el.onclick = () => {
-    const t = txs[+el.dataset.i];
+  list.querySelectorAll('.act').forEach((el, idx) => el.onclick = () => {
+    const i = shown[idx];
     const open = $('#actDetail');
-    const sameRow = open?.dataset.txid === t.txid;
+    const sameRow = open?.dataset.txid === i.txid;
     open?.remove();
     document.querySelector('.act.open')?.classList.remove('open');
     if (sameRow) return;
     el.classList.add('open');   // suppress the row's own rule — the detail carries the divider
     const d = document.createElement('div');
-    d.id = 'actDetail'; d.dataset.txid = t.txid;
-    d.innerHTML = `<div class="detail"><span class="sub">${t.confirmations > 0 ? t.confirmations + ' ' + tr('conf') : tr('pending')} · ${new Date(t.time * 1000).toLocaleString(getLang())}</span><span class="sub">txid</span><div class="txid">${t.txid}</div><button id="copyTxid" class="ghost">${tr('Copy txid')}</button></div>`;
+    d.id = 'actDetail'; d.dataset.txid = i.txid;
+    d.innerHTML = `<div class="detail"><span class="sub">${i.confirmations > 0 ? i.confirmations + ' ' + tr('conf') : tr('pending')} · ${new Date(i.time * 1000).toLocaleString(getLang())}</span><span class="sub">txid</span><div class="txid">${i.txid}</div><button id="copyTxid" class="ghost">${tr('Copy txid')}</button></div>`;
     el.insertAdjacentElement('afterend', d);
-    $('#copyTxid').onclick = e => copy(t.txid, e.target);
+    $('#copyTxid').onclick = e => copy(i.txid, e.target);
   });
   return true;
 }
@@ -579,6 +598,7 @@ const render = {
           <option value="">${tr('all')}</option>
           <option value="receive">${tr('receive')}</option>
           <option value="send">${tr('send')}</option>
+          ${MKT() ? `<option value="trade">${tr('trades')}</option>` : ''}
           <option value="generate">${tr('generate')}</option>
         </select></label>
         ${MKT() ? `<label>${tr('Currency')}<select id="afCur"><option value="">${tr('all')}</option><option value="FRC">FRC</option></select></label>` : ''}

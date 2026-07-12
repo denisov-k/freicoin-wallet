@@ -34,7 +34,7 @@ const RU = {
   'Unlock wallet': 'Разблокировать кошелёк', 'Unlock': 'Разблокировать',
   'unlocking…': 'разблокировка…', 'wrong passphrase': 'неверный пароль',
   'Only money that goes out of date like a newspaper, rots like potatoes, rusts like iron, is fit to be a medium of exchange.': 'Лишь деньги, что устаревают, как газета, гниют, как картофель, ржавеют, как железо, — годятся быть средством обмена.',
-  'Silvio Gesell': 'Сильвио Гезелль', 'Sign up': 'Зарегистрироваться', 'Log in': 'Войти', 'Back': 'Назад', 'New address': 'Новый адрес', 'Receiving': 'Получение', 'nothing matches the filters': 'ничего не подходит под фильтры',
+  'Silvio Gesell': 'Сильвио Гезелль', 'Sign up': 'Зарегистрироваться', 'Log in': 'Войти', 'Back': 'Назад', 'New address': 'Новый адрес', 'Receiving': 'Получение', 'nothing matches the filters': 'ничего не подходит под фильтры', 'purchase': 'Покупка', 'sale': 'Продажа', 'swap': 'Обмен', 'trades': 'сделки',
   '⚠ Write these 12 words down. They are the ONLY key to your money — no one can recover them for you.':
     '⚠ Запишите эти 12 слов. Это ЕДИНСТВЕННЫЙ ключ к вашим деньгам — восстановить его за вас не сможет никто.',
   'I wrote them down': 'Я записал(а) слова', 'Recovery phrase or hex seed': 'Фраза восстановления или hex-сид',
