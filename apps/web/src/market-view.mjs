@@ -418,7 +418,9 @@ async function maybeResignRanged() {
     // re-sign after a partial fill (needsResign) AND periodically: the signature pins the
     // tx lockHeight, and takers can only pay with coins no younger than it — an offer left
     // at an old height slowly becomes unbuyable for everyone with fresh coins.
-    const stale = o.status === 'open' && state.mine.height - o.lockHeight > 10;
+    // resign as soon as the offer trails the tip at all: any coin minted after lockHeight
+    // (a fresh faucet, a buyer's change) is otherwise too young to pay — signatures are cheap
+    const stale = o.status === 'open' && state.mine.height - o.lockHeight > 1;
     if (!o.ranged || !(o.needsResign || stale) || !spks.includes(o.makerSpk)) continue;
     const u = state.mine.utxos.find(x => x.outpoint === o.giveOutpoint);
     if (!u) continue;                    // the change coin isn't in my verified set yet
