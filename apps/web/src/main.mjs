@@ -566,7 +566,7 @@ const render = {
     pending = null;
     openModal(tr('Send'),
       `<div class="sub" id="avail">${tr('available…')}</div>
-       ${MKT() ? `<label>${tr('Currency')}<select id="sendAsset"><option value="">FRC</option></select></label>` : ''}
+       ${MKT() ? `<label>${tr('Asset')}<select id="sendAsset"><option value="">FRC</option></select></label>` : ''}
        <label>${tr('To address')}<input id="to" placeholder="fc1…" autocomplete="off"></label>
        <label id="amtLabel">${tr('Amount (FRC)')}<div class="amtrow"><input id="amt" type="number" step="0.00000001" min="0" placeholder="0.0"><button id="maxBtn" class="ghost">${tr('Max')}</button></div></label>
        <button id="reviewBtn">${tr('Review')}</button><div id="sendResult"></div>`);
