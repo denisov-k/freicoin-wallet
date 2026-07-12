@@ -10,7 +10,7 @@
 // It can steal nothing: every asset movement carries a user signature the chain verifies.
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { serializeTx, parseTx, txid as computeTxid, NV3_TX_VERSION } from '../../core/tx.mjs';
 import { assetPresentValue } from '../../core/assets.mjs';
 
@@ -133,6 +133,7 @@ function repointAfterFill(o, changeOp, h) {
   if (c && c.spk === o.desc.changeScript && cpv > 0n && cpv >= BigInt(o.desc.minFill)) {
     o.giveOutpoint = changeOp; o.witness = null; o.ladder = []; o.needsResign = true; o.status = 'open';
   } else o.status = 'filled';
+  saveBook();
 }
 async function ensureMatcherFuel() {
   for (const op of spkIndex.get(TRUE_SPK) ?? []) { const u = utxos.get(op); if (u && !u.assetTag && u.value >= FEE + 10000n) return; }
@@ -239,15 +240,37 @@ const pvOf = (u, h) => assetPresentValue(u.value, h - u.refheight, rateOf(u.asse
 const book = [];
 let offerSeq = 1;
 
+// ---- book persistence: the catalogue survives relay restarts. Everything in an offer is
+// already JSON-safe (amounts ride as strings); coins/validity re-derive from the chain index,
+// and reconcileBook() at boot retires whatever was spent/expired while we were down.
+const BOOK_FILE = `${DATADIR}/market-book.json`;
+let saveTimer = null;
+function saveBook() {                        // debounced — mutations arrive in bursts
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    try { writeFileSync(BOOK_FILE, JSON.stringify({ offerSeq, book })); } catch (e) { say('книга не сохранилась: ' + String(e.message).slice(0, 60)); }
+  }, 250);
+}
+function loadBook() {
+  try {
+    const j = JSON.parse(readFileSync(BOOK_FILE, 'utf8'));
+    if (Array.isArray(j.book)) { book.push(...j.book); offerSeq = Number(j.offerSeq) || book.length + 1; }
+    say(`каталог восстановлен: ${book.length} предложений`);
+  } catch { /* first run — no file yet */ }
+}
+
 // Mark an offer done once its give coin leaves the UTXO set. A ranged fill re-points the offer
 // at its change coin FIRST (in the tx handler, before this runs), so a ranged offer only trips
 // this if its coin was spent by something else (another offer, a manual spend) — it is then
 // orphaned and unfillable, so retire it instead of leaving a dead "open" row.
 function reconcileBook() {
+  const before = book.map(o => o.status + o.giveOutpoint).join();
   for (const o of book) if (o.status === 'open' && o.nExpireTime && indexedHeight > o.nExpireTime) o.status = 'expired';
   for (const o of book) if (o.status === 'open' && !utxos.has(o.giveOutpoint)) o.status = 'filled';
   // a give coin that exists but is worth nothing (fully-taken change, or melted away) is done too
   for (const o of book) if (o.status === 'open') { const c = utxos.get(o.giveOutpoint); if (c && BigInt(c.value) === 0n) o.status = 'filled'; }
+  if (book.map(o => o.status + o.giveOutpoint).join() !== before) saveBook();
 }
 
 // ---- lifecycle ----
@@ -258,7 +281,9 @@ async function bootstrap() {
   try { await rpc('loadwallet', 'w'); } catch {}
   mineAddr = await rpc('getnewaddress');
   if (await rpc('getblockcount') < 120) await rpc('generatetoaddress', 120, mineAddr);
+  loadBook();
   await catchUp();
+  reconcileBook();   // retire offers whose coins were spent / expired while the relay was down
   say('маркет запущен (релей книги + майнер + автомэтчер)');
   // the miner role only: produce a block on a timer so the chain lives. No matching here.
   setInterval(async () => {
@@ -372,6 +397,7 @@ const api = {
         if (c && c.spk === o.desc.changeScript && cpv > 0n && cpv >= BigInt(o.desc.minFill)) {
           o.giveOutpoint = changeOp; o.witness = null; o.ladder = []; o.needsResign = true; o.status = 'open';
         } else { o.status = 'filled'; }
+        saveBook();
       }
     }
     reconcileBook();                          // retire any offer whose give coin this tx consumed
@@ -409,6 +435,7 @@ const api = {
       ladder: sanitizeLadder(arguments[0].ladder) ?? [{ lockHeight: Number(lockHeight), witness }],
       needsResign: false, status: 'open' };
     book.push(o);
+    saveBook();
     say(`новый ranged-оффер #${o.id} (частичные филлы)`);
     return { id: o.id };
   },
@@ -429,12 +456,14 @@ const api = {
       if (o.ladder.length > 5000) o.ladder = o.ladder.slice(-5000);
     }
     o.witness = witness; o.lockHeight = Number(lockHeight); o.needsResign = false; o.status = 'open';
+    saveBook();
     return { id: o.id };
   },
   async cancel({ id, makerSpk }) {
     const o = book.find(x => x.id === Number(id) && x.status === 'open');
     if (!o || o.makerSpk !== makerSpk) throw new Error('нет такого открытого оффера');
     o.status = 'cancelled';   // NB: true cancel = spend the coin; this only delists locally
+    saveBook();
     return {};
   },
   async name({ tag }) { return { name: assets.get(tag)?.name ?? null }; },
