@@ -403,33 +403,55 @@ function paintActivity(txs) {
       : actFilter.cat === 'generate' ? (i.category === 'generate' || i.category === 'immature') : i.category === actFilter.cat))
     && (!actFilter.cur || ((i.trade ? [i.recv, i.paid] : [i]).some(l => actFilter.cur === 'FRC' ? !l.assetTag : l.assetTag === actFilter.cur))));
   const amtStr = t => `${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount / (t.assetTag ? 10 ** Number(actDefs[t.assetTag]?.decimals ?? 0) : 1))} <small>${t.assetTag ? actAssetName(t.assetTag) : 'FRC'}</small>`;
-  const html = shown.length ? shown.map(i =>
-    `<div class="act">
-       <div class="act-i ${i.trade ? 'trade' : i.category}">${CAT[i.category] || '•'}</div>
-       <div class="act-m"><b>${tr(i.category)}</b><span class="sub">${i.confirmations > 0 ? '' : tr('pending') + ' · '}${timeAgo(i.time)}</span></div>
-       ${i.trade
+  const rowHtml = i =>
+    `<div class="act-i ${i.trade ? 'trade' : i.category}">${CAT[i.category] || '•'}</div>
+     <div class="act-m"><b>${tr(i.category)}</b><span class="sub">${i.confirmations > 0 ? '' : tr('pending') + ' · '}${timeAgo(i.time)}</span></div>
+     ${i.trade
     ? `<div class="act-a"><span class="pos">${amtStr(i.recv)}</span><span class="neg">${amtStr(i.paid)}</span></div>`
-    : `<div class="act-a ${(+i.amount) < 0 ? 'neg' : 'pos'}"><span>${amtStr(i)}</span></div>`}
-     </div>`).join('') : `<div class="sub">${txs.length ? tr('nothing matches the filters') : tr('no transactions yet')}</div>`;
-  if (html === actLastHtml) return true;   // identical content — skip the rewrite (no blink)
-  actLastHtml = html;
-  list.innerHTML = html;
-  // detail opens RIGHT UNDER the tapped row (a fixed slot at the list's end scrolled out
-  // of view on long histories — taps looked like they did nothing); tap again to close
-  list.querySelectorAll('.act').forEach((el, idx) => el.onclick = () => {
-    const i = shown[idx];
-    const open = $('#actDetail');
-    const sameRow = open?.dataset.txid === i.txid;
-    open?.remove();
-    document.querySelector('.act.open')?.classList.remove('open');
-    if (sameRow) return;
-    el.classList.add('open');   // suppress the row's own rule — the detail carries the divider
-    const d = document.createElement('div');
-    d.id = 'actDetail'; d.dataset.txid = i.txid;
-    d.innerHTML = `<div class="detail"><span class="sub">${i.confirmations > 0 ? i.confirmations + ' ' + tr('conf') : tr('pending')} · ${new Date(i.time * 1000).toLocaleString(getLang())}</span><span class="sub">txid</span><div class="txid">${i.txid}</div><button id="copyTxid" class="ghost">${tr('Copy txid')}</button></div>`;
-    el.insertAdjacentElement('afterend', d);
-    $('#copyTxid').onclick = e => copy(i.txid, e.target);
-  });
+    : `<div class="act-a ${(+i.amount) < 0 ? 'neg' : 'pos'}"><span>${amtStr(i)}</span></div>`}`;
+  const detailHtml = i => `<div class="detail"><span class="sub">${i.confirmations > 0 ? i.confirmations + ' ' + tr('conf') : tr('pending')} · ${new Date(i.time * 1000).toLocaleString(getLang())}</span><span class="sub">txid</span><div class="txid">${i.txid}</div><button id="copyTxid" class="ghost">${tr('Copy txid')}</button></div>`;
+  const keyOf = i => i.txid + '|' + (i.trade ? '#trade' : (i.assetTag ?? 'FRC') + '|' + i.category);
+
+  // KEYED RECONCILE — update rows in place instead of rewriting the container, so a refresh
+  // never resets the scroll position or closes the opened detail (that detail rides right
+  // under its row and its confirmations stay live).
+  if (!shown.length) {
+    list.innerHTML = `<div class="sub">${txs.length ? tr('nothing matches the filters') : tr('no transactions yet')}</div>`;
+    return true;
+  }
+  [...list.children].forEach(n => { if (!n.classList?.contains('act') && n.id !== 'actDetail') n.remove(); });   // skeletons/placeholders
+  const existing = new Map([...list.querySelectorAll('.act')].map(el => [el.dataset.key, el]));
+  let anchor = null;   // last placed node; the next one goes right after it
+  const place = node => { const want = anchor ? anchor.nextSibling : list.firstChild; if (node !== want) list.insertBefore(node, want); anchor = node; };
+  for (const i of shown) {
+    const k = keyOf(i), inner = rowHtml(i);
+    let el = existing.get(k);
+    if (el) existing.delete(k);
+    else { el = document.createElement('div'); el.className = 'act'; el.dataset.key = k; }
+    if (el._src !== inner) { el.innerHTML = inner; el._src = inner; }
+    el.onclick = () => {   // (re)bound each paint — closes over the fresh item
+      const open = $('#actDetail');
+      const sameRow = open?.dataset.key === k;
+      open?.remove();
+      document.querySelector('.act.open')?.classList.remove('open');
+      if (sameRow) return;
+      el.classList.add('open');   // suppress the row's own rule — the detail carries the divider
+      const d = document.createElement('div');
+      d.id = 'actDetail'; d.dataset.key = k; d.innerHTML = detailHtml(i);
+      el.insertAdjacentElement('afterend', d);
+      $('#copyTxid').onclick = e => copy(i.txid, e.target);
+    };
+    place(el);
+    const det = $('#actDetail');
+    if (det?.dataset.key === k) {   // opened detail: keep it glued under its row, content live
+      const dh = detailHtml(i);
+      if (det._src !== dh) { det.innerHTML = dh; det._src = dh; det.querySelector('#copyTxid').onclick = e => copy(i.txid, e.target); }
+      place(det);
+    }
+  }
+  for (const el of existing.values()) el.remove();   // rows that left the filter/history
+  const det = $('#actDetail');
+  if (det && !list.querySelector(`.act[data-key="${(CSS?.escape ?? (s => s))(det.dataset.key)}"]`)) det.remove();
   return true;
 }
 // Send available line — ≈ marks unverified (streamed/preview) values.
