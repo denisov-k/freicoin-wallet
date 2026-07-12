@@ -376,7 +376,7 @@ function paintActivity(txs) {
     `<div class="act" data-i="${txs.indexOf(t)}">
        <div class="act-i ${t.category}">${CAT[t.category] || '•'}</div>
        <div class="act-m"><b>${tr(t.category)}</b>${t.confirmations > 0 ? '' : `<span class="sub">${tr('pending')}</span>`}</div>
-       <div class="act-a ${(+t.amount) < 0 ? 'neg' : 'pos'}"><span>${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)}${t.assetTag ? ` <small>${actAssetName(t.assetTag)}</small>` : ''}</span><span class="sub">${timeAgo(t.time)}</span></div>
+       <div class="act-a ${(+t.amount) < 0 ? 'neg' : 'pos'}"><span>${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)} <small>${t.assetTag ? actAssetName(t.assetTag) : 'FRC'}</small></span><span class="sub">${timeAgo(t.time)}</span></div>
      </div>`).join('') : `<div class="sub">${txs.length ? tr('nothing matches the filters') : tr('no transactions yet')}</div>`;
   if (html === actLastHtml) return true;   // identical content — skip the rewrite (no blink)
   actLastHtml = html;
