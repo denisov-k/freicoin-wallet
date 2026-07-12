@@ -468,7 +468,8 @@ export function openIssueModal() {
     const perBlock = 2 ** -k;
     const blocksDay = 86400 / ((state?.info?.mineEveryMs ?? 20000) / 1000);
     const over = days => kind === 'd' ? 1 - (1 - perBlock) ** (blocksDay * days) : (1 + perBlock) ** (blocksDay * days) - 1;
-    const f = x => (x * 100).toLocaleString(getLang(), { maximumSignificantDigits: 3 });
+    // extreme k values compound into astronomy — anything past 9 999% reads as "practically infinite"
+    const f = x => { const pc = x * 100; return (!isFinite(pc) || pc > 9999) ? '∞' : pc.toLocaleString(getLang(), { maximumSignificantDigits: 3 }); };
     el.textContent = `≈ ${f(over(1))}% ${tr('per day')} · ≈ ${f(over(30))}% ${tr('per month')} · ≈ ${f(over(365))}% ${tr('per year')}`;
   };
   m.querySelector('#iShift').oninput = e => {   // hard-clamp typed values (min/max only guard the spinner)
