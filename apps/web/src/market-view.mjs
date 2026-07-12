@@ -92,8 +92,8 @@ export function mvRefresh() {
 }
 async function doRefresh() {
   if (!_ds || !seed) return;
-  const [info, r] = await Promise.all([api('info'), _ds().assets()]);
-  state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos: r.assetUtxos } };
+  const [info, r, swap] = await Promise.all([api('info'), _ds().assets(), api('swapInfo').catch(() => null)]);
+  state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos: r.assetUtxos }, swap };
   // cache relay defs for the light client's next boot (seedDefs) — rates for history valuation
   try { localStorage.setItem('fw_reldefs', JSON.stringify(Object.fromEntries(
     (info.assets || []).map(a => [a.tag, { shift: a.shift, interest: a.interest, name: a.name, decimals: a.decimals }])))); } catch {}
@@ -101,7 +101,6 @@ async function doRefresh() {
   if ($('#assetBalBody')) paintAssetBalance(); // Freimarkets Balance tab mounted → per-asset table
   maybeResignRanged();                                      // keep my ranged offers alive after partial fills
   checkMySwaps();                                           // refund any of my swaps stalled past their timeout
-  if ($('#swapBoard')) paintSwapBoard();                    // refresh the Bitcoin swap board + my swap statuses
 }
 
 // ---- actions ----
@@ -244,6 +243,14 @@ async function signLadder(desc, coin, giveOutpoint, fromL, toL) {
 
 async function postRangedOffer() {
   try {
+    // want = BTC ⇒ a cross-chain swap, not a ranged offer: give must be FRC; the "quantity"
+    // field is the FRC to swap; settlement runs the HTLC flow at the relay's rate.
+    if ($('#rWant').value === 'BTC') {
+      if ($('#rAsset').value !== 'FRC') throw new Error(tr('BTC swaps sell FRC — pick FRC to sell'));
+      const q = parseFloat($('#rQty').value) || 1;
+      $('#modal')?.remove();
+      return openSwapModal(q);   // hand off to the swap modal (progress log + confirm) prefilled
+    }
     const giveTag = $('#rAsset').value === 'FRC' ? HOST_TAG : $('#rAsset').value;
     const wantTag = $('#rWant').value === 'FRC' ? HOST_TAG : $('#rWant').value;
     if (!giveTag) throw new Error(tr('no coins yet'));
@@ -280,8 +287,8 @@ function openOfferModal() {
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Post an offer')}</b><button id="offerClose" class="icon">✕</button></div>
     <div class="row"><label>${tr('I sell')}<select id="rAsset"></select></label><label>${tr('Quantity')}<input id="rQty" type="text" inputmode="decimal"></label></div>
-    <div class="row"><label>${tr('I want')}<select id="rWant"></select></label><label>${tr('Quantity')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
-    <label class="chk"><input type="checkbox" id="rPartial" checked>${tr('allow partial fills')}</label>
+    <div class="row"><label>${tr('I want')}<select id="rWant"></select></label><label id="rPriceLbl">${tr('Quantity')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
+    <label class="chk" id="rPartialLbl"><input type="checkbox" id="rPartial" checked>${tr('allow partial fills')}</label>
     <button id="rOfferBtn">${tr('Post offer')}</button>
     <p class="sub" style="font-size:12px" id="rHint">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p></div>`;
   document.body.appendChild(m);
@@ -291,6 +298,15 @@ function openOfferModal() {
   m.querySelector('#rPartial').onchange = e => { $('#rHint').textContent = e.target.checked
     ? tr('Buyers fill any amount; the remainder keeps trading while you are online.')
     : tr('The offer can only be taken whole — one buyer, the full quantity.'); };
+  // want = BTC ⇒ cross-chain swap: no price/partial (rate is the relay's), give is FRC.
+  m.querySelector('#rWant').onchange = e => {
+    const btc = e.target.value === 'BTC';
+    $('#rPriceLbl').hidden = btc; $('#rPartialLbl').hidden = btc;
+    $('#rHint').textContent = btc
+      ? `${tr('Cross-chain swap at')} ${state.swap?.rate ?? '?'} BTC/FRC — ${tr('non-custodial, refundable')}`
+      : tr('Buyers fill any amount; the remainder keeps trading while you are online.');
+    if (btc) { setOptions('#rAsset', '<option value="FRC">FRC</option>'); }
+  };
   paint();                                 // populate #rAsset / #rWant now
 }
 
@@ -350,40 +366,12 @@ async function sendFrcToSpk(spk, amount) {
   return { txid, vout: 0 };
 }
 
-// The Bitcoin swap BOARD: a listing on the Exchange tab. V1 lists the always-available relay
-// LP offer (FRC → BTC, non-custodial for you — the refund timeout is your safety net) plus your
-// own in-flight swaps with their live status. User-to-user listings slot into the same board.
-async function paintSwapBoard() {
-  const el = $('#swapBoard'); if (!el) return;
-  let info; try { info = await api('swapInfo'); } catch { el.hidden = true; return; }
-  if (!info.available && !loadMySwaps().length) { el.hidden = true; return; }
-  el.hidden = false;
-  const hrp = info.btcHrp || 'bcrt';
-  const mySw = loadMySwaps();
-  const statusOf = w => {
-    const past = state && state.mine.height > w.T1;
-    return past ? tr('refundable') : tr('in progress');
-  };
-  el.innerHTML =
-    `<p class="label" style="margin-top:14px">${tr('Bitcoin swaps')} <span class="sub">(${info.btcNet || 'regtest'})</span></p>`
-    + (info.available
-      ? `<table class="mkt"><tbody><tr>
-           <td>FRC → BTC</td><td class="r">${info.rate} BTC / FRC</td>
-           <td class="act-cell"><button id="swGoBtc" class="rbtn">${tr('Swap')}</button></td></tr></tbody></table>`
-      : `<p class="sub">${tr('no BTC counterparty online')}</p>`)
-    + (mySw.length
-      ? `<p class="sub" style="margin-top:8px">${tr('your swaps')}</p><table class="mkt"><tbody>`
-        + mySw.map(w => `<tr><td>${w.id}</td><td class="r">${Number(BigInt(w.funding.value)) / 1e8} FRC</td><td class="act-cell sub">${statusOf(w)}</td></tr>`).join('')
-        + `</tbody></table>` : '');
-  const g = $('#swGoBtc'); if (g) g.onclick = openSwapModal;
-}
-
-function openSwapModal() {
+function openSwapModal(prefill) {
   if ($('#modal')) return;
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Swap FRC → BTC')}</b><button id="swClose" class="icon">✕</button></div>
-    <label>${tr('FRC to swap')}<input id="swAmt" type="text" inputmode="decimal" value="1"></label>
+    <label>${tr('FRC to swap')}<input id="swAmt" type="text" inputmode="decimal" value="${(prefill > 0 ? prefill : 1)}"></label>
     <div class="rrow"><span>${tr('You receive')}</span><b id="swGet">—</b></div>
     <button id="swGo">${tr('Start swap')}</button>
     <div id="swLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
@@ -680,10 +668,8 @@ export function renderExchange(el) {
     </div>
     <label class="chk"><input type="checkbox" id="fOpen" checked>${tr('open only')}</label>
     <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>
-    <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>
-    <div id="swapBoard" hidden></div>`;
+    <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>`;
   $('#openOffer').onclick = openOfferModal;
-  paintSwapBoard();
   ['#fGive', '#fWant', '#fOpen'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });
   if (state) paint(); else mvRefresh();
 }
@@ -741,11 +727,13 @@ function paint() {
   setOptions('#rAsset', ((frcHeld ? `<optgroup label="${tr('Currency')}">${sellOpt(['FRC', frcHeld])}</optgroup>` : '')
     + (heldAssets.length ? `<optgroup label="${tr('Assets')}">${heldAssets.map(sellOpt).join('')}</optgroup>` : ''))
     || `<option value="">${tr('no coins yet')}</option>`);
-  setOptions('#rWant', grouped('<option value="FRC">FRC</option>'));
+  // BTC is a cross-chain WANT (settled by swap, not a ranged offer) — only when a BTC node is up
+  const btcOpt = state.swap?.available ? `<optgroup label="${tr('Cross-chain')}"><option value="BTC">BTC</option></optgroup>` : '';
+  setOptions('#rWant', grouped('<option value="FRC">FRC</option>') + btcOpt);
 
   // order-book filters (grouped the same way; 'all' stays ungrouped at the top)
   const fopt = `<option value="">${tr('all')}</option>` + grouped('<option value="FRC">FRC</option>');
-  setOptions('#fGive', fopt); setOptions('#fWant', fopt);
+  setOptions('#fGive', fopt); setOptions('#fWant', fopt + btcOpt);
 
   // skip repainting the book while a fill amount is being typed into it (else the 15s refresh
   // wipes the input) — same reason the offer selects are preserved.
@@ -776,9 +764,23 @@ function paint() {
         <td>${fmtA(o.want.assetTag ?? 'FRC', BigInt(o.want.value))}</td><td class="act-cell">${o.status}</td></tr>`;
     };
     const rows = state.info.book.filter(o => (!fg || giveOf(o) === fg) && (!fw || wantOf(o) === fw) && (!fo || o.status === 'open')).reverse();
-    $('#bookBody').innerHTML = rows.map(bookRow).join('')
+    // cross-chain BTC swaps ride the SAME table: the relay LP listing (FRC→BTC) + my in-flight
+    // swaps, shown only when the filters don't exclude a BTC pair. Settlement is HTLC, not an
+    // on-chain splice — marked with the ⇄ badge so it reads as cross-chain, not a ranged offer.
+    const btcMatch = (!fg || fg === 'FRC') && (!fw || fw === 'BTC');
+    let swapRows = '';
+    if (btcMatch && state.swap) {
+      if (state.swap.available)
+        swapRows += `<tr class="swap"><td>⇄</td><td>FRC</td><td>BTC @ ${state.swap.rate}</td><td class="act-cell"><button id="swGoBtc" class="rbtn">${tr('Swap')}</button></td></tr>`;
+      for (const w of loadMySwaps()) {
+        const past = state.mine.height > w.T1;
+        swapRows += `<tr class="swap ${past ? '' : 'filled'}"><td>⇄</td><td>${Number(BigInt(w.funding.value)) / 1e8} FRC</td><td>BTC</td><td class="act-cell sub">${past ? tr('refundable') : tr('in progress')}</td></tr>`;
+      }
+    }
+    $('#bookBody').innerHTML = (rows.map(bookRow).join('') + swapRows)
       || `<tr><td colspan="4" class="sub">${state.info.book.length ? tr('no offers match') : tr('no offers yet')}</td></tr>`;
-    $('#bookBody').querySelectorAll('.rbtn').forEach(b => b.onclick = () => {
+    const sg = $('#swGoBtc'); if (sg) sg.onclick = () => openSwapModal();
+    $('#bookBody').querySelectorAll('.rbtn:not(#swGoBtc)').forEach(b => b.onclick = () => {
       const offer = state.info.book.find(o => o.id === +b.dataset.id);
       if (offer) openBuyModal(offer);
     });
