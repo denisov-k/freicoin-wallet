@@ -475,8 +475,10 @@ function paint() {
       if (o.ranged) {
         const wantTag = (o.desc.payoutAsset && o.desc.payoutAsset !== HOST_TAG) ? o.desc.payoutAsset : null;
         const giveTag = o.give ? (o.give.assetTag ?? null) : null;
-        // desc price is a kria/kria ratio; convert to want-units per give-unit for display
+        // desc price is a kria/kria ratio; the Want cell shows the TOTAL for the remainder
+        // (what a full fill pays, maker-rounding matched), with the unit price in the tooltip
         const price = Number(BigInt(o.desc.priceNum)) / Number(BigInt(o.desc.priceDen)) * scaleOf(giveTag) / scaleOf(wantTag);
+        const wantTotal = o.give ? (BigInt(o.give.pv) * BigInt(o.desc.priceNum) + BigInt(o.desc.priceDen) - 1n) / BigInt(o.desc.priceDen) : null;
         const maxU = o.give ? Number(BigInt(o.give.pv)) / scaleOf(giveTag) : 0;
         const act = mine
           ? (o.status === 'open' ? `${tr('mine')} <button class="rcancel" data-id="${o.id}">${tr('Cancel')}</button>` : `${tr('mine')} ${o.status}`)
@@ -484,7 +486,7 @@ function paint() {
             ? `<span class="fillbox"><input class="rfill" data-id="${o.id}" type="text" inputmode="decimal" placeholder="${maxU}"><button class="rbtn" data-id="${o.id}">${tr('Buy')}</button></span>`
             : o.status;
         return `<tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td><td>${give}</td>
-          <td>@ ${price.toLocaleString(getLang(), { maximumFractionDigits: 8 })} ${assetName(wantTag)}</td><td>${act}</td></tr>`;
+          <td title="@ ${price.toLocaleString(getLang(), { maximumFractionDigits: 8 })} ${assetName(wantTag)}">${wantTotal !== null ? fmtA(wantTag ?? 'FRC', wantTotal) : '—'}</td><td>${act}</td></tr>`;
       }
       return `<tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td><td>${give}</td>
         <td>${fmtA(o.want.assetTag ?? 'FRC', BigInt(o.want.value))}</td><td>${mine ? tr('mine') : ''} ${o.status}</td></tr>`;
