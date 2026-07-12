@@ -417,7 +417,7 @@ async function runSwap(frcUnits) {
     const cB = btcHtlcClaim({ prevTxid: r2.btcHtlc.txid, vout: r2.btcHtlc.vout, valueSats: BigInt(r2.btcHtlc.value), leafHex: r2.btcHtlc.leaf, preimage: R, claimKey: btcKey, toSpk: myBtcSpk, fee: 2000n });
     await api('swapBtcBroadcast', { id: c.id, rawtx: cB.rawtx });
     dropMySwap(c.id);   // settled — the relay claimed the FRC, our BTC is in hand
-    log(`✅ ${(Number(c.btcAmount) / 1e8)} BTC → ${btcAddress(hash160(Buffer.from(btcPub, 'hex')).toString('hex'), 'bcrt')}`);
+    log(`✅ ${(Number(c.btcAmount) / 1e8)} BTC → ${btcAddress(hash160(Buffer.from(btcPub, 'hex')).toString('hex'), state.swap?.btcHrp || 'bcrt')}`);
     log(tr('swap complete ✅'));
     toast(tr('swap complete ✅'), 'ok'); mvRefresh();
   } catch (e) { log('⚠ ' + e.message); toast(e.message, 'err'); if (go) { go.disabled = false; go.textContent = tr('Start swap'); } }

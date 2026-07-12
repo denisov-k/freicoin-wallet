@@ -5,6 +5,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/root/free-money/freicoin-wallet
+Environment=BTC_NET=signet BTC_DATADIR=/root/btc-signet BTC_RPCPORT=38332 BTC_WALLET=swap SWAP_RATE=0.001
 ExecStart=/usr/bin/node research/nversion3/market-server.mjs
 Restart=always
 RestartSec=3
