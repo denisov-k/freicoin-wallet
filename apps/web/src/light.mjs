@@ -59,6 +59,22 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     }
   }
 
+  // One entry per (txid, currency): normalize the all-zero host tag to null and sum the legs
+  // (legacy caches hold a separate spend leg and change leg for the same tx). Sign decides the
+  // category; 'generate' sticks.
+  const mergeLegs = entries => {
+    const m = new Map();
+    for (const h of entries) {
+      const tag = (!h.assetTag || h.assetTag === '0'.repeat(40)) ? null : h.assetTag;
+      const k = h.txid + '|' + (tag ?? '');
+      const e = m.get(k);
+      if (e) { e.amount += h.amount; if (h.category === 'generate') e.category = 'generate'; }
+      else m.set(k, { ...h, assetTag: tag });
+    }
+    for (const e of m.values()) if (e.category !== 'generate' && e.category !== 'immature') e.category = e.amount < 0n ? 'send' : 'receive';
+    return [...m.values()];
+  };
+
   const toCache = (r, stale = false) => {
     const tip = r.tipHeight;
     return {
@@ -78,18 +94,18 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       assetDefs: r.assetDefs || {},
       assetUtxos: r.utxos.map(u => ({ outpoint: `${u.txid}:${u.vout}`, spk: u.script, assetTag: (!u.assetTag || u.assetTag === '0'.repeat(40)) ? null : u.assetTag, value: String(u.value), refheight: u.refheight })),
       // history entries are per-currency legs; user assets are integer tokens (scale 1).
-      // Normalize the all-zero host tag here too — entries persisted before the client
-      // normalized it would otherwise show FRC as a phantom "00000000…" asset.
-      history: r.history.map(h => { const tag = (!h.assetTag || h.assetTag === '0'.repeat(40)) ? null : h.assetTag; return {
-        txid: h.txid, category: h.category, assetTag: tag,
-        amount: tag ? Number(h.amount) : kriaToFrc(h.amount < 0n ? -h.amount : h.amount) * (h.amount < 0n ? -1 : 1),
+      // Normalize the all-zero host tag AND merge legs of the same (txid, currency) — entries
+      // persisted before normalization split one tx into a spend leg and a change leg.
+      history: mergeLegs(r.history).map(h => ({
+        txid: h.txid, category: h.category, assetTag: h.assetTag,
+        amount: h.assetTag ? Number(h.amount) : kriaToFrc(h.amount < 0n ? -h.amount : h.amount) * (h.amount < 0n ? -1 : 1),
         confirmations: tip - h.height + 1, time: h.time,
-      }; }),
-      pending: (r.pending || []).map(p => { const tag = (!p.assetTag || p.assetTag === '0'.repeat(40)) ? null : p.assetTag; return {
-        txid: p.txid, category: p.category, assetTag: tag,
-        amount: tag ? Number(p.amount) : kriaToFrc(p.amount < 0n ? -p.amount : p.amount) * (p.amount < 0n ? -1 : 1),
+      })),
+      pending: mergeLegs(r.pending || []).map(p => ({
+        txid: p.txid, category: p.category, assetTag: p.assetTag,
+        amount: p.assetTag ? Number(p.amount) : kriaToFrc(p.amount < 0n ? -p.amount : p.amount) * (p.amount < 0n ? -1 : 1),
         confirmations: 0, time: p.time,
-      }; }),
+      })),
       agreement: r.agreement || null,
     };
   };
