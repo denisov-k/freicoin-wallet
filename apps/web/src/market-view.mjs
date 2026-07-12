@@ -10,7 +10,7 @@ import { segwitV0Sighash, rangedSighash, SIGHASH_ALL, SIGHASH_BUNDLE } from '../
 import { serializeTx, NV3_TX_VERSION } from '../../../core/tx.mjs';
 import { assetPresentValue } from '../../../core/assets.mjs';
 import { sha256, hash160 } from '../../../core/crypto.mjs';
-import { frcLeg } from '../../../core/swap.mjs';
+import { frcLeg, refundGiven } from '../../../core/swap.mjs';
 import { paymentHashOf } from '../../../core/htlc.mjs';
 import { btcHtlcClaim, btcAddress } from '../../../core/btc.mjs';
 import { tr, getLang } from './i18n.mjs';
@@ -100,6 +100,7 @@ async function doRefresh() {
   if ($('#bookBody')) paint();                 // Exchange tab mounted → repaint the book
   if ($('#assetBalBody')) paintAssetBalance(); // Freimarkets Balance tab mounted → per-asset table
   maybeResignRanged();                                      // keep my ranged offers alive after partial fills
+  checkMySwaps();                                           // refund any of my swaps stalled past their timeout
 }
 
 // ---- actions ----
@@ -296,6 +297,38 @@ function openOfferModal() {
 // deterministic swap keys from the wallet seed (kept off the payment path — a swap key leak
 // never touches wallet funds), one FRC key + one BTC key per swap id.
 const swapPriv = (id, leg) => sha256(Buffer.from(seed + 'fw-swap:' + id + ':' + leg, 'utf8')).toString('hex');
+
+// Persisted swap records — the SAFETY NET: whatever the relay or the network does, a swap we
+// funded is refundable from these (+ the seed) after its T1. Survives reloads.
+const SWAP_LS = 'fw_swaps';
+const loadMySwaps = () => { try { return JSON.parse(localStorage.getItem(SWAP_LS) || '[]'); } catch { return []; } };
+const saveMySwaps = a => { try { localStorage.setItem(SWAP_LS, JSON.stringify(a)); } catch {} };
+const putMySwap = rec => { const a = loadMySwaps().filter(x => x.id !== rec.id); a.push(rec); saveMySwaps(a); };
+const dropMySwap = id => saveMySwaps(loadMySwaps().filter(x => x.id !== id));
+
+// Reconcile my funded swaps against the chain: settled ones drop; any still-unspent FRC HTLC
+// past its T1 is refunded back to me (relay down, counterparty vanished — funds come home).
+async function checkMySwaps() {
+  const mine = loadMySwaps();
+  if (!mine.length || !state) return;
+  const h = state.mine.height;
+  for (const w of mine) {
+    try {
+      // is the FRC HTLC coin still unspent? ask the relay's index for the HTLC spk.
+      const r = await api('utxos', { spks: [w.spk] });
+      const live = (r.utxos || []).find(u => u.outpoint === `${w.funding.txid}:${w.funding.vout}`);
+      if (!live) { dropMySwap(w.id); continue; }          // spent → swap settled (or already refunded)
+      if (h <= w.T1 + 1) continue;                        // not yet refundable — CLTV not reached
+      const key = swapPriv(w.nonce, 'frc');
+      const rf = refundGiven({ funding: { txid: w.funding.txid, vout: w.funding.vout, value: BigInt(w.funding.value), refheight: w.funding.refheight },
+        leaf: w.leaf, cltv: w.T1, ourKey: key, toSpk: spks[0], fee: 10000n });
+      await api('tx', { rawtx: rf.rawtx, kind: 'send' });
+      dropMySwap(w.id);
+      toast(`${tr('swap refunded')}: ${Number(BigInt(w.funding.value)) / 1e8} FRC`, 'ok');
+      mvRefresh();
+    } catch { /* coin gone or too early — retry next cycle */ }
+  }
+}
 const opIn = op => ({ prevout: { txid: rev(op.split(':')[0]), vout: +op.split(':')[1] }, scriptSig: '', sequence: 0xffffffff, witness: [] });
 
 // pay `amount` kria of FRC to an arbitrary scriptPubKey (funds the FRC HTLC). Fee + change to us.
@@ -356,6 +389,9 @@ async function runSwap(frcUnits) {
     const leg = frcLeg({ role: 'give', ourKey: frcKey, theirPub: c.relayFrcPub, paymentHash: H, cltv: T1, net: 'regtest' });
     log(`${tr('locking')} ${frcUnits} FRC…`);
     const fund = await sendFrcToSpk(leg.spk, frcAmount);
+    // persist BEFORE we hand control to the relay — if anything below fails, checkMySwaps refunds
+    putMySwap({ id: c.id, nonce, spk: leg.spk, leaf: leg.leaf, T1,
+      funding: { txid: fund.txid, vout: fund.vout, value: String(frcAmount), refheight: L } });
     await mvRefresh();
     const r2 = await api('swapFrcFunded', { id: c.id, txid: fund.txid, vout: fund.vout, leaf: leg.leaf, t1: T1 });
     log(tr('relay locked the BTC — claiming it…'));
@@ -363,6 +399,7 @@ async function runSwap(frcUnits) {
     const myBtcSpk = '0014' + hash160(Buffer.from(btcPub, 'hex')).toString('hex');
     const cB = btcHtlcClaim({ prevTxid: r2.btcHtlc.txid, vout: r2.btcHtlc.vout, valueSats: BigInt(r2.btcHtlc.value), leafHex: r2.btcHtlc.leaf, preimage: R, claimKey: btcKey, toSpk: myBtcSpk, fee: 2000n });
     await api('swapBtcBroadcast', { id: c.id, rawtx: cB.rawtx });
+    dropMySwap(c.id);   // settled — the relay claimed the FRC, our BTC is in hand
     log(`✅ ${(Number(c.btcAmount) / 1e8)} BTC → ${btcAddress(hash160(Buffer.from(btcPub, 'hex')).toString('hex'), 'bcrt')}`);
     log(tr('swap complete ✅'));
     toast(tr('swap complete ✅'), 'ok'); mvRefresh();
