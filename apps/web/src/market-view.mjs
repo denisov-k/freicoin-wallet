@@ -447,19 +447,22 @@ export function openIssueModal() {
     <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="часы-труда"></label>
     <div class="row">
       <label>${tr('Type')}<select id="iKind"><option value="c">${tr('constant')}</option><option value="d">${tr('melts')}</option><option value="i">${tr('grows')}</option></select></label>
-      <label>${tr('Rate k')}<input id="iShift" type="number" value="16" min="1" max="63" disabled></label>
+      <label id="iRateLbl" hidden>${tr('Rate k')}<input id="iShift" type="number" value="16" min="1" max="63"></label>
     </div>
     <div class="row">
       <label>${tr('Quantity')}<input id="iAmt" type="number" value="1000000"></label>
       <label>${tr('Decimals')}<select id="iDec"><option value="2">0,01</option><option value="3">0,001</option><option value="0">${tr('whole only')}</option></select></label>
     </div>
-    <p class="sub" style="font-size:12px">${tr('Melting eats whole units on indivisible assets — decimals let it shave fractions instead.')}</p>
+    <p class="sub" id="iMeltHint" style="font-size:12px" hidden>${tr('Melting eats whole units on indivisible assets — decimals let it shave fractions instead.')}</p>
     <button id="issueBtn">${tr('Issue asset')}</button></div>`;
   document.body.appendChild(m);
   m.onclick = e => { if (e.target === m) m.remove(); };
   m.querySelector('#issClose').onclick = () => m.remove();
   m.querySelector('#issueBtn').onclick = issue;
-  m.querySelector('#iKind').onchange = e => { $('#iShift').disabled = e.target.value === 'c'; };   // constant has no rate
+  m.querySelector('#iKind').onchange = e => {
+    $('#iRateLbl').hidden = e.target.value === 'c';        // constant has no rate at all
+    $('#iMeltHint').hidden = e.target.value !== 'd';       // the decimals hint is about melting
+  };
 }
 export function renderExchange(el) {
   el.innerHTML = `
