@@ -216,6 +216,21 @@ async function prepareGiveCoin(giveTag, Q, L, coins) {
   return { outpoint: `${txid}:0`, spk: changeSpk, value: Q, refheight: L, L };
 }
 
+// Pre-signed offer LADDER: one rung every LADDER_STEP blocks out to LADDER_SPAN (~24h at
+// 20s blocks); desc.nExpireTime = the last rung, so the offer dies where the signatures end.
+// An OFFLINE maker's offer stays fillable until then (first fill only — the remainder is a
+// new coin no pre-signed rung can cover; the maker re-ladders it when back online). While
+// online, maybeResignRanged still tops the ladder up with a tip rung for 1-block freshness.
+const LADDER_STEP = 10, LADDER_SPAN = 4320;
+async function signLadder(desc, coin, giveOutpoint, fromL, toL) {
+  const ladder = [];
+  for (let Li = fromL, i = 0; Li <= toL; Li += LADDER_STEP, i++) {
+    ladder.push({ lockHeight: Li, witness: signRangedGive(desc, giveOutpoint, coin, Li) });
+    if (i % 32 === 31) await new Promise(r => setTimeout(r));   // yield — keep the UI alive
+  }
+  return ladder;
+}
+
 async function postRangedOffer() {
   try {
     const giveTag = $('#rAsset').value === 'FRC' ? HOST_TAG : $('#rAsset').value;
@@ -237,9 +252,11 @@ async function postRangedOffer() {
     if (Q > total) Q = total;                                             // cap at the whole balance
     const partial = $('#rPartial')?.checked ?? true;                      // unchecked ⇒ all-or-nothing (minFill = the whole lot)
     const give = await prepareGiveCoin(giveTag, Q, L, coins);
-    const desc = { payoutAsset: wantTag, payoutScript: give.spk, priceNum, priceDen, changeScript: give.spk, minFill: partial ? 0n : Q, maxFill: Q };
-    const witness = signRangedGive(desc, give.outpoint, give, give.L);
-    await api('rangedOffer', { makerSpk: give.spk, giveOutpoint: give.outpoint, desc, nExpireTime: 0, lockHeight: give.L, witness });
+    const expireAt = give.L + LADDER_SPAN;
+    const desc = { payoutAsset: wantTag, payoutScript: give.spk, priceNum, priceDen, changeScript: give.spk, minFill: partial ? 0n : Q, maxFill: Q, nExpireTime: expireAt };
+    toast(tr('signing the offer ladder…'));
+    const ladder = await signLadder(desc, give, give.outpoint, give.L, expireAt);
+    await api('rangedOffer', { makerSpk: give.spk, giveOutpoint: give.outpoint, desc, nExpireTime: expireAt, lockHeight: ladder[0].lockHeight, witness: ladder[0].witness, ladder });
     $('#modal')?.remove();                 // close the offer modal on success
     toast(tr('Offer signed and posted'), 'ok'); mvRefresh();
   } catch (e) { toast(e.message, 'err'); }
@@ -425,10 +442,22 @@ async function maybeResignRanged() {
     const u = state.mine.utxos.find(x => x.outpoint === o.giveOutpoint);
     if (!u) continue;                    // the change coin isn't in my verified set yet
     const d = o.desc, L = state.mine.height;
-    const desc = { payoutAsset: d.payoutAsset ?? HOST_TAG, payoutScript: d.payoutScript, priceNum: BigInt(d.priceNum), priceDen: BigInt(d.priceDen), changeScript: d.changeScript, minFill: BigInt(d.minFill), maxFill: BigInt(d.maxFill) };
+    const expireAt = Number(o.nExpireTime) || 0;
+    if (expireAt && L > expireAt) continue;                       // past the signed expiry — dead, let it expire
+    // the digest commits desc.nExpireTime — reconstruct EXACTLY what was originally signed
+    const desc = { payoutAsset: d.payoutAsset ?? HOST_TAG, payoutScript: d.payoutScript, priceNum: BigInt(d.priceNum), priceDen: BigInt(d.priceDen), changeScript: d.changeScript, minFill: BigInt(d.minFill), maxFill: BigInt(d.maxFill), ...(d.nExpireTime != null ? { nExpireTime: Number(d.nExpireTime) } : {}) };
     try {
-      const witness = signRangedGive(desc, o.giveOutpoint, u, L);
-      await api('resignRanged', { id: o.id, giveOutpoint: o.giveOutpoint, lockHeight: L, witness });
+      const coin = { spk: u.spk, value: BigInt(u.value), refheight: u.refheight };
+      if (o.needsResign && expireAt) {
+        // fill re-pointed the offer at a NEW coin: the old ladder is dead — sign a fresh one
+        // from here to the original expiry, so the remainder survives us going offline again
+        const ladder = await signLadder(desc, coin, o.giveOutpoint, L, expireAt);
+        if (ladder.length) await api('resignRanged', { id: o.id, giveOutpoint: o.giveOutpoint, lockHeight: ladder[0].lockHeight, witness: ladder[0].witness, ladder });
+      } else {
+        // online freshness: top the ladder up with a single tip rung
+        const witness = signRangedGive(desc, o.giveOutpoint, coin, L);
+        await api('resignRanged', { id: o.id, giveOutpoint: o.giveOutpoint, lockHeight: L, witness });
+      }
     } catch { /* next sync retries */ }
   }
 }

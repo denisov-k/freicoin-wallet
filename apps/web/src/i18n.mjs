@@ -61,7 +61,7 @@ const RU = {
   'Issue an asset that lives on the chain: constant, melting (demurrage) or growing (interest).':
     'Выпустите актив: он живёт в цепи — постоянный, тающий (демерредж) или растущий (процент).',
   'Name': 'Название', 'Rate k': 'Ставка k', 'Type': 'Тип', 'melts': 'Тает', 'grows': 'Растёт', 'constant': 'Постоянный', 'Quantity': 'Количество', 'Decimals': 'Дробность', 'Rate, % per year': 'Скорость, % в год', 'per day': 'в день', 'per month': 'в месяц', 'per year': 'в год', 'whole only': 'только целые', 'Melting eats whole units on indivisible assets — decimals let it shave fractions instead.': 'У неделимого актива таяние съедает целые единицы — дробность позволяет ему съедать доли.', 'Growth rounds down — small indivisible holdings stall until a whole unit accrues; decimals make it smooth.': 'Рост округляется вниз — мелкие неделимые суммы стоят на месте, пока не набежит целая единица; дробность делает рост плавным.',
-  'Post an offer': 'Добавить предложение', 'I give': 'Отдаю монету', 'I want': 'Хочу', 'How much I want': 'Сколько хочу', 'Post offer': 'Добавить',
+  'Post an offer': 'Добавить предложение', 'signing the offer ladder…': 'подписываем лесенку оффера…', 'I give': 'Отдаю монету', 'I want': 'Хочу', 'How much I want': 'Сколько хочу', 'Post offer': 'Добавить',
   '⚡ Match crossing offers and take the spread': '⚡ Свести встречные офферы и забрать спред',
   'Matching is done by any participant with their own fee coin — there is no privileged matcher.':
     'Сведение делает любой участник своей монетой на комиссию — привилегированного матчера нет.',

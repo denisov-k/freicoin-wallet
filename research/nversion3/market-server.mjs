@@ -108,6 +108,19 @@ async function catchUp() {
   while (indexedHeight < tip) await indexBlock(indexedHeight + 1);
 }
 
+// pre-signed ladder: [{lockHeight, witness}] ascending; the CURRENT rung is the highest one
+// not above the chain tip — buyers' coins only need to be older than that rung.
+const sanitizeLadder = l => Array.isArray(l) && l.length
+  ? l.filter(r => r && Number.isFinite(Number(r.lockHeight)) && Array.isArray(r.witness) && r.witness.length >= 2)
+     .map(r => ({ lockHeight: Number(r.lockHeight), witness: r.witness }))
+     .sort((a, b) => a.lockHeight - b.lockHeight).slice(0, 5000)
+  : null;
+const rungAt = (o, h) => {
+  let best = null;
+  for (const r of (o.ladder || [])) { if (r.lockHeight <= h && (!best || r.lockHeight > best.lockHeight)) best = r; }
+  return best || { lockHeight: o.lockHeight, witness: o.witness };
+};
+
 const rateOf = tag => tag === null ? { k: 20, interest: false }
   : { k: assets.get(tag)?.shift ?? 20, interest: !!assets.get(tag)?.interest };
 const pvOf = (u, h) => assetPresentValue(u.value, h - u.refheight, rateOf(u.assetTag));
@@ -130,6 +143,7 @@ let offerSeq = 1;
 // this if its coin was spent by something else (another offer, a manual spend) — it is then
 // orphaned and unfillable, so retire it instead of leaving a dead "open" row.
 function reconcileBook() {
+  for (const o of book) if (o.status === 'open' && o.nExpireTime && indexedHeight > o.nExpireTime) o.status = 'expired';
   for (const o of book) if (o.status === 'open' && !utxos.has(o.giveOutpoint)) o.status = 'filled';
   // a give coin that exists but is worth nothing (fully-taken change, or melted away) is done too
   for (const o of book) if (o.status === 'open') { const c = utxos.get(o.giveOutpoint); if (c && BigInt(c.value) === 0n) o.status = 'filled'; }
@@ -169,7 +183,8 @@ const api = {
       book: book.slice(-80).map(o => {
         const g = utxos.get(o.giveOutpoint);
         const give = g ? { assetTag: g.assetTag, value: String(g.value), refheight: g.refheight, pv: String(pvOf(g, h)) } : null;
-        const base = { id: o.id, status: o.status, makerSpk: o.makerSpk, lockHeight: o.lockHeight, giveOutpoint: o.giveOutpoint, witness: o.witness, give };
+        const rung = o.ranged ? rungAt(o, h) : { lockHeight: o.lockHeight, witness: o.witness };
+        const base = { id: o.id, status: o.status, makerSpk: o.makerSpk, lockHeight: rung.lockHeight, giveOutpoint: o.giveOutpoint, witness: rung.witness, give };
         return o.ranged
           ? { ...base, ranged: true, desc: o.desc, nExpireTime: o.nExpireTime, needsResign: !!o.needsResign }
           : { ...base, sequence: o.sequence, want: { assetTag: o.want.assetTag, value: String(o.want.value) } };
@@ -252,7 +267,7 @@ const api = {
         const cpv = c ? pvOf(c, h) : 0n;
         // a zero-value change means the offer was taken WHOLE — it is done, not resignable
         if (c && c.spk === o.desc.changeScript && cpv > 0n && cpv >= BigInt(o.desc.minFill)) {
-          o.giveOutpoint = changeOp; o.witness = null; o.needsResign = true; o.status = 'open';
+          o.giveOutpoint = changeOp; o.witness = null; o.ladder = []; o.needsResign = true; o.status = 'open';
         } else { o.status = 'filled'; }
       }
     }
@@ -285,8 +300,11 @@ const api = {
     const o = { id: offerSeq++, ranged: true, makerSpk, giveOutpoint,
       desc: { payoutAsset: desc.payoutAsset ?? '00'.repeat(20), payoutScript: desc.payoutScript,
         priceNum: String(desc.priceNum), priceDen: String(desc.priceDen), changeScript: desc.changeScript,
-        minFill: String(desc.minFill), maxFill: String(desc.maxFill) },
-      nExpireTime: Number(nExpireTime ?? 0), lockHeight: Number(lockHeight), witness, needsResign: false, status: 'open' };
+        minFill: String(desc.minFill), maxFill: String(desc.maxFill),
+        ...(desc.nExpireTime != null ? { nExpireTime: Number(desc.nExpireTime) } : {}) },
+      nExpireTime: Number(nExpireTime ?? 0), lockHeight: Number(lockHeight), witness,
+      ladder: sanitizeLadder(arguments[0].ladder) ?? [{ lockHeight: Number(lockHeight), witness }],
+      needsResign: false, status: 'open' };
     book.push(o);
     say(`новый ranged-оффер #${o.id} (частичные филлы)`);
     return { id: o.id };
@@ -299,6 +317,14 @@ const api = {
     const g = utxos.get(o.giveOutpoint);
     if (!g || g.spk !== o.makerSpk) throw new Error('монета остатка недоступна');
     if (!Array.isArray(witness) || witness.length < 2) throw new Error('нет подписи');
+    const fresh = sanitizeLadder(arguments[0].ladder);
+    if (fresh) o.ladder = fresh;                                   // full re-ladder (new coin after a fill)
+    else {                                                          // single tip rung: top the ladder up
+      o.ladder = (o.ladder || []).filter(r => r.lockHeight !== Number(lockHeight));
+      o.ladder.push({ lockHeight: Number(lockHeight), witness });
+      o.ladder.sort((a, b) => a.lockHeight - b.lockHeight);
+      if (o.ladder.length > 5000) o.ladder = o.ladder.slice(-5000);
+    }
     o.witness = witness; o.lockHeight = Number(lockHeight); o.needsResign = false; o.status = 'open';
     return { id: o.id };
   },
