@@ -446,8 +446,8 @@ export function openIssueModal() {
     <p class="sub">${tr('Issue an asset that lives on the chain: constant, melting (demurrage) or growing (interest).')}</p>
     <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="часы-труда"></label>
     <div class="row">
-      <label>${tr('Rate k')}<input id="iShift" type="number" value="16" min="1" max="63" disabled></label>
       <label>${tr('Type')}<select id="iKind"><option value="c">${tr('constant')}</option><option value="d">${tr('melts')}</option><option value="i">${tr('grows')}</option></select></label>
+      <label>${tr('Rate k')}<input id="iShift" type="number" value="16" min="1" max="63" disabled></label>
     </div>
     <div class="row">
       <label>${tr('Quantity')}<input id="iAmt" type="number" value="1000000"></label>
