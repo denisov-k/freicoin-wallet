@@ -2,12 +2,12 @@ import { Buffer } from 'buffer';
 globalThis.Buffer = Buffer;
 
 import QRCode from 'qrcode';
-import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress, walletScripts, configureNetwork } from './wallet.mjs';
+import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress, walletScripts, configureNetwork, addrToSpk } from './wallet.mjs';
 import { encryptSecret, decryptSecret } from './vault.mjs';
 import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS, CHECKPOINT } from './netparams.mjs';
 import { tr, getLang, setLang, LANGS } from './i18n.mjs';
 // Freimarkets (Issue + Exchange) — mounted as extra tabs only on the nv3 network.
-import { initMarketView, mvSetSeed, mvRefresh, openIssueModal, renderExchange, renderAssetBalance } from './market-view.mjs';
+import { initMarketView, mvSetSeed, mvRefresh, openIssueModal, renderExchange, renderAssetBalance, mvOwnedAssets, mvSendAsset } from './market-view.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
@@ -528,10 +528,29 @@ const render = {
     pending = null;
     openModal(tr('Send'),
       `<div class="sub" id="avail">${tr('available…')}</div>
+       ${MKT() ? `<label>${tr('Currency')}<select id="sendAsset"><option value="">FRC</option></select></label>` : ''}
        <label>${tr('To address')}<input id="to" placeholder="fc1…" autocomplete="off"></label>
-       <label>${tr('Amount (FRC)')}<div class="amtrow"><input id="amt" type="number" step="0.00000001" min="0" placeholder="0.0"><button id="maxBtn" class="ghost">${tr('Max')}</button></div></label>
+       <label id="amtLabel">${tr('Amount (FRC)')}<div class="amtrow"><input id="amt" type="number" step="0.00000001" min="0" placeholder="0.0"><button id="maxBtn" class="ghost">${tr('Max')}</button></div></label>
        <button id="reviewBtn">${tr('Review')}</button><div id="sendResult"></div>`);
     $('#reviewBtn').onclick = doReview;
+    // Max dispatches on the selected currency: asset → its whole quantity; FRC → balance-fee
+    let sendBal = null;
+    $('#maxBtn').onclick = () => {
+      const sel = $('#sendAsset');
+      if (sel && sel.value) $('#amt').value = sel.selectedOptions[0].dataset.qty;
+      else if (sendBal != null) $('#amt').value = Math.max(0, sendBal - 0.001).toFixed(8);
+    };
+    // Freimarkets: the selector offers every owned asset; assets are integer tokens (scale 1)
+    if (MKT()) mvOwnedAssets().then(list => {
+      const sel = $('#sendAsset'); if (!sel) return;
+      sel.innerHTML = `<option value="">FRC</option>` + list.map(a => `<option value="${a.tag}" data-qty="${a.qty}">${a.name} (${a.qty.toLocaleString(getLang())})</option>`).join('');
+      sel.onchange = () => {
+        const isFrc = !sel.value;
+        $('#amtLabel').firstChild.textContent = isFrc ? tr('Amount (FRC)') : tr('Quantity');
+        const amt = $('#amt'); amt.step = isFrc ? '0.00000001' : '1'; amt.placeholder = isFrc ? '0.0' : '0'; amt.value = '';
+        $('#avail').style.display = isFrc ? '' : 'none';   // the FRC line doesn't describe an asset
+      };
+    }).catch(() => {});
     $('#amt').addEventListener('keydown', e => { if (e.key === 'Enter') doReview(); });
     // Instant: approximate available (verified cache > streamed partial > preview); live
     // partials keep it fresh; the verified value replaces it in place and binds Max.
@@ -540,7 +559,7 @@ const render = {
     else { try { const pv = await ds().preview(); if (pv) paintSendAvail(pv, true); } catch {} }
     const sendGen = renderGen;
     try { const s = await getState(); if (sendGen !== renderGen) return; paintBalance(s); paintSendAvail(s, false);
-      if ($('#maxBtn')) $('#maxBtn').onclick = () => { $('#amt').value = Math.max(0, s.balance - 0.001).toFixed(8); }; }
+      sendBal = s.balance; }
     catch { if (sendGen !== renderGen) return; const el = $('#avail'); if (el && el.textContent === tr('available…')) el.textContent = ''; }
   },
   async activity() {
@@ -657,6 +676,28 @@ async function doReview() {
   const to = $('#to').value.trim(), amt = parseFloat($('#amt').value);
   if (!isValidAddress(to)) return toast(tr('invalid Freicoin address'), 'err');
   if (!(amt > 0)) return toast(tr('enter an amount'), 'err');
+  // Asset branch (Freimarkets): review, then sign+broadcast through the exchange machinery
+  const assetTag = $('#sendAsset')?.value || null;
+  if (assetTag) {
+    const name = $('#sendAsset').selectedOptions[0].textContent.replace(/ \(.*\)$/, '');
+    $('#sendResult').innerHTML =
+      `<div class="review">
+         <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
+         <div class="rrow"><span>${tr('Amount')}</span><b>${amt.toLocaleString(getLang())} ${name}</b></div>
+         <div class="rrow"><span>${tr('Fee')}</span><b>0.00010000 FRC</b></div>
+         <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
+       </div>`;
+    $('#cancelBtn').onclick = () => { $('#sendResult').innerHTML = ''; toast(''); };
+    $('#confirmBtn').onclick = async () => {
+      const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
+      try {
+        const txid = await mvSendAsset(assetTag, amt, addrToSpk(to));
+        $('#sendResult').innerHTML = `<div class="ok">${tr('Sent ✓')}</div><div class="txid">${txid}</div>`;
+        $('#to').value = ''; $('#amt').value = ''; toast(tr('broadcast ✓'));
+      } catch (e) { toast(tr('broadcast failed: ') + e.message, 'err'); btn.disabled = false; btn.textContent = tr('Confirm & broadcast'); }
+    };
+    return;
+  }
   toast(tr('building…')); $('#reviewBtn').disabled = true;
   try {
     const { utxos, tipHeight, balance } = await getState();

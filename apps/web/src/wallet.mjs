@@ -61,7 +61,7 @@ export function deriveAddress(seed, index = 0, chain = 0) {
 }
 
 // scriptPubKey (hex) of a Freicoin witness-v0 address
-function addrToSpk(addr) {
+export function addrToSpk(addr) {
   const { version, programHex } = decodeWitness(addr);
   return version.toString(16).padStart(2, '0') + (programHex.length / 2).toString(16).padStart(2, '0') + programHex;
 }

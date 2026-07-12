@@ -138,6 +138,46 @@ function myCoinsOf(tag, L, reserved = committedOutpoints()) {
 // capped at Q and the rest stays the maker's (a separate coin, never in the offer). If one coin
 // already IS the whole sale, use it; otherwise self-send the needed coins into [Q, rest, feeChange]
 // and return the fresh Q-coin. Afterwards the tested single-input offer path is reused unchanged.
+// Owned assets (for the wallet's Send selector): [{tag, name, qty}] — qty in display units.
+export async function mvOwnedAssets() {
+  if (!state) await doRefresh();
+  const L = state.mine.height, byAsset = new Map();
+  for (const u of state.mine.utxos) {
+    const k = u.assetTag ?? null; if (k === null) continue;   // FRC is the wallet's own business
+    byAsset.set(k, (byAsset.get(k) ?? 0n) + assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(k)));
+  }
+  return [...byAsset.entries()].map(([tag, pv]) => ({ tag, name: assetName(tag), qty: Number(pv) / scaleOf(tag) }));
+}
+
+// Send Q display-units of an asset to an address — the exchange's coin machinery with
+// vout[0] pointed at the recipient instead of self. Fee rides a separate FRC coin.
+export async function mvSendAsset(tag, qty, toSpk) {
+  if (!state) await doRefresh();
+  const L = state.mine.height, fee = 10000n, changeSpk = spks[0];
+  const Q = BigInt(Math.round(qty * scaleOf(tag)));
+  if (Q <= 0n) throw new Error(tr('enter an amount'));
+  const coins = myCoinsOf(tag, L);
+  if (coins.reduce((s, c) => s + c.pv, 0n) < Q) throw new Error(tr('amount exceeds available'));
+  const picked = []; let S = 0n;
+  for (const c of [...coins].sort((a, b) => (b.pv > a.pv ? 1 : b.pv < a.pv ? -1 : 0))) { picked.push(c); S += c.pv; if (S >= Q) break; }
+  const opIn = c => ({ prevout: { txid: rev(c.outpoint.split(':')[0]), vout: +c.outpoint.split(':')[1] }, scriptSig: '', sequence: 0xffffffff, witness: [] });
+  const inputs = [...picked];
+  const vout = [{ value: Q, scriptPubKey: toSpk, assetTag: tag }];
+  if (S - Q > 0n) vout.push({ value: S - Q, scriptPubKey: changeSpk, assetTag: tag });   // asset conserves exactly
+  const reserved = committedOutpoints();
+  const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && x.refheight <= L && !reserved.has(x.outpoint)
+    && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
+  if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
+  const feePv = assetPresentValue(BigInt(feeCoin.value), L - feeCoin.refheight, { k: 20, interest: false });
+  inputs.push({ outpoint: feeCoin.outpoint, spk: feeCoin.spk, value: BigInt(feeCoin.value), refheight: feeCoin.refheight });
+  if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: changeSpk, assetTag: HOST_TAG });
+  const tx = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(opIn), vout };
+  inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
+  const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+  mvRefresh();
+  return txid;
+}
+
 async function prepareGiveCoin(giveTag, Q, L, coins) {
   const isFrc = giveTag === HOST_TAG, fee = 10000n, changeSpk = spks[0];
   if (coins.length === 1 && coins[0].pv === Q) return { ...coins[0], L };   // sell one whole coin
