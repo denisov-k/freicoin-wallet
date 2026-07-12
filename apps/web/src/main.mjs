@@ -376,7 +376,7 @@ function paintActivity(txs) {
     `<div class="act" data-i="${txs.indexOf(t)}">
        <div class="act-i ${t.category}">${CAT[t.category] || '•'}</div>
        <div class="act-m"><b>${tr(t.category)}</b>${t.confirmations > 0 ? '' : `<span class="sub">${tr('pending')}</span>`}</div>
-       <div class="act-a ${(+t.amount) < 0 ? 'neg' : 'pos'}"><span>${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)} <small>${t.assetTag ? actAssetName(t.assetTag) : 'FRC'}</small></span><span class="sub">${timeAgo(t.time)}</span></div>
+       <div class="act-a ${(+t.amount) < 0 ? 'neg' : 'pos'}"><span>${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount / (t.assetTag ? 10 ** Number(actDefs[t.assetTag]?.decimals ?? 0) : 1))} <small>${t.assetTag ? actAssetName(t.assetTag) : 'FRC'}</small></span><span class="sub">${timeAgo(t.time)}</span></div>
      </div>`).join('') : `<div class="sub">${txs.length ? tr('nothing matches the filters') : tr('no transactions yet')}</div>`;
   if (html === actLastHtml) return true;   // identical content — skip the rewrite (no blink)
   actLastHtml = html;
@@ -550,11 +550,11 @@ const render = {
     // Freimarkets: the selector offers every owned asset; assets are integer tokens (scale 1)
     if (MKT()) mvOwnedAssets().then(list => {
       const sel = $('#sendAsset'); if (!sel) return;
-      sel.innerHTML = `<option value="">FRC</option>` + list.map(a => `<option value="${a.tag}" data-qty="${a.qty}">${a.name} (${a.qty.toLocaleString(getLang())})</option>`).join('');
+      sel.innerHTML = `<option value="">FRC</option>` + list.map(a => `<option value="${a.tag}" data-qty="${a.qty}" data-dec="${a.decimals}">${a.name} (${a.qty.toLocaleString(getLang())})</option>`).join('');
       sel.onchange = () => {
-        const isFrc = !sel.value;
+        const isFrc = !sel.value, dec = +(sel.selectedOptions[0]?.dataset.dec || 0);
         $('#amtLabel').firstChild.textContent = isFrc ? tr('Amount (FRC)') : tr('Quantity');
-        const amt = $('#amt'); amt.step = isFrc ? '0.00000001' : '1'; amt.placeholder = isFrc ? '0.0' : '0'; amt.value = '';
+        const amt = $('#amt'); amt.step = isFrc ? '0.00000001' : String(1 / 10 ** dec); amt.placeholder = isFrc ? '0.0' : '0'; amt.value = '';
         $('#avail').style.display = isFrc ? '' : 'none';   // the FRC line doesn't describe an asset
       };
     }).catch(() => {});
@@ -593,7 +593,7 @@ const render = {
       // from blocks its own filters matched — a buyer never scans the issuer's issuance block)
       Promise.all([ds().assets(), mvRelayAssets().catch(() => [])]).then(([r, relay]) => {
         actDefs = { ...(r.assetDefs || {}) };
-        for (const a of relay) if (a.name) { (actDefs[a.tag] ??= {}); actDefs[a.tag].name ??= a.name; }
+        for (const a of relay) if (a.name) { const d = (actDefs[a.tag] ??= {}); d.name ??= a.name; d.decimals ??= a.decimals; }
         const tags = new Set([...Object.keys(actDefs), ...actLastTxs.map(t => t.assetTag).filter(Boolean)]);
         cur.innerHTML = `<option value="">${tr('all')}</option><option value="FRC">FRC</option>`
           + [...tags].map(tg => `<option value="${tg}">${actAssetName(tg)}</option>`).join('');

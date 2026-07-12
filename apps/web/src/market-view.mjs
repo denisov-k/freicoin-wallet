@@ -13,8 +13,10 @@ import { tr, getLang } from './i18n.mjs';
 
 const API = location.protocol === 'https:' ? `${location.origin}/api` : `http://${location.hostname}:5181/api`;
 const HOST_TAG = '00'.repeat(20);
-// kria per DISPLAY unit: FRC = 1e8 (8 decimals); user assets = 1 (indivisible integer tokens).
-const scaleOf = tag => (tag == null || tag === HOST_TAG || tag === 'FRC') ? 100000000 : 1;
+// kria per DISPLAY unit: FRC = 1e8 (8 decimals); user assets = 10^decimals from their
+// self-certified name suffix (legacy assets without one are indivisible integer tokens).
+const decimalsOf = tag => Number(state?.defs?.[tag]?.decimals ?? state?.info?.assets?.find(a => a.tag === tag)?.decimals ?? 0);
+const scaleOf = tag => (tag == null || tag === HOST_TAG || tag === 'FRC') ? 100000000 : 10 ** decimalsOf(tag);
 const ACCOUNT = "m/84'/1'/0'";              // nv3 = coin type 1 (Freimarkets shares the regtest branch)
 const $ = s => document.querySelector(s);
 const rev = h => h.match(/../g).reverse().join('');
@@ -99,7 +101,7 @@ async function faucet() { try { await api('faucet', { address: myAddress }); toa
 async function issue() {
   try {
     const name = $('#iName').value.trim() || 'актив';
-    await api('issue', { name, shift: $('#iShift').value, interest: $('#iKind').value === 'i', amount: $('#iAmt').value, spk: spks[0] });
+    await api('issue', { name, shift: $('#iShift').value, interest: $('#iKind').value === 'i', amount: $('#iAmt').value, decimals: $('#iDec')?.value ?? 0, spk: spks[0] });
     $('#modal')?.remove();
     toast(`«${name}» ${tr('issued to your address')}`, 'ok'); mvRefresh();
   } catch (e) { toast(e.message, 'err'); }
@@ -148,7 +150,7 @@ export async function mvOwnedAssets() {
     const k = u.assetTag ?? null; if (k === null) continue;   // FRC is the wallet's own business
     byAsset.set(k, (byAsset.get(k) ?? 0n) + assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(k)));
   }
-  return [...byAsset.entries()].map(([tag, pv]) => ({ tag, name: assetName(tag), qty: Number(pv) / scaleOf(tag) }));
+  return [...byAsset.entries()].map(([tag, pv]) => ({ tag, name: assetName(tag), qty: Number(pv) / scaleOf(tag), decimals: decimalsOf(tag) }));
 }
 
 // Send Q display-units of an asset to an address — the exchange's coin machinery with
@@ -419,7 +421,8 @@ async function maybeResignRanged() {
 // render() builds the STATIC shell (nav, inputs, buttons) ONCE and wires handlers; paint()
 // refreshes only the data regions (balances, order book, log, offer selects) every sync — so
 // a periodic refresh never wipes what the user is typing.
-const fmtA = (tag, v) => tag === 'FRC' ? frc(v) + ' FRC' : String(v) + ' ' + assetName(tag);
+const fmtA = (tag, v) => tag === 'FRC' ? frc(v) + ' FRC'
+  : (Number(BigInt(v)) / scaleOf(tag)).toLocaleString(getLang(), { maximumFractionDigits: decimalsOf(tag) }) + ' ' + assetName(tag);
 // The three Freimarkets surfaces mounted into the wallet's own tab sections (called by main.mjs
 // on the nv3 network). Each builds its section and wires its handlers; data arrives via mvRefresh.
 export function openIssueModal() {
@@ -433,7 +436,11 @@ export function openIssueModal() {
       <label>${tr('Rate k')}<input id="iShift" type="number" value="16" min="1" max="64"></label>
       <label>${tr('Type')}<select id="iKind"><option value="d">${tr('melts')}</option><option value="i">${tr('grows')}</option></select></label>
     </div>
-    <label>${tr('Quantity')}<input id="iAmt" type="number" value="1000000"></label>
+    <div class="row">
+      <label>${tr('Quantity')}<input id="iAmt" type="number" value="1000000"></label>
+      <label>${tr('Decimals')}<select id="iDec"><option value="2">0,01</option><option value="3">0,001</option><option value="0">${tr('whole only')}</option></select></label>
+    </div>
+    <p class="sub" style="font-size:12px">${tr('Melting eats whole units on indivisible assets — decimals let it shave fractions instead.')}</p>
     <button id="issueBtn">${tr('Issue asset')}</button></div>`;
   document.body.appendChild(m);
   m.onclick = e => { if (e.target === m) m.remove(); };
@@ -469,7 +476,8 @@ function paintAssetBalance() {
   const pvU = u => assetPresentValue(BigInt(u.value), h - u.refheight, rateOf(u.assetTag));
   const byAsset = new Map();
   for (const u of state.mine.utxos) { const k = u.assetTag ?? 'FRC'; const e = byAsset.get(k) ?? { nominal: 0n, pv: 0n }; e.nominal += BigInt(u.value); e.pv += pvU(u); byAsset.set(k, e); }
-  const amt = (tag, v) => tag === 'FRC' ? frc(v) : String(v);
+  const amt = (tag, v) => tag === 'FRC' ? frc(v)
+    : (Number(BigInt(v)) / scaleOf(tag)).toLocaleString(getLang(), { maximumFractionDigits: decimalsOf(tag) });
   body.innerHTML = [...byAsset.entries()].map(([tag, e]) => {
     const melt = e.pv < e.nominal, grow = e.pv > e.nominal;
     return `<tr><td${tag === 'FRC' ? '' : ` title="${tag}"`}>${assetName(tag === 'FRC' ? null : tag)}</td><td class="r ${melt ? 'melt' : grow ? 'grow' : ''}">${amt(tag, e.pv)}</td></tr>`;

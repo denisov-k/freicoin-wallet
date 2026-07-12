@@ -45,7 +45,11 @@ export function extractAssetDefs(txs) {
       // accept the name ONLY if it is self-certified: sha256(name) must equal the 32 bytes the
       // tag commits (def bytes 10..42). So the displayed name is provably the issued one — the
       // relay cannot relabel an asset, only the issuer's original name shows.
-      if (name && nameHash && Buffer.from(sha256(Buffer.from(name, 'utf8'))).equals(nameHash)) params.name = name;
+      if (name && nameHash && Buffer.from(sha256(Buffer.from(name, 'utf8'))).equals(nameHash)) {
+        // the committed string may carry display decimals as a "name|D" suffix
+        const dm = name.match(/^(.*)\|([0-8])$/);
+        if (dm) { params.name = dm[1]; params.decimals = +dm[2]; } else params.name = name;
+      }
       defs.set(tag, params);
     }
   }

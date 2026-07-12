@@ -86,7 +86,13 @@ async function indexBlock(h) {
         try { declaredName = Buffer.from(spk.slice(spk.indexOf('4652414e') + 8), 'hex').toString('utf8').replace(/[<>&"'\x00-\x1f\x7f]/g, '').slice(0, 32).trim(); } catch { /* not a name */ }
       }
     }
-    if (definedTag && declaredName && assets.has(definedTag)) assets.get(definedTag).name = declaredName;
+    if (definedTag && declaredName && assets.has(definedTag)) {
+      // committed FRAN string may carry display decimals as a "name|D" suffix (self-certified
+      // with the name itself — the def hashes the WHOLE string)
+      const dm = declaredName.match(/^(.*)\|([0-8])$/);
+      const a = assets.get(definedTag);
+      if (dm) { a.name = dm[1]; a.decimals = +dm[2]; } else { a.name = declaredName; a.decimals = 0; }
+    }
     tx.vout.forEach((o, n) => {
       if (o.scriptPubKey.hex.startsWith('6a')) return;   // OP_RETURN: unspendable
       const tag = o.assetTag ? rev(o.assetTag) : null;   // RPC shows uint160 hex reversed
@@ -185,14 +191,19 @@ const api = {
     say(`кран: 1 FRC → ${address.slice(0, 16)}…`);
     return { txid };
   },
-  async issue({ name, shift, interest, amount, spk }) {
+  async issue({ name, shift, interest, amount, spk, decimals }) {
     shift = Math.min(64, Math.max(1, Number(shift) || 16));
-    const amt = BigInt(amount);
+    const d = Math.min(8, Math.max(0, Number(decimals) || 0));
+    // display decimals: one shown unit = 10^d base units — issue that many more base units so
+    // demurrage melts fractions instead of eating whole tokens (base units stay granularity-1)
+    const amt = BigInt(amount) * 10n ** BigInt(d);
     if (amt <= 0n || amt > 9007199254740991n) throw new Error('bad amount');
     if (!/^[0-9a-f]{4,140}$/.test(spk)) throw new Error('bad spk');
     // the human name, sanitized once and used everywhere: its sha256 goes in the def (so the tag
     // commits it) AND the raw string goes in a companion 'FRAN' OP_RETURN (so indexers recover it).
-    const nm = String(name ?? 'asset').replace(/[<>&"'\x00-\x1f\x7f]/g, '').slice(0, 32).trim() || 'asset';
+    // Decimals ride INSIDE the committed string as a "name|D" suffix — self-certified with it.
+    const nm0 = String(name ?? 'asset').replace(/[<>&"'|\x00-\x1f\x7f]/g, '').slice(0, 30).trim() || 'asset';
+    const nm = d ? `${nm0}|${d}` : nm0;
     const def = Buffer.concat([Buffer.from([shift, interest ? 1 : 0]), Buffer.alloc(8), sha256(Buffer.from(nm, 'utf8'))]);
     def.writeUInt8(1, 2);
     const tag = hash160(def).toString('hex');
@@ -218,8 +229,8 @@ const api = {
     tx.vout.push({ value: 0n, scriptPubKey: '6a' + (4 + nmeta.length).toString(16).padStart(2, '0') + '4652414e' + nmeta.toString('hex') });
     await rpc('generateblock', mineAddr, [serializeTx(tx)]);
     await catchUp();
-    assets.get(tag).name = nm;
-    say(`выпуск: «${nm}» ×${amount} (shift ${shift}${interest ? ', растёт' : ''})`);
+    Object.assign(assets.get(tag), { name: nm0, decimals: d });
+    say(`выпуск: «${nm0}» ×${amount}${d ? ` (.${d})` : ''} (shift ${shift}${interest ? ', растёт' : ''})`);
     return { tag, txid: computeTxid(tx) };
   },
   async tx({ rawtx, kind, offerId }) {
