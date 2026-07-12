@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const dir = dirname(fileURLToPath(import.meta.url));
-const tests = readdirSync(dir).filter(f => f.endsWith('.test.mjs')).sort();
+const tests = readdirSync(dir).filter(f => f.endsWith('.test.mjs') || f.endsWith('.fuzz.mjs')).sort();
 let failed = 0;
 for (const f of tests) {
   console.log(`\n=== ${f} ===`);
