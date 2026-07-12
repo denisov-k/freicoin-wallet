@@ -468,9 +468,9 @@ export function openIssueModal() {
     const k = Math.min(63, Math.max(1, +$('#iShift').value || 16));
     const perBlock = 2 ** -k;
     const blocksDay = 86400 / ((state?.info?.mineEveryMs ?? 20000) / 1000);
-    const perDay = kind === 'd' ? 1 - (1 - perBlock) ** blocksDay : (1 + perBlock) ** blocksDay - 1;
+    const over = days => kind === 'd' ? 1 - (1 - perBlock) ** (blocksDay * days) : (1 + perBlock) ** (blocksDay * days) - 1;
     const f = x => (x * 100).toLocaleString(getLang(), { maximumSignificantDigits: 3 });
-    el.textContent = `≈ ${f(perBlock)}% ${tr('per block')} · ≈ ${f(perDay)}% ${tr('per day on this chain')}`;
+    el.textContent = `≈ ${f(over(1))}% ${tr('per day')} · ≈ ${f(over(30))}% ${tr('per month')} · ≈ ${f(over(365))}% ${tr('per year on this chain')}`;
   };
   m.querySelector('#iShift').oninput = rateHint;
   m.querySelector('#iKind').onchange = e => {
