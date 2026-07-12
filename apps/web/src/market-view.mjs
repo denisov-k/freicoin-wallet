@@ -104,7 +104,10 @@ async function faucet() { try { await api('faucet', { address: myAddress }); toa
 async function issue() {
   try {
     const name = $('#iName').value.trim() || 'актив';
-    await api('issue', { name, shift: $('#iShift').value, interest: $('#iKind').value === 'i', amount: $('#iAmt').value, decimals: $('#iDec')?.value ?? 0, spk: spks[0] });
+    // 'constant' = shift 64 demurrage: the fixed-point kernel rounds one base unit off ONCE
+    // and the value then never changes (rate 2^-64 stays below one unit for ~2^44 blocks).
+    const kind = $('#iKind').value;
+    await api('issue', { name, shift: kind === 'c' ? 64 : $('#iShift').value, interest: kind === 'i', amount: $('#iAmt').value, decimals: $('#iDec')?.value ?? 0, spk: spks[0] });
     $('#modal')?.remove();
     toast(`«${name}» ${tr('issued to your address')}`, 'ok'); mvRefresh();
   } catch (e) { toast(e.message, 'err'); }
@@ -443,8 +446,8 @@ export function openIssueModal() {
     <p class="sub">${tr('Issue an asset that lives on the chain with its own demurrage (melts) or interest (grows) rate.')}</p>
     <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="часы-труда"></label>
     <div class="row">
-      <label>${tr('Rate k')}<input id="iShift" type="number" value="16" min="1" max="64"></label>
-      <label>${tr('Type')}<select id="iKind"><option value="d">${tr('melts')}</option><option value="i">${tr('grows')}</option></select></label>
+      <label>${tr('Rate k')}<input id="iShift" type="number" value="16" min="1" max="63"></label>
+      <label>${tr('Type')}<select id="iKind"><option value="d">${tr('melts')}</option><option value="i">${tr('grows')}</option><option value="c">${tr('constant')}</option></select></label>
     </div>
     <div class="row">
       <label>${tr('Quantity')}<input id="iAmt" type="number" value="1000000"></label>
@@ -456,6 +459,7 @@ export function openIssueModal() {
   m.onclick = e => { if (e.target === m) m.remove(); };
   m.querySelector('#issClose').onclick = () => m.remove();
   m.querySelector('#issueBtn').onclick = issue;
+  m.querySelector('#iKind').onchange = e => { $('#iShift').disabled = e.target.value === 'c'; };   // constant has no rate
 }
 export function renderExchange(el) {
   el.innerHTML = `
@@ -489,7 +493,8 @@ function paintAssetBalance() {
   const amt = (tag, v) => tag === 'FRC' ? frc(v)
     : (Number(BigInt(v)) / scaleOf(tag)).toLocaleString(getLang(), { maximumFractionDigits: decimalsOf(tag) });
   body.innerHTML = [...byAsset.entries()].map(([tag, e]) => {
-    const melt = e.pv < e.nominal, grow = e.pv > e.nominal;
+    const constant = tag !== 'FRC' && rateOf(tag).k >= 64;   // k=64 ≈ constant: the one-off rounding unit isn't "melting"
+    const melt = !constant && e.pv < e.nominal, grow = !constant && e.pv > e.nominal;
     return `<tr><td${tag === 'FRC' ? '' : ` title="${tag}"`}>${assetName(tag === 'FRC' ? null : tag)}</td><td class="r ${melt ? 'melt' : grow ? 'grow' : ''}">${amt(tag, e.pv)}</td></tr>`;
   }).join('') || `<tr><td colspan="2" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
 }
