@@ -76,6 +76,7 @@ select { background:var(--card); border:1px solid var(--line); border-radius:10p
 .statusbtn { border:none; width:26px; height:26px; padding:0; font-size:13px; line-height:1; display:inline-flex; align-items:center; justify-content:center; transform:translateY(1px); }   /* borderless dot, aligned to the ƒ crossbar (the optical middle; its mass-center sits ~2px lower thanks to the thin tail), colored by .st-* */
 .st-ok   { color:var(--ok); }
 .st-off  { color:var(--err); }
+.st-retry { color:var(--warn); }   /* reconnecting: the bridge dropped but we're redialing */
 .st-sync { color:var(--warn); animation: stpulse 1.2s ease-in-out infinite; }
 @keyframes stpulse { 0%,100% { opacity:1; } 50% { opacity:.35; } }
 #statusPop { position:absolute; top:56px; right:16px; z-index:20; min-width:240px;

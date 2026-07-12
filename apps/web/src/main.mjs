@@ -32,7 +32,7 @@ function renderStatusPop() {
   // The verify tail runs after download+scan complete; without this the status showed a
   // motionless 'syncing…' with both visible phases at 100%.
   const label = (() => {
-    if (status.state !== 'sync') return tr({ ok: 'synced ✓ (verified)', off: 'offline' }[status.state] || status.state);
+    if (status.state !== 'sync') return tr({ ok: 'synced ✓ (verified)', off: 'offline', retry: 'reconnecting…' }[status.state] || status.state);
     const v = status.progress.verify, h = status.progress.headers, f = status.progress.filters;
     const headersDone = !h || (h.height ?? h.done) >= (h.target ?? h.want);
     const scanDone = !f || f.done >= f.want;
@@ -319,7 +319,7 @@ function renderApp() {
       paintBalance(st);                                   // sets status ok; skips DOM when hidden
       if (!$('#activity').hidden) { const { txs } = await ds().history(); paintActivity(txs); }
       if (MKT()) mvRefresh();                             // keep the order book + asset balance fresh on nv3
-    } catch { setStatus('off', 'bridge unreachable — retrying'); }
+    } catch { setStatus('retry', 'bridge unreachable — retrying'); }
   }, 6000);
   const fromHash = location.hash.slice(1);
   const saved = store.get('fw_tab');
@@ -515,7 +515,7 @@ const render = {
         wireBalActions();
       }
       mvRefresh();
-      try { paintBalance(await getState(true)); } catch { setStatus('off', 'bridge unreachable — retrying'); }
+      try { paintBalance(await getState(true)); } catch { setStatus('retry', 'bridge unreachable — retrying'); }
       return;
     }
     const gen = ++renderGen;
@@ -545,7 +545,7 @@ const render = {
         render.balance(); return;
       }
       if (!balPainted) { setStatus('off', e.message); $('#balance').innerHTML = `<div class="err">${tr('sync failed — ')}${e.message}</div><button id="refresh" class="ghost">${tr('↻ Retry')}</button>`; $('#refresh').onclick = render.balance; return; }
-      setStatus('off', 'bridge unreachable — retrying');
+      setStatus('retry', 'bridge unreachable — retrying');
     }
   },
   exchange() { renderExchange($('#exchange')); }, // Freimarkets: the ranged-offer order book

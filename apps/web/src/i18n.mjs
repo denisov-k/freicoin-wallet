@@ -5,7 +5,7 @@ const RU = {
   'Balance': 'Баланс', 'Receive': 'Получить', 'Send': 'Отправить', 'Activity': 'Активность',
   'Network': 'Сеть', 'Status': 'Статус', 'Downloaded': 'Загружено',
   'synced ✓ (verified)': 'синхронизирован ✓', 'syncing…': 'синхронизация…', 'offline': 'нет связи',
-  'connecting…': 'подключение…', 'bridge unreachable — retrying': 'мост недоступен — повторяем…',
+  'connecting…': 'подключение…', 'bridge unreachable — retrying': 'мост недоступен — повторяем…', 'reconnecting…': 'переподключение…',
   'headers': 'заголовки', 'scan': 'скан', 'blocks': 'блоки', 'PoW': 'PoW',
   'first sync…': 'первая синхронизация…', 'pending': 'ожидает', 'conf': 'подтв.',
   'no transactions yet': 'пока нет транзакций', 'just now': 'только что', 'm ago': ' мин назад', 'h ago': ' ч назад',
