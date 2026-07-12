@@ -457,6 +457,27 @@ function paintActivity(txs, final = true) {
   if (det && !list.querySelector(`.act[data-key="${(CSS?.escape ?? (s => s))(det.dataset.key)}"]`)) det.remove();
   return true;
 }
+// Self-healing for chain-level sync failures, shared by every tab that reads the source:
+// returns true when the state was wiped and a re-render should retry.
+async function chainRecovery(e) {
+  const msg = String(e?.message || e);
+  if (msg.includes('below the checkpoint')) {
+    // the anchor was reorged out (very deep reorg): drop it and resync from scratch
+    try { store.del('fw_ab:' + walletFp(myScripts())); } catch {}
+    if (lightSrc) { lightSrc.close?.(); lightSrc = null; } cache = null; liveState = null;
+    return true;
+  }
+  if (/do not connect|deep reorg/.test(msg)) {
+    // the persisted header chain diverged from the node (an experimental chain was
+    // rewound): wipe the stored chain and re-sync from genesis.
+    try { await ds().reset(); } catch {}
+    try { store.del('fw_ab:' + walletFp(myScripts())); } catch {}
+    cache = null; liveState = null;
+    return true;
+  }
+  return false;
+}
+
 // Send available line — ≈ marks unverified (streamed/preview) values.
 function paintSendAvail(st, approx) {
   const el = $('#avail');
@@ -530,20 +551,7 @@ const render = {
     try { const st = await getState(true); if (gen !== renderGen) return; paintBalance(st); }
     catch (e) {
       if (gen !== renderGen) return;   // stale render (source was replaced) — ignore
-      if (String(e.message).includes('below the checkpoint')) {
-        // the anchor was reorged out (very deep reorg): drop it and resync from scratch
-        try { store.del('fw_ab:' + walletFp(myScripts())); } catch {}
-        if (lightSrc) { lightSrc.close?.(); lightSrc = null; } cache = null; liveState = null;
-        render.balance(); return;
-      }
-      if (/do not connect|deep reorg/.test(String(e.message))) {
-        // the persisted header chain diverged from the node (an experimental chain was
-        // rewound): wipe the stored chain and re-sync from genesis.
-        try { await ds().reset(); } catch {}
-        try { store.del('fw_ab:' + walletFp(myScripts())); } catch {}
-        cache = null; liveState = null;
-        render.balance(); return;
-      }
+      if (await chainRecovery(e)) { render.balance(); return; }
       if (!balPainted) { setStatus('off', e.message); $('#balance').innerHTML = `<div class="err">${tr('sync failed — ')}${e.message}</div><button id="refresh" class="ghost">${tr('↻ Retry')}</button>`; $('#refresh').onclick = render.balance; return; }
       setStatus('retry', 'bridge unreachable — retrying');
     }
@@ -668,7 +676,11 @@ const render = {
       if (gen !== renderGen) return;
       painted = paintActivity(txs) || painted;
       setStatus('ok');
-    } catch (e) { if (gen === renderGen && !painted) ($('#actList') || $('#activity')).innerHTML = `<div class="err">${e.message}</div>`; }
+    } catch (e) {
+      if (gen !== renderGen) return;
+      if (await chainRecovery(e)) { render.activity(); return; }   // deep reorg / lost anchor heal here too
+      if (!painted) ($('#actList') || $('#activity')).innerHTML = `<div class="err">${e.message}</div>`;
+    }
   },
   settings() {
     const vault = getVault(), s = secret();
