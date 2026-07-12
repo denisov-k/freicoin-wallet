@@ -7,6 +7,9 @@ server {
     location /ws/nv3     { proxy_pass http://127.0.0.1:3055; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 1h; proxy_send_timeout 1h; }
     location /snap/      { proxy_pass http://127.0.0.1:3050/; proxy_set_header Range $http_range; }
     location /api/       { proxy_pass http://127.0.0.1:5181/api/; proxy_set_header Host $host; }
+    location /explorer   { proxy_pass http://127.0.0.1:3060; }
+    location = /mine     { alias /var/www/fw-mine/index.html; default_type text/html; }
+    location = /about    { alias /var/www/fw-landing/index.html; default_type text/html; }
     location /           { proxy_pass http://127.0.0.1:5173; }
 
     listen 443 ssl; # managed by Certbot
