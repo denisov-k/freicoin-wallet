@@ -384,6 +384,18 @@ function paintActivity(txs) {
         confirmations: Math.min(...legs.map(l => l.confirmations)) });
     } else items.push(...legs);
   }
+  // the currency filter offers exactly what the history contains (options refresh in place,
+  // selection preserved; a selection filtered out of existence falls back to 'all')
+  const cur = $('#afCur');
+  if (cur) {
+    const opts = `<option value="">${tr('all')}</option><option value="FRC">FRC</option>`
+      + [...new Set(txs.map(t => t.assetTag).filter(Boolean))].map(tg => `<option value="${tg}">${actAssetName(tg)}</option>`).join('');
+    if (cur.dataset.opts !== opts) {
+      cur.dataset.opts = opts; const v = cur.value; cur.innerHTML = opts;
+      cur.value = [...cur.options].some(o => o.value === v) ? v : '';
+      if (cur.value !== actFilter.cur) actFilter.cur = cur.value;
+    }
+  }
   const shown = items.filter(i =>
     (!actFilter.cat || (i.trade ? actFilter.cat === 'trade'
       : actFilter.cat === 'generate' ? (i.category === 'generate' || i.category === 'immature') : i.category === actFilter.cat))
@@ -610,15 +622,12 @@ const render = {
       const cur = $('#afCur');
       cur.onchange = () => { actFilter.cur = cur.value; actLastHtml = ''; paintActivity(actLastTxs); };
       // scan-verified defs first; relay names fill the gaps (the wallet only learns defs
-      // from blocks its own filters matched — a buyer never scans the issuer's issuance block)
+      // from blocks its own filters matched — a buyer never scans the issuer's issuance block).
+      // The filter's OPTIONS are painted by paintActivity from the actual history.
       Promise.all([ds().assets(), mvRelayAssets().catch(() => [])]).then(([r, relay]) => {
         actDefs = { ...(r.assetDefs || {}) };
         for (const a of relay) if (a.name) { const d = (actDefs[a.tag] ??= {}); d.name ??= a.name; d.decimals ??= a.decimals; }
-        const tags = new Set([...Object.keys(actDefs), ...actLastTxs.map(t => t.assetTag).filter(Boolean)]);
-        cur.innerHTML = `<option value="">${tr('all')}</option><option value="FRC">FRC</option>`
-          + [...tags].map(tg => `<option value="${tg}">${actAssetName(tg)}</option>`).join('');
-        cur.value = actFilter.cur;
-        actLastHtml = ''; paintActivity(actLastTxs);   // rows painted before the defs arrived show raw tags
+        actLastHtml = ''; paintActivity(actLastTxs);   // rows/options painted before the defs arrived show raw tags
       }).catch(() => {});
     } else actFilter.cur = '';
     let painted = false;
