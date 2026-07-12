@@ -101,6 +101,7 @@ async function doRefresh() {
   if ($('#assetBalBody')) paintAssetBalance(); // Freimarkets Balance tab mounted → per-asset table
   maybeResignRanged();                                      // keep my ranged offers alive after partial fills
   checkMySwaps();                                           // refund any of my swaps stalled past their timeout
+  if ($('#swapBoard')) paintSwapBoard();                    // refresh the Bitcoin swap board + my swap statuses
 }
 
 // ---- actions ----
@@ -347,6 +348,34 @@ async function sendFrcToSpk(spk, amount) {
   picked.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
   return { txid, vout: 0 };
+}
+
+// The Bitcoin swap BOARD: a listing on the Exchange tab. V1 lists the always-available relay
+// LP offer (FRC → BTC, non-custodial for you — the refund timeout is your safety net) plus your
+// own in-flight swaps with their live status. User-to-user listings slot into the same board.
+async function paintSwapBoard() {
+  const el = $('#swapBoard'); if (!el) return;
+  let info; try { info = await api('swapInfo'); } catch { el.hidden = true; return; }
+  if (!info.available && !loadMySwaps().length) { el.hidden = true; return; }
+  el.hidden = false;
+  const hrp = info.btcHrp || 'bcrt';
+  const mySw = loadMySwaps();
+  const statusOf = w => {
+    const past = state && state.mine.height > w.T1;
+    return past ? tr('refundable') : tr('in progress');
+  };
+  el.innerHTML =
+    `<p class="label" style="margin-top:14px">${tr('Bitcoin swaps')} <span class="sub">(${info.btcNet || 'regtest'})</span></p>`
+    + (info.available
+      ? `<table class="mkt"><tbody><tr>
+           <td>FRC → BTC</td><td class="r">${info.rate} BTC / FRC</td>
+           <td class="act-cell"><button id="swGoBtc" class="rbtn">${tr('Swap')}</button></td></tr></tbody></table>`
+      : `<p class="sub">${tr('no BTC counterparty online')}</p>`)
+    + (mySw.length
+      ? `<p class="sub" style="margin-top:8px">${tr('your swaps')}</p><table class="mkt"><tbody>`
+        + mySw.map(w => `<tr><td>${w.id}</td><td class="r">${Number(BigInt(w.funding.value)) / 1e8} FRC</td><td class="act-cell sub">${statusOf(w)}</td></tr>`).join('')
+        + `</tbody></table>` : '');
+  const g = $('#swGoBtc'); if (g) g.onclick = openSwapModal;
 }
 
 function openSwapModal() {
@@ -652,10 +681,9 @@ export function renderExchange(el) {
     <label class="chk"><input type="checkbox" id="fOpen" checked>${tr('open only')}</label>
     <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>
     <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>
-    <div class="row" id="swapRow" hidden><button id="openSwap" class="ghost">${tr('Swap FRC → BTC')}</button></div>`;
+    <div id="swapBoard" hidden></div>`;
   $('#openOffer').onclick = openOfferModal;
-  $('#openSwap').onclick = openSwapModal;
-  api('swapInfo').then(s => { const r = $('#swapRow'); if (r && s.available) r.hidden = false; }).catch(() => {});
+  paintSwapBoard();
   ['#fGive', '#fWant', '#fOpen'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });
   if (state) paint(); else mvRefresh();
 }
