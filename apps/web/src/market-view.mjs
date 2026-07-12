@@ -611,16 +611,16 @@ function paint() {
         const price = Number(BigInt(o.desc.priceNum)) / Number(BigInt(o.desc.priceDen)) * scaleOf(giveTag) / scaleOf(wantTag);
         const wantTotal = o.give ? (BigInt(o.give.pv) * BigInt(o.desc.priceNum) + BigInt(o.desc.priceDen) - 1n) / BigInt(o.desc.priceDen) : null;
         const act = mine
-          ? (o.status === 'open' ? `${tr('mine')} <button class="rcancel" data-id="${o.id}">${tr('Cancel')}</button>` : `${tr('mine')} ${o.status}`)
+          ? (o.status === 'open' ? `<button class="rcancel" data-id="${o.id}">${tr('Cancel')}</button>` : o.status)
           : (o.status === 'open' && o.give && !o.needsResign)
             ? `<button class="rbtn" data-id="${o.id}">${tr('Buy')}</button>`
             : (o.status === 'open' && o.needsResign) ? `<span class="sub">${tr('awaiting seller')}</span>`   // remainder needs the maker's fresh signature (auto while their wallet is open)
             : o.status;
         return `<tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td><td>${give}</td>
-          <td title="@ ${price.toLocaleString(getLang(), { maximumFractionDigits: 8 })} ${assetName(wantTag)}">${wantTotal !== null ? fmtA(wantTag ?? 'FRC', wantTotal) : '—'}</td><td>${act}</td></tr>`;
+          <td title="@ ${price.toLocaleString(getLang(), { maximumFractionDigits: 8 })} ${assetName(wantTag)}">${wantTotal !== null ? fmtA(wantTag ?? 'FRC', wantTotal) : '—'}</td><td class="act-cell">${act}</td></tr>`;
       }
       return `<tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td><td>${give}</td>
-        <td>${fmtA(o.want.assetTag ?? 'FRC', BigInt(o.want.value))}</td><td>${mine ? tr('mine') : ''} ${o.status}</td></tr>`;
+        <td>${fmtA(o.want.assetTag ?? 'FRC', BigInt(o.want.value))}</td><td class="act-cell">${o.status}</td></tr>`;
     };
     const rows = state.info.book.filter(o => (!fg || giveOf(o) === fg) && (!fw || wantOf(o) === fw) && (!fo || o.status === 'open')).reverse();
     $('#bookBody').innerHTML = rows.map(bookRow).join('')
