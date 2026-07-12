@@ -595,6 +595,7 @@ const render = {
         cur.innerHTML = `<option value="">${tr('all')}</option><option value="FRC">FRC</option>`
           + [...tags].map(tg => `<option value="${tg}">${actAssetName(tg)}</option>`).join('');
         cur.value = actFilter.cur;
+        actLastHtml = ''; paintActivity(actLastTxs);   // rows painted before the defs arrived show raw tags
       }).catch(() => {});
     } else actFilter.cur = '';
     let painted = false;

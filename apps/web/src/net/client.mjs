@@ -198,8 +198,8 @@ export class Neutrino {
     // per-asset legs, mirroring _applyBlocks (mempool value = ARRAY of entries per tx)
     const recvBy = new Map(), sentBy = new Map();
     const add = (m, tag, v) => m.set(tag, (m.get(tag) ?? 0n) + v);
-    for (const vin of tx.vin) { const u = this.utxos.get(rev(vin.prevout.txid) + ':' + vin.prevout.vout); if (u) { const tg = u.assetTag ?? null; add(sentBy, tg, tg === null ? timeAdjustValue(u.value, tx.lockHeight - u.refheight) : u.value); } }   // value at the tx's lock_height (see _applyBlocks)
-    for (const o of tx.vout) if (this._watch.has(o.scriptPubKey)) add(recvBy, o.assetTag ?? null, o.value);
+    for (const vin of tx.vin) { const u = this.utxos.get(rev(vin.prevout.txid) + ':' + vin.prevout.vout); if (u) { const tg = isHostCoin(u) ? null : u.assetTag; add(sentBy, tg, tg === null ? timeAdjustValue(u.value, tx.lockHeight - u.refheight) : u.value); } }   // value at the tx's lock_height (see _applyBlocks)
+    for (const o of tx.vout) if (this._watch.has(o.scriptPubKey)) add(recvBy, isHostCoin(o) ? null : o.assetTag, o.value);
     if (!recvBy.size && !sentBy.size) return;
     const now = Math.floor(Date.now() / 1000);
     this.mempool.set(id, [...new Set([...recvBy.keys(), ...sentBy.keys()])].map(tag => {
@@ -425,13 +425,13 @@ export class Neutrino {
         // refheight, and diffing raw nominals would blame the coin's accrued demurrage on
         // this transfer (a 10 FRC send out of an aged coin showed as "sent 10.0038").
         // User-asset coins diff by raw nominal (their rate handling lives in the market view).
-        for (const vin of tx.vin) { const k = rev(vin.prevout.txid) + ':' + vin.prevout.vout; const u = utxos.get(k); if (u) { const tg = u.assetTag ?? null; add(sentBy, tg, tg === null ? timeAdjustValue(u.value, tx.lockHeight - u.refheight) : u.value); utxos.delete(k); } }
+        for (const vin of tx.vin) { const k = rev(vin.prevout.txid) + ':' + vin.prevout.vout; const u = utxos.get(k); if (u) { const tg = isHostCoin(u) ? null : u.assetTag; add(sentBy, tg, tg === null ? timeAdjustValue(u.value, tx.lockHeight - u.refheight) : u.value); utxos.delete(k); } }
         // CONSENSUS: a coin's refheight is the TRANSACTION's lock_height, not the block
         // height — they differ whenever a tx confirms later than it was built, and using
         // the block height overvalues the coin by the demurrage of the gap (spends then
         // fail bad-txns-in-belowout). Coinbases have lock_height == height, which is why
         // mining-only wallets never tripped this.
-        tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) { add(recvBy, o.assetTag ?? null, o.value); utxos.set(id + ':' + i, { txid: id, vout: i, value: o.value, refheight: tx.lockHeight, script: o.scriptPubKey, coinbase: txIndex === 0, assetTag: o.assetTag ?? null, tokens: o.tokens ?? [] }); } });
+        tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) { add(recvBy, isHostCoin(o) ? null : o.assetTag, o.value); utxos.set(id + ':' + i, { txid: id, vout: i, value: o.value, refheight: tx.lockHeight, script: o.scriptPubKey, coinbase: txIndex === 0, assetTag: o.assetTag ?? null, tokens: o.tokens ?? [] }); } });
         for (const tag of new Set([...recvBy.keys(), ...sentBy.keys()])) {
           const recv = recvBy.get(tag) ?? 0n, sent = sentBy.get(tag) ?? 0n;
           if (recv > sent) history.push({ txid: id, assetTag: tag, category: txIndex === 0 ? 'generate' : 'receive', amount: recv - sent, height, time });
