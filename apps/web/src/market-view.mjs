@@ -27,6 +27,8 @@ export function initMarketView(ds) { _ds = ds; }
 export function mvSetSeed(hexSeed) { seed = hexSeed; deriveKeys(); }
 export function mvMyAddress() { return myAddress; }
 
+// Relay-known asset names (UNVERIFIED — display fallback only; scan-verified defs win).
+export const mvRelayAssets = () => api('info').then(i => i.assets || []);
 async function api(path, body) {
   const r = await fetch(`${API}/${path}`, body ? { method: 'POST', body: JSON.stringify(body, (k, v) => typeof v === 'bigint' ? String(v) : v) } : undefined);
   const j = await r.json();

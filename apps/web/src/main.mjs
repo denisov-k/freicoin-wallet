@@ -7,7 +7,7 @@ import { encryptSecret, decryptSecret } from './vault.mjs';
 import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS, CHECKPOINT } from './netparams.mjs';
 import { tr, getLang, setLang, LANGS } from './i18n.mjs';
 // Freimarkets (Issue + Exchange) — mounted as extra tabs only on the nv3 network.
-import { initMarketView, mvSetSeed, mvRefresh, openIssueModal, renderExchange, renderAssetBalance, mvOwnedAssets, mvSendAsset } from './market-view.mjs';
+import { initMarketView, mvSetSeed, mvRefresh, openIssueModal, renderExchange, renderAssetBalance, mvOwnedAssets, mvSendAsset, mvRelayAssets } from './market-view.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
@@ -589,8 +589,11 @@ const render = {
     if (MKT()) {
       const cur = $('#afCur');
       cur.onchange = () => { actFilter.cur = cur.value; actLastHtml = ''; paintActivity(actLastTxs); };
-      ds().assets().then(r => {
-        actDefs = r.assetDefs || {};
+      // scan-verified defs first; relay names fill the gaps (the wallet only learns defs
+      // from blocks its own filters matched — a buyer never scans the issuer's issuance block)
+      Promise.all([ds().assets(), mvRelayAssets().catch(() => [])]).then(([r, relay]) => {
+        actDefs = { ...(r.assetDefs || {}) };
+        for (const a of relay) if (a.name) { (actDefs[a.tag] ??= {}); actDefs[a.tag].name ??= a.name; }
         const tags = new Set([...Object.keys(actDefs), ...actLastTxs.map(t => t.assetTag).filter(Boolean)]);
         cur.innerHTML = `<option value="">${tr('all')}</option><option value="FRC">FRC</option>`
           + [...tags].map(tg => `<option value="${tg}">${actAssetName(tg)}</option>`).join('');
