@@ -61,7 +61,7 @@ const RU = {
   'Issue an asset that lives on the chain with its own demurrage (melts) or interest (grows) rate.':
     'Выпустите актив: он живёт в цепи со своей ставкой демерреджа (плавится) или процента (растёт).',
   'Name': 'Название', 'Rate k': 'Ставка k', 'Type': 'Тип', 'melts': 'плавится', 'grows': 'растёт', 'Quantity': 'Количество', 'Decimals': 'Дробность', 'whole only': 'только целые', 'Melting eats whole units on indivisible assets — decimals let it shave fractions instead.': 'У неделимого актива плавление съедает целые единицы — дробность позволяет ему съедать доли.',
-  'Post an offer': 'Выставить оффер', 'I give': 'Отдаю монету', 'I want': 'Хочу', 'How much I want': 'Сколько хочу', 'Post offer': 'Выставить',
+  'Post an offer': 'Добавить предложение', 'I give': 'Отдаю монету', 'I want': 'Хочу', 'How much I want': 'Сколько хочу', 'Post offer': 'Добавить',
   '⚡ Match crossing offers and take the spread': '⚡ Свести встречные офферы и забрать спред',
   'Matching is done by any participant with their own fee coin — there is no privileged matcher.':
     'Сведение делает любой участник своей монетой на комиссию — привилегированного матчера нет.',
