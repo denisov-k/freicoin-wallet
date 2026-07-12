@@ -527,14 +527,13 @@ export function openIssueModal() {
 }
 export function renderExchange(el) {
   el.innerHTML = `
-    <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>
-    <p class="label" style="margin-top:14px">${tr('Order book')}</p>
     <div class="row">
       <label>${tr('Selling')}<select id="fGive"></select></label>
       <label>${tr('Wants')}<select id="fWant"></select></label>
     </div>
     <label class="chk"><input type="checkbox" id="fOpen" checked>${tr('open only')}</label>
-    <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>`;
+    <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>
+    <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>`;
   $('#openOffer').onclick = openOfferModal;
   ['#fGive', '#fWant', '#fOpen'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });
   if (state) paint(); else mvRefresh();
