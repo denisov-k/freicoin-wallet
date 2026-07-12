@@ -1,0 +1,14 @@
+[Unit]
+Description=Freimarkets p2p→WS bridge for the nv3 node (:3055)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/free-money/freicoin-wallet
+Environment=FW_NODE_HOST=127.0.0.1 FW_NODE_PORT=19666 FW_BRIDGE_PORT=3055
+ExecStart=/usr/bin/node services/p2p-bridge/bridge.mjs
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

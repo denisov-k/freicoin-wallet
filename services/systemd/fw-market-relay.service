@@ -1,0 +1,15 @@
+[Unit]
+Description=Freimarkets order-book relay + BTC swap coordinator (:5181)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/free-money/freicoin-wallet
+ExecStart=/usr/bin/node research/nversion3/market-server.mjs
+Restart=always
+RestartSec=3
+StandardOutput=append:/root/nv3-playground/relay.log
+StandardError=append:/root/nv3-playground/relay.log
+
+[Install]
+WantedBy=multi-user.target
