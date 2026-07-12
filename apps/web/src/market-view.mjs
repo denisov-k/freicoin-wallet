@@ -287,7 +287,13 @@ async function fillRangedNow(offer, fillUnits) {
     const need = payout + (isFrcPayout ? fee : 0n);
     const reserved = committedOutpoints();   // don't spend coins backing my own open offers
     const { got: payCoins, sum: payPv } = gather(payTagNorm, payRate, need, reserved);
-    if (payPv < need) throw new Error(isFrcPayout ? tr('you need more FRC (tap Faucet) to pay for this fill') : tr('you need more of the requested asset to pay for this fill'));
+    if (payPv < need) {
+      // the age filter (refheight <= offer lockHeight) may be what starves us — say so
+      const ageless = state.mine.utxos.filter(x => (x.assetTag ?? null) === payTagNorm && !reserved.has(x.outpoint))
+        .reduce((s, x) => s + BigInt(x.value), 0n);
+      throw new Error(ageless >= need ? tr('your coins are newer than this offer — the seller must refresh it')
+        : isFrcPayout ? tr('you need more FRC (tap Faucet) to pay for this fill') : tr('you need more of the requested asset to pay for this fill'));
+    }
     const vin = [{ prevout: prevout(offer.giveOutpoint), scriptSig: '', sequence: 0xffffffff, witness: offer.witness }];
     const takerInputs = [];
     for (const c of payCoins) { vin.push({ prevout: prevout(c.outpoint), scriptSig: '', sequence: 0xffffffff, witness: [] }); takerInputs.push(c); }
@@ -387,7 +393,11 @@ async function cancelRanged(offer) {
 async function maybeResignRanged() {
   if (!state?.info?.book) return;
   for (const o of state.info.book) {
-    if (!o.ranged || !o.needsResign || !spks.includes(o.makerSpk)) continue;
+    // re-sign after a partial fill (needsResign) AND periodically: the signature pins the
+    // tx lockHeight, and takers can only pay with coins no younger than it — an offer left
+    // at an old height slowly becomes unbuyable for everyone with fresh coins.
+    const stale = o.status === 'open' && state.mine.height - o.lockHeight > 10;
+    if (!o.ranged || !(o.needsResign || stale) || !spks.includes(o.makerSpk)) continue;
     const u = state.mine.utxos.find(x => x.outpoint === o.giveOutpoint);
     if (!u) continue;                    // the change coin isn't in my verified set yet
     const d = o.desc, L = state.mine.height;
