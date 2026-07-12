@@ -395,7 +395,7 @@ function paintActivity(txs) {
 // Send available line — ≈ marks unverified (streamed/preview) values.
 function paintSendAvail(st, approx) {
   const el = $('#avail');
-  if (el && st) el.textContent = `${tr('available ')}${approx ? '≈ ' : ''}${fmtBal(st.balance)} FRC`;
+  if (el && st) el.textContent = `${tr('available ')}${approx ? '≈ ' : ''}${fmt(st.balance)} FRC`;   // full precision — this number is meant to be spent
 }
 
 // Render generation: bumped on every tab render; async callbacks from an older render
