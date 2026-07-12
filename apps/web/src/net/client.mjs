@@ -195,11 +195,17 @@ export class Neutrino {
     const id = txidOf(tx);
     if (this.mempool.has(id)) return;
     const rev = h => Buffer.from(h, 'hex').reverse().toString('hex');
-    let recv = 0n, sent = 0n;
-    for (const vin of tx.vin) { const u = this.utxos.get(rev(vin.prevout.txid) + ':' + vin.prevout.vout); if (u) sent += timeAdjustValue(u.value, tx.lockHeight - u.refheight); }   // value at the tx's lock_height (see _applyBlocks)
-    for (const o of tx.vout) if (this._watch.has(o.scriptPubKey)) recv += o.value;
-    if (recv === 0n && sent === 0n) return;
-    this.mempool.set(id, { txid: id, category: recv >= sent ? 'receive' : 'send', amount: recv - sent, time: Math.floor(Date.now() / 1000) });
+    // per-asset legs, mirroring _applyBlocks (mempool value = ARRAY of entries per tx)
+    const recvBy = new Map(), sentBy = new Map();
+    const add = (m, tag, v) => m.set(tag, (m.get(tag) ?? 0n) + v);
+    for (const vin of tx.vin) { const u = this.utxos.get(rev(vin.prevout.txid) + ':' + vin.prevout.vout); if (u) { const tg = u.assetTag ?? null; add(sentBy, tg, tg === null ? timeAdjustValue(u.value, tx.lockHeight - u.refheight) : u.value); } }   // value at the tx's lock_height (see _applyBlocks)
+    for (const o of tx.vout) if (this._watch.has(o.scriptPubKey)) add(recvBy, o.assetTag ?? null, o.value);
+    if (!recvBy.size && !sentBy.size) return;
+    const now = Math.floor(Date.now() / 1000);
+    this.mempool.set(id, [...new Set([...recvBy.keys(), ...sentBy.keys()])].map(tag => {
+      const recv = recvBy.get(tag) ?? 0n, sent = sentBy.get(tag) ?? 0n;
+      return { txid: id, assetTag: tag, category: recv >= sent ? 'receive' : 'send', amount: recv - sent, time: now };
+    }));
   }
 
   /** Incrementally extend the chain from the current tip, verifying linkage + PoW.
@@ -411,19 +417,26 @@ export class Neutrino {
       for (const [tag, params] of extractAssetDefs(txsOfBlock)) this.assetDefs.set(tag, params);
       txsOfBlock.forEach((tx, txIndex) => {
         const id = txidOf(tx);
-        let recv = 0n, sent = 0n;
-        // Value spent coins AT THE TX'S LOCK_HEIGHT: their nominal is written at an older
+        // Per-asset accounting: one history entry per currency the tx moved (an asset transfer
+        // also has a small FRC leg — the fee) so Activity can filter/label by asset.
+        const recvBy = new Map(), sentBy = new Map();
+        const add = (m, tag, v) => m.set(tag, (m.get(tag) ?? 0n) + v);
+        // Value spent HOST coins AT THE TX'S LOCK_HEIGHT: their nominal is written at an older
         // refheight, and diffing raw nominals would blame the coin's accrued demurrage on
         // this transfer (a 10 FRC send out of an aged coin showed as "sent 10.0038").
-        for (const vin of tx.vin) { const k = rev(vin.prevout.txid) + ':' + vin.prevout.vout; const u = utxos.get(k); if (u) { sent += timeAdjustValue(u.value, tx.lockHeight - u.refheight); utxos.delete(k); } }
+        // User-asset coins diff by raw nominal (their rate handling lives in the market view).
+        for (const vin of tx.vin) { const k = rev(vin.prevout.txid) + ':' + vin.prevout.vout; const u = utxos.get(k); if (u) { const tg = u.assetTag ?? null; add(sentBy, tg, tg === null ? timeAdjustValue(u.value, tx.lockHeight - u.refheight) : u.value); utxos.delete(k); } }
         // CONSENSUS: a coin's refheight is the TRANSACTION's lock_height, not the block
         // height — they differ whenever a tx confirms later than it was built, and using
         // the block height overvalues the coin by the demurrage of the gap (spends then
         // fail bad-txns-in-belowout). Coinbases have lock_height == height, which is why
         // mining-only wallets never tripped this.
-        tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) { recv += o.value; utxos.set(id + ':' + i, { txid: id, vout: i, value: o.value, refheight: tx.lockHeight, script: o.scriptPubKey, coinbase: txIndex === 0, assetTag: o.assetTag ?? null, tokens: o.tokens ?? [] }); } });
-        if (recv > sent) history.push({ txid: id, category: txIndex === 0 ? 'generate' : 'receive', amount: recv - sent, height, time });
-        else if (sent > recv) history.push({ txid: id, category: 'send', amount: recv - sent, height, time });
+        tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) { add(recvBy, o.assetTag ?? null, o.value); utxos.set(id + ':' + i, { txid: id, vout: i, value: o.value, refheight: tx.lockHeight, script: o.scriptPubKey, coinbase: txIndex === 0, assetTag: o.assetTag ?? null, tokens: o.tokens ?? [] }); } });
+        for (const tag of new Set([...recvBy.keys(), ...sentBy.keys()])) {
+          const recv = recvBy.get(tag) ?? 0n, sent = sentBy.get(tag) ?? 0n;
+          if (recv > sent) history.push({ txid: id, assetTag: tag, category: txIndex === 0 ? 'generate' : 'receive', amount: recv - sent, height, time });
+          else if (sent > recv) history.push({ txid: id, assetTag: tag, category: 'send', amount: recv - sent, height, time });
+        }
       });
     }
     this.scannedHeight = upto;
@@ -453,7 +466,7 @@ export class Neutrino {
   /** Result shape at height `at` (present values evaluated at at+1). */
   _result(at = this.chain.length - 1) {
     let balance = 0n; for (const u of this.utxos.values()) if (isHostCoin(u)) balance += timeAdjustValue(u.value, at + 1 - u.refheight);
-    return { tipHeight: at, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()], assetDefs: Object.fromEntries(this.assetDefs) };
+    return { tipHeight: at, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()].flat(), assetDefs: Object.fromEntries(this.assetDefs) };
   }
 
   /** Consume a static cfilter snapshot for a from-genesis scan: filters stream over HTTP
@@ -562,7 +575,7 @@ export class Neutrino {
   snapshot() {
     const tip = this.chain.length - 1;
     let balance = 0n; for (const u of this.utxos.values()) if (isHostCoin(u)) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
-    return { tipHeight: tip, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()], assetDefs: Object.fromEntries(this.assetDefs) };
+    return { tipHeight: tip, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()].flat(), assetDefs: Object.fromEntries(this.assetDefs) };
   }
 
   /** Serialize the incremental state (JSON-safe) for persistence across page reloads.
@@ -691,7 +704,7 @@ export class NeutrinoPool {
       else pending.set(id, e);
     }
     let balance = 0n; for (const u of primary.utxos.values()) if (isHostCoin(u)) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
-    return { tipHeight: tip, balance, utxos: [...primary.utxos.values()], history: [...primary.history].reverse(), pending: [...pending.values()], agreement: this.lastAgreement, assetDefs: Object.fromEntries(primary.assetDefs) };
+    return { tipHeight: tip, balance, utxos: [...primary.utxos.values()], history: [...primary.history].reverse(), pending: [...pending.values()].flat(), agreement: this.lastAgreement, assetDefs: Object.fromEntries(primary.assetDefs) };
   }
 
   broadcast(rawHex) { for (const p of this.peers) p.broadcast(rawHex); return null; }

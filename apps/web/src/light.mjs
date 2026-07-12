@@ -77,14 +77,15 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       // merged wallet's Issue/Exchange tabs, which the plain host-only `utxos` above hides.
       assetDefs: r.assetDefs || {},
       assetUtxos: r.utxos.map(u => ({ outpoint: `${u.txid}:${u.vout}`, spk: u.script, assetTag: (!u.assetTag || u.assetTag === '0'.repeat(40)) ? null : u.assetTag, value: String(u.value), refheight: u.refheight })),
+      // history entries are per-currency legs; user assets are integer tokens (scale 1)
       history: r.history.map(h => ({
-        txid: h.txid, category: h.category,
-        amount: kriaToFrc(h.amount < 0n ? -h.amount : h.amount) * (h.amount < 0n ? -1 : 1),
+        txid: h.txid, category: h.category, assetTag: h.assetTag ?? null,
+        amount: h.assetTag ? Number(h.amount) : kriaToFrc(h.amount < 0n ? -h.amount : h.amount) * (h.amount < 0n ? -1 : 1),
         confirmations: tip - h.height + 1, time: h.time,
       })),
       pending: (r.pending || []).map(p => ({
-        txid: p.txid, category: p.category,
-        amount: kriaToFrc(p.amount < 0n ? -p.amount : p.amount) * (p.amount < 0n ? -1 : 1),
+        txid: p.txid, category: p.category, assetTag: p.assetTag ?? null,
+        amount: p.assetTag ? Number(p.amount) : kriaToFrc(p.amount < 0n ? -p.amount : p.amount) * (p.amount < 0n ? -1 : 1),
         confirmations: 0, time: p.time,
       })),
       agreement: r.agreement || null,

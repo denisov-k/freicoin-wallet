@@ -361,19 +361,26 @@ const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏' };
 let liveState = null;
 
 // Activity list painter — module-level so streamed partials can update the visible list.
-let actLastHtml = '';
+let actLastHtml = '', actLastTxs = [], actDefs = {};
+const actFilter = { cat: '', cur: '' };
+const actAssetName = tag => actDefs[tag]?.name || tag.slice(0, 8) + '…';
 function paintActivity(txs) {
   const sec = $('#activity');
   if (!sec || sec.hidden) return false;
-  const html = txs.length ? txs.map((t, i) =>
-    `<div class="act" data-i="${i}">
+  const list = $('#actList') || sec;   // filters live above the list; partials may land before render.activity
+  actLastTxs = txs;
+  const shown = txs.filter(t =>
+    (!actFilter.cat || (actFilter.cat === 'generate' ? (t.category === 'generate' || t.category === 'immature') : t.category === actFilter.cat))
+    && (!actFilter.cur || (actFilter.cur === 'FRC' ? !t.assetTag : t.assetTag === actFilter.cur)));
+  const html = shown.length ? shown.map(t =>
+    `<div class="act" data-i="${txs.indexOf(t)}">
        <div class="act-i ${t.category}">${CAT[t.category] || '•'}</div>
        <div class="act-m"><b>${tr(t.category)}</b>${t.confirmations > 0 ? '' : `<span class="sub">${tr('pending')}</span>`}</div>
-       <div class="act-a ${(+t.amount) < 0 ? 'neg' : 'pos'}">${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)}<span class="sub">${timeAgo(t.time)}</span></div>
-     </div>`).join('') : `<div class="sub">${tr('no transactions yet')}</div>`;
+       <div class="act-a ${(+t.amount) < 0 ? 'neg' : 'pos'}">${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)}${t.assetTag ? ` <small>${actAssetName(t.assetTag)}</small>` : ''}<span class="sub">${timeAgo(t.time)}</span></div>
+     </div>`).join('') : `<div class="sub">${txs.length ? tr('nothing matches the filters') : tr('no transactions yet')}</div>`;
   if (html === actLastHtml) return true;   // identical content — skip the rewrite (no blink)
   actLastHtml = html;
-  sec.innerHTML = html;
+  list.innerHTML = html;
   // detail opens RIGHT UNDER the tapped row (a fixed slot at the list's end scrolled out
   // of view on long histories — taps looked like they did nothing); tap again to close
   document.querySelectorAll('.act').forEach(el => el.onclick = () => {
@@ -565,7 +572,31 @@ const render = {
   async activity() {
     const gen = ++renderGen;
     actLastHtml = '';
-    $('#activity').innerHTML = skel(4);
+    // filter bar (type always; currency only where assets exist) + the list container
+    $('#activity').innerHTML = `
+      <div class="row">
+        <label>${tr('Type')}<select id="afCat">
+          <option value="">${tr('all')}</option>
+          <option value="receive">${tr('receive')}</option>
+          <option value="send">${tr('send')}</option>
+          <option value="generate">${tr('generate')}</option>
+        </select></label>
+        ${MKT() ? `<label>${tr('Currency')}<select id="afCur"><option value="">${tr('all')}</option><option value="FRC">FRC</option></select></label>` : ''}
+      </div>
+      <div id="actList">${skel(4)}</div>`;
+    $('#afCat').value = actFilter.cat;
+    $('#afCat').onchange = () => { actFilter.cat = $('#afCat').value; actLastHtml = ''; paintActivity(actLastTxs); };
+    if (MKT()) {
+      const cur = $('#afCur');
+      cur.onchange = () => { actFilter.cur = cur.value; actLastHtml = ''; paintActivity(actLastTxs); };
+      ds().assets().then(r => {
+        actDefs = r.assetDefs || {};
+        const tags = new Set([...Object.keys(actDefs), ...actLastTxs.map(t => t.assetTag).filter(Boolean)]);
+        cur.innerHTML = `<option value="">${tr('all')}</option><option value="FRC">FRC</option>`
+          + [...tags].map(tg => `<option value="${tg}">${actAssetName(tg)}</option>`).join('');
+        cur.value = actFilter.cur;
+      }).catch(() => {});
+    } else actFilter.cur = '';
     let painted = false;
     // Instant: verified cache > streamed partial > persisted preview; live partials keep
     // updating the list via the worker's provisional events while the sync runs.
@@ -577,7 +608,7 @@ const render = {
       if (gen !== renderGen) return;
       painted = paintActivity(txs) || painted;
       setStatus('ok');
-    } catch (e) { if (gen === renderGen && !painted) $('#activity').innerHTML = `<div class="err">${e.message}</div>`; }
+    } catch (e) { if (gen === renderGen && !painted) ($('#actList') || $('#activity')).innerHTML = `<div class="err">${e.message}</div>`; }
   },
   settings() {
     const vault = getVault(), s = secret();
