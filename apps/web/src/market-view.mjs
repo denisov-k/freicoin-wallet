@@ -251,7 +251,7 @@ function openOfferModal() {
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Post an offer')}</b><button id="offerClose" class="icon">✕</button></div>
     <div class="row"><label>${tr('I sell')}<select id="rAsset"></select></label><label>${tr('Quantity')}<input id="rQty" type="text" inputmode="decimal"></label></div>
-    <div class="row"><label>${tr('I want')}<select id="rWant"></select></label><label>${tr('Total price')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
+    <div class="row"><label>${tr('I want')}<select id="rWant"></select></label><label>${tr('Quantity')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
     <label class="chk"><input type="checkbox" id="rPartial" checked>${tr('allow partial fills')}</label>
     <button id="rOfferBtn">${tr('Post offer')}</button>
     <p class="sub" style="font-size:12px" id="rHint">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p></div>`;
