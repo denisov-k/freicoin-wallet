@@ -321,6 +321,11 @@ function renderApp() {
       if (MKT()) mvRefresh();                             // keep the order book + asset balance fresh on nv3
     } catch { setStatus('retry', 'bridge unreachable — retrying'); }
   }, 6000);
+  // iOS freezes background tabs and kills the WebSocket — on wake, kick a sync immediately
+  // instead of letting the user stare at "reconnecting" until the next poll tick.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && unlockedSecret) { getState(true).then(paintBalance).catch(() => {}); if (MKT()) mvRefresh(); }
+  });
   const fromHash = location.hash.slice(1);
   const saved = store.get('fw_tab');
   const tabs = visibleTabs();
