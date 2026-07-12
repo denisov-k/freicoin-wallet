@@ -593,7 +593,7 @@ const render = {
     actLastHtml = '';
     // filter bar (type always; currency only where assets exist) + the list container
     $('#activity').innerHTML = `
-      <div class="row">
+      <div class="row actfix">
         <label>${tr('Type')}<select id="afCat">
           <option value="">${tr('all')}</option>
           <option value="receive">${tr('receive')}</option>
