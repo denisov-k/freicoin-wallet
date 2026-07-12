@@ -613,7 +613,7 @@ const render = {
           ${MKT() ? `<option value="trade">${tr('trades')}</option>` : ''}
           <option value="generate">${tr('generate')}</option>
         </select></label>
-        ${MKT() ? `<label>${tr('Currency')}<select id="afCur"><option value="">${tr('all')}</option><option value="FRC">FRC</option></select></label>` : ''}
+        ${MKT() ? `<label>${tr('Asset')}<select id="afCur"><option value="">${tr('all')}</option><option value="FRC">FRC</option></select></label>` : ''}
       </div>
       <div id="actList">${skel(4)}</div>`;
     $('#afCat').value = actFilter.cat;
