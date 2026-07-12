@@ -392,10 +392,10 @@ function paintActivity(txs) {
   const html = shown.length ? shown.map(i =>
     `<div class="act">
        <div class="act-i ${i.trade ? 'trade' : i.category}">${CAT[i.category] || '•'}</div>
-       <div class="act-m"><b>${tr(i.category)}</b>${i.confirmations > 0 ? '' : `<span class="sub">${tr('pending')}</span>`}</div>
+       <div class="act-m"><b>${tr(i.category)}</b><span class="sub">${i.confirmations > 0 ? '' : tr('pending') + ' · '}${timeAgo(i.time)}</span></div>
        ${i.trade
-    ? `<div class="act-a"><span class="pos">${amtStr(i.recv)}</span><span class="neg">${amtStr(i.paid)}</span><span class="sub">${timeAgo(i.time)}</span></div>`
-    : `<div class="act-a ${(+i.amount) < 0 ? 'neg' : 'pos'}"><span>${amtStr(i)}</span><span class="sub">${timeAgo(i.time)}</span></div>`}
+    ? `<div class="act-a"><span class="pos">${amtStr(i.recv)}</span><span class="neg">${amtStr(i.paid)}</span></div>`
+    : `<div class="act-a ${(+i.amount) < 0 ? 'neg' : 'pos'}"><span>${amtStr(i)}</span></div>`}
      </div>`).join('') : `<div class="sub">${txs.length ? tr('nothing matches the filters') : tr('no transactions yet')}</div>`;
   if (html === actLastHtml) return true;   // identical content — skip the rewrite (no blink)
   actLastHtml = html;
