@@ -104,10 +104,11 @@ async function faucet() { try { await api('faucet', { address: myAddress }); toa
 async function issue() {
   try {
     const name = $('#iName').value.trim() || 'актив';
-    // 'constant' = shift 64 demurrage: the fixed-point kernel rounds one base unit off ONCE
-    // and the value then never changes (rate 2^-64 stays below one unit for ~2^44 blocks).
+    // 'constant' = shift-64 INTEREST: growth of 2^-64/block floors to exactly zero at any age
+    // and any amount — truly flat. (The demurrage side would round ONE base unit off, which
+    // on a whole-unit asset is a visible token.)
     const kind = $('#iKind').value;
-    await api('issue', { name, shift: kind === 'c' ? 64 : Math.min(63, Math.max(1, Math.round(+$('#iShift').value || 16))), interest: kind === 'i', amount: $('#iAmt').value, decimals: $('#iDec')?.value ?? 0, spk: spks[0] });
+    await api('issue', { name, shift: kind === 'c' ? 64 : Math.min(63, Math.max(1, Math.round(+$('#iShift').value || 16))), interest: kind === 'i' || kind === 'c', amount: $('#iAmt').value, decimals: $('#iDec')?.value ?? 0, spk: spks[0] });
     $('#modal')?.remove();
     toast(`«${name}» ${tr('issued to your address')}`, 'ok'); mvRefresh();
   } catch (e) { toast(e.message, 'err'); }
