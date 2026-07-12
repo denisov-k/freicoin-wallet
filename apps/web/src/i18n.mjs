@@ -65,7 +65,7 @@ const RU = {
   '⚡ Match crossing offers and take the spread': '⚡ Свести встречные офферы и забрать спред',
   'Matching is done by any participant with their own fee coin — there is no privileged matcher.':
     'Сведение делает любой участник своей монетой на комиссию — привилегированного матчера нет.',
-  'Order book': 'Книга офферов', 'Give': 'Отдают', 'Want': 'Хотят', 'mine': 'мой', 'no offers yet': 'офферов пока нет', 'empty so far': 'пока пусто',
+  'Order book': 'Каталог предложений', 'Give': 'Отдают', 'Want': 'Хотят', 'mine': 'мой', 'no offers yet': 'офферов пока нет', 'empty so far': 'пока пусто',
   'Ranged offer (sell part, buyers fill any amount)': 'Диапазонный оффер (продать часть, берут любой объём)',
   'I give (coin)': 'Отдаю (монету)', 'Total price': 'Сумма за всё', 'no coins yet': 'монет пока нет',
   'I sell': 'Продаю', 'enter a price': 'укажите цену', 'enter a quantity': 'укажите количество',
