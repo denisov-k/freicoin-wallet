@@ -319,7 +319,13 @@ function renderApp() {
       paintBalance(st);                                   // sets status ok; skips DOM when hidden
       if (!$('#activity').hidden) { const { txs } = await ds().history(); paintActivity(txs); }
       if (MKT()) mvRefresh();                             // keep the order book + asset balance fresh on nv3
-    } catch { setStatus('retry', 'bridge unreachable — retrying'); }
+    } catch (e) {
+      // the poll must also self-heal (deep reorg / lost anchor) — otherwise a wallet that
+      // hits the error HERE spins on "reconnecting" forever; and surface the REAL error
+      // in the popover instead of a generic bridge message.
+      if (await chainRecovery(e)) return;
+      setStatus('retry', String(e?.message || 'bridge unreachable — retrying'));
+    }
   }, 6000);
   // iOS freezes background tabs and kills the WebSocket — on wake, kick a sync immediately
   // instead of letting the user stare at "reconnecting" until the next poll tick.
