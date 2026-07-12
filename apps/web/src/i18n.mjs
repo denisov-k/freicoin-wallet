@@ -58,8 +58,8 @@ const RU = {
   'Balance': 'Баланс', 'Issue': 'Выпуск', 'Exchange': 'Биржа', 'Log': 'Журнал',
   'Your receiving address': 'Ваш адрес для получения', 'Asset': 'Актив', 'Nominal': 'Номинал', 'Present value': 'Сейчас стоит',
   'empty — tap Faucet': 'пусто — нажмите «Кран»', 'Faucet (+1 FRC)': 'Кран (+1 FRC)', 'Refresh': 'Обновить',
-  'Issue an asset that lives on the chain with its own demurrage (melts) or interest (grows) rate.':
-    'Выпустите актив: он живёт в цепи со своей ставкой демерреджа (плавится) или процента (растёт).',
+  'Issue an asset that lives on the chain: constant, melting (demurrage) or growing (interest).':
+    'Выпустите актив: он живёт в цепи — постоянный, плавящийся (демерредж) или растущий (процент).',
   'Name': 'Название', 'Rate k': 'Ставка k', 'Type': 'Тип', 'melts': 'плавится', 'grows': 'растёт', 'constant': 'постоянный', 'Quantity': 'Количество', 'Decimals': 'Дробность', 'whole only': 'только целые', 'Melting eats whole units on indivisible assets — decimals let it shave fractions instead.': 'У неделимого актива плавление съедает целые единицы — дробность позволяет ему съедать доли.',
   'Post an offer': 'Добавить предложение', 'I give': 'Отдаю монету', 'I want': 'Хочу', 'How much I want': 'Сколько хочу', 'Post offer': 'Добавить',
   '⚡ Match crossing offers and take the spread': '⚡ Свести встречные офферы и забрать спред',
