@@ -10,14 +10,26 @@
 // It can steal nothing: every asset movement carries a user signature the chain verifies.
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { serializeTx, parseTx, txid as computeTxid, NV3_TX_VERSION } from '../../core/tx.mjs';
 import { assetPresentValue } from '../../core/assets.mjs';
+import { pubkeyCompressed, signEcdsa } from '../../core/ecdsa.mjs';
+import { frcLeg, claimReceived } from '../../core/swap.mjs';
+import { htlcSpk } from '../../core/htlc.mjs';
+import { btcHtlcLeaf, btcHtlcSpk, btcHtlcAddress, btcHtlcRefund } from '../../core/btc.mjs';
 
 const DATADIR = process.env.NV3_DATADIR ?? '/root/nv3-playground/chain';
 const RPCPORT = Number(process.env.NV3_RPCPORT ?? 19660);
 const LISTEN = Number(process.env.NV3_LISTEN ?? 5181);
 const MINE_EVERY_MS = Number(process.env.NV3_MINE_MS ?? 20000);
+// cross-chain swap: the relay is the BTC-side liquidity bot (regtest test coins, like the FRC
+// faucet). It holds only its OWN BTC; the user is non-custodial (a refund timeout protects them).
+const BTC_PORT = Number(process.env.BTC_RPCPORT ?? 19332);
+const BTC_DATADIR = process.env.BTC_DATADIR ?? '/root/btc-regtest';
+const BTC_WALLET = process.env.BTC_WALLET ?? 'swap';
+const SWAP_RATE = Number(process.env.SWAP_RATE ?? 0.2);   // BTC per 1 FRC (demo price)
+const SWAP_T1 = 40, SWAP_T2 = 20;                          // FRC refund height offset (T1) > BTC (T2)
 const HOST_TAG = '00'.repeat(20);
 
 const sha256 = b => createHash('sha256').update(b).digest();
@@ -223,6 +235,49 @@ async function matchCrosses() {
   }
 }
 
+// Swap watcher: for a BTC-funded swap, detect the user's claim on the BTC chain, read the
+// revealed preimage from its witness, and claim the escrowed FRC. Also refund expired swaps.
+async function watchSwaps() {
+  if (!btcAvail()) return;
+  const h = await rpc('getblockcount').catch(() => 0);
+  for (const w of swaps) {
+    try {
+      if (w.status === 'btc_funded') {
+        // has the BTC HTLC output been spent (by the user's claim)? read R from that spend.
+        const spent = await btcRpc('gettxout', w.btcHtlc.txid, w.btcHtlc.vout).catch(() => null);
+        if (spent) continue;                                   // still unspent — user hasn't claimed yet
+        // find the spending tx in recent blocks and extract the preimage from its witness
+        const R = await findBtcPreimage(w);
+        if (!R) continue;
+        w.preimage = R;
+        // claim the FRC HTLC with R (relay is the claim party)
+        const f = w.frcHtlc;
+        const bobSpk = '0014' + hash160(Buffer.from(pubkeyCompressed(relayKey(w.id, 'frc')), 'hex')).toString('hex');
+        const c = claimReceived({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight },
+          leaf: f.leaf, preimage: R, ourKey: relayKey(w.id, 'frc'), toSpk: bobSpk, fee: 2000n });
+        await rpc('generateblock', mineAddr, [c.rawtx]); await catchUp();
+        w.status = 'done'; saveSwaps();
+        say(`своп ${w.id}: завершён — FRC получены релеем, BTC у пользователя ✅`);
+      } else if ((w.status === 'created' || w.status === 'btc_funded') && w.t1 && h > w.t1 + 2) {
+        w.status = 'expired'; saveSwaps();
+      }
+    } catch (e) { say(`своп ${w.id}: ` + String(e.message).slice(0, 60)); }
+  }
+}
+async function findBtcPreimage(w) {
+  const tip = await btcRpc('getblockcount');
+  for (let bh = tip; bh > tip - 6 && bh > 0; bh--) {
+    const blk = await btcRpc('getblock', await btcRpc('getblockhash', bh), 2);
+    for (const tx of blk.tx) for (const vin of tx.vin) {
+      if (vin.txid === w.btcHtlc.txid && vin.vout === w.btcHtlc.vout) {
+        const wit = vin.txinwitness || [];
+        for (const item of wit) if (/^[0-9a-f]{64}$/.test(item) && sha256(Buffer.from(item, 'hex')).toString('hex') === w.paymentHash) return item;
+      }
+    }
+  }
+  return null;
+}
+
 const rateOf = tag => tag === null ? { k: 20, interest: false }
   : { k: assets.get(tag)?.shift ?? 20, interest: !!assets.get(tag)?.interest };
 const pvOf = (u, h) => assetPresentValue(u.value, h - u.refheight, rateOf(u.assetTag));
@@ -237,6 +292,42 @@ const pvOf = (u, h) => assetPresentValue(u.value, h - u.refheight, rateOf(u.asse
 //   witness, needsResign, status} — a signed CONSTRAINT (price ratio + fill bounds) whose give
 //   coin partially fills. Each fill spends the give coin and returns a smaller change coin, which
 //   the maker's client re-signs (resignRanged) to keep the remainder tradeable.
+// ---- Bitcoin side (relay = the BTC liquidity counterparty) ----
+let btcCookie = '';
+const btcAvail = () => existsSync(`${BTC_DATADIR}/regtest/.cookie`);
+async function btcRpc(method, ...params) {
+  btcCookie = Buffer.from(readFileSync(`${BTC_DATADIR}/regtest/.cookie`)).toString('base64');
+  const res = await fetch(`http://127.0.0.1:${BTC_PORT}/wallet/${BTC_WALLET}`, {
+    method: 'POST', headers: { Authorization: `Basic ${btcCookie}` },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  });
+  const j = await res.json();
+  if (j.error) throw new Error(`btc ${method}: ${j.error.message ?? JSON.stringify(j.error)}`);
+  return j.result;
+}
+const btcMine = async n => btcRpc('generatetoaddress', n, await btcRpc('getnewaddress'));
+
+// the relay's per-swap keys (deterministic from a persisted seed; they touch only the relay's
+// own BTC float and the escrowed FRC it is owed — never a user's coins).
+const RELAY_SEED_FILE = `${DATADIR}/relay-swap-seed`;
+if (!existsSync(RELAY_SEED_FILE)) writeFileSync(RELAY_SEED_FILE, randomBytes(32).toString('hex'));
+const RELAY_SEED = readFileSync(RELAY_SEED_FILE, 'utf8').trim();
+const relayKey = (id, leg) => sha256(Buffer.from(RELAY_SEED + id + leg, 'utf8')).toString('hex');
+
+// ---- swap board: persisted like the offer book ----
+const swaps = [];
+let swapSeq = 1;
+const SWAP_FILE = `${DATADIR}/market-swaps.json`;
+let swapSaveTimer = null;
+function saveSwaps() {
+  if (swapSaveTimer) return;
+  swapSaveTimer = setTimeout(() => { swapSaveTimer = null;
+    try { writeFileSync(SWAP_FILE, JSON.stringify({ swapSeq, swaps })); } catch {} }, 250);
+}
+function loadSwaps() {
+  try { const j = JSON.parse(readFileSync(SWAP_FILE, 'utf8')); if (Array.isArray(j.swaps)) { swaps.push(...j.swaps); swapSeq = Number(j.swapSeq) || swaps.length + 1; } } catch {}
+}
+
 const book = [];
 let offerSeq = 1;
 
@@ -281,7 +372,7 @@ async function bootstrap() {
   try { await rpc('loadwallet', 'w'); } catch {}
   mineAddr = await rpc('getnewaddress');
   if (await rpc('getblockcount') < 120) await rpc('generatetoaddress', 120, mineAddr);
-  loadBook();
+  loadBook(); loadSwaps();
   await catchUp();
   reconcileBook();   // retire offers whose coins were spent / expired while the relay was down
   say('маркет запущен (релей книги + майнер + автомэтчер)');
@@ -293,6 +384,7 @@ async function bootstrap() {
       reconcileBook();
       await ensureMatcherFuel();
       await matchCrosses();
+      await watchSwaps();
     } catch (e) { say('майнер: ' + String(e.message).slice(0, 80)); }
   }, MINE_EVERY_MS);
 }
@@ -466,6 +558,73 @@ const api = {
     saveBook();
     return {};
   },
+  // ---- cross-chain swap (FRC -> BTC), relay = BTC liquidity bot ----
+  async swapInfo() {
+    return { available: btcAvail(), rate: SWAP_RATE, t1: SWAP_T1, t2: SWAP_T2,
+      swaps: swaps.slice(-40).map(w => ({ id: w.id, status: w.status, frcAmount: w.frcAmount, btcAmount: w.btcAmount,
+        maker: w.maker, relayFrcPub: w.relayFrcPub, relayBtcPub: w.relayBtcPub, paymentHash: w.paymentHash,
+        t1: w.t1, t2: w.t2, frcHtlc: w.frcHtlc, btcHtlc: w.btcHtlc, preimage: w.preimage ?? null })) };
+  },
+  // 1. the user opens a swap: they hold the secret R, commit paymentHash=SHA256(R). The relay
+  //    reserves its per-swap pubkeys (the user builds their FRC HTLC with relayFrcPub as claim).
+  async swapCreate({ paymentHash, frcAmount, makerFrcPub, makerBtcPub }) {
+    if (!btcAvail()) throw new Error('своп недоступен: нет BTC-узла');
+    if (!/^[0-9a-f]{64}$/.test(paymentHash || '')) throw new Error('плохой paymentHash');
+    if (!/^[0-9a-f]{66}$/.test(makerFrcPub || '') || !/^[0-9a-f]{66}$/.test(makerBtcPub || '')) throw new Error('плохие ключи');
+    const frc = BigInt(frcAmount);
+    if (frc <= 0n || frc > 100n * 100000000n) throw new Error('плохая сумма FRC');
+    const btcAmount = BigInt(Math.round(Number(frc) * SWAP_RATE));   // sats
+    const id = 'sw' + (swapSeq++);
+    const w = { id, status: 'created', paymentHash, frcAmount: String(frc), btcAmount: String(btcAmount),
+      maker: { frcPub: makerFrcPub, btcPub: makerBtcPub },
+      relayFrcPub: pubkeyCompressed(relayKey(id, 'frc')), relayBtcPub: pubkeyCompressed(relayKey(id, 'btc')),
+      t1: 0, t2: 0, frcHtlc: null, btcHtlc: null, preimage: null };
+    swaps.push(w); saveSwaps();
+    say(`своп ${id}: открыт (${Number(frc)/1e8} FRC -> ${Number(btcAmount)/1e8} BTC)`);
+    return { id, relayFrcPub: w.relayFrcPub, relayBtcPub: w.relayBtcPub, btcAmount: String(btcAmount) };
+  },
+  // 2. the user funded the FRC HTLC (claim=relayFrcPub, refund=makerFrcPub, cltv=T1). They report
+  //    the funding; the relay VERIFIES it on-chain, then funds the BTC HTLC (claim=makerBtcPub,
+  //    refund=relayBtcPub, cltv=T2 < T1) from its own float.
+  async swapFrcFunded({ id, txid, vout, leaf, t1 }) {
+    const w = swaps.find(x => x.id === id); if (!w) throw new Error('нет такого свопа');
+    if (w.status !== 'created') throw new Error('своп уже в работе');
+    await catchUp();
+    // verify the funding output pays the exact FRC HTLC these terms produce
+    const want = frcLeg({ role: 'receive', ourKey: relayKey(id, 'frc'), theirPub: w.maker.frcPub, paymentHash: w.paymentHash, cltv: Number(t1), net: 'regtest' });
+    if (want.leaf !== leaf) throw new Error('дескриптор FRC HTLC не совпадает');
+    const u = utxos.get(`${txid}:${vout}`);
+    if (!u || u.assetTag !== null || u.spk !== want.spk) throw new Error('FRC HTLC не найден в цепи');
+    if (u.value < BigInt(w.frcAmount)) throw new Error('в FRC HTLC меньше оговоренного');
+    const h = await rpc('getblockcount');
+    if (Number(t1) < h + SWAP_T1 - 5) throw new Error('слишком близкий таймаут T1');
+    w.frcHtlc = { txid, vout, value: String(u.value), refheight: u.refheight, leaf, cltv: Number(t1) }; w.t1 = Number(t1);
+    // relay funds the BTC HTLC
+    const bh = await btcRpc('getblockcount');
+    const t2 = bh + SWAP_T2;
+    const bleaf = btcHtlcLeaf({ paymentHash: w.paymentHash, claimPub: w.maker.btcPub, refundPub: w.relayBtcPub, cltv: t2 });
+    const baddr = btcHtlcAddress(bleaf, 'bcrt');
+    const btcId = await btcRpc('sendtoaddress', baddr, (Number(w.btcAmount) / 1e8).toFixed(8));
+    await btcMine(1);
+    const braw = await btcRpc('getrawtransaction', btcId, true);
+    const bvout = braw.vout.findIndex(o => o.scriptPubKey.address === baddr);
+    w.btcHtlc = { txid: btcId, vout: bvout, value: String(Math.round(braw.vout[bvout].value * 1e8)), leaf: bleaf, addr: baddr, cltv: t2 }; w.t2 = t2;
+    w.status = 'btc_funded'; saveSwaps();
+    say(`своп ${id}: BTC HTLC профинансирован, ждём выкупа пользователем`);
+    return { btcHtlc: w.btcHtlc, t2 };
+  },
+  // 3. the user built their BTC claim (revealing R). The relay only broadcasts it (holds no key
+  //    for it) and mines a regtest block; the watcher then reads R and claims the FRC.
+  async swapBtcBroadcast({ id, rawtx }) {
+    const w = swaps.find(x => x.id === id); if (!w) throw new Error('нет такого свопа');
+    if (w.status !== 'btc_funded') throw new Error('своп не на этой стадии');
+    const btcId = await btcRpc('sendrawtransaction', rawtx);
+    await btcMine(1);
+    say(`своп ${id}: пользователь выкупил BTC (${btcId.slice(0, 12)}…)`);
+    await watchSwaps();   // immediate: read R and settle the FRC leg
+    return { btcClaim: btcId, status: w.status };
+  },
+
   async name({ tag }) { return { name: assets.get(tag)?.name ?? null }; },
 };
 
