@@ -228,8 +228,9 @@ async function postRangedOffer() {
     // a full fill pays exactly T; if the quantity gets capped below, the unit price holds.
     const priceNum = BigInt(Math.round(T * scaleOf(wantTag))), priceDen = BigInt(Math.round(qtyAsked * scaleOf(giveTag)));
     if (Q > total) Q = total;                                             // cap at the whole balance
+    const partial = $('#rPartial')?.checked ?? true;                      // unchecked ⇒ all-or-nothing (minFill = the whole lot)
     const give = await prepareGiveCoin(giveTag, Q, L, coins);
-    const desc = { payoutAsset: wantTag, payoutScript: give.spk, priceNum, priceDen, changeScript: give.spk, minFill: 0n, maxFill: Q };
+    const desc = { payoutAsset: wantTag, payoutScript: give.spk, priceNum, priceDen, changeScript: give.spk, minFill: partial ? 0n : Q, maxFill: Q };
     const witness = signRangedGive(desc, give.outpoint, give, give.L);
     await api('rangedOffer', { makerSpk: give.spk, giveOutpoint: give.outpoint, desc, nExpireTime: 0, lockHeight: give.L, witness });
     $('#modal')?.remove();                 // close the offer modal on success
@@ -245,12 +246,16 @@ function openOfferModal() {
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Post an offer')}</b><button id="offerClose" class="icon">✕</button></div>
     <div class="row"><label>${tr('I sell')}<select id="rAsset"></select></label><label>${tr('Quantity')}<input id="rQty" type="text" inputmode="decimal"></label></div>
     <div class="row"><label>${tr('I want')}<select id="rWant"></select></label><label>${tr('Total price')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
+    <label class="chk"><input type="checkbox" id="rPartial" checked>${tr('allow partial fills')}</label>
     <button id="rOfferBtn">${tr('Post offer')}</button>
-    <p class="sub" style="font-size:12px">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p></div>`;
+    <p class="sub" style="font-size:12px" id="rHint">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p></div>`;
   document.body.appendChild(m);
   m.onclick = e => { if (e.target === m) m.remove(); };   // tap outside the card = close
   m.querySelector('#offerClose').onclick = () => m.remove();
   m.querySelector('#rOfferBtn').onclick = postRangedOffer;
+  m.querySelector('#rPartial').onchange = e => { $('#rHint').textContent = e.target.checked
+    ? tr('Buyers fill any amount; the remainder keeps trading while you are online.')
+    : tr('The offer can only be taken whole — one buyer, the full quantity.'); };
   paint();                                 // populate #rAsset / #rWant now
 }
 
@@ -335,11 +340,13 @@ function openBuyModal(o) {
   const L = o.lockHeight;
   const maxK = assetPresentValue(BigInt(o.give.value), L - o.give.refheight, rateOf(o.give.assetTag));
   const maxU = Number(maxK) / scaleOf(giveTag);
+  const whole = BigInt(o.desc.minFill) > 0n && BigInt(o.desc.minFill) >= maxK;   // all-or-nothing offer
   const costOf = u => { let f = BigInt(Math.round(u * scaleOf(giveTag))); if (f > maxK) f = maxK; return (f * num + den - 1n) / den; };
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} ${assetName(giveTag)}</b><button id="bClose" class="icon">✕</button></div>
-    <label>${tr('Quantity')}<div class="amtrow"><input id="bQty" type="text" inputmode="decimal" value="${maxU}"><button id="bMax" class="ghost">${tr('Max')}</button></div></label>
+    <label>${tr('Quantity')}<div class="amtrow"><input id="bQty" type="text" inputmode="decimal" value="${maxU}"${whole ? ' disabled' : ''}>${whole ? '' : `<button id="bMax" class="ghost">${tr('Max')}</button>`}</div></label>
+    ${whole ? `<p class="sub" style="font-size:12px">${tr('this offer sells only as a whole')}</p>` : ''}
     <div class="rrow"><span>${tr('You pay')}</span><b id="bCost"></b></div>
     <p class="warn" id="bMelt" hidden>${tr('⚠ this amount is so small it will melt to zero within a few blocks — buy more')}</p>
     <button id="bBuy">${tr('Buy')}</button></div>`;
@@ -353,7 +360,7 @@ function openBuyModal(o) {
   m.onclick = e => { if (e.target === m) m.remove(); };
   m.querySelector('#bClose').onclick = () => m.remove();
   m.querySelector('#bQty').oninput = cost;
-  m.querySelector('#bMax').onclick = () => { $('#bQty').value = maxU; cost(); };
+  const bm = m.querySelector('#bMax'); if (bm) bm.onclick = () => { $('#bQty').value = maxU; cost(); };
   m.querySelector('#bBuy').onclick = async () => {
     const u = parseFloat($('#bQty').value);
     if (!(u > 0)) return toast(tr('enter a quantity'), 'err');
