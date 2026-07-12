@@ -90,6 +90,9 @@ async function doRefresh() {
   if (!_ds || !seed) return;
   const [info, r] = await Promise.all([api('info'), _ds().assets()]);
   state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos: r.assetUtxos } };
+  // cache relay defs for the light client's next boot (seedDefs) — rates for history valuation
+  try { localStorage.setItem('fw_reldefs', JSON.stringify(Object.fromEntries(
+    (info.assets || []).map(a => [a.tag, { shift: a.shift, interest: a.interest, name: a.name, decimals: a.decimals }])))); } catch {}
   if ($('#bookBody')) paint();                 // Exchange tab mounted → repaint the book
   if ($('#assetBalBody')) paintAssetBalance(); // Freimarkets Balance tab mounted → per-asset table
   maybeResignRanged();                                      // keep my ranged offers alive after partial fills

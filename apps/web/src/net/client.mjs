@@ -12,6 +12,7 @@ import { HeaderChain } from './chain.mjs';
 import { makePool } from './verifypool.mjs';
 import { parseTx, txid as txidOf } from '../../../../core/tx.mjs';
 import { timeAdjustValue } from '../../../../core/demurrage.mjs';
+import { assetPresentValue } from '../../../../core/assets.mjs';
 import { sha256d } from '../../../../core/crypto.mjs';
 
 const HOST20 = '0'.repeat(40);
@@ -190,6 +191,14 @@ export class Neutrino {
     if (!this._watch) return;
     try { this._considerTx(parseTx(Buffer.from(m.payload).toString('hex'))); } catch {}
   }
+  /** Value a spent coin AT THE TX'S LOCK_HEIGHT: host coins via host demurrage; asset coins
+   *  via their def's own rate when known (else raw nominal — without the rate the diff would
+   *  blame the coin's accrued melt/growth on this transfer, same trap as the FRC case). */
+  _pvIn(u, tag, lockHeight) {
+    if (tag === null) return timeAdjustValue(u.value, lockHeight - u.refheight);
+    const d = this.assetDefs.get(tag);
+    return d ? assetPresentValue(BigInt(u.value), lockHeight - u.refheight, { k: Number(d.shift), interest: !!d.interest }) : u.value;
+  }
   /** If `tx` touches the wallet (pays a watched script / spends our UTXO), record it as pending. */
   _considerTx(tx) {
     const id = txidOf(tx);
@@ -198,7 +207,7 @@ export class Neutrino {
     // per-asset legs, mirroring _applyBlocks (mempool value = ARRAY of entries per tx)
     const recvBy = new Map(), sentBy = new Map();
     const add = (m, tag, v) => m.set(tag, (m.get(tag) ?? 0n) + v);
-    for (const vin of tx.vin) { const u = this.utxos.get(rev(vin.prevout.txid) + ':' + vin.prevout.vout); if (u) { const tg = isHostCoin(u) ? null : u.assetTag; add(sentBy, tg, tg === null ? timeAdjustValue(u.value, tx.lockHeight - u.refheight) : u.value); } }   // value at the tx's lock_height (see _applyBlocks)
+    for (const vin of tx.vin) { const u = this.utxos.get(rev(vin.prevout.txid) + ':' + vin.prevout.vout); if (u) { const tg = isHostCoin(u) ? null : u.assetTag; add(sentBy, tg, this._pvIn(u, tg, tx.lockHeight)); } }   // value at the tx's lock_height (see _applyBlocks)
     for (const o of tx.vout) if (this._watch.has(o.scriptPubKey)) add(recvBy, isHostCoin(o) ? null : o.assetTag, o.value);
     if (!recvBy.size && !sentBy.size) return;
     const now = Math.floor(Date.now() / 1000);
@@ -425,7 +434,7 @@ export class Neutrino {
         // refheight, and diffing raw nominals would blame the coin's accrued demurrage on
         // this transfer (a 10 FRC send out of an aged coin showed as "sent 10.0038").
         // User-asset coins diff by raw nominal (their rate handling lives in the market view).
-        for (const vin of tx.vin) { const k = rev(vin.prevout.txid) + ':' + vin.prevout.vout; const u = utxos.get(k); if (u) { const tg = isHostCoin(u) ? null : u.assetTag; add(sentBy, tg, tg === null ? timeAdjustValue(u.value, tx.lockHeight - u.refheight) : u.value); utxos.delete(k); } }
+        for (const vin of tx.vin) { const k = rev(vin.prevout.txid) + ':' + vin.prevout.vout; const u = utxos.get(k); if (u) { const tg = isHostCoin(u) ? null : u.assetTag; add(sentBy, tg, this._pvIn(u, tg, tx.lockHeight)); utxos.delete(k); } }
         // CONSENSUS: a coin's refheight is the TRANSACTION's lock_height, not the block
         // height — they differ whenever a tx confirms later than it was built, and using
         // the block height overvalues the coin by the demurrage of the gap (spends then

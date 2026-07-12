@@ -13,7 +13,7 @@ const kriaToFrc = k => Number(k) / 1e8;
 // same wallet (a different secret ⇒ different scripts ⇒ discard the persisted UTXO set).
 export const scriptsKey = scripts => { let h = 5381 >>> 0; const s = scripts.join(''); for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0; return scripts.length + ':' + h.toString(16); };
 
-export function createLightSource({ url, net, genesis, scripts, birthHeight = 0, onProgress = null, onProvisional = null, snapshotUrl = null, filterSnapshotUrl = null, checkpoint = null }) {
+export function createLightSource({ url, net, genesis, scripts, birthHeight = 0, onProgress = null, onProvisional = null, snapshotUrl = null, filterSnapshotUrl = null, checkpoint = null, seedDefs = null }) {
   let n = null, cache = null;
   const store = new IdbStore(net, genesis);   // IndexedDB — holds a full mainnet header chain
   // NOTE: birthHeight is NOT part of the fingerprint — it is auto-learned from the scan
@@ -45,6 +45,10 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     n = urls.length > 1 ? new NeutrinoPool({ urls, net, genesis }) : new Neutrino({ url: urls[0], net, genesis, snapshotUrl, filterSnapshotUrl });
     let resumed = false;
     try { if (await store.open()) resumed = await store.loadInto(n, skey); } catch {}   // resume persisted chain if same wallet
+    // Seed asset defs the wallet can never scan itself (an issuance block matches only the
+    // ISSUER's filters): untrusted relay hints for rate/valuation of history legs — a lying
+    // rate only mislabels amounts. Scan-verified defs overwrite seeds as blocks arrive.
+    try { for (const [t, p] of Object.entries(seedDefs || {})) if (!n.stateClient.assetDefs.has(t)) n.stateClient.assetDefs.set(t, p); } catch {}
     // Fresh start: skip filters/scan below the wallet's birth height (headers still sync
     // fully — PoW trustlessness is not windowed). Crucial on mainnet: without a birth
     // height a new wallet would scan ~485k filters that cannot contain its coins.

@@ -125,6 +125,8 @@ function ds() {
       // anchor: the wallet's own recorded birth anchor, else the build-time one (valid
       // only when the birth is at/above it — the source enforces that)
       checkpoint: (rec?.anchorH && rec?.anchorHash) ? { height: rec.anchorH, hash: rec.anchorHash } : (CHECKPOINT[net] || null),
+      // untrusted relay asset defs (rates) — lets history value asset spends it can't scan defs for
+      seedDefs: (() => { try { return JSON.parse(store.get('fw_reldefs') || 'null'); } catch { return null; } })(),
     }).catch(() => {});
     lightSrc = {
       health: () => wcall('health'), balance: () => wcall('balance'), utxos: () => wcall('utxos'),
