@@ -28,8 +28,14 @@ const MINE_EVERY_MS = Number(process.env.NV3_MINE_MS ?? 20000);
 const BTC_PORT = Number(process.env.BTC_RPCPORT ?? 19332);
 const BTC_DATADIR = process.env.BTC_DATADIR ?? '/root/btc-regtest';
 const BTC_WALLET = process.env.BTC_WALLET ?? 'swap';
+const BTC_NET = process.env.BTC_NET ?? 'regtest';         // regtest | signet | testnet | main
+const BTC_ONDEMAND = BTC_NET === 'regtest';               // only regtest can mine blocks on demand
+const BTC_HRP = { regtest: 'bcrt', signet: 'tb', testnet: 'tb', main: 'bc' }[BTC_NET] ?? 'bcrt';
 const SWAP_RATE = Number(process.env.SWAP_RATE ?? 0.2);   // BTC per 1 FRC (demo price)
-const SWAP_T1 = 40, SWAP_T2 = 20;                          // FRC refund height offset (T1) > BTC (T2)
+// refund offsets in BLOCKS. FRC (T1) must outlast BTC (T2) so the user is never squeezed.
+// Real BTC blocks are ~10 min: 20/10 blocks ≈ 3h/1.5h. FRC blocks are fast, so scale T1 up.
+const SWAP_T2 = BTC_ONDEMAND ? 20 : 10;
+const SWAP_T1 = BTC_ONDEMAND ? 40 : 4000;
 const HOST_TAG = '00'.repeat(20);
 
 const sha256 = b => createHash('sha256').update(b).digest();
@@ -243,11 +249,8 @@ async function watchSwaps() {
   for (const w of swaps) {
     try {
       if (w.status === 'btc_funded') {
-        // has the BTC HTLC output been spent (by the user's claim)? read R from that spend.
-        const spent = await btcRpc('gettxout', w.btcHtlc.txid, w.btcHtlc.vout).catch(() => null);
-        if (spent) continue;                                   // still unspent — user hasn't claimed yet
-        // find the spending tx in recent blocks and extract the preimage from its witness
-        const R = await findBtcPreimage(w);
+        if (!w.btcClaimTxid) continue;                         // user hasn't broadcast their BTC claim yet
+        const R = await preimageFromTx(w.btcClaimTxid, w.paymentHash);   // mempool or confirmed
         if (!R) continue;
         w.preimage = R;
         // claim the FRC HTLC with R (relay is the claim party)
@@ -264,17 +267,12 @@ async function watchSwaps() {
     } catch (e) { say(`своп ${w.id}: ` + String(e.message).slice(0, 60)); }
   }
 }
-async function findBtcPreimage(w) {
-  const tip = await btcRpc('getblockcount');
-  for (let bh = tip; bh > tip - 6 && bh > 0; bh--) {
-    const blk = await btcRpc('getblock', await btcRpc('getblockhash', bh), 2);
-    for (const tx of blk.tx) for (const vin of tx.vin) {
-      if (vin.txid === w.btcHtlc.txid && vin.vout === w.btcHtlc.vout) {
-        const wit = vin.txinwitness || [];
-        for (const item of wit) if (/^[0-9a-f]{64}$/.test(item) && sha256(Buffer.from(item, 'hex')).toString('hex') === w.paymentHash) return item;
-      }
-    }
-  }
+async function preimageFromTx(txid, paymentHash) {
+  // works whether the claim is unconfirmed (mempool) or mined — getrawtransaction reads both
+  const tx = await btcRpc('getrawtransaction', txid, true).catch(() => null);
+  if (!tx) return null;
+  for (const vin of tx.vin) for (const item of (vin.txinwitness || []))
+    if (/^[0-9a-f]{64}$/.test(item) && sha256(Buffer.from(item, 'hex')).toString('hex') === paymentHash) return item;
   return null;
 }
 
@@ -294,9 +292,10 @@ const pvOf = (u, h) => assetPresentValue(u.value, h - u.refheight, rateOf(u.asse
 //   the maker's client re-signs (resignRanged) to keep the remainder tradeable.
 // ---- Bitcoin side (relay = the BTC liquidity counterparty) ----
 let btcCookie = '';
-const btcAvail = () => existsSync(`${BTC_DATADIR}/regtest/.cookie`);
+const BTC_COOKIE = `${BTC_DATADIR}/${BTC_NET === 'main' ? '' : BTC_NET + '/'}.cookie`;
+const btcAvail = () => existsSync(BTC_COOKIE);
 async function btcRpc(method, ...params) {
-  btcCookie = Buffer.from(readFileSync(`${BTC_DATADIR}/regtest/.cookie`)).toString('base64');
+  btcCookie = Buffer.from(readFileSync(BTC_COOKIE)).toString('base64');
   const res = await fetch(`http://127.0.0.1:${BTC_PORT}/wallet/${BTC_WALLET}`, {
     method: 'POST', headers: { Authorization: `Basic ${btcCookie}` },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
@@ -305,7 +304,7 @@ async function btcRpc(method, ...params) {
   if (j.error) throw new Error(`btc ${method}: ${j.error.message ?? JSON.stringify(j.error)}`);
   return j.result;
 }
-const btcMine = async n => btcRpc('generatetoaddress', n, await btcRpc('getnewaddress'));
+const btcMine = async n => { if (BTC_ONDEMAND) return btcRpc('generatetoaddress', n, await btcRpc('getnewaddress')); };
 
 // the relay's per-swap keys (deterministic from a persisted seed; they touch only the relay's
 // own BTC float and the escrowed FRC it is owed — never a user's coins).
@@ -560,7 +559,7 @@ const api = {
   },
   // ---- cross-chain swap (FRC -> BTC), relay = BTC liquidity bot ----
   async swapInfo() {
-    return { available: btcAvail(), rate: SWAP_RATE, t1: SWAP_T1, t2: SWAP_T2,
+    return { available: btcAvail(), rate: SWAP_RATE, t1: SWAP_T1, t2: SWAP_T2, btcNet: BTC_NET, btcHrp: BTC_HRP,
       swaps: swaps.slice(-40).map(w => ({ id: w.id, status: w.status, frcAmount: w.frcAmount, btcAmount: w.btcAmount,
         maker: w.maker, relayFrcPub: w.relayFrcPub, relayBtcPub: w.relayBtcPub, paymentHash: w.paymentHash,
         t1: w.t1, t2: w.t2, frcHtlc: w.frcHtlc, btcHtlc: w.btcHtlc, preimage: w.preimage ?? null })) };
@@ -603,7 +602,7 @@ const api = {
     const bh = await btcRpc('getblockcount');
     const t2 = bh + SWAP_T2;
     const bleaf = btcHtlcLeaf({ paymentHash: w.paymentHash, claimPub: w.maker.btcPub, refundPub: w.relayBtcPub, cltv: t2 });
-    const baddr = btcHtlcAddress(bleaf, 'bcrt');
+    const baddr = btcHtlcAddress(bleaf, BTC_HRP);
     const btcId = await btcRpc('sendtoaddress', baddr, (Number(w.btcAmount) / 1e8).toFixed(8));
     await btcMine(1);
     const braw = await btcRpc('getrawtransaction', btcId, true);
@@ -619,9 +618,10 @@ const api = {
     const w = swaps.find(x => x.id === id); if (!w) throw new Error('нет такого свопа');
     if (w.status !== 'btc_funded') throw new Error('своп не на этой стадии');
     const btcId = await btcRpc('sendrawtransaction', rawtx);
-    await btcMine(1);
+    w.btcClaimTxid = btcId; saveSwaps();
+    await btcMine(1);     // regtest: confirm now; real chains: it sits in the mempool
     say(`своп ${id}: пользователь выкупил BTC (${btcId.slice(0, 12)}…)`);
-    await watchSwaps();   // immediate: read R and settle the FRC leg
+    await watchSwaps();   // immediate: read R (works at 0-conf) and settle the FRC leg
     return { btcClaim: btcId, status: w.status };
   },
 
