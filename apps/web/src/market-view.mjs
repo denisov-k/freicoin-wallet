@@ -90,7 +90,7 @@ async function doRefresh() {
   if (!_ds || !seed) return;
   const [info, r] = await Promise.all([api('info'), _ds().assets()]);
   state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos: r.assetUtxos } };
-  if ($('#bookBody')) paint();                 // Exchange tab mounted → repaint the book
+  if ($('#askBody') || $('#rAsset')) paint();  // Exchange tab or offer modal mounted → repaint
   if ($('#assetBalBody')) paintAssetBalance(); // Freimarkets Balance tab mounted → per-asset table
   maybeResignRanged();                                      // keep my ranged offers alive after partial fills
 }
