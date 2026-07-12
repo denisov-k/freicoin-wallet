@@ -9,6 +9,10 @@ import { pubkeyCompressed, signEcdsa } from '../../../core/ecdsa.mjs';
 import { segwitV0Sighash, rangedSighash, SIGHASH_ALL, SIGHASH_BUNDLE } from '../../../core/sighash.mjs';
 import { serializeTx, NV3_TX_VERSION } from '../../../core/tx.mjs';
 import { assetPresentValue } from '../../../core/assets.mjs';
+import { sha256, hash160 } from '../../../core/crypto.mjs';
+import { frcLeg } from '../../../core/swap.mjs';
+import { paymentHashOf } from '../../../core/htlc.mjs';
+import { btcHtlcClaim, btcAddress } from '../../../core/btc.mjs';
 import { tr, getLang } from './i18n.mjs';
 
 const API = location.protocol === 'https:' ? `${location.origin}/api` : `http://${location.hostname}:5181/api`;
@@ -288,6 +292,83 @@ function openOfferModal() {
   paint();                                 // populate #rAsset / #rWant now
 }
 
+// ---- cross-chain swap FRC → BTC (relay = BTC liquidity bot; we stay non-custodial) ----
+// deterministic swap keys from the wallet seed (kept off the payment path — a swap key leak
+// never touches wallet funds), one FRC key + one BTC key per swap id.
+const swapPriv = (id, leg) => sha256(Buffer.from(seed + 'fw-swap:' + id + ':' + leg, 'utf8')).toString('hex');
+const opIn = op => ({ prevout: { txid: rev(op.split(':')[0]), vout: +op.split(':')[1] }, scriptSig: '', sequence: 0xffffffff, witness: [] });
+
+// pay `amount` kria of FRC to an arbitrary scriptPubKey (funds the FRC HTLC). Fee + change to us.
+async function sendFrcToSpk(spk, amount) {
+  const L = state.mine.height, fee = 10000n, reserved = committedOutpoints();
+  const coins = state.mine.utxos.filter(u => (u.assetTag ?? null) === null && u.refheight <= L && !reserved.has(u.outpoint))
+    .map(u => ({ outpoint: u.outpoint, spk: u.spk, value: BigInt(u.value), refheight: u.refheight,
+                 pv: assetPresentValue(BigInt(u.value), L - u.refheight, { k: 20, interest: false }) }))
+    .sort((a, b) => (b.pv > a.pv ? 1 : b.pv < a.pv ? -1 : 0));
+  const picked = []; let S = 0n;
+  for (const c of coins) { picked.push(c); S += c.pv; if (S >= amount + fee) break; }
+  if (S < amount + fee) throw new Error(tr('not enough FRC for this swap'));
+  const vout = [{ value: amount, scriptPubKey: spk, assetTag: HOST_TAG }];
+  if (S - amount - fee > 0n) vout.push({ value: S - amount - fee, scriptPubKey: spks[0], assetTag: HOST_TAG });
+  const tx = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: picked.map(c => opIn(c.outpoint)), vout };
+  picked.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
+  const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+  return { txid, vout: 0 };
+}
+
+function openSwapModal() {
+  if ($('#modal')) return;
+  const m = document.createElement('div'); m.id = 'modal';
+  m.innerHTML = `<div class="review">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Swap FRC → BTC')}</b><button id="swClose" class="icon">✕</button></div>
+    <label>${tr('FRC to swap')}<input id="swAmt" type="text" inputmode="decimal" value="1"></label>
+    <div class="rrow"><span>${tr('You receive')}</span><b id="swGet">—</b></div>
+    <button id="swGo">${tr('Start swap')}</button>
+    <div id="swLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
+    <p class="warn" style="font-size:12px">${tr('Experimental, on the test chains. Your FRC is refundable if the swap stalls.')}</p></div>`;
+  document.body.appendChild(m);
+  m.onclick = e => { if (e.target === m) m.remove(); };
+  m.querySelector('#swClose').onclick = () => m.remove();
+  let rate = 0.2;
+  api('swapInfo').then(s => { rate = s.rate; upd(); }).catch(() => {});
+  const upd = () => { const a = parseFloat($('#swAmt').value) || 0; $('#swGet').textContent = (a * rate).toLocaleString(getLang(), { maximumFractionDigits: 8 }) + ' BTC'; };
+  m.querySelector('#swAmt').oninput = upd;
+  m.querySelector('#swGo').onclick = () => runSwap(parseFloat($('#swAmt').value));
+}
+
+async function runSwap(frcUnits) {
+  const log = t => { const el = $('#swLog'); if (el) el.textContent += (el.textContent ? '\n' : '') + t; };
+  const go = $('#swGo'); if (go) { go.disabled = true; go.textContent = tr('swapping…'); }
+  try {
+    if (!(frcUnits > 0)) throw new Error(tr('enter an amount'));
+    const frcAmount = BigInt(Math.round(frcUnits * 1e8));
+    // secret R + the two swap keys, all bound to a per-swap nonce (seed-derived ⇒ a refund is
+    // always reconstructable from the seed alone). H commits R.
+    const nonce = sha256(Buffer.from(seed + 'fw-swap-nonce:' + frcAmount + ':' + (state.mine.height), 'utf8')).toString('hex').slice(0, 16);
+    const R = swapPriv(nonce, 'R'), H = paymentHashOf(R);
+    const frcKey = swapPriv(nonce, 'frc'), btcKey = swapPriv(nonce, 'btc');
+    const frcPub = pubkeyCompressed(frcKey), btcPub = pubkeyCompressed(btcKey);
+    // 1. open the swap — the relay reserves ITS per-swap pubkeys and echoes ours back
+    log(tr('opening the swap…'));
+    const c = await api('swapCreate', { paymentHash: H, frcAmount: String(frcAmount), makerFrcPub: frcPub, makerBtcPub: btcPub });
+    // 2. build + fund the FRC HTLC (claim=relay, refund=us) — same key whose pub we just sent
+    const L = state.mine.height, T1 = L + 40;
+    const leg = frcLeg({ role: 'give', ourKey: frcKey, theirPub: c.relayFrcPub, paymentHash: H, cltv: T1, net: 'regtest' });
+    log(`${tr('locking')} ${frcUnits} FRC…`);
+    const fund = await sendFrcToSpk(leg.spk, frcAmount);
+    await mvRefresh();
+    const r2 = await api('swapFrcFunded', { id: c.id, txid: fund.txid, vout: fund.vout, leaf: leg.leaf, t1: T1 });
+    log(tr('relay locked the BTC — claiming it…'));
+    // 3. claim the BTC with R (reveals R); the relay broadcasts and then settles the FRC leg
+    const myBtcSpk = '0014' + hash160(Buffer.from(btcPub, 'hex')).toString('hex');
+    const cB = btcHtlcClaim({ prevTxid: r2.btcHtlc.txid, vout: r2.btcHtlc.vout, valueSats: BigInt(r2.btcHtlc.value), leafHex: r2.btcHtlc.leaf, preimage: R, claimKey: btcKey, toSpk: myBtcSpk, fee: 2000n });
+    await api('swapBtcBroadcast', { id: c.id, rawtx: cB.rawtx });
+    log(`✅ ${(Number(c.btcAmount) / 1e8)} BTC → ${btcAddress(hash160(Buffer.from(btcPub, 'hex')).toString('hex'), 'bcrt')}`);
+    log(tr('swap complete ✅'));
+    toast(tr('swap complete ✅'), 'ok'); mvRefresh();
+  } catch (e) { log('⚠ ' + e.message); toast(e.message, 'err'); if (go) { go.disabled = false; go.textContent = tr('Start swap'); } }
+}
+
 // build + broadcast a partial fill of a ranged offer, in EITHER direction. The ranged bundle's
 // [payout, change] are the first two outputs; the taker's fill + change follow. The maker's give
 // input keeps its (fill-independent) SIGHASH_BUNDLE signature; the taker signs its own inputs.
@@ -533,8 +614,11 @@ export function renderExchange(el) {
     </div>
     <label class="chk"><input type="checkbox" id="fOpen" checked>${tr('open only')}</label>
     <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>
-    <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>`;
+    <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>
+    <div class="row" id="swapRow" hidden><button id="openSwap" class="ghost">${tr('Swap FRC → BTC')}</button></div>`;
   $('#openOffer').onclick = openOfferModal;
+  $('#openSwap').onclick = openSwapModal;
+  api('swapInfo').then(s => { const r = $('#swapRow'); if (r && s.available) r.hidden = false; }).catch(() => {});
   ['#fGive', '#fWant', '#fOpen'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });
   if (state) paint(); else mvRefresh();
 }
