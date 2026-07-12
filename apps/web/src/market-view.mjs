@@ -211,18 +211,20 @@ async function postRangedOffer() {
     const wantTag = $('#rWant').value === 'FRC' ? HOST_TAG : $('#rWant').value;
     if (!giveTag) throw new Error(tr('no coins yet'));
     if (giveTag === wantTag) throw new Error(tr('give and want must be different assets'));
-    const P = parseFloat($('#rPrice').value);
-    if (!(P > 0)) throw new Error(tr('enter a price'));
+    const T = parseFloat($('#rPrice').value);   // TOTAL want for the whole quantity
+    if (!(T > 0)) throw new Error(tr('enter a price'));
     const L = state.mine.height;
     const coins = myCoinsOf(giveTag, L);
     const total = coins.reduce((a, c) => a + c.pv, 0n);
     if (total <= 0n) throw new Error(tr('no coins of that asset'));
-    let Q = BigInt(Math.round(parseFloat($('#rQty').value) * scaleOf(giveTag)));   // quantity in give units
+    const qtyAsked = parseFloat($('#rQty').value);
+    let Q = BigInt(Math.round(qtyAsked * scaleOf(giveTag)));              // quantity in give units
     if (!(Q > 0n)) throw new Error(tr('enter a quantity'));
+    // price ratio from the REQUESTED quantity (payout-kria per give-kria = T·wantScale / qty·giveScale):
+    // a full fill pays exactly T; if the quantity gets capped below, the unit price holds.
+    const priceNum = BigInt(Math.round(T * scaleOf(wantTag))), priceDen = BigInt(Math.round(qtyAsked * scaleOf(giveTag)));
     if (Q > total) Q = total;                                             // cap at the whole balance
     const give = await prepareGiveCoin(giveTag, Q, L, coins);
-    // price = want units per give unit ⇒ payout-kria / give-kria = P·wantScale / giveScale
-    const priceNum = BigInt(Math.round(P * scaleOf(wantTag))), priceDen = BigInt(scaleOf(giveTag));
     const desc = { payoutAsset: wantTag, payoutScript: give.spk, priceNum, priceDen, changeScript: give.spk, minFill: 0n, maxFill: Q };
     const witness = signRangedGive(desc, give.outpoint, give, give.L);
     await api('rangedOffer', { makerSpk: give.spk, giveOutpoint: give.outpoint, desc, nExpireTime: 0, lockHeight: give.L, witness });
@@ -238,7 +240,7 @@ function openOfferModal() {
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Post an offer')}</b><button id="offerClose" class="icon">✕</button></div>
     <div class="row"><label>${tr('I sell')}<select id="rAsset"></select></label><label>${tr('Quantity')}<input id="rQty" type="text" inputmode="decimal"></label></div>
-    <div class="row"><label>${tr('I want')}<select id="rWant"></select></label><label>${tr('Price (want per unit)')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
+    <div class="row"><label>${tr('I want')}<select id="rWant"></select></label><label>${tr('Total price')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
     <button id="rOfferBtn">${tr('Post offer')}</button>
     <p class="sub" style="font-size:12px">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p></div>`;
   document.body.appendChild(m);
