@@ -106,7 +106,7 @@ function ds() {
       if (m.type === 'provisional') {
         liveState = m.c;
         try { paintBalance(m.c); } catch {}
-        try { paintActivity([...m.c.pending, ...m.c.history]); } catch {}
+        try { paintActivity([...m.c.pending, ...m.c.history], false); } catch {}
         try { paintSendAvail(m.c, true); } catch {}
         setStatus('sync', undefined, m.c.tipHeight);
         return;
@@ -366,7 +366,7 @@ let liveState = null;
 let actLastHtml = '', actLastTxs = [], actDefs = {};
 const actFilter = { cat: '', cur: '' };
 const actAssetName = tag => actDefs[tag]?.name || tag.slice(0, 8) + '…';
-function paintActivity(txs) {
+function paintActivity(txs, final = true) {
   const sec = $('#activity');
   if (!sec || sec.hidden) return false;
   const list = $('#actList') || sec;   // filters live above the list; partials may land before render.activity
@@ -416,6 +416,9 @@ function paintActivity(txs) {
   // never resets the scroll position or closes the opened detail (that detail rides right
   // under its row and its confirmations stay live).
   if (!shown.length) {
+    // an EMPTY provisional/preview just means the scan hasn't reached the wallet's history
+    // yet — keep the skeleton shimmering instead of flashing "no transactions yet"
+    if (!txs.length && !final) { if (!list.querySelector('.skel')) list.innerHTML = skel(4); return false; }
     list.innerHTML = `<div class="sub">${txs.length ? tr('nothing matches the filters') : tr('no transactions yet')}</div>`;
     return true;
   }
@@ -658,8 +661,8 @@ const render = {
     // Instant: verified cache > streamed partial > persisted preview; live partials keep
     // updating the list via the worker's provisional events while the sync runs.
     const seed = cache || liveState;
-    if (seed) painted = paintActivity([...seed.pending, ...seed.history]) || painted;
-    else { try { const pv = await ds().preview(); if (pv) painted = paintActivity([...pv.pending, ...pv.history]) || painted; } catch {} }
+    if (seed) painted = paintActivity([...seed.pending, ...seed.history], !!cache) || painted;
+    else { try { const pv = await ds().preview(); if (pv) painted = paintActivity([...pv.pending, ...pv.history], false) || painted; } catch {} }
     try {
       const { txs } = await ds().history();
       if (gen !== renderGen) return;
