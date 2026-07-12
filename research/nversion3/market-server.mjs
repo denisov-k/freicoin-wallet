@@ -121,6 +121,107 @@ const rungAt = (o, h) => {
   return best || { lockHeight: o.lockHeight, witness: o.witness };
 };
 
+// ---- AUTO-MATCHER: splice two crossing ranged offers into ONE tx. Permissionless by design
+// (any client could do this); the relay just runs the default bot. It cannot steal: both
+// signatures pin destinations and price floors — the matcher only takes the spread, funding
+// the fee from the OP_TRUE pool. Requires a COMMON rung height (grid-aligned ladders).
+const FEE = 10000n;
+const opPrev = op => ({ txid: rev(op.split(':')[0]), vout: +op.split(':')[1] });
+function repointAfterFill(o, changeOp, h) {
+  const c = utxos.get(changeOp);
+  const cpv = c ? pvOf(c, h) : 0n;
+  if (c && c.spk === o.desc.changeScript && cpv > 0n && cpv >= BigInt(o.desc.minFill)) {
+    o.giveOutpoint = changeOp; o.witness = null; o.ladder = []; o.needsResign = true; o.status = 'open';
+  } else o.status = 'filled';
+}
+async function ensureMatcherFuel() {
+  for (const op of spkIndex.get(TRUE_SPK) ?? []) { const u = utxos.get(op); if (u && !u.assetTag && u.value >= FEE + 10000n) return; }
+  try {
+    const dec = await rpc('decodescript', TRUE_SPK);
+    await rpc('sendtoaddress', dec.address, '0.01');
+    await rpc('generatetoaddress', 1, mineAddr); await catchUp();
+  } catch (e) { say('матчер: нет топлива: ' + String(e.message).slice(0, 60)); }
+}
+async function matchCrosses() {
+  const h = indexedHeight;
+  const open = book.filter(o => o.ranged && o.status === 'open' && !o.needsResign && (o.ladder || []).length && utxos.has(o.giveOutpoint));
+  for (const A of open) for (const B of open) {
+    if (A.id === B.id) continue;
+    const aGive = utxos.get(A.giveOutpoint), bGive = utxos.get(B.giveOutpoint);
+    if (!aGive || !bGive) continue;
+    const T = aGive.assetTag;
+    if (T === null || bGive.assetTag !== null) continue;          // A sells asset T, B sells FRC
+    if ((A.desc.payoutAsset ?? HOST_TAG) !== HOST_TAG) continue;  // A wants FRC
+    if ((B.desc.payoutAsset ?? HOST_TAG) !== T) continue;         // B wants T
+    const nA = BigInt(A.desc.priceNum), dA = BigInt(A.desc.priceDen);
+    const nB = BigInt(B.desc.priceNum), dB = BigInt(B.desc.priceDen);
+    if (nA * nB > dA * dB) continue;                              // prices do not cross
+    if ((A.nExpireTime && h > A.nExpireTime) || (B.nExpireTime && h > B.nExpireTime)) continue;
+    // highest COMMON rung not above the tip (both signatures must commit the same lock_height)
+    const bH = new Set((B.ladder || []).map(r => r.lockHeight));
+    let L = -1;
+    for (const r of (A.ladder || [])) if (r.lockHeight <= h && bH.has(r.lockHeight) && r.lockHeight > L) L = r.lockHeight;
+    if (L < 0) continue;
+    const wA = A.ladder.find(r => r.lockHeight === L)?.witness, wB = B.ladder.find(r => r.lockHeight === L)?.witness;
+    if (!wA || !wB) continue;
+    if (aGive.refheight > L || bGive.refheight > L) continue;     // coins must predate the rung
+    const pvA = pvOf(aGive, L), pvB = pvOf(bGive, L);
+    const minA = BigInt(A.desc.minFill), maxA = BigInt(A.desc.maxFill);
+    const minB = BigInt(B.desc.minFill), maxB = BigInt(B.desc.maxFill);
+    // fills: start from B's full FRC capacity, shrink to A's asset capacity
+    let f = pvB < maxB ? pvB : maxB;
+    let t = (f * nB + dB - 1n) / dB;
+    const tCap = pvA < maxA ? pvA : maxA;
+    if (t > tCap) { t = tCap; f = t * dB / nB; if (f > pvB) f = pvB; }
+    const payB = (f * nB + dB - 1n) / dB;                          // T owed to B (price floor)
+    const payA = (t * nA + dA - 1n) / dA;                          // FRC owed to A (price floor)
+    if (payB > t || payA > f) continue;                            // rounding killed the cross
+    if (t < minA || t > maxA || f < minB || f > maxB || t <= 0n || f <= 0n) continue;
+    // matcher fuel: an OP_TRUE host coin old enough for the rung
+    let fuelOp = null, fuel = null;
+    for (const op of spkIndex.get(TRUE_SPK) ?? []) {
+      const u = utxos.get(op);
+      if (u && !u.assetTag && u.refheight <= L && u.value >= FEE + 1000n) { fuelOp = op; fuel = u; break; }
+    }
+    if (!fuelOp) continue;
+    const fuelPv = pvOf(fuel, L);
+    const spreadT = t - payB, spreadF = f - payA;
+    const vout = [
+      { value: payA, scriptPubKey: A.desc.payoutScript, assetTag: HOST_TAG },     // ranged[0] payout
+      { value: pvA - t, scriptPubKey: A.desc.changeScript, assetTag: T },          // ranged[0] change
+      { value: payB, scriptPubKey: B.desc.payoutScript, assetTag: T },             // ranged[1] payout
+      { value: pvB - f, scriptPubKey: B.desc.changeScript, assetTag: HOST_TAG },   // ranged[1] change
+    ];
+    if (spreadT > 0n) vout.push({ value: spreadT, scriptPubKey: TRUE_SPK, assetTag: T });
+    const frcBack = fuelPv - FEE + spreadF;
+    if (frcBack > 0n) vout.push({ value: frcBack, scriptPubKey: TRUE_SPK, assetTag: HOST_TAG });
+    const tx = {
+      version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0,
+      vin: [
+        { prevout: opPrev(A.giveOutpoint), scriptSig: '', sequence: 0xffffffff, witness: wA },
+        { prevout: opPrev(B.giveOutpoint), scriptSig: '', sequence: 0xffffffff, witness: wB },
+        { prevout: opPrev(fuelOp), scriptSig: '', sequence: 0xffffffff, witness: TRUE_WITNESS },
+      ],
+      ranged: [
+        { nIn: 1, payoutAsset: HOST_TAG, payoutScript: A.desc.payoutScript, priceNum: nA, priceDen: dA, changeScript: A.desc.changeScript, minFill: minA, maxFill: maxA, nExpireTime: A.nExpireTime ?? 0 },
+        { nIn: 1, payoutAsset: T, payoutScript: B.desc.payoutScript, priceNum: nB, priceDen: dB, changeScript: B.desc.changeScript, minFill: minB, maxFill: maxB, nExpireTime: B.nExpireTime ?? 0 },
+      ],
+      vout,
+    };
+    try {
+      const raw = serializeTx(tx);
+      await rpc('generateblock', mineAddr, [raw]);
+      await catchUp();
+      const txid = computeTxid(parseTx(raw));
+      repointAfterFill(A, `${txid}:1`, indexedHeight);
+      repointAfterFill(B, `${txid}:3`, indexedHeight);
+      reconcileBook();
+      say(`автомэтч #${A.id} × #${B.id}: ${t} за ${f} kria (${txid.slice(0, 12)}…), спред ${spreadT}+${spreadF}`);
+      return;                                                       // one match per tick
+    } catch (e) { say('матчер: ' + String(e.message).slice(0, 80)); }
+  }
+}
+
 const rateOf = tag => tag === null ? { k: 20, interest: false }
   : { k: assets.get(tag)?.shift ?? 20, interest: !!assets.get(tag)?.interest };
 const pvOf = (u, h) => assetPresentValue(u.value, h - u.refheight, rateOf(u.assetTag));
@@ -158,13 +259,15 @@ async function bootstrap() {
   mineAddr = await rpc('getnewaddress');
   if (await rpc('getblockcount') < 120) await rpc('generatetoaddress', 120, mineAddr);
   await catchUp();
-  say('маркет запущен (релей книги + майнер, без матчинга)');
+  say('маркет запущен (релей книги + майнер + автомэтчер)');
   // the miner role only: produce a block on a timer so the chain lives. No matching here.
   setInterval(async () => {
     try {
       await rpc('generatetoaddress', 1, mineAddr);
       await catchUp();
       reconcileBook();
+      await ensureMatcherFuel();
+      await matchCrosses();
     } catch (e) { say('майнер: ' + String(e.message).slice(0, 80)); }
   }, MINE_EVERY_MS);
 }

@@ -222,10 +222,15 @@ async function prepareGiveCoin(giveTag, Q, L, coins) {
 // new coin no pre-signed rung can cover; the maker re-ladders it when back online). While
 // online, maybeResignRanged still tops the ladder up with a tip rung for 1-block freshness.
 const LADDER_STEP = 10, LADDER_SPAN = 4320;
+// Rungs sit on the ABSOLUTE grid (heights divisible by LADDER_STEP) plus one rung at the
+// exact posting height: two offers' ladders then share heights, which is what lets a matcher
+// splice them into ONE tx (both ranged signatures must commit the same lock_height).
 async function signLadder(desc, coin, giveOutpoint, fromL, toL) {
+  const rungs = [fromL];
+  for (let Li = Math.floor(fromL / LADDER_STEP + 1) * LADDER_STEP; Li <= toL; Li += LADDER_STEP) rungs.push(Li);
   const ladder = [];
-  for (let Li = fromL, i = 0; Li <= toL; Li += LADDER_STEP, i++) {
-    ladder.push({ lockHeight: Li, witness: signRangedGive(desc, giveOutpoint, coin, Li) });
+  for (let i = 0; i < rungs.length; i++) {
+    ladder.push({ lockHeight: rungs[i], witness: signRangedGive(desc, giveOutpoint, coin, rungs[i]) });
     if (i % 32 === 31) await new Promise(r => setTimeout(r));   // yield — keep the UI alive
   }
   return ladder;
