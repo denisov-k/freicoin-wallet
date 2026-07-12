@@ -523,10 +523,24 @@ function paintBalance(s) {
   // build the card once; update fields in place afterwards (a full innerHTML rewrite per
   // streamed partial made the screen flicker)
   if (!$('#balBig')) {
+    // Mainnet gets a gentle pointer at the experimental chain — assets, the exchange, the
+    // faucet all live there; one tap switches (Settings switches back).
+    const promo = curNet() === 'main'
+      ? `<div class="promo"><span class="sub">${tr('Assets and the exchange live on the experimental Freimarkets chain — try them with free test coins.')}</span>
+         <button id="tryFm" class="ghost">${tr('Try Freimarkets')}</button></div>`
+      : '';
     $('#balance').innerHTML =
       `<div class="big" id="balBig"></div>
-       <div class="sub" id="balPend"></div>` + balActions();
+       <div class="sub" id="balPend"></div>` + balActions() + promo;
     wireBalActions();
+    const t = $('#tryFm');
+    if (t) t.onclick = () => {
+      store.set('fw_net', 'nv3'); configureNetwork('nv3'); store.del('fw_bridge');
+      if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
+      cache = null; liveState = null; actLastHtml = '';
+      status.progress = {}; status.rx = 0; status.rxAt = 0; status.mbps = 0; status.utxos = null; status.tip = null;
+      renderApp(); toast(tr('welcome to Freimarkets 🧪'));
+    };
   }
   // no qualifier line: the header dot carries the state (amber = syncing/unverified,
   // green = verified) and the popover the details
