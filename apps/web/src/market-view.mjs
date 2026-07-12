@@ -339,10 +339,14 @@ function openBuyModal(o) {
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} ${assetName(giveTag)}</b><button id="bClose" class="icon">✕</button></div>
     <label>${tr('Quantity')}<div class="amtrow"><input id="bQty" type="text" inputmode="decimal" value="${maxU}"><button id="bMax" class="ghost">${tr('Max')}</button></div></label>
     <div class="rrow"><span>${tr('You pay')}</span><b id="bCost"></b></div>
+    <p class="warn" id="bMelt" hidden>${tr('⚠ this amount is so small it will melt to zero within a few blocks — buy more')}</p>
     <button id="bBuy">${tr('Buy')}</button></div>`;
   document.body.appendChild(m);
+  const rate = rateOf(o.give.assetTag);
   const cost = () => { const u = parseFloat($('#bQty').value);
-    $('#bCost').textContent = (u > 0) ? fmtA(wantTag ?? 'FRC', costOf(u)) : '—'; };
+    $('#bCost').textContent = (u > 0) ? fmtA(wantTag ?? 'FRC', costOf(u)) : '—';
+    // an integer-floored melting asset eats tiny holdings whole — warn before the trap
+    $('#bMelt').hidden = !(u > 0) || assetPresentValue(BigInt(Math.round(u * scaleOf(giveTag))), 10, rate) > 0n; };
   cost();
   m.onclick = e => { if (e.target === m) m.remove(); };
   m.querySelector('#bClose').onclick = () => m.remove();
