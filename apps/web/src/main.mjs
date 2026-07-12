@@ -363,10 +363,11 @@ const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏', pur
 let liveState = null;
 
 // Activity list painter — module-level so streamed partials can update the visible list.
-let actLastHtml = '', actLastTxs = [], actDefs = {};
+let actLastHtml = '', actLastTxs = [], actDefs = {}, actGotFinal = false;
 const actFilter = { cat: '', cur: '' };
 const actAssetName = tag => actDefs[tag]?.name || tag.slice(0, 8) + '…';
 function paintActivity(txs, final = true) {
+  if (final) actGotFinal = true;
   const sec = $('#activity');
   if (!sec || sec.hidden) return false;
   const list = $('#actList') || sec;   // filters live above the list; partials may land before render.activity
@@ -637,7 +638,7 @@ const render = {
   },
   async activity() {
     const gen = ++renderGen;
-    actLastHtml = '';
+    actLastHtml = ''; actGotFinal = false;
     // filter bar (type always; currency only where assets exist) + the list container
     $('#activity').innerHTML = `
       <div class="row actfix">
@@ -652,24 +653,24 @@ const render = {
       </div>
       <div id="actList">${skel(4)}</div>`;
     $('#afCat').value = actFilter.cat;
-    $('#afCat').onchange = () => { actFilter.cat = $('#afCat').value; actLastHtml = ''; paintActivity(actLastTxs); };
+    $('#afCat').onchange = () => { actFilter.cat = $('#afCat').value; actLastHtml = ''; paintActivity(actLastTxs, actGotFinal); };
     if (MKT()) {
       const cur = $('#afCur');
-      cur.onchange = () => { actFilter.cur = cur.value; actLastHtml = ''; paintActivity(actLastTxs); };
+      cur.onchange = () => { actFilter.cur = cur.value; actLastHtml = ''; paintActivity(actLastTxs, actGotFinal); };
       // scan-verified defs first; relay names fill the gaps (the wallet only learns defs
       // from blocks its own filters matched — a buyer never scans the issuer's issuance block).
       // The filter's OPTIONS are painted by paintActivity from the actual history.
       Promise.all([ds().assets(), mvRelayAssets().catch(() => [])]).then(([r, relay]) => {
         actDefs = { ...(r.assetDefs || {}) };
         for (const a of relay) if (a.name) { const d = (actDefs[a.tag] ??= {}); d.name ??= a.name; d.decimals ??= a.decimals; }
-        actLastHtml = ''; paintActivity(actLastTxs);   // rows/options painted before the defs arrived show raw tags
+        actLastHtml = ''; paintActivity(actLastTxs, actGotFinal);   // rows/options painted before the defs arrived show raw tags
       }).catch(() => {});
     } else actFilter.cur = '';
     let painted = false;
     // Instant: verified cache > streamed partial > persisted preview; live partials keep
     // updating the list via the worker's provisional events while the sync runs.
     const seed = cache || liveState;
-    if (seed) painted = paintActivity([...seed.pending, ...seed.history], !!cache) || painted;
+    if (seed) painted = paintActivity([...(seed.pending || []), ...(seed.history || [])], !!(cache && cache.history)) || painted;
     else { try { const pv = await ds().preview(); if (pv) painted = paintActivity([...pv.pending, ...pv.history], false) || painted; } catch {} }
     try {
       const { txs } = await ds().history();
