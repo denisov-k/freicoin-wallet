@@ -101,13 +101,23 @@ async function doRefresh() {
 // ---- actions ----
 async function faucet() { try { await api('faucet', { address: myAddress }); toast(tr('Faucet: +1 FRC'), 'ok'); mvRefresh(); } catch (e) { toast(e.message, 'err'); } }
 
+// The issuer thinks in % PER YEAR; the chain thinks in 2^-k per block. Pick the nearest k
+// for the requested yearly rate at THIS chain's cadence (k is discrete — the form echoes
+// what the chosen k really does; the input is the wish, the echo is the truth).
+const kFromPct = (kind, pct) => {
+  const N = 365 * 86400 / ((state?.info?.mineEveryMs ?? 20000) / 1000);   // blocks per year
+  const p = Math.min(kind === 'd' ? 0.9999 : 1e6, Math.max(1e-9, (pct || 0) / 100));
+  const r = kind === 'd' ? 1 - (1 - p) ** (1 / N) : (1 + p) ** (1 / N) - 1;
+  return Math.min(63, Math.max(1, Math.round(-Math.log2(r))));
+};
+
 async function issue() {
   try {
     const name = $('#iName').value.trim() || 'актив';
     // 'constant' = shift 64 demurrage: the fixed-point kernel rounds one base unit off ONCE
     // and the value then never changes (rate 2^-64 stays below one unit for ~2^44 blocks).
     const kind = $('#iKind').value;
-    await api('issue', { name, shift: kind === 'c' ? 64 : $('#iShift').value, interest: kind === 'i', amount: $('#iAmt').value, decimals: $('#iDec')?.value ?? 0, spk: spks[0] });
+    await api('issue', { name, shift: kind === 'c' ? 64 : kFromPct(kind, +$('#iPct').value || 5), interest: kind === 'i', amount: $('#iAmt').value, decimals: $('#iDec')?.value ?? 0, spk: spks[0] });
     $('#modal')?.remove();
     toast(`«${name}» ${tr('issued to your address')}`, 'ok'); mvRefresh();
   } catch (e) { toast(e.message, 'err'); }
@@ -447,7 +457,7 @@ export function openIssueModal() {
     <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="часы-труда"></label>
     <div class="row">
       <label>${tr('Type')}<select id="iKind"><option value="c">${tr('constant')}</option><option value="d">${tr('melts')}</option><option value="i">${tr('grows')}</option></select></label>
-      <label id="iRateLbl" hidden>${tr('Rate k')}<input id="iShift" type="number" value="16" min="1" max="63"></label>
+      <label id="iRateLbl" hidden>${tr('Rate, % per year')}<input id="iPct" type="number" value="5" min="0.001" step="any"></label>
     </div>
     <p class="sub" id="iRateHint" style="font-size:12px" hidden></p>
     <div class="row">
@@ -460,19 +470,18 @@ export function openIssueModal() {
   m.onclick = e => { if (e.target === m) m.remove(); };
   m.querySelector('#issClose').onclick = () => m.remove();
   m.querySelector('#issueBtn').onclick = issue;
-  // live human units for the 2^-k rate: % per block and % per day at THIS chain's cadence
   const rateHint = () => {
     const kind = $('#iKind').value, el = $('#iRateHint');
     el.hidden = kind === 'c';
     if (el.hidden) return;
-    const k = Math.min(63, Math.max(1, +$('#iShift').value || 16));
+    const k = kFromPct(kind, +$('#iPct').value || 5);
     const perBlock = 2 ** -k;
     const blocksDay = 86400 / ((state?.info?.mineEveryMs ?? 20000) / 1000);
     const over = days => kind === 'd' ? 1 - (1 - perBlock) ** (blocksDay * days) : (1 + perBlock) ** (blocksDay * days) - 1;
     const f = x => (x * 100).toLocaleString(getLang(), { maximumSignificantDigits: 3 });
     el.textContent = `≈ ${f(over(1))}% ${tr('per day')} · ≈ ${f(over(30))}% ${tr('per month')} · ≈ ${f(over(365))}% ${tr('per year on this chain')}`;
   };
-  m.querySelector('#iShift').oninput = rateHint;
+  m.querySelector('#iPct').oninput = rateHint;
   m.querySelector('#iKind').onchange = e => {
     $('#iRateLbl').hidden = e.target.value === 'c';        // constant has no rate at all
     // rounding hint per type: melting EATS whole units; growth STALLS below a whole unit
