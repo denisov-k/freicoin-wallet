@@ -95,7 +95,7 @@ const RU = {
   'this offer pays a non-FRC asset (not supported yet)': 'этот оффер платит не-FRC активом (пока не поддерживается)',
   'offer coin is gone': 'монета оффера уже потрачена', 'amount is below the offer minimum': 'объём меньше минимума оффера',
   'you need an FRC coin (tap Faucet) to pay for this fill': 'нужна монета FRC (нажмите Кран), чтобы оплатить покупку',
-  'no user-asset coins': 'нет монет активов', 'Buy': 'Купить', 'Bought': 'Куплено',
+  'no user-asset coins': 'нет монет активов', 'Buy': 'Купить', 'Bought': 'Куплено', 'You pay': 'К оплате',
   'Account': 'Аккаунт', 'Secret phrase': 'Секретная фраза', 'Copy': 'Копировать', 'Stored only in this browser.': 'Хранится только в этом браузере.',
   'Log out of account': 'Выйти из аккаунта', 'Restore': 'Восстановить', 'Create': 'Создать',
   'A non-custodial exchange for user-issued Freicoin assets.': 'Некастодиальная биржа пользовательских активов Freicoin.',

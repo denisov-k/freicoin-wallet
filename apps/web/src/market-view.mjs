@@ -312,7 +312,40 @@ async function fillRangedNow(offer, fillUnits) {
     takerInputs.forEach((c, i) => signInput(tx, i + 1, c.spk, c.value, c.refheight, SIGHASH_ALL));   // maker give at 0 already signed
     await api('tx', { rawtx: serializeTx(tx), kind: 'rangedfill', offerId: offer.id });
     toast(`${tr('Bought')} ${(Number(fill) / scaleOf(giveTag)).toLocaleString(getLang())} ${assetName(offer.give.assetTag)}`, 'ok'); mvRefresh();
-  } catch (e) { toast(e.message, 'err'); }
+    return true;
+  } catch (e) { toast(e.message, 'err'); return false; }
+}
+
+// Buy modal: quantity (prefilled with the whole remainder) + live total; Buy = fill.
+function openBuyModal(o) {
+  if ($('#modal')) return;
+  const giveTag = o.give.assetTag ?? null;
+  const wantTag = (o.desc.payoutAsset && o.desc.payoutAsset !== HOST_TAG) ? o.desc.payoutAsset : null;
+  const num = BigInt(o.desc.priceNum), den = BigInt(o.desc.priceDen);
+  const L = o.lockHeight;
+  const maxK = assetPresentValue(BigInt(o.give.value), L - o.give.refheight, rateOf(o.give.assetTag));
+  const maxU = Number(maxK) / scaleOf(giveTag);
+  const costOf = u => { let f = BigInt(Math.round(u * scaleOf(giveTag))); if (f > maxK) f = maxK; return (f * num + den - 1n) / den; };
+  const m = document.createElement('div'); m.id = 'modal';
+  m.innerHTML = `<div class="review">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} ${assetName(giveTag)}</b><button id="bClose" class="icon">✕</button></div>
+    <label>${tr('Quantity')}<div class="amtrow"><input id="bQty" type="text" inputmode="decimal" value="${maxU}"><button id="bMax" class="ghost">${tr('Max')}</button></div></label>
+    <div class="rrow"><span>${tr('You pay')}</span><b id="bCost"></b></div>
+    <button id="bBuy">${tr('Buy')}</button></div>`;
+  document.body.appendChild(m);
+  const cost = () => { const u = parseFloat($('#bQty').value);
+    $('#bCost').textContent = (u > 0) ? fmtA(wantTag ?? 'FRC', costOf(u)) : '—'; };
+  cost();
+  m.onclick = e => { if (e.target === m) m.remove(); };
+  m.querySelector('#bClose').onclick = () => m.remove();
+  m.querySelector('#bQty').oninput = cost;
+  m.querySelector('#bMax').onclick = () => { $('#bQty').value = maxU; cost(); };
+  m.querySelector('#bBuy').onclick = async () => {
+    const u = parseFloat($('#bQty').value);
+    if (!(u > 0)) return toast(tr('enter a quantity'), 'err');
+    const btn = m.querySelector('#bBuy'); btn.disabled = true;
+    if (await fillRangedNow(o, u)) m.remove(); else btn.disabled = false;
+  };
 }
 
 // Cancel my ranged offer. A real cancel SPENDS the give coin back to me — the maker's descriptor
@@ -479,11 +512,10 @@ function paint() {
         // (what a full fill pays, maker-rounding matched), with the unit price in the tooltip
         const price = Number(BigInt(o.desc.priceNum)) / Number(BigInt(o.desc.priceDen)) * scaleOf(giveTag) / scaleOf(wantTag);
         const wantTotal = o.give ? (BigInt(o.give.pv) * BigInt(o.desc.priceNum) + BigInt(o.desc.priceDen) - 1n) / BigInt(o.desc.priceDen) : null;
-        const maxU = o.give ? Number(BigInt(o.give.pv)) / scaleOf(giveTag) : 0;
         const act = mine
           ? (o.status === 'open' ? `${tr('mine')} <button class="rcancel" data-id="${o.id}">${tr('Cancel')}</button>` : `${tr('mine')} ${o.status}`)
           : (o.status === 'open' && o.give && !o.needsResign)
-            ? `<span class="fillbox"><input class="rfill" data-id="${o.id}" type="text" inputmode="decimal" placeholder="${maxU}"><button class="rbtn" data-id="${o.id}">${tr('Buy')}</button></span>`
+            ? `<button class="rbtn" data-id="${o.id}">${tr('Buy')}</button>`
             : o.status;
         return `<tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td><td>${give}</td>
           <td title="@ ${price.toLocaleString(getLang(), { maximumFractionDigits: 8 })} ${assetName(wantTag)}">${wantTotal !== null ? fmtA(wantTag ?? 'FRC', wantTotal) : '—'}</td><td>${act}</td></tr>`;
@@ -495,9 +527,8 @@ function paint() {
     $('#bookBody').innerHTML = rows.map(bookRow).join('')
       || `<tr><td colspan="4" class="sub">${state.info.book.length ? tr('no offers match') : tr('no offers yet')}</td></tr>`;
     $('#bookBody').querySelectorAll('.rbtn').forEach(b => b.onclick = () => {
-      const id = +b.dataset.id, offer = state.info.book.find(o => o.id === id);
-      const inp = $(`.rfill[data-id="${id}"]`), amt = parseFloat(inp?.value || inp?.placeholder || '0');
-      if (offer && amt > 0) fillRangedNow(offer, amt);
+      const offer = state.info.book.find(o => o.id === +b.dataset.id);
+      if (offer) openBuyModal(offer);
     });
     $('#bookBody').querySelectorAll('.rcancel').forEach(b => b.onclick = () => {
       const offer = state.info.book.find(o => o.id === +b.dataset.id);
