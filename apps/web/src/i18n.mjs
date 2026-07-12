@@ -70,7 +70,7 @@ const RU = {
   'I give (coin)': 'Отдаю (монету)', 'Total price': 'Сумма за всё', 'no coins yet': 'монет пока нет',
   'I sell': 'Продаю', 'enter a price': 'укажите цену', 'enter a quantity': 'укажите количество',
   'Issue asset': 'Выпустить актив',
-  'Selling': 'Продают', 'Buying': 'Покупают', 'Wants': 'Хотят', 'Pair': 'Пара', 'Price': 'Цена', 'Total': 'Сумма', 'Sell': 'Продать', 'bid': 'бид', 'ask': 'аск', 'spread': 'спред', 'open only': 'только открытые', 'all': 'все', 'no offers match': 'нет офферов по фильтру',
+  'Selling': 'Продают', 'Wants': 'Хотят', 'open only': 'только открытые', 'all': 'все', 'no offers match': 'нет офферов по фильтру',
   'Currency': 'Валюта',
   'Offer cancelled': 'Оффер отменён', 'not your offer': 'это не ваш оффер',
   'you need an FRC coin (tap Faucet) to cancel': 'нужна монета FRC (нажмите Кран) для отмены',

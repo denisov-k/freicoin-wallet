@@ -90,7 +90,7 @@ async function doRefresh() {
   if (!_ds || !seed) return;
   const [info, r] = await Promise.all([api('info'), _ds().assets()]);
   state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos: r.assetUtxos } };
-  if ($('#askBody') || $('#rAsset')) paint();  // Exchange tab or offer modal mounted → repaint
+  if ($('#bookBody')) paint();                 // Exchange tab mounted → repaint the book
   if ($('#assetBalBody')) paintAssetBalance(); // Freimarkets Balance tab mounted → per-asset table
   maybeResignRanged();                                      // keep my ranged offers alive after partial fills
 }
@@ -459,18 +459,13 @@ export function renderExchange(el) {
     <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>
     <p class="label" style="margin-top:14px">${tr('Order book')}</p>
     <div class="row">
-      <label>${tr('Pair')}<select id="fPair"></select></label>
+      <label>${tr('Selling')}<select id="fGive"></select></label>
+      <label>${tr('Wants')}<select id="fWant"></select></label>
     </div>
     <label class="chk"><input type="checkbox" id="fOpen" checked>${tr('open only')}</label>
-    <div id="pairBook">
-      <div id="pairHead" class="sub"></div>
-      <p class="label" id="askLbl"></p>
-      <table class="mkt"><thead><tr><th>${tr('Price')}</th><th class="r">${tr('Quantity')}</th><th class="r">${tr('Total')}</th><th></th></tr></thead><tbody id="askBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>
-      <p class="label" id="bidLbl"></p>
-      <table class="mkt"><thead><tr><th>${tr('Price')}</th><th class="r">${tr('Quantity')}</th><th class="r">${tr('Total')}</th><th></th></tr></thead><tbody id="bidBody"></tbody></table>
-    </div>`;
+    <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>`;
   $('#openOffer').onclick = openOfferModal;
-  ['#fPair', '#fOpen'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });
+  ['#fGive', '#fWant', '#fOpen'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });
   if (state) paint(); else mvRefresh();
 }
 // per-asset balance table (FRC + user assets) — the wallet's Balance tab shows this on nv3
@@ -503,7 +498,7 @@ function setOptions(sel, html) {
   if ([...el.options].some(o => o.value === cur)) el.value = cur;
 }
 function paint() {
-  if (!state) return;   // each section below guards its own mount point (exchange tab, offer modal)
+  if (!state || !$('#bookBody')) return;
   const h = state.mine.height;
   const pvU = u => assetPresentValue(BigInt(u.value), h - u.refheight, rateOf(u.assetTag));
   const byAsset = new Map();
@@ -528,70 +523,46 @@ function paint() {
     || `<option value="">${tr('no coins yet')}</option>`);
   setOptions('#rWant', grouped('<option value="FRC">FRC</option>'));
 
-  // ---- per-pair two-sided book ----
-  // Canonical pair: asset/FRC when FRC is one side (asset is the BASE, FRC the QUOTE);
-  // asset/asset pairs order by tag so both directions land in the same market.
-  const giveOf = o => o.give ? (o.give.assetTag ?? 'FRC') : '';
-  const wantOf = o => (o.desc.payoutAsset && o.desc.payoutAsset !== HOST_TAG) ? o.desc.payoutAsset : 'FRC';
-  const pairOf = o => {
-    if (!o.ranged || !o.give) return null;
-    const g = giveOf(o), w = wantOf(o); if (!g || g === w) return null;
-    const [base, quote] = w === 'FRC' ? [g, 'FRC'] : g === 'FRC' ? [w, 'FRC'] : (g < w ? [g, w] : [w, g]);
-    return { key: base + '/' + quote, base, quote };
-  };
-  const nameOf = t => assetName(t === 'FRC' ? null : t);
-  const pairs = new Map();
-  for (const o of state.info.book) { const p = pairOf(o); if (p && !pairs.has(p.key)) pairs.set(p.key, p); }
-  setOptions('#fPair', [...pairs.values()].map(p => `<option value="${p.key}">${nameOf(p.base)}/${nameOf(p.quote)}</option>`).join('')
-    || `<option value="">—</option>`);
-  const sel = pairs.get($('#fPair')?.value) || [...pairs.values()][0];
+  // order-book filters (grouped the same way; 'all' stays ungrouped at the top)
+  const fopt = `<option value="">${tr('all')}</option>` + grouped('<option value="FRC">FRC</option>');
+  setOptions('#fGive', fopt); setOptions('#fWant', fopt);
 
-  if ($('#pairBook') && !$('#pairBook').contains(document.activeElement)) {
-    if (!sel) {
-      $('#pairHead').textContent = ''; $('#askLbl').textContent = ''; $('#bidLbl').textContent = '';
-      $('#askBody').innerHTML = `<tr><td colspan="4" class="sub">${tr('no offers yet')}</td></tr>`;
-      $('#bidBody').innerHTML = '';
-    } else {
-      const sB = scaleOf(sel.base === 'FRC' ? null : sel.base), sQ = scaleOf(sel.quote === 'FRC' ? null : sel.quote);
-      const decQ = sel.quote === 'FRC' ? 8 : decimalsOf(sel.quote);
-      const fo = $('#fOpen')?.checked;
-      const asks = [], bids = [];
-      for (const o of state.info.book) {
-        const p = pairOf(o); if (!p || p.key !== sel.key || (fo && o.status !== 'open')) continue;
-        const r = Number(BigInt(o.desc.priceNum)) / Number(BigInt(o.desc.priceDen));   // payout-kria per give-kria
-        const pv = Number(BigInt(o.give.pv));
-        if (giveOf(o) === sel.base) asks.push({ o, price: r * sB / sQ, qty: pv / sB, total: pv * r / sQ });
-        else bids.push({ o, price: 1 / (r * sQ / sB), qty: pv * r / sB, total: pv / sQ });
-      }
-      asks.sort((a, b) => a.price - b.price); bids.sort((a, b) => b.price - a.price);
-      const bb = bids.find(x => x.o.status === 'open'), ba = asks.find(x => x.o.status === 'open');
-      const fp = x => x.toLocaleString(getLang(), { maximumFractionDigits: Math.min(8, decQ + 4) });
-      $('#pairHead').textContent = (bb || ba)
-        ? `${tr('bid')} ${bb ? fp(bb.price) : '—'} · ${tr('ask')} ${ba ? fp(ba.price) : '—'}`
-          + (bb && ba ? ` · ${tr('spread')} ${((ba.price - bb.price) / ba.price * 100).toLocaleString(getLang(), { maximumFractionDigits: 1 })}%` : '')
-        : '';
-      $('#askLbl').textContent = `${tr('Selling')} ${nameOf(sel.base)}`;
-      $('#bidLbl').textContent = `${tr('Buying')} ${nameOf(sel.base)}`;
-      const actOf = (o, buyLabel) => {
-        const mine = spks.includes(o.makerSpk);
-        return mine
+  // skip repainting the book while a fill amount is being typed into it (else the 15s refresh
+  // wipes the input) — same reason the offer selects are preserved.
+  if (!$('#bookBody').contains(document.activeElement)) {
+    const giveOf = o => o.give ? (o.give.assetTag ?? 'FRC') : '';
+    const wantOf = o => o.ranged ? ((o.desc.payoutAsset && o.desc.payoutAsset !== HOST_TAG) ? o.desc.payoutAsset : 'FRC') : (o.want?.assetTag ?? 'FRC');
+    const fg = $('#fGive')?.value || '', fw = $('#fWant')?.value || '', fo = $('#fOpen')?.checked;
+    const bookRow = o => {
+      const mine = spks.includes(o.makerSpk);
+      const give = o.give ? fmtA(o.give.assetTag ?? 'FRC', BigInt(o.give.pv)) : '—';
+      if (o.ranged) {
+        const wantTag = (o.desc.payoutAsset && o.desc.payoutAsset !== HOST_TAG) ? o.desc.payoutAsset : null;
+        const giveTag = o.give ? (o.give.assetTag ?? null) : null;
+        // desc price is a kria/kria ratio; the Want cell shows the TOTAL for the remainder
+        // (what a full fill pays, maker-rounding matched), with the unit price in the tooltip
+        const price = Number(BigInt(o.desc.priceNum)) / Number(BigInt(o.desc.priceDen)) * scaleOf(giveTag) / scaleOf(wantTag);
+        const wantTotal = o.give ? (BigInt(o.give.pv) * BigInt(o.desc.priceNum) + BigInt(o.desc.priceDen) - 1n) / BigInt(o.desc.priceDen) : null;
+        const act = mine
           ? (o.status === 'open' ? `${tr('mine')} <button class="rcancel" data-id="${o.id}">${tr('Cancel')}</button>` : `${tr('mine')} ${o.status}`)
-          : (o.status === 'open' && !o.needsResign) ? `<button class="rbtn" data-id="${o.id}">${buyLabel}</button>`
-          : (o.status === 'open') ? `<span class="sub">${tr('awaiting seller')}</span>`
-          : o.status;
-      };
-      const row = (x, buyLabel) => `<tr class="${x.o.status !== 'open' ? 'filled' : ''}">
-        <td>${fp(x.price)}</td><td class="r">${x.qty.toLocaleString(getLang(), { maximumFractionDigits: 8 })}</td>
-        <td class="r">${x.total.toLocaleString(getLang(), { maximumFractionDigits: decQ })}</td><td>${actOf(x.o, buyLabel)}</td></tr>`;
-      const empty = `<tr><td colspan="4" class="sub">—</td></tr>`;
-      $('#askBody').innerHTML = asks.map(x => row(x, tr('Buy'))).join('') || empty;
-      $('#bidBody').innerHTML = bids.map(x => row(x, tr('Sell'))).join('') || empty;
-    }
-    $('#pairBook').querySelectorAll('.rbtn').forEach(b => b.onclick = () => {
+          : (o.status === 'open' && o.give && !o.needsResign)
+            ? `<button class="rbtn" data-id="${o.id}">${tr('Buy')}</button>`
+            : (o.status === 'open' && o.needsResign) ? `<span class="sub">${tr('awaiting seller')}</span>`   // remainder needs the maker's fresh signature (auto while their wallet is open)
+            : o.status;
+        return `<tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td><td>${give}</td>
+          <td title="@ ${price.toLocaleString(getLang(), { maximumFractionDigits: 8 })} ${assetName(wantTag)}">${wantTotal !== null ? fmtA(wantTag ?? 'FRC', wantTotal) : '—'}</td><td>${act}</td></tr>`;
+      }
+      return `<tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td><td>${give}</td>
+        <td>${fmtA(o.want.assetTag ?? 'FRC', BigInt(o.want.value))}</td><td>${mine ? tr('mine') : ''} ${o.status}</td></tr>`;
+    };
+    const rows = state.info.book.filter(o => (!fg || giveOf(o) === fg) && (!fw || wantOf(o) === fw) && (!fo || o.status === 'open')).reverse();
+    $('#bookBody').innerHTML = rows.map(bookRow).join('')
+      || `<tr><td colspan="4" class="sub">${state.info.book.length ? tr('no offers match') : tr('no offers yet')}</td></tr>`;
+    $('#bookBody').querySelectorAll('.rbtn').forEach(b => b.onclick = () => {
       const offer = state.info.book.find(o => o.id === +b.dataset.id);
       if (offer) openBuyModal(offer);
     });
-    $('#pairBook').querySelectorAll('.rcancel').forEach(b => b.onclick = () => {
+    $('#bookBody').querySelectorAll('.rcancel').forEach(b => b.onclick = () => {
       const offer = state.info.book.find(o => o.id === +b.dataset.id);
       if (offer) cancelRanged(offer);
     });
