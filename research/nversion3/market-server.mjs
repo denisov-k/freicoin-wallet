@@ -914,18 +914,22 @@ const api = {
   // refund=taker, cltv=TF — the NEAR leg); the maker claims FRC (reveals R on fc-nv3); the taker
   // claims BTC with R. Timelock ordering (TB later than TF) mirrors the forward path and likewise
   // assumes prompt completion. The relay holds no keys and no funds here either. =====
-  async p2pPostB({ frcAmount, btcAmount, makerFrcPub, makerBtcPub, makerFrcAddr, paymentHash }) {
+  // assetTag ⇒ maker buys that CONSTANT asset with BTC (the "FRC leg" the taker funds is an asset
+  // HTLC). frcAmount then counts asset base units.
+  async p2pPostB({ frcAmount, btcAmount, makerFrcPub, makerBtcPub, makerFrcAddr, paymentHash, assetTag }) {
     if (!btcAvail()) throw new Error('своп недоступен: нет BTC-узла');
     if (!/^[0-9a-f]{64}$/.test(paymentHash || '')) throw new Error('плохой paymentHash');
     if (!/^[0-9a-f]{66}$/.test(makerFrcPub || '') || !/^[0-9a-f]{66}$/.test(makerBtcPub || '')) throw new Error('плохие ключи');
+    const tag = assetTag || null;
+    if (tag) { const def = assets.get(tag); if (!def) throw new Error('неизвестный актив'); if (Number(def.shift) < 64) throw new Error('пока обмениваются только постоянные активы'); }
     const frc = BigInt(frcAmount), btc = BigInt(btcAmount);
     if (frc <= 0n || btc <= 0n) throw new Error('плохие суммы');
     const id = 'p2p' + (p2pSeq++);
-    const w = { id, dir: 'sellBtc', status: 'open', frcAmount: String(frc), btcAmount: String(btc), paymentHash,
+    const w = { id, dir: 'sellBtc', status: 'open', assetTag: tag, frcAmount: String(frc), btcAmount: String(btc), paymentHash,
       maker: { frcPub: makerFrcPub, btcPub: makerBtcPub, frcAddr: makerFrcAddr },
       taker: null, frcHtlc: null, btcHtlc: null, preimage: null, t1: 0, t2: 0 };
     p2p.push(w); saveP2p();
-    say(`P2P-оффер ${id}: продаю ${Number(btc)/1e8} BTC за ${Number(frc)/1e8} FRC`);
+    say(`P2P-оффер ${id}: покупаю ${tag ? frc + ' ' + (assets.get(tag)?.name ?? 'актив') : (Number(frc)/1e8) + ' FRC'} за ${Number(btc)/1e8} BTC`);
     return { id };
   },
   async p2pTakeB({ id, takerFrcPub, takerBtcPub, takerBtcAddr }) {
@@ -935,7 +939,7 @@ const api = {
     w.taker = { frcPub: takerFrcPub, btcPub: takerBtcPub, btcAddr: takerBtcAddr };
     w.status = 'taken'; w.takenAt = indexedHeight; saveP2p();
     say(`P2P-оффер ${id}: взят (обратный) — стороны обмениваются HTLC`);
-    return { id, maker: w.maker, frcAmount: w.frcAmount, btcAmount: w.btcAmount, paymentHash: w.paymentHash };
+    return { id, maker: w.maker, assetTag: w.assetTag ?? null, frcAmount: w.frcAmount, btcAmount: w.btcAmount, paymentHash: w.paymentHash };
   },
   // maker funded the BTC HTLC (claim=taker, refund=maker, cltv=tb). Relay verifies on-chain, then
   // hands back the FRC HTLC terms (claim=maker, refund=taker, cltv=TF) for the taker to fund.
@@ -954,7 +958,7 @@ const api = {
     const fh = await rpc('getblockcount'); const tf = fh + REV_TF;
     const fleaf = htlcLeaf({ paymentHash: w.paymentHash, claimPub: w.maker.frcPub, refundPub: w.taker.frcPub, cltv: tf });
     w.btcHtlc = { addr: baddr, leaf: bleaf, cltv: Number(tb), value: String(Math.round(tx.vout[vout].value * 1e8)), txid: btcTxid, vout }; w.t2 = Number(tb);
-    w.frcHtlc = { addr: null, spk: htlcSpk(fleaf), leaf: fleaf, cltv: tf, txid: null, vout: null, value: null }; w.t1 = tf;
+    w.frcHtlc = { addr: null, spk: htlcSpk(fleaf), leaf: fleaf, cltv: tf, txid: null, vout: null, value: null, assetTag: w.assetTag ?? null }; w.t1 = tf;
     w.status = 'btc_funded_rev'; saveP2p();
     say(`P2P ${id}: BTC заперт мейкером — тейкер финансирует FRC HTLC ${htlcSpk(fleaf).slice(0, 12)}…`);
     return { frcHtlc: { spk: htlcSpk(fleaf), leaf: fleaf, cltv: tf } };
@@ -965,8 +969,9 @@ const api = {
     if (w.status !== 'btc_funded_rev') throw new Error('оффер не на этой стадии');
     await catchUp();
     const u = utxos.get(`${txid}:${vout}`);
-    if (!u || u.assetTag !== null || u.spk !== w.frcHtlc.spk) throw new Error('FRC HTLC не найден/не совпал');
-    if (u.value < BigInt(w.frcAmount)) throw new Error('в FRC HTLC меньше оговоренного');
+    const wantTag = w.assetTag ?? null;
+    if (!u || (u.assetTag ?? null) !== wantTag || u.spk !== w.frcHtlc.spk) throw new Error('HTLC не найден/не совпал');
+    if (u.value < BigInt(w.frcAmount)) throw new Error('в HTLC меньше оговоренного');
     w.frcHtlc.txid = txid; w.frcHtlc.vout = vout; w.frcHtlc.value = String(u.value); w.frcHtlc.refheight = u.refheight;
     w.status = 'frc_funded_rev'; saveP2p();
     say(`P2P ${id}: FRC заперт тейкером — мейкер забирает FRC (раскроет секрет)`);
