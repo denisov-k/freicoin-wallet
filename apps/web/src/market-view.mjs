@@ -523,9 +523,15 @@ async function driveP2p() {
         }
       }
       if (w.status === 'done') dropP2p(rec.id);
-    } catch (e) { /* retry next cycle */ }
+    } catch (e) {
+      // surface the reason a swap won't advance (once per id per minute) instead of silently
+      // retrying forever — this is how a stuck 'taken' offer stays stuck invisibly
+      const key = rec.id + ':' + w.status;
+      if (driveErr.get(key) !== e.message) { driveErr.set(key, e.message); toast(`${rec.id}: ${e.message}`, 'err'); }
+    }
   }
 }
+const driveErr = new Map();   // last surfaced error per (id,status) — avoid toast spam
 
 // TAKER: pay the BTC HTLC from your own wallet (manual), then report the txid to the relay.
 function openP2pPayModal(rec) {
