@@ -696,8 +696,10 @@ const api = {
     const utxos = await btcWatch('listunspent', 0, 9999999, addrs).catch(() => []);
     const byTx = new Map();
     for (const u of utxos) {
-      const e = byTx.get(u.txid) || { txid: u.txid, category: 'receive', amount: 0, confirmations: u.confirmations ?? 0, time: 0 };
-      e.amount += u.amount; e.confirmations = u.confirmations ?? e.confirmations; byTx.set(u.txid, e);
+      const e = byTx.get(u.txid) || { txid: u.txid, category: 'receive', amount: 0, confirmations: u.confirmations ?? 0, time: 0, addresses: [] };
+      e.amount += u.amount; e.confirmations = u.confirmations ?? e.confirmations;
+      if (!e.addresses.includes(u.address)) e.addresses.push(u.address);   // lets the client tie a receive to its swap
+      byTx.set(u.txid, e);
     }
     for (const e of byTx.values()) { const tx = await btcWatch('gettransaction', e.txid, true).catch(() => null); e.time = tx?.blocktime ?? tx?.time ?? 0; }
     return { txs: [...byTx.values()] };

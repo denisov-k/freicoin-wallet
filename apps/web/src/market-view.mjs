@@ -591,6 +591,7 @@ async function driveP2p() {
           const cB = btcHtlcClaim({ prevTxid: b.txid, vout: b.vout, valueSats: BigInt(b.value), leafHex: b.leaf, preimage: R, claimKey: btcKey, toSpk: btcP2wpkhSpk(btcAcctPub()), fee: 2000n });
           await api('p2pBtcClaim', { id: rec.id, rawtx: cB.rawtx });
           putP2p({ ...rec, status: 'btc_claimed' });
+          addSwapHist({ id: rec.id, category: 'purchase', frcAmount: w.frcAmount, btcAmount: String(BigInt(b.value) - 2000n), btcTxid: cB.txid, frcTxid: rec.funding?.txid ?? null, time: Math.floor(Date.now() / 1000) });
           toast(`${w.id}: ${tr('BTC received ✅')}`, 'ok'); mvRefresh();
         }
       } else {   // taker
@@ -603,6 +604,7 @@ async function driveP2p() {
           const cF = claimReceived({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leaf: f.leaf, preimage: R, ourKey: p2pKey(rec.nonce, 'frc'), toSpk: spks[0], fee: 10000n });
           await api('tx', { rawtx: cF.rawtx, kind: 'send' });
           await api('p2pDone', { id: rec.id });
+          addSwapHist({ id: rec.id, category: 'sale', frcAmount: w.frcAmount, btcAmount: w.btcAmount, btcTxid: null, frcTxid: cF.txid ?? null, time: Math.floor(Date.now() / 1000) });
           dropP2p(rec.id);
           toast(`${w.id}: ${tr('FRC received ✅')}`, 'ok'); mvRefresh();
         }
@@ -635,6 +637,7 @@ async function driveP2pRev(rec, w, info) {
       const cF = claimReceived({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leaf: f.leaf, preimage: R, ourKey: p2pKey(rec.nonce, 'frc'), toSpk: spks[0], fee: 10000n });
       await api('p2pFrcClaimB', { id: rec.id, rawtx: cF.rawtx });
       putP2p({ ...rec, status: 'frc_claimed_rev' });
+      addSwapHist({ id: rec.id, category: 'sale', frcAmount: w.frcAmount, btcAmount: w.btcAmount, btcTxid: null, frcTxid: cF.txid ?? null, time: Math.floor(Date.now() / 1000) });
       toast(`${w.id}: ${tr('FRC received ✅')}`, 'ok'); mvRefresh();
     }
   } else {   // taker
@@ -642,7 +645,7 @@ async function driveP2pRev(rec, w, info) {
       const leg = frcLeg({ role: 'give', ourKey: p2pKey(rec.nonce, 'frc'), theirPub: w.maker.frcPub, paymentHash: w.paymentHash, cltv: w.frcHtlc.cltv, net: 'regtest' });
       if (leg.spk !== w.frcHtlc.spk) throw new Error(tr('FRC HTLC mismatch'));
       const fund = await sendFrcToSpk(leg.spk, BigInt(w.frcAmount));
-      putP2p({ ...rec, status: 'frc_funded_rev' });
+      putP2p({ ...rec, status: 'frc_funded_rev', funding: { txid: fund.txid } });
       await api('p2pFrcFundedB', { id: rec.id, txid: fund.txid, vout: fund.vout });
       toast(`${w.id}: ${tr('FRC locked — awaiting the secret')}`, 'ok'); mvRefresh();
     } else if ((w.status === 'frc_claimed_rev' || w.preimage) && rec.status !== 'done') {   // R revealed → claim BTC
@@ -651,6 +654,7 @@ async function driveP2pRev(rec, w, info) {
       const cB = btcHtlcClaim({ prevTxid: b.txid, vout: b.vout, valueSats: BigInt(b.value), leafHex: b.leaf, preimage: R, claimKey: p2pKey(rec.nonce, 'btc'), toSpk: btcP2wpkhSpk(btcAcctPub()), fee: 2000n });
       await api('btcBroadcast', { rawtx: cB.rawtx });
       await api('p2pDoneB', { id: rec.id });
+      addSwapHist({ id: rec.id, category: 'purchase', frcAmount: w.frcAmount, btcAmount: String(BigInt(b.value) - 2000n), btcTxid: cB.txid, frcTxid: rec.funding?.txid ?? null, time: Math.floor(Date.now() / 1000) });
       putP2p({ ...rec, status: 'done' }); dropP2p(rec.id);
       toast(`${w.id}: ${tr('BTC received ✅')}`, 'ok'); mvRefresh();
     }
@@ -958,6 +962,14 @@ const BTCADDR_LS = 'fw_btc_nonces';
 const loadBtcNonces = () => { try { return JSON.parse(localStorage.getItem(BTCADDR_LS) || '[]'); } catch { return []; } };
 const addBtcNonce = n => { try { const a = loadBtcNonces(); if (!a.includes(n)) { a.push(n); localStorage.setItem(BTCADDR_LS, JSON.stringify(a)); } } catch {} };
 
+// Completed-swap history (persistent): each entry becomes a TRADE row in Activity — Buy/Sell BTC
+// with BOTH legs (FRC paid/received AND BTC received/paid) — instead of a bare one-sided leg.
+// frcTxid lets Activity hide the raw FRC HTLC leg the trade row replaces; btcTxid/btcAddr tie the
+// BTC receive to the swap. category: 'purchase' = bought BTC (paid FRC), 'sale' = sold BTC.
+const SWHIST_LS = 'fw_swap_hist';
+const loadSwapHist = () => { try { return JSON.parse(localStorage.getItem(SWHIST_LS) || '[]'); } catch { return []; } };
+const addSwapHist = e => { try { const a = loadSwapHist(); if (!a.some(x => x.id === e.id)) { a.push(e); localStorage.setItem(SWHIST_LS, JSON.stringify(a)); } } catch {} };
+
 // Every BTC address this wallet controls → its private key: the fixed account PLUS each P2P swap's
 // per-nonce BTC key (live records AND the persistent address book). Balance sums them; sends spend any.
 function btcKeyring() {
@@ -974,14 +986,24 @@ async function recoverBtcNonces() {
   if (btcRecovered || !state?.p2p?.swaps?.length) return;
   btcRecovered = true;
   const tip = state.mine.height, known = new Set(loadBtcNonces());
+  // A completed swap whose local record is gone still deserves a trade row — synthesize the
+  // history entry from the relay offer once we prove the role (keys match). Idempotent (by id).
+  const doneish = o => ['btc_claimed', 'frc_claimed_rev', 'done'].includes(o.status);
+  const synth = (o, role, nonce) => {
+    if (!doneish(o)) return;
+    const boughtBtc = (role === 'maker') !== (o.dir === 'sellBtc');   // forward maker & reverse taker BUY btc
+    addSwapHist({ id: o.id, category: boughtBtc ? 'purchase' : 'sale', frcAmount: o.frcAmount, btcAmount: o.btcHtlc?.value || o.btcAmount,
+      btcTxid: null, btcAddr: boughtBtc ? btcP2wpkhAddress(pubkeyCompressed(p2pKey(nonce, 'btc')), btcHrp()) : null,
+      frcTxid: (role === 'maker' && o.dir !== 'sellBtc') ? (o.frcHtlc?.txid ?? null) : null, time: 0 });
+  };
   for (const o of state.p2p.swaps) {
     try {
       const tn = sha256(Buffer.from(seed + 'fw-p2p-take:' + o.id, 'utf8')).toString('hex').slice(0, 16);
-      if (o.taker && pubkeyCompressed(p2pKey(tn, 'frc')) === o.taker.frcPub) { if (!known.has(tn)) { addBtcNonce(tn); known.add(tn); } continue; }
+      if (o.taker && pubkeyCompressed(p2pKey(tn, 'frc')) === o.taker.frcPub) { if (!known.has(tn)) { addBtcNonce(tn); known.add(tn); } synth(o, 'taker', tn); continue; }
       const prefix = o.dir === 'sellBtc' ? 'fw-p2p-nonce:B:' : 'fw-p2p-nonce:';   // maker: brute-force the post height
       for (let h = tip + 5; h >= 0; h--) {
         const n = sha256(Buffer.from(seed + prefix + o.frcAmount + ':' + o.btcAmount + ':' + h, 'utf8')).toString('hex').slice(0, 16);
-        if (pubkeyCompressed(p2pKey(n, 'frc')) === o.maker.frcPub) { if (!known.has(n)) { addBtcNonce(n); known.add(n); } break; }
+        if (pubkeyCompressed(p2pKey(n, 'frc')) === o.maker.frcPub) { if (!known.has(n)) { addBtcNonce(n); known.add(n); } synth(o, 'maker', n); break; }
         if ((h & 511) === 0) await new Promise(r => setTimeout(r, 0));   // yield so the UI stays responsive
       }
     } catch {}
@@ -999,15 +1021,30 @@ async function refreshBtc() {
 // ---- exports so BTC lives in the wallet's MAIN flow (assets table + Send/Receive), not a side panel ----
 /** Is a BTC account available, and its current balance (sats) + address prefix. */
 export function mvBtc() { return { available: !!state?.swap?.available, balance: btcAcct?.balance ?? null, hrp: btcHrp() }; }
-/** BTC receive history for the Activity feed — merged INTO the existing list as `btc` legs. */
+/** BTC history for the Activity feed: completed swaps become TRADE items (both legs — FRC and
+ *  BTC), remaining receives stay plain legs. Returns { legs, hideFrc } where hideFrc lists FRC
+ *  txids the trade rows replace (the raw HTLC legs must not show twice). */
 export async function mvBtcHistory() {
   if (!state) { try { await doRefresh(); } catch {} }   // first load: the market state isn't in yet — wait for it, don't return an empty list
-  if (!state?.swap?.available) return [];
+  if (!state?.swap?.available) return { legs: [], hideFrc: [] };
   try {
     await recoverBtcNonces();
     const r = await api('btcHistory', { addresses: Object.keys(btcKeyring()) });
-    return (r.txs || []).map(t => ({ txid: t.txid, category: t.category, amount: t.amount, confirmations: t.confirmations, time: t.time, assetTag: null, btc: true }));
-  } catch { return []; }
+    const receives = (r.txs || []).map(t => ({ txid: t.txid, category: 'receive', amount: t.amount, confirmations: t.confirmations, time: t.time, addresses: t.addresses || [], assetTag: null, btc: true }));
+    const hist = loadSwapHist(), used = new Set(), items = [];
+    for (const h of hist) {
+      // tie the swap to its BTC receive (by claim txid, or by the per-swap address for recovered ones)
+      const recv = receives.find(t => t.txid === h.btcTxid) || (h.btcAddr ? receives.find(t => t.addresses.includes(h.btcAddr)) : null);
+      if (recv) used.add(recv.txid);
+      const frcAmt = Number(BigInt(h.frcAmount)) / 1e8, btcAmt = recv ? recv.amount : Number(BigInt(h.btcAmount)) / 1e8;
+      const buy = h.category === 'purchase';   // bought BTC (recv BTC, paid FRC) vs sold BTC
+      items.push({ trade: true, txid: recv?.txid || h.btcTxid || h.id, time: recv?.time || h.time || 0, confirmations: recv?.confirmations ?? 1, category: h.category,
+        recv: buy ? { amount: btcAmt, btc: true } : { amount: frcAmt },
+        paid: buy ? { amount: -frcAmt } : { amount: -btcAmt, btc: true } });
+    }
+    items.push(...receives.filter(t => !used.has(t.txid)));   // non-swap receives stay as plain legs
+    return { legs: items, hideFrc: hist.map(h => h.frcTxid).filter(Boolean) };
+  } catch { return { legs: [], hideFrc: [] }; }
 }
 /** The account's receive address (and start watching it so incoming funds are seen). */
 export function mvBtcAddress() { const a = btcAcctAddr(); api('btcAccount', { addresses: [a] }).catch(() => {}); return a; }
