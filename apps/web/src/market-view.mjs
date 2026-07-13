@@ -25,6 +25,7 @@ const ACCOUNT = "m/84'/1'/0'";              // nv3 = coin type 1 (Freimarkets sh
 const $ = s => document.querySelector(s);
 const rev = h => h.match(/../g).reverse().join('');
 const frc = v => (Number(BigInt(v)) / 1e8).toLocaleString('ru-RU', { maximumFractionDigits: 8 });
+const num = v => parseFloat(String(v ?? '').replace(',', '.'));   // locale-tolerant: accept a comma decimal separator
 const toast = (m, cls = '') => { const t = $('#toast'); if (t) { t.textContent = m; t.className = 'show ' + cls; setTimeout(() => t.className = '', 3500); } };
 
 let seed = null, km = {}, spks = [], myAddress = '', state = null, _ds = null;
@@ -248,7 +249,7 @@ async function postRangedOffer() {
     // matches it with a taker; the HTLC dance runs non-custodially. (Not a ranged offer.)
     if ($('#rWant').value === 'BTC') {
       if ($('#rAsset').value !== 'FRC') throw new Error(tr('BTC swaps sell FRC — pick FRC to sell'));
-      const frcQ = parseFloat($('#rQty').value), btcQ = parseFloat($('#rPrice').value);
+      const frcQ = num($('#rQty').value), btcQ = num($('#rPrice').value);
       if (!(frcQ > 0)) throw new Error(tr('enter a quantity'));
       if (!(btcQ > 0)) throw new Error(tr('enter the BTC price'));
       $('#modal')?.remove();
@@ -258,13 +259,13 @@ async function postRangedOffer() {
     const wantTag = $('#rWant').value === 'FRC' ? HOST_TAG : $('#rWant').value;
     if (!giveTag) throw new Error(tr('no coins yet'));
     if (giveTag === wantTag) throw new Error(tr('give and want must be different assets'));
-    const T = parseFloat($('#rPrice').value);   // TOTAL want for the whole quantity
+    const T = num($('#rPrice').value);   // TOTAL want for the whole quantity
     if (!(T > 0)) throw new Error(tr('enter a price'));
     const L = state.mine.height;
     const coins = myCoinsOf(giveTag, L);
     const total = coins.reduce((a, c) => a + c.pv, 0n);
     if (total <= 0n) throw new Error(tr('no coins of that asset'));
-    const qtyAsked = parseFloat($('#rQty').value);
+    const qtyAsked = num($('#rQty').value);
     let Q = BigInt(Math.round(qtyAsked * scaleOf(giveTag)));              // quantity in give units
     if (!(Q > 0n)) throw new Error(tr('enter a quantity'));
     // price ratio from the REQUESTED quantity (payout-kria per give-kria = T·wantScale / qty·giveScale):
@@ -386,9 +387,9 @@ function openSwapModal(prefill) {
   m.querySelector('#swClose').onclick = () => m.remove();
   let rate = 0.2;
   api('swapInfo').then(s => { rate = s.rate; upd(); }).catch(() => {});
-  const upd = () => { const a = parseFloat($('#swAmt').value) || 0; $('#swGet').textContent = (a * rate).toLocaleString(getLang(), { maximumFractionDigits: 8 }) + ' BTC'; };
+  const upd = () => { const a = num($('#swAmt').value) || 0; $('#swGet').textContent = (a * rate).toLocaleString(getLang(), { maximumFractionDigits: 8 }) + ' BTC'; };
   m.querySelector('#swAmt').oninput = upd;
-  m.querySelector('#swGo').onclick = () => runSwap(parseFloat($('#swAmt').value));
+  m.querySelector('#swGo').onclick = () => runSwap(num($('#swAmt').value));
 }
 
 async function runSwap(frcUnits) {
@@ -643,7 +644,7 @@ function openBuyModal(o) {
     <button id="bBuy">${tr('Buy')}</button></div>`;
   document.body.appendChild(m);
   const rate = rateOf(o.give.assetTag);
-  const cost = () => { const u = parseFloat($('#bQty').value);
+  const cost = () => { const u = num($('#bQty').value);
     $('#bCost').textContent = (u > 0) ? fmtA(wantTag ?? 'FRC', costOf(u)) : '—';
     // an integer-floored melting asset eats tiny holdings whole — warn before the trap
     $('#bMelt').hidden = !(u > 0) || assetPresentValue(BigInt(Math.round(u * scaleOf(giveTag))), 10, rate) > 0n; };
@@ -653,7 +654,7 @@ function openBuyModal(o) {
   m.querySelector('#bQty').oninput = cost;
   const bm = m.querySelector('#bMax'); if (bm) bm.onclick = () => { $('#bQty').value = maxU; cost(); };
   m.querySelector('#bBuy').onclick = async () => {
-    const u = parseFloat($('#bQty').value);
+    const u = num($('#bQty').value);
     if (!(u > 0)) return toast(tr('enter a quantity'), 'err');
     const btn = m.querySelector('#bBuy'); btn.disabled = true;
     if (await fillRangedNow(o, u)) m.remove(); else btn.disabled = false;
