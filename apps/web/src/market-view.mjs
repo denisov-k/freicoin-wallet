@@ -12,7 +12,7 @@ import { assetPresentValue } from '../../../core/assets.mjs';
 import { sha256, hash160 } from '../../../core/crypto.mjs';
 import { frcLeg, refundGiven, claimReceived } from '../../../core/swap.mjs';
 import { paymentHashOf } from '../../../core/htlc.mjs';
-import { btcHtlcClaim, btcAddress, btcHtlcRefund, btcP2wpkhAddress, btcP2wpkhSpk, btcDecodeAddress, btcP2wpkhSend } from '../../../core/btc.mjs';
+import { btcHtlcClaim, btcAddress, btcHtlcRefund, btcHtlcLeaf, btcHtlcAddress, btcP2wpkhAddress, btcP2wpkhSpk, btcDecodeAddress, btcP2wpkhSend } from '../../../core/btc.mjs';
 import { tr, getLang } from './i18n.mjs';
 
 const API = location.protocol === 'https:' ? `${location.origin}/api` : `http://${location.hostname}:5181/api`;
@@ -260,6 +260,17 @@ async function signLadder(desc, coin, giveOutpoint, fromL, toL) {
 
 async function postRangedOffer() {
   try {
+    // I sell = BTC ⇒ REVERSE cross-chain swap: sell BTC for FRC at MY price (BTC qty → FRC wanted).
+    if ($('#rAsset').value === 'BTC') {
+      const btcQ = num($('#rQty').value), frcQ = num($('#rPrice').value);
+      if (!(btcQ > 0)) throw new Error(tr('enter a quantity'));
+      if (!(frcQ > 0)) throw new Error(tr('enter a quantity'));
+      const bal = mvBtc().balance, maxSats = bal ? BigInt(bal) - 1000n : 0n;
+      if (BigInt(Math.round(btcQ * 1e8)) > maxSats)
+        throw new Error(`${tr('only')} ${(Number(maxSats > 0n ? maxSats : 0n) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC ${tr('free to lock (rest backs your open offers)')}`);
+      $('#modal')?.remove();
+      return postP2pOfferB(btcQ, frcQ);
+    }
     // want = BTC ⇒ post a P2P swap offer at YOUR price (FRC quantity → BTC amount). The board
     // matches it with a taker; the HTLC dance runs non-custodially. (Not a ranged offer.)
     if ($('#rWant').value === 'BTC') {
@@ -320,6 +331,16 @@ function openOfferModal() {
   q(m, '#rPartial').onchange = e => { $('#rHint').textContent = e.target.checked
     ? tr('Buyers fill any amount; the remainder keeps trading while you are online.')
     : tr('The offer can only be taken whole — one buyer, the full quantity.'); };
+  // I sell = BTC ⇒ reverse cross-chain swap: want is FRC, no partial, price is FRC wanted.
+  q(m, '#rAsset').onchange = e => {
+    if (e.target.value !== 'BTC') { paint(); $('#rPartialLbl').hidden = false; $('#rHint').textContent = tr('Buyers fill any amount; the remainder keeps trading while you are online.'); return; }
+    setOptions('#rWant', '<option value="FRC">FRC</option>');
+    $('#rPartialLbl').hidden = true;
+    $('#rPriceLbl').childNodes[0].textContent = tr('Quantity');
+    const bal = mvBtc().balance, maxSats = bal ? BigInt(bal) - 1000n : 0n;
+    $('#rHint').innerHTML = `${tr('You post a swap offer at your price; a taker fills it non-custodially (refundable).')}`
+      + `<br><b>${tr('Free to lock')}: ${(Number(maxSats > 0n ? maxSats : 0n) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC</b>`;
+  };
   // want = BTC ⇒ cross-chain swap: no price/partial (rate is the relay's), give is FRC.
   q(m, '#rWant').onchange = e => {
     const btc = e.target.value === 'BTC';
@@ -474,6 +495,29 @@ async function postP2pOffer(frcUnits, btcUnits) {
   } catch (e) { toast(e.message, 'err'); }
 }
 
+// MAKER (reverse): post a BTC→FRC offer — I SELL BTC at my price. I hold R; keys from a fresh nonce.
+async function postP2pOfferB(btcUnits, frcUnits) {
+  try {
+    const frcAmount = BigInt(Math.round(frcUnits * 1e8)), btcAmount = BigInt(Math.round(btcUnits * 1e8));
+    const nonce = sha256(Buffer.from(seed + 'fw-p2p-nonce:B:' + frcAmount + ':' + btcAmount + ':' + state.mine.height, 'utf8')).toString('hex').slice(0, 16);
+    const R = p2pKey(nonce, 'R'), H = paymentHashOf(R);
+    const frcPub = pubkeyCompressed(p2pKey(nonce, 'frc')), btcPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
+    const r = await api('p2pPostB', { frcAmount: String(frcAmount), btcAmount: String(btcAmount), makerFrcPub: frcPub, makerBtcPub: btcPub, makerFrcAddr: deriveAddress(seed, 0, 0), paymentHash: H });
+    putP2p({ id: r.id, role: 'maker', dir: 'sellBtc', nonce, status: 'open', frcAmount: String(frcAmount), btcAmount: String(btcAmount) });
+    toast(tr('offer posted'), 'ok'); mvRefresh();
+  } catch (e) { toast(e.message, 'err'); }
+}
+// TAKER (reverse): accept a sell-BTC offer — I pay FRC, receive BTC into my account.
+async function takeP2pB(offer) {
+  try {
+    const nonce = sha256(Buffer.from(seed + 'fw-p2p-take:' + offer.id, 'utf8')).toString('hex').slice(0, 16);
+    const frcPub = pubkeyCompressed(p2pKey(nonce, 'frc')), btcPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
+    await api('p2pTakeB', { id: offer.id, takerFrcPub: frcPub, takerBtcPub: btcPub, takerBtcAddr: btcAcctAddr() });
+    putP2p({ id: offer.id, role: 'taker', dir: 'sellBtc', nonce, status: 'taken', frcAmount: offer.frcAmount, btcAmount: offer.btcAmount, paymentHash: offer.paymentHash });
+    toast(tr('offer taken — follow the steps'), 'ok'); mvRefresh();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
 // TAKER: accept someone's offer — I provide BTC (from my own wallet), receive FRC.
 function openP2pTakeModal(offer) {
   if ($('#modal')) return;
@@ -489,6 +533,22 @@ function openP2pTakeModal(offer) {
   m.onclick = e => { if (e.target === m) m.remove(); };
   q(m, '#tkClose').onclick = () => m.remove();
   q(m, '#tkGo').onclick = () => takeP2p(offer, t => { const el = $('#tkLog'); if (el) el.textContent += (el.textContent ? '\n' : '') + t; });
+}
+
+// TAKER (reverse): buy BTC with FRC. You lock FRC after the seller locks BTC; BTC arrives automatically.
+function openP2pTakeModalB(offer) {
+  if ($('#modal')) return;
+  const m = document.createElement('div'); m.id = 'modal';
+  m.innerHTML = `<div class="review">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} BTC</b><button id="tkClose" class="icon">✕</button></div>
+    <div class="rrow"><span>${tr('You receive')}</span><b>${Number(BigInt(offer.btcAmount)) / 1e8} BTC</b></div>
+    <div class="rrow"><span>${tr('You pay')}</span><b>${frc(offer.frcAmount)} FRC</b></div>
+    <button id="tkGo">${tr('Buy')}</button>
+    <p class="sub" style="font-size:12px">${tr('You lock FRC after the seller locks BTC; the BTC arrives automatically. Refundable if it stalls.')}</p></div>`;
+  document.body.appendChild(m);
+  m.onclick = e => { if (e.target === m) m.remove(); };
+  q(m, '#tkClose').onclick = () => m.remove();
+  q(m, '#tkGo').onclick = () => { m.remove(); takeP2pB(offer); };
 }
 
 async function takeP2p(offer, log) {
@@ -511,6 +571,7 @@ async function driveP2p() {
   for (const rec of mine) {
     const w = byId.get(rec.id); if (!w) { continue; }
     try {
+      if (rec.dir === 'sellBtc') { await driveP2pRev(rec, w, info); if (w.status === 'done') dropP2p(rec.id); continue; }
       if (rec.role === 'maker') {
         if (w.status === 'taken') {                       // taker committed → fund the FRC HTLC
           const H = w.paymentHash, T1 = state.mine.height + (info.t1 || 40);
@@ -552,6 +613,63 @@ async function driveP2p() {
   }
 }
 const driveErr = new Map();   // last surfaced error per (id,status) — avoid toast spam
+
+// REVERSE swap drive (maker SELLS BTC): maker funds the BTC HTLC first, then claims FRC (reveals R);
+// taker funds the FRC HTLC, then claims BTC with R. Mirror of the forward flow above.
+async function driveP2pRev(rec, w, info) {
+  if (rec.role === 'maker') {
+    if (w.status === 'taken') {                                   // taker committed → lock BTC first
+      const tb = (info.btcHeight || 0) + (info.revTb || 12);
+      const bleaf = btcHtlcLeaf({ paymentHash: w.paymentHash, claimPub: w.taker.btcPub, refundPub: pubkeyCompressed(p2pKey(rec.nonce, 'btc')), cltv: tb });
+      const baddr = btcHtlcAddress(bleaf, btcHrp());
+      const fund = await btcFundHtlc(baddr, BigInt(w.btcAmount));
+      putP2p({ ...rec, status: 'btc_funded_rev', btcHtlc: { addr: baddr, leaf: bleaf, cltv: tb, txid: fund.txid, vout: fund.vout, value: fund.value } });
+      await api('p2pBtcFundedB', { id: rec.id, btcTxid: fund.txid, tb });
+      toast(`${w.id}: ${tr('BTC locked — awaiting FRC')}`, 'ok'); mvRefresh();
+    } else if (w.status === 'frc_funded_rev' && w.frcHtlc?.txid) {  // taker locked FRC → claim it with R (reveals R)
+      const R = p2pKey(rec.nonce, 'R'), f = w.frcHtlc;
+      const cF = claimReceived({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leaf: f.leaf, preimage: R, ourKey: p2pKey(rec.nonce, 'frc'), toSpk: spks[0], fee: 10000n });
+      await api('p2pFrcClaimB', { id: rec.id, rawtx: cF.rawtx });
+      putP2p({ ...rec, status: 'frc_claimed_rev' });
+      toast(`${w.id}: ${tr('FRC received ✅')}`, 'ok'); mvRefresh();
+    }
+  } else {   // taker
+    if (w.status === 'btc_funded_rev' && w.frcHtlc?.spk && rec.status !== 'frc_funded_rev') {   // maker locked BTC → I lock FRC
+      const leg = frcLeg({ role: 'give', ourKey: p2pKey(rec.nonce, 'frc'), theirPub: w.maker.frcPub, paymentHash: w.paymentHash, cltv: w.frcHtlc.cltv, net: 'regtest' });
+      if (leg.spk !== w.frcHtlc.spk) throw new Error(tr('FRC HTLC mismatch'));
+      const fund = await sendFrcToSpk(leg.spk, BigInt(w.frcAmount));
+      putP2p({ ...rec, status: 'frc_funded_rev' });
+      await api('p2pFrcFundedB', { id: rec.id, txid: fund.txid, vout: fund.vout });
+      toast(`${w.id}: ${tr('FRC locked — awaiting the secret')}`, 'ok'); mvRefresh();
+    } else if ((w.status === 'frc_claimed_rev' || w.preimage) && rec.status !== 'done') {   // R revealed → claim BTC
+      const R = w.preimage; if (!R) return;
+      const b = w.btcHtlc;
+      const cB = btcHtlcClaim({ prevTxid: b.txid, vout: b.vout, valueSats: BigInt(b.value), leafHex: b.leaf, preimage: R, claimKey: p2pKey(rec.nonce, 'btc'), toSpk: btcP2wpkhSpk(btcAcctPub()), fee: 2000n });
+      await api('btcBroadcast', { rawtx: cB.rawtx });
+      await api('p2pDoneB', { id: rec.id });
+      putP2p({ ...rec, status: 'done' }); dropP2p(rec.id);
+      toast(`${w.id}: ${tr('BTC received ✅')}`, 'ok'); mvRefresh();
+    }
+  }
+}
+// pay `sats` to a BTC address (e.g. an HTLC) FROM the account — build+sign locally, broadcast via
+// the relay. The paid output is always vout 0 (change, if any, is vout 1).
+async function btcFundHtlc(toAddr, sats) {
+  const toSpk = btcDecodeAddress(toAddr, btcHrp());
+  const amount = BigInt(sats), fee = 1000n;
+  const ring = btcKeyring();
+  const acct = await api('btcAccount', { addresses: Object.keys(ring) });
+  const coins = [...acct.utxos].filter(c => ring[c.address]).sort((a, b) => Number(BigInt(b.value) - BigInt(a.value)));
+  const picked = []; let S = 0n;
+  for (const c of coins) { picked.push(c); S += BigInt(c.value); if (S >= amount + fee) break; }
+  if (S < amount + fee) throw new Error(tr('not enough BTC'));
+  const outputs = [{ spk: toSpk, value: amount }], change = S - amount - fee;
+  if (change > 546n) outputs.push({ spk: btcP2wpkhSpk(btcAcctPub()), value: change });
+  const inputs = picked.map(c => ({ prevTxid: c.txid, vout: c.vout, valueSats: BigInt(c.value), key: ring[c.address] }));
+  const { rawtx, txid } = btcP2wpkhSend({ inputs, outputs });
+  await api('btcBroadcast', { rawtx });
+  return { txid, vout: 0, value: String(amount) };
+}
 
 // TAKER: pay the BTC HTLC from your own wallet (manual), then report the txid to the relay.
 function openP2pPayModal(rec) {
@@ -938,11 +1056,11 @@ function paint() {
   // "I sell": only the assets I actually hold, with my balance (present value, in units)
   const sellOpt = ([k, e]) => `<option value="${k}">${assetName(k === 'FRC' ? null : k)} (${(Number(e.pv) / scaleOf(k)).toLocaleString(getLang())})</option>`;
   const frcHeld = byAsset.get('FRC'), heldAssets = [...byAsset.entries()].filter(([k]) => k !== 'FRC');
-  setOptions('#rAsset', ((frcHeld ? `<optgroup label="${tr('Currency')}">${sellOpt(['FRC', frcHeld])}</optgroup>` : '')
-    + (heldAssets.length ? `<optgroup label="${tr('Assets')}">${heldAssets.map(sellOpt).join('')}</optgroup>` : ''))
-    || `<option value="">${tr('no coins yet')}</option>`);
-  // BTC is a cross-chain WANT (settled by swap, not a ranged offer) — only when a BTC node is up
+  // BTC is a cross-chain leg (settled by swap, not a ranged offer) — only when a BTC node is up
   const btcOpt = state.swap?.available ? `<optgroup label="${tr('Cross-chain')}"><option value="BTC">BTC</option></optgroup>` : '';
+  setOptions('#rAsset', (((frcHeld ? `<optgroup label="${tr('Currency')}">${sellOpt(['FRC', frcHeld])}</optgroup>` : '')
+    + (heldAssets.length ? `<optgroup label="${tr('Assets')}">${heldAssets.map(sellOpt).join('')}</optgroup>` : '')) + btcOpt)   // + sell BTC
+    || `<option value="">${tr('no coins yet')}</option>`);
   setOptions('#rWant', grouped('<option value="FRC">FRC</option>') + btcOpt);
 
   // order-book filters (grouped the same way; 'all' stays ungrouped at the top)
@@ -984,25 +1102,27 @@ function paint() {
     const btcMatch = (!fg || fg === 'FRC') && (!fw || fw === 'BTC');
     let swapRows = '';
     const myP2p = new Map(loadP2p().map(r => [r.id, r]));
-    if (btcMatch && state.swap) {
-      // P2P board offers: open ones from OTHERS get a Take button; mine/in-flight show status
-      // (the fixed-rate relay-LP listing was removed — the board is a pure maker-priced market)
-      // newest first (mirror the ranged book's .reverse())
+    if (state.swap) {
+      // P2P board offers (BOTH directions): open ones from OTHERS get a Buy button; mine/in-flight
+      // show status. Reverse (sell-BTC) offers give BTC / want FRC — the mirror of the forward row.
       for (const o of [...(state.p2p?.swaps || [])].reverse()) {
+        const isRev = o.dir === 'sellBtc', gTag = isRev ? 'BTC' : 'FRC', wTag = isRev ? 'FRC' : 'BTC';
+        if ((fg && fg !== gTag) || (fw && fw !== wTag)) continue;   // per-offer filter, both directions
         const mineRec = myP2p.get(o.id);
-        const give = `${frc(o.frcAmount)} FRC`, want = `${(Number(BigInt(o.btcAmount)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`;
+        const btcStr = `${(Number(BigInt(o.btcAmount)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`, frcStr = `${frc(o.frcAmount)} FRC`;
+        const give = isRev ? btcStr : frcStr, want = isRev ? frcStr : btcStr;
         // drop my finished/dead offers from view (don't clutter with done/cancelled/expired)
-        if (mineRec && ['done', 'btc_claimed'].includes(o.status)) { dropP2p(o.id); continue; }
+        if (mineRec && (o.status === 'done' || (!isRev && o.status === 'btc_claimed'))) { dropP2p(o.id); continue; }
         let act;
-        if (mineRec) act = mineRec.status === 'need_btc' ? `<button class="p2ppay rbtn" data-id="${o.id}">${tr('Pay BTC')}</button>`
+        if (mineRec) act = (!isRev && mineRec.status === 'need_btc') ? `<button class="p2ppay rbtn" data-id="${o.id}">${tr('Pay BTC')}</button>`
           // my own OPEN offer (nothing locked yet) → let me cancel it
-          : (o.status === 'open' && !o.frcHtlc) ? `<button class="p2pcancel" data-id="${o.id}">${tr('Cancel')}</button>`
+          : (o.status === 'open' && !o.frcHtlc && !o.btcHtlc) ? `<button class="p2pcancel" data-id="${o.id}">${tr('Cancel')}</button>`
           : `<span class="sub">${tr(o.status)}</span>`;
         else act = o.status === 'open' ? `<button class="p2ptake rbtn" data-id="${o.id}">${tr('Buy')}</button>` : `<span class="sub">${tr(o.status)}</span>`;
         if (o.status === 'open' || mineRec)
           swapRows += `<tr class="swap ${o.status === 'open' ? '' : 'filled'}"><td>${o.id.replace(/^p2p/, '')}</td><td>${give}</td><td>${want}</td><td class="act-cell">${act}</td></tr>`;
       }
-      for (const w of loadMySwaps()) {
+      for (const w of (btcMatch ? loadMySwaps() : [])) {
         const past = state.mine.height > w.T1;
         swapRows += `<tr class="swap ${past ? '' : 'filled'}"><td></td><td>${Number(BigInt(w.funding.value)) / 1e8} FRC</td><td>BTC</td><td class="act-cell sub">${past ? tr('refundable') : tr('in progress')}</td></tr>`;
       }
@@ -1011,7 +1131,8 @@ function paint() {
       || `<tr><td colspan="4" class="sub">${state.info.book.length ? tr('no offers match') : tr('no offers yet')}</td></tr>`;
     // (LP swap button removed with the listing)
     $('#bookBody').querySelectorAll('.p2ptake').forEach(b => b.onclick = () => {
-      const o = (state.p2p?.swaps || []).find(x => x.id === b.dataset.id); if (o) openP2pTakeModal(o);
+      const o = (state.p2p?.swaps || []).find(x => x.id === b.dataset.id); if (!o) return;
+      o.dir === 'sellBtc' ? openP2pTakeModalB(o) : openP2pTakeModal(o);
     });
     $('#bookBody').querySelectorAll('.p2ppay').forEach(b => b.onclick = () => {
       const rec = loadP2p().find(x => x.id === b.dataset.id); if (rec) openP2pPayModal(rec);
