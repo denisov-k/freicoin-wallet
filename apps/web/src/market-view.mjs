@@ -11,7 +11,7 @@ import { serializeTx, NV3_TX_VERSION } from '../../../core/tx.mjs';
 import { assetPresentValue } from '../../../core/assets.mjs';
 import { sha256, hash160 } from '../../../core/crypto.mjs';
 import { frcLeg, refundGiven, claimReceived } from '../../../core/swap.mjs';
-import { paymentHashOf, htlcClaimAsset, htlcRefundAsset, htlcSpk } from '../../../core/htlc.mjs';
+import { paymentHashOf, htlcClaimAsset, htlcRefundAsset, htlcSpk, htlcCoopSig, htlcCoopRefundHost, htlcCoopRefundAsset } from '../../../core/htlc.mjs';
 import { btcHtlcClaim, btcAddress, btcHtlcRefund, btcHtlcLeaf, btcHtlcAddress, btcP2wpkhAddress, btcP2wpkhSpk, btcDecodeAddress, btcP2wpkhSend } from '../../../core/btc.mjs';
 import { tr, getLang } from './i18n.mjs';
 
@@ -137,16 +137,32 @@ async function checkP2pRefunds() {
       if (!isMaker && !isRevTaker) continue;
       // reverse taker's leaf/cltv come from the relay record (its own funding stored only txid/vout)
       let leaf = rec.leaf, cltv = rec.T1, funding = rec.funding, tag = rec.assetTag ?? null;
+      let w; try { w = (await api('p2pList')).swaps.find(s => s.id === rec.id); } catch { w = null; }
       if (isRevTaker) {
-        let w; try { w = (await api('p2pList')).swaps.find(s => s.id === rec.id); } catch { continue; }
         if (!w?.frcHtlc) continue;
         leaf = w.frcHtlc.leaf; cltv = w.frcHtlc.cltv; tag = w.assetTag ?? w.frcHtlc.assetTag ?? null;
         funding = { txid: rec.funding.txid, vout: rec.funding.vout ?? 0, value: w.frcHtlc.value, refheight: w.frcHtlc.refheight };
       }
-      if (h <= cltv + 1) continue;                          // CLTV not reached yet — nothing to do
       const live = await api('utxos', { spks: [htlcSpk(leaf)] }).then(r => (r.utxos || []).find(u => u.outpoint === `${funding.txid}:${funding.vout}`)).catch(() => null);
       if (!live) { dropP2p(rec.id); continue; }             // already spent (claimed or refunded)
       const ourKey = p2pKey(rec.nonce, 'frc');
+      // INSTANT cooperative refund: the other side submitted a coop signature → no timelock wait.
+      if (w?.coopSig) {
+        const refh = Number(funding.refheight);
+        let cr;
+        if (tag) {
+          const feeCoin = hostFeeCoin(refh, 11000n);   // must be OLDER than the HTLC (valued at refh)
+          if (!feeCoin) throw new Error(tr('you need an older FRC coin (tap Faucet) for the network fee'));
+          cr = htlcCoopRefundAsset({ funding: { txid: funding.txid, vout: funding.vout, value: BigInt(live.value), refheight: refh }, leafHex: leaf, refundKey: ourKey, otherSig: w.coopSig, toSpk: spks[0], assetTag: tag, feeCoin, fee: 10000n });
+        } else {
+          cr = htlcCoopRefundHost({ funding: { txid: funding.txid, vout: funding.vout, value: BigInt(live.value), refheight: refh }, leafHex: leaf, refundKey: ourKey, otherSig: w.coopSig, toSpk: spks[0], fee: 10000n });
+        }
+        await api('tx', { rawtx: cr.rawtx, kind: 'send' });
+        dropP2p(rec.id);
+        toast(`${rec.id}: ${tr(tag ? 'asset refunded (cancelled)' : 'FRC refunded (cancelled)')}`, 'ok'); mvRefresh();
+        continue;
+      }
+      if (h <= cltv + 1) continue;                          // CLTV not reached yet — nothing to do
       let rf;
       if (tag) {   // asset refund: whole asset back to me (present-valued), fee from a host coin
         const feeCoin = hostFeeCoin(h, 11000n);
@@ -874,7 +890,18 @@ function openP2pPayModal(rec) {
   }, 4000);
   // back out: the taker committed nothing on-chain, so drop the swap locally and stop driving it.
   // The maker's FRC is refunded to them automatically once its T1 passes (their checkMySwaps).
-  q(m, '#pyCancel').onclick = () => { dropP2p(rec.id); close(); toast(tr('swap declined'), 'ok'); mvRefresh(); };
+  q(m, '#pyCancel').onclick = async () => {
+    // Cooperative cancel: hand the seller a coop signature so they can unlock their FRC/asset
+    // INSTANTLY (no timeout wait). I never funded BTC, so I risk nothing by authorizing it.
+    try {
+      const w = (await api('p2pList')).swaps.find(s => s.id === rec.id);
+      if (w?.frcHtlc?.leaf) {
+        const sig = htlcCoopSig({ funding: { txid: w.frcHtlc.txid, vout: w.frcHtlc.vout, value: BigInt(w.frcHtlc.value), refheight: Number(w.frcHtlc.refheight) }, leafHex: w.frcHtlc.leaf, key: p2pKey(rec.nonce, 'frc') });
+        await api('p2pCoopSign', { id: rec.id, sig });
+      }
+    } catch {}
+    dropP2p(rec.id); close(); toast(tr('swap cancelled — seller refunds instantly'), 'ok'); mvRefresh();
+  };
 }
 
 // build + broadcast a partial fill of a ranged offer, in EITHER direction. The ranged bundle's

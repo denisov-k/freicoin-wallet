@@ -801,6 +801,15 @@ const api = {
   // watches both chains but holds NO keys and NO funds — real price discovery, non-custodial.
   // V1 direction: maker SELLS FRC for BTC (the "exit"). Maker is the initiator (holds R). =====
   // cancel/remove MY p2p offer (soft-owned by the maker's pubkey). Only if no FRC is locked yet.
+  // the party backing out submits their COOP signature — a one-way "you may take the locked coin
+  // back now" authorization. The counterparty completes the instant refund with it (no timelock).
+  async p2pCoopSign({ id, sig }) {
+    const w = p2p.find(x => x.id === id); if (!w) throw new Error('нет такого оффера');
+    if (!/^[0-9a-f]{130,150}$/.test(sig || '')) throw new Error('плохая подпись');
+    w.coopSig = sig; saveP2p();
+    say(`P2P ${id}: кооп-подпись отмены получена — контрагент вернёт средства мгновенно`);
+    return { ok: true };
+  },
   async p2pCancel({ id, makerFrcPub }) {
     const i = p2p.findIndex(x => x.id === id);
     if (i < 0) throw new Error('нет такого оффера');
@@ -818,7 +827,7 @@ const api = {
       assetDefs: Object.fromEntries([...assets.entries()].map(([tag, a]) => [tag, { name: a.name, decimals: a.decimals, shift: a.shift }])),
       swaps: p2p.slice(-60).map(w => ({ id: w.id, dir: w.dir ?? 'sellFrc', status: w.status, assetTag: w.assetTag ?? null, frcAmount: w.frcAmount, btcAmount: w.btcAmount,
         maker: w.maker, taker: w.taker, paymentHash: w.paymentHash, t1: w.t1, t2: w.t2,
-        frcHtlc: w.frcHtlc, btcHtlc: w.btcHtlc, preimage: w.preimage ?? null })),
+        frcHtlc: w.frcHtlc, btcHtlc: w.btcHtlc, preimage: w.preimage ?? null, coopSig: w.coopSig ?? null })),
       archive: p2pArchive.slice(-30).map(w => ({ id: w.id, dir: w.dir ?? 'sellFrc', status: 'done', assetTag: w.assetTag ?? null, frcAmount: w.frcAmount, btcAmount: w.btcAmount,
         maker: w.maker, taker: w.taker, paymentHash: w.paymentHash,
         frcHtlc: w.frcHtlc, btcHtlc: w.btcHtlc, preimage: w.preimage ?? null, archivedAt: w.archivedAt ?? null })) };

@@ -80,6 +80,8 @@ const RU = {
   'only constant assets can be swapped for BTC': 'на BTC можно менять только постоянные активы',
   'asset received ✅': 'актив получен ✅', 'asset locked — awaiting the secret': 'актив заперт — ждём секрет', 'Sell': 'Продать',
   'asset refunded': 'актив возвращён', 'FRC refunded': 'FRC возвращены',
+  'asset refunded (cancelled)': 'актив возвращён (отменено)', 'FRC refunded (cancelled)': 'FRC возвращены (отменено)',
+  'swap cancelled — seller refunds instantly': 'обмен отменён — продавец вернёт средства мгновенно', 'you need an older FRC coin (tap Faucet) for the network fee': 'нужна более старая FRC-монета (Кран) на комиссию',
   'Issue asset': 'Выпустить актив',
   'Selling': 'Продают', 'Wants': 'Хотят', 'open only': 'только открытые', 'all': 'все', 'no offers match': 'нет офферов по фильтру',
   'Currency': 'Валюта',
