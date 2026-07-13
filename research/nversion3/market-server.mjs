@@ -682,27 +682,25 @@ const api = {
     const txid = await btcRpc('sendrawtransaction', rawtx);
     return { txid };
   },
-  // BTC transaction history for the wallet's addresses (watch-only) — send/receive legs the
-  // Activity view merges alongside FRC/asset history. Collapsed per (txid, category).
+  // BTC receive history for the wallet's addresses, derived from the SAME UTXO set the balance
+  // uses (listunspent) — so whatever shows in the balance shows in Activity, by construction. One
+  // receive entry per funding txid (block time from gettransaction). (Spent receives aren't listed:
+  // the funds are gone; and listtransactions on the shared watch wallet mis-attributes swap moves.)
   async btcHistory({ addresses }) {
     if (!btcAvail()) return { txs: [] };
     const addrs = (addresses || []).filter(a => /^(bc|tb|bcrt)1[0-9a-z]{6,90}$/i.test(a)).slice(0, 200);
     if (!addrs.length) return { txs: [] };
-    const set = new Set(addrs);
     await ensureWatchWallet();
     for (const a of addrs) await watchAddress(a).catch(() => {});
     btcDeepScan(addrs);
-    const list = await btcWatch('listtransactions', '*', 300, 0, true).catch(() => []);
-    // Incoming only: the shared watch wallet also watches HTLC escrows, so a claim to one of my
-    // addresses spuriously shows a 'send' leg too (an internal move between watched addresses).
-    // Receives to my addresses are unambiguous — that's the BTC I actually got. Sum per txid.
-    const seen = new Map();
-    for (const t of list) {
-      if (t.category !== 'receive' || !set.has(t.address)) continue;
-      const e = seen.get(t.txid) || { txid: t.txid, category: 'receive', amount: 0, confirmations: t.confirmations ?? 0, time: t.time ?? 0 };
-      e.amount += t.amount; e.confirmations = t.confirmations ?? e.confirmations; seen.set(t.txid, e);
+    const utxos = await btcWatch('listunspent', 0, 9999999, addrs).catch(() => []);
+    const byTx = new Map();
+    for (const u of utxos) {
+      const e = byTx.get(u.txid) || { txid: u.txid, category: 'receive', amount: 0, confirmations: u.confirmations ?? 0, time: 0 };
+      e.amount += u.amount; e.confirmations = u.confirmations ?? e.confirmations; byTx.set(u.txid, e);
     }
-    return { txs: [...seen.values()] };
+    for (const e of byTx.values()) { const tx = await btcWatch('gettransaction', e.txid, true).catch(() => null); e.time = tx?.blocktime ?? tx?.time ?? 0; }
+    return { txs: [...byTx.values()] };
   },
   // ---- cross-chain swap (FRC -> BTC), relay = BTC liquidity bot ----
   async swapInfo() {

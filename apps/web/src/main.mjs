@@ -321,7 +321,7 @@ function renderApp() {
     try {
       const st = await getState(true);
       paintBalance(st);                                   // sets status ok; skips DOM when hidden
-      if (!$('#activity').hidden) { const { txs } = await ds().history(); const btcTxs = MKT() ? await mvBtcHistory() : []; paintActivity([...txs, ...btcTxs]); }
+      if (!$('#activity').hidden) { const { txs } = await ds().history(); if (MKT()) btcActLegs = await mvBtcHistory(); paintActivity(txs); }
       if (MKT()) mvRefresh();                             // keep the order book + asset balance fresh on nv3
     } catch (e) {
       // the poll must also self-heal (deep reorg / lost anchor) — otherwise a wallet that
@@ -380,6 +380,10 @@ let liveState = null;
 
 // Activity list painter — module-level so streamed partials can update the visible list.
 let actLastHtml = '', actLastTxs = [], actDefs = {}, actGotFinal = false;
+// BTC legs (from the relay's watch-only index) live on a SEPARATE chain than the FRC light client,
+// so they aren't in ds().history(). Cache them here and always merge — otherwise any FRC-only
+// repaint (the 6s poll, worker provisionals, preview) would wipe the BTC rows between fetches.
+let btcActLegs = [];
 const actFilter = { cat: '', cur: '' };
 const actAssetName = tag => actDefs[tag]?.name || tag.slice(0, 8) + '…';
 function paintActivity(txs, final = true) {
@@ -387,6 +391,7 @@ function paintActivity(txs, final = true) {
   const sec = $('#activity');
   if (!sec || sec.hidden) return false;
   const list = $('#actList') || sec;   // filters live above the list; partials may land before render.activity
+  txs = [...txs.filter(t => !t.btc), ...btcActLegs];   // FRC/asset legs from the caller + cached BTC legs
   actLastTxs = txs;
   // A tx whose legs move DIFFERENT currencies in opposite directions is a trade — collapse
   // its legs into one Purchase/Sale/Swap item (display-level; the raw legs stay in history).
@@ -545,7 +550,7 @@ function paintBalance(s) {
     if (t) t.onclick = () => {
       store.set('fw_net', 'nv3'); configureNetwork('nv3'); store.del('fw_bridge');
       if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
-      cache = null; liveState = null; actLastHtml = '';
+      cache = null; liveState = null; actLastHtml = ''; btcActLegs = [];
       status.progress = {}; status.rx = 0; status.rxAt = 0; status.mbps = 0; status.utxos = null; status.tip = null;
       renderApp(); toast(tr('welcome to Freimarkets 🧪'));
     };
@@ -724,9 +729,8 @@ const render = {
     try {
       const { txs } = await ds().history();
       if (gen !== renderGen) return;
-      const btcTxs = MKT() ? await mvBtcHistory() : [];   // BTC legs merged INTO the same list
-      if (gen !== renderGen) return;
-      painted = paintActivity([...txs, ...btcTxs]) || painted;
+      if (MKT()) { btcActLegs = await mvBtcHistory(); if (gen !== renderGen) return; }   // cached, merged by paintActivity
+      painted = paintActivity(txs) || painted;
       setStatus('ok');
     } catch (e) {
       if (gen !== renderGen) return;
@@ -821,7 +825,7 @@ function applyNetSettings() {
   const br = $('#br').value.trim();
   if (br && br !== DEFAULT_BRIDGE[net]) store.set('fw_bridge', br); else store.del('fw_bridge');   // keep the net default unless overridden
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
-  cache = null; liveState = null; actLastHtml = '';   // same wallet — keep the receive index
+  cache = null; liveState = null; actLastHtml = ''; btcActLegs = [];   // same wallet — keep the receive index
   status.progress = {}; status.rx = 0; status.rxAt = 0; status.mbps = 0; status.utxos = null; status.tip = null;
   // Full rebuild: the old network's numbers must not linger, and the Freimarkets (Issue/Exchange)
   // tabs must appear or disappear as the network gains/loses nv3.
