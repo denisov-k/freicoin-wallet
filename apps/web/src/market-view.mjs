@@ -869,8 +869,11 @@ async function driveP2pInner() {
             toast(`${w.id}: ${tr('FRC locked — awaiting BTC')}`, 'ok'); mvRefresh();
             continue;
           }
-          // for a partial-offer CHILD the offer commits no secret — derive my per-child H + keys here
-          const H = w.paymentHash || paymentHashOf(p2pKey(rec.nonce, 'R')), T1 = state.mine.height + (info.t1 || 40);
+          // for a partial-offer CHILD the offer commits no secret — derive my per-child H + keys here.
+          // T1 is anchored to the RELAY's height (+ a drift buffer): the light client's tip can lag
+          // the relay node, and a T1 from a lagging tip lands "too close" and the relay rejects it.
+          const H = w.paymentHash || paymentHashOf(p2pKey(rec.nonce, 'R'));
+          const T1 = Math.max(state.mine.height, info.frcHeight || 0) + (info.t1 || 40) + 20;
           const leg = frcLeg({ role: 'give', ourKey: p2pKey(rec.nonce, 'frc'), theirPub: w.taker.frcPub, paymentHash: H, cltv: T1, net: 'regtest' });
           // FRC HTLC (host coin) OR an asset HTLC (asset coin + separate FRC fee coin)
           const fund = w.assetTag ? await lockAssetToHtlc(leg.spk, w.assetTag, BigInt(w.frcAmount)) : await sendFrcToSpk(leg.spk, BigInt(w.frcAmount));
