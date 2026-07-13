@@ -1655,7 +1655,7 @@ function paint() {
       try { await api('p2pCancel', { id: rec.id, makerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')) }); dropP2p(rec.id); toast(tr('offer cancelled'), 'ok'); mvRefresh(); }
       catch (e) { toast(e.message, 'err'); }
     });
-    $('#bookBody').querySelectorAll('.rbtn:not(.p2ptake):not(.p2ppay)').forEach(b => b.onclick = () => {
+    $('#bookBody').querySelectorAll('.rbtn:not(.p2ptake):not(.p2ppay):not(.p2ptakepart)').forEach(b => b.onclick = () => {
       const offer = state.info.book.find(o => o.id === +b.dataset.id);
       if (offer) openBuyModal(offer);
     });
