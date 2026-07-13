@@ -78,6 +78,7 @@ const RU = {
   'You lock FRC after the seller locks BTC; the BTC arrives automatically. Refundable if it stalls.': 'Вы запираете FRC после того, как продавец запер BTC; BTC придут автоматически. Возврат, если зависнет.',
   'btc_funded_rev': 'BTC заперт', 'frc_funded_rev': 'FRC заперт', 'frc_claimed_rev': 'FRC забран',
   'only constant assets can be swapped for BTC': 'на BTC можно менять только постоянные активы',
+  'asset received ✅': 'актив получен ✅', 'asset locked — awaiting the secret': 'актив заперт — ждём секрет', 'Sell': 'Продать',
   'Issue asset': 'Выпустить актив',
   'Selling': 'Продают', 'Wants': 'Хотят', 'open only': 'только открытые', 'all': 'все', 'no offers match': 'нет офферов по фильтру',
   'Currency': 'Валюта',
