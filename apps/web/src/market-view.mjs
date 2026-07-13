@@ -903,14 +903,14 @@ function paint() {
       // P2P board offers: open ones from OTHERS get a Take button; mine/in-flight show status
       for (const o of (state.p2p?.swaps || [])) {
         const mineRec = myP2p.get(o.id);
-        const price = `${Number(BigInt(o.frcAmount)) / 1e8} FRC → ${Number(BigInt(o.btcAmount)) / 1e8} BTC`;
+        const give = `${Number(BigInt(o.frcAmount)) / 1e8} FRC`, want = `${Number(BigInt(o.btcAmount)) / 1e8} BTC`;
         let act;
         if (mineRec) act = mineRec.status === 'need_btc'
           ? `<button class="p2ppay rbtn" data-id="${o.id}">${tr('Pay BTC')}</button>`
           : `<span class="sub">${tr(o.status)}</span>`;
         else act = o.status === 'open' ? `<button class="p2ptake rbtn" data-id="${o.id}">${tr('Take')}</button>` : `<span class="sub">${tr(o.status)}</span>`;
         if (o.status === 'open' || mineRec)
-          swapRows += `<tr class="swap ${o.status === 'open' ? '' : 'filled'}"><td>⇄</td><td colspan="2">${price}</td><td class="act-cell">${act}</td></tr>`;
+          swapRows += `<tr class="swap ${o.status === 'open' ? '' : 'filled'}"><td>⇄</td><td>${give}</td><td>${want}</td><td class="act-cell">${act}</td></tr>`;
       }
       for (const w of loadMySwaps()) {
         const past = state.mine.height > w.T1;
