@@ -898,9 +898,8 @@ function paint() {
     let swapRows = '';
     const myP2p = new Map(loadP2p().map(r => [r.id, r]));
     if (btcMatch && state.swap) {
-      if (state.swap.available)
-        swapRows += `<tr class="swap"><td></td><td>FRC</td><td>BTC @ ${state.swap.rate}</td><td class="act-cell"><button id="swGoBtc" class="rbtn">${tr('Swap')}</button></td></tr>`;
       // P2P board offers: open ones from OTHERS get a Take button; mine/in-flight show status
+      // (the fixed-rate relay-LP listing was removed — the board is a pure maker-priced market)
       for (const o of (state.p2p?.swaps || [])) {
         const mineRec = myP2p.get(o.id);
         const give = `${frc(o.frcAmount)} FRC`, want = `${(Number(BigInt(o.btcAmount)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`;
@@ -919,14 +918,14 @@ function paint() {
     }
     $('#bookBody').innerHTML = (rows.map(bookRow).join('') + swapRows)
       || `<tr><td colspan="4" class="sub">${state.info.book.length ? tr('no offers match') : tr('no offers yet')}</td></tr>`;
-    const sg = $('#swGoBtc'); if (sg) sg.onclick = () => openSwapModal();
+    // (LP swap button removed with the listing)
     $('#bookBody').querySelectorAll('.p2ptake').forEach(b => b.onclick = () => {
       const o = (state.p2p?.swaps || []).find(x => x.id === b.dataset.id); if (o) openP2pTakeModal(o);
     });
     $('#bookBody').querySelectorAll('.p2ppay').forEach(b => b.onclick = () => {
       const rec = loadP2p().find(x => x.id === b.dataset.id); if (rec) openP2pPayModal(rec);
     });
-    $('#bookBody').querySelectorAll('.rbtn:not(#swGoBtc)').forEach(b => b.onclick = () => {
+    $('#bookBody').querySelectorAll('.rbtn:not(.p2ptake):not(.p2ppay)').forEach(b => b.onclick = () => {
       const offer = state.info.book.find(o => o.id === +b.dataset.id);
       if (offer) openBuyModal(offer);
     });
