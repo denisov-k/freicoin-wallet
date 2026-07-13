@@ -1001,6 +1001,7 @@ async function refreshBtc() {
 export function mvBtc() { return { available: !!state?.swap?.available, balance: btcAcct?.balance ?? null, hrp: btcHrp() }; }
 /** BTC receive history for the Activity feed — merged INTO the existing list as `btc` legs. */
 export async function mvBtcHistory() {
+  if (!state) { try { await doRefresh(); } catch {} }   // first load: the market state isn't in yet — wait for it, don't return an empty list
   if (!state?.swap?.available) return [];
   try {
     await recoverBtcNonces();
