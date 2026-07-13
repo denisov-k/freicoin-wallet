@@ -490,6 +490,7 @@ async function postP2pOffer(frcUnits, btcUnits) {
     const frcPub = pubkeyCompressed(p2pKey(nonce, 'frc')), btcPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
     const myBtcAddr = btcAddress(hash160(Buffer.from(btcPub, 'hex')).toString('hex'), state.swap?.btcHrp || 'tb');
     const r = await api('p2pPost', { frcAmount: String(frcAmount), btcAmount: String(btcAmount), makerFrcPub: frcPub, makerBtcPub: btcPub, makerBtcAddr: myBtcAddr, paymentHash: H });
+    addBtcNonce(nonce);
     putP2p({ id: r.id, role: 'maker', nonce, status: 'open', frcAmount: String(frcAmount), btcAmount: String(btcAmount) });
     toast(tr('offer posted'), 'ok'); mvRefresh();
   } catch (e) { toast(e.message, 'err'); }
@@ -503,6 +504,7 @@ async function postP2pOfferB(btcUnits, frcUnits) {
     const R = p2pKey(nonce, 'R'), H = paymentHashOf(R);
     const frcPub = pubkeyCompressed(p2pKey(nonce, 'frc')), btcPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
     const r = await api('p2pPostB', { frcAmount: String(frcAmount), btcAmount: String(btcAmount), makerFrcPub: frcPub, makerBtcPub: btcPub, makerFrcAddr: deriveAddress(seed, 0, 0), paymentHash: H });
+    addBtcNonce(nonce);
     putP2p({ id: r.id, role: 'maker', dir: 'sellBtc', nonce, status: 'open', frcAmount: String(frcAmount), btcAmount: String(btcAmount) });
     toast(tr('offer posted'), 'ok'); mvRefresh();
   } catch (e) { toast(e.message, 'err'); }
@@ -513,6 +515,7 @@ async function takeP2pB(offer) {
     const nonce = sha256(Buffer.from(seed + 'fw-p2p-take:' + offer.id, 'utf8')).toString('hex').slice(0, 16);
     const frcPub = pubkeyCompressed(p2pKey(nonce, 'frc')), btcPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
     await api('p2pTakeB', { id: offer.id, takerFrcPub: frcPub, takerBtcPub: btcPub, takerBtcAddr: btcAcctAddr() });
+    addBtcNonce(nonce);
     putP2p({ id: offer.id, role: 'taker', dir: 'sellBtc', nonce, status: 'taken', frcAmount: offer.frcAmount, btcAmount: offer.btcAmount, paymentHash: offer.paymentHash });
     toast(tr('offer taken — follow the steps'), 'ok'); mvRefresh();
   } catch (e) { toast(e.message, 'err'); }
@@ -558,6 +561,7 @@ async function takeP2p(offer, log) {
     const frcPub = pubkeyCompressed(p2pKey(nonce, 'frc')), btcPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
     const myFrcAddr = deriveAddress(seed, 0, 0);
     await api('p2pTake', { id: offer.id, takerFrcPub: frcPub, takerBtcPub: btcPub, takerFrcAddr: myFrcAddr });
+    addBtcNonce(nonce);
     putP2p({ id: offer.id, role: 'taker', nonce, status: 'taken', frcAmount: offer.frcAmount, btcAmount: offer.btcAmount, paymentHash: offer.paymentHash, funded: false });
     toast(tr('offer taken — follow the steps'), 'ok'); mvRefresh();
   } catch (e) { log('⚠ ' + e.message); toast(e.message, 'err'); if (go) { go.disabled = false; go.textContent = tr('Buy'); } }
@@ -947,17 +951,47 @@ const btcHrp = () => state?.swap?.btcHrp || 'tb';
 const btcAcctPriv = () => sha256(Buffer.from(seed + 'fw-btc-acct:0', 'utf8')).toString('hex');
 const btcAcctPub = () => pubkeyCompressed(btcAcctPriv());
 const btcAcctAddr = () => btcP2wpkhAddress(btcAcctPub(), btcHrp());
+// Persistent BTC address book: the nonce of every P2P swap this wallet took part in. The live swap
+// record is dropped on completion (which would lose the nonce and orphan the per-swap BTC address);
+// this book keeps it, so swap proceeds/refunds stay visible AND spendable forever.
+const BTCADDR_LS = 'fw_btc_nonces';
+const loadBtcNonces = () => { try { return JSON.parse(localStorage.getItem(BTCADDR_LS) || '[]'); } catch { return []; } };
+const addBtcNonce = n => { try { const a = loadBtcNonces(); if (!a.includes(n)) { a.push(n); localStorage.setItem(BTCADDR_LS, JSON.stringify(a)); } } catch {} };
+
 // Every BTC address this wallet controls → its private key: the fixed account PLUS each P2P swap's
-// per-nonce BTC key (that's where swap proceeds/refunds land). Balance sums them; sends can spend any.
+// per-nonce BTC key (live records AND the persistent address book). Balance sums them; sends spend any.
 function btcKeyring() {
   const ring = { [btcAcctAddr()]: btcAcctPriv() };
-  for (const rec of loadP2p()) { try { const k = p2pKey(rec.nonce, 'btc'); ring[btcP2wpkhAddress(pubkeyCompressed(k), btcHrp())] = k; } catch {} }
+  const nonces = new Set([...loadP2p().map(r => r.nonce).filter(Boolean), ...loadBtcNonces()]);
+  for (const n of nonces) { try { const k = p2pKey(n, 'btc'); ring[btcP2wpkhAddress(pubkeyCompressed(k), btcHrp())] = k; } catch {} }
   return ring;
+}
+// Recover BTC addresses of PAST swaps whose local record was already dropped: match each live relay
+// offer against my derivable keys — the taker nonce is deterministic (from the offer id); the maker
+// nonce brute-forces the post height. Found nonces go into the address book. One-time per session.
+let btcRecovered = false;
+async function recoverBtcNonces() {
+  if (btcRecovered || !state?.p2p?.swaps?.length) return;
+  btcRecovered = true;
+  const tip = state.mine.height, known = new Set(loadBtcNonces());
+  for (const o of state.p2p.swaps) {
+    try {
+      const tn = sha256(Buffer.from(seed + 'fw-p2p-take:' + o.id, 'utf8')).toString('hex').slice(0, 16);
+      if (o.taker && pubkeyCompressed(p2pKey(tn, 'frc')) === o.taker.frcPub) { if (!known.has(tn)) { addBtcNonce(tn); known.add(tn); } continue; }
+      const prefix = o.dir === 'sellBtc' ? 'fw-p2p-nonce:B:' : 'fw-p2p-nonce:';   // maker: brute-force the post height
+      for (let h = tip + 5; h >= 0; h--) {
+        const n = sha256(Buffer.from(seed + prefix + o.frcAmount + ':' + o.btcAmount + ':' + h, 'utf8')).toString('hex').slice(0, 16);
+        if (pubkeyCompressed(p2pKey(n, 'frc')) === o.maker.frcPub) { if (!known.has(n)) { addBtcNonce(n); known.add(n); } break; }
+        if ((h & 511) === 0) await new Promise(r => setTimeout(r, 0));   // yield so the UI stays responsive
+      }
+    } catch {}
+  }
 }
 let btcAcct = null;   // last { balance, utxos, hrp, net } from the relay
 const btcToStr = sats => (Number(BigInt(sats)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 });
 async function refreshBtc() {
   if (!state?.swap?.available) return;
+  await recoverBtcNonces();   // one-time: rebuild the address book for swaps whose record was dropped
   try { btcAcct = await api('btcAccount', { addresses: Object.keys(btcKeyring()) }); } catch { return; }
   const cell = $('#btcBalCell'); if (cell) cell.textContent = btcToStr(btcAcct.balance);   // BTC row in the assets table
 }
