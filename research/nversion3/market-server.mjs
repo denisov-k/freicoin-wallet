@@ -831,10 +831,9 @@ const api = {
     if (!/^[0-9a-f]{64}$/.test(paymentHash || '')) throw new Error('плохой paymentHash');
     if (!/^[0-9a-f]{66}$/.test(makerFrcPub || '') || !/^[0-9a-f]{66}$/.test(makerBtcPub || '')) throw new Error('плохие ключи');
     const tag = assetTag || null;
-    if (tag) {
-      const def = assets.get(tag); if (!def) throw new Error('неизвестный актив');
-      if (Number(def.shift) < 64) throw new Error('пока обмениваются только постоянные активы');
-    }
+    // any user-issued asset (constant / melting / growing) — the payout is present-valued at claim
+    // time via the asset's rate, so melt/grow settle correctly; the amount is the NOMINAL locked.
+    if (tag && !assets.get(tag)) throw new Error('неизвестный актив');
     const frc = BigInt(frcAmount), btc = BigInt(btcAmount);
     if (frc <= 0n || btc <= 0n) throw new Error('плохие суммы');
     const id = 'p2p' + (p2pSeq++);
@@ -921,7 +920,7 @@ const api = {
     if (!/^[0-9a-f]{64}$/.test(paymentHash || '')) throw new Error('плохой paymentHash');
     if (!/^[0-9a-f]{66}$/.test(makerFrcPub || '') || !/^[0-9a-f]{66}$/.test(makerBtcPub || '')) throw new Error('плохие ключи');
     const tag = assetTag || null;
-    if (tag) { const def = assets.get(tag); if (!def) throw new Error('неизвестный актив'); if (Number(def.shift) < 64) throw new Error('пока обмениваются только постоянные активы'); }
+    if (tag && !assets.get(tag)) throw new Error('неизвестный актив');   // any asset type (melt/grow settle via present value)
     const frc = BigInt(frcAmount), btc = BigInt(btcAmount);
     if (frc <= 0n || btc <= 0n) throw new Error('плохие суммы');
     const id = 'p2p' + (p2pSeq++);

@@ -34,13 +34,14 @@ async function feeCoinFrom(pv = 0.001) {                       // an FRC coin un
 const aFrc = hex(sha256(bin('as-alice-frc'.padEnd(64, '0')))), aBtc = hex(sha256(bin('as-alice-btc'.padEnd(64, '0'))));
 const R = hex(sha256(bin('as-secret'.padEnd(64, '0')))), H = paymentHashOf(R);
 const bFrc = hex(sha256(bin('as-bob-frc'.padEnd(64, '0')))), bBtc = hex(sha256(bin('as-bob-btc'.padEnd(64, '0'))));
+const SHIFT = Number(process.env.SHIFT || 64), GROW = process.env.GROW === '1';
 const ASSET_QTY = 1000n, BTC_AMT = 15000n;
 
 // 1. maker posts the asset→BTC offer (relay issues the tag via the UI normally; here issue directly)
 const fh0 = await frc('getblockcount'), T1 = fh0 + Number((await api('p2pList')).t1) + 5;
 const leaf = htlcLeaf({ paymentHash: H, claimPub: pubkeyCompressed(bFrc), refundPub: pubkeyCompressed(aFrc), cltv: T1 });
 const htlcSpkHex = htlcSpk(leaf);
-const issue = await api('issue', { name: 'Swap' + Date.now().toString().slice(-6), shift: 64, amount: String(ASSET_QTY), spk: htlcSpkHex });
+const issue = await api('issue', { name: 'Swap' + Date.now().toString().slice(-6), shift: SHIFT, interest: GROW, amount: String(ASSET_QTY), spk: htlcSpkHex });
 const TAG = issue.tag;
 console.log('1. issued 5 SwapTest (CONSTANT) straight into the HTLC', htlcSpkHex.slice(0, 14), '…  tag', TAG.slice(0, 12));
 const iraw = await frc('getrawtransaction', issue.txid, true);
@@ -73,7 +74,7 @@ const f = (await api('p2pList')).swaps.find(x => x.id === post.id).frcHtlc;
 const feeCoin = await feeCoinFrom();
 const L = await frc('getblockcount');   // single lockHeight for the whole tx; present-value everything at it
 feeCoin.pv = assetPresentValue(feeCoin.value, L - feeCoin.refheight, { k: 20, interest: false });
-const payout = assetPresentValue(BigInt(f.value), L - f.refheight, { k: 64, interest: false });
+const payout = assetPresentValue(BigInt(f.value), L - f.refheight, { k: SHIFT, interest: GROW });
 const bRecvSpk = (await frc('getaddressinfo', bFrcAddr)).scriptPubKey;
 const cF = htlcClaimAsset({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leafHex: f.leaf, preimage: R2, claimKey: bFrc, toSpk: bRecvSpk, assetTag: TAG, payout, feeCoin, fee: 10000n, lockHeight: L });
 await frc('generateblock', await frc('getnewaddress'), [cF.rawtx]);

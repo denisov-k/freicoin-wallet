@@ -45,12 +45,13 @@ const aFrc = hex(sha256(bin('ra-alice-frc'.padEnd(64, '0')))), aBtc = hex(sha256
 const R = hex(sha256(bin('ra-secret'.padEnd(64, '0')))), H = paymentHashOf(R);
 // Taker (Bob): SELLS the asset, gets BTC.
 const bFrc = hex(sha256(bin('ra-bob-frc'.padEnd(64, '0')))), bBtc = hex(sha256(bin('ra-bob-btc'.padEnd(64, '0'))));
+const SHIFT = Number(process.env.SHIFT || 64), GROW = process.env.GROW === '1';
 const ASSET_QTY = 1000n, BTC_AMT = 18000n;
 
 // 0. issue the whole supply to a TAKER-controlled asset coin (Bob owns the asset he'll sell)
 const iName = 'RevAsset' + Date.now().toString().slice(-6);
 const assetCoinKey = mastCoin(hex(sha256(bin('ra-bob-asset'.padEnd(64, '0')))));
-const seed0 = await api('issue', { name: iName, shift: 64, amount: String(ASSET_QTY + 20n), spk: assetCoinKey.spk });
+const seed0 = await api('issue', { name: iName, shift: SHIFT, interest: GROW, amount: String(ASSET_QTY + 20n), spk: assetCoinKey.spk });
 const TAG = seed0.tag;
 const acRaw = await frc('getrawtransaction', seed0.txid, true), acVout = acRaw.vout.findIndex(o => o.scriptPubKey.hex === assetCoinKey.spk);
 const acRefh = acRaw.lockheight;   // a coin's refheight is the creating tx's lockHeight
@@ -75,7 +76,7 @@ console.log(`3. Alice locked BTC; taker must fund the ASSET HTLC ${r3.frcHtlc.sp
 // 4. Bob funds the ASSET HTLC by SPENDING his asset coin into the relay-dictated spk (+ FRC fee)
 const bobFee = await feeCoinFrom('ra-bob-fee');
 const Lb = await frc('getblockcount');
-const acPv = assetPresentValue(BigInt(Math.round(acRaw.vout[acVout].value * 1e8)), Lb - acRefh, { k: 64, interest: false });
+const acPv = assetPresentValue(BigInt(Math.round(acRaw.vout[acVout].value * 1e8)), Lb - acRefh, { k: SHIFT, interest: GROW });
 const feePvB = assetPresentValue(bobFee.value, Lb - bobFee.refheight, { k: 20, interest: false });
 const lockTx = {
   version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: Lb, nExpireTime: 0,
@@ -98,7 +99,7 @@ const f = w.frcHtlc;
 const feeCoin = await feeCoinFrom('ra-alice-fee');
 const L = await frc('getblockcount');
 feeCoin.pv = assetPresentValue(feeCoin.value, L - feeCoin.refheight, { k: 20, interest: false });
-const payout = assetPresentValue(BigInt(f.value), L - f.refheight, { k: 64, interest: false });
+const payout = assetPresentValue(BigInt(f.value), L - f.refheight, { k: SHIFT, interest: GROW });
 const aRecvSpk = (await frc('getaddressinfo', aFrcAddr)).scriptPubKey;
 const cF = htlcClaimAsset({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leafHex: f.leaf, preimage: R, claimKey: aFrc, toSpk: aRecvSpk, assetTag: TAG, payout, feeCoin, fee: 10000n, lockHeight: L });
 const r5 = await api('p2pFrcClaimB', { id: post.id, rawtx: cF.rawtx });

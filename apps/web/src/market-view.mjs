@@ -280,7 +280,6 @@ async function postRangedOffer() {
       const wantTag = $('#rWant').value === 'FRC' ? null : $('#rWant').value;   // FRC or a constant asset to BUY
       if (!(btcQ > 0)) throw new Error(tr('enter a quantity'));
       if (!(wantV > 0)) throw new Error(tr('enter a quantity'));
-      if (wantTag && !(rateOf(wantTag).k >= 64)) throw new Error(tr('only constant assets can be swapped for BTC'));
       const bal = mvBtc().balance, maxSats = bal ? BigInt(bal) - 1000n : 0n;
       if (BigInt(Math.round(btcQ * 1e8)) > maxSats)
         throw new Error(`${tr('only')} ${(Number(maxSats > 0n ? maxSats : 0n) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC ${tr('free to lock (rest backs your open offers)')}`);
@@ -293,7 +292,6 @@ async function postRangedOffer() {
       const sell = $('#rAsset').value, btcQ = num($('#rPrice').value);
       if (!(btcQ > 0)) throw new Error(tr('enter a quantity'));
       if (sell !== 'FRC') {   // sell a user-issued CONSTANT asset for BTC
-        if (!(rateOf(sell).k >= 64)) throw new Error(tr('only constant assets can be swapped for BTC'));
         const qty = num($('#rQty').value);
         const units = BigInt(Math.round(qty * scaleOf(sell)));
         if (!(units > 0n)) throw new Error(tr('enter a quantity'));
@@ -369,7 +367,7 @@ function openOfferModal() {
   // I sell = BTC ⇒ reverse swap (want FRC). I sell = FRC/asset with want=BTC ⇒ forward swap.
   q(m, '#rAsset').onchange = e => {
     if (e.target.value === 'BTC') {   // sell BTC → want FRC or a CONSTANT asset (buy that asset)
-      const consts = (state.info.assets || []).filter(a => Number(a.shift) >= 64);
+      const consts = (state.info.assets || []);   // any user-issued asset (melt/grow settle via present value)
       setOptions('#rWant', '<option value="FRC">FRC</option>' + consts.map(a => `<option value="${a.tag}">${assetName(a.tag)}</option>`).join(''));
       $('#rPartialLbl').hidden = true; $('#rPriceLbl').childNodes[0].textContent = tr('Quantity'); swapHint(); return;
     }
@@ -392,11 +390,11 @@ function openOfferModal() {
   };
   paint();                                 // populate #rAsset / #rWant now
 }
-// held user-issued CONSTANT assets (k>=64) with present-valued balance — the only ones swappable for BTC
+// held user-issued assets with present-valued balance — all are swappable for BTC (melt/grow settle at claim)
 function heldConstAssets() {
   const L = state.mine.height, m = new Map();
   for (const u of state.mine.utxos) {
-    const t = u.assetTag ?? null; if (!t || rateOf(t).k < 64) continue;
+    const t = u.assetTag ?? null; if (!t) continue;   // any held user-issued asset is swappable
     m.set(t, (m.get(t) ?? 0n) + assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(t)));
   }
   return [...m.entries()];
