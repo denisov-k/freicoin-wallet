@@ -899,7 +899,7 @@ function paint() {
     const myP2p = new Map(loadP2p().map(r => [r.id, r]));
     if (btcMatch && state.swap) {
       if (state.swap.available)
-        swapRows += `<tr class="swap"><td>⇄</td><td>FRC</td><td>BTC @ ${state.swap.rate}</td><td class="act-cell"><button id="swGoBtc" class="rbtn">${tr('Swap')}</button></td></tr>`;
+        swapRows += `<tr class="swap"><td></td><td>FRC</td><td>BTC @ ${state.swap.rate}</td><td class="act-cell"><button id="swGoBtc" class="rbtn">${tr('Swap')}</button></td></tr>`;
       // P2P board offers: open ones from OTHERS get a Take button; mine/in-flight show status
       for (const o of (state.p2p?.swaps || [])) {
         const mineRec = myP2p.get(o.id);
@@ -910,11 +910,11 @@ function paint() {
           : `<span class="sub">${tr(o.status)}</span>`;
         else act = o.status === 'open' ? `<button class="p2ptake rbtn" data-id="${o.id}">${tr('Take')}</button>` : `<span class="sub">${tr(o.status)}</span>`;
         if (o.status === 'open' || mineRec)
-          swapRows += `<tr class="swap ${o.status === 'open' ? '' : 'filled'}"><td>${o.id.replace(/^p2p/, '')}</td><td>⇄ ${give}</td><td>${want}</td><td class="act-cell">${act}</td></tr>`;
+          swapRows += `<tr class="swap ${o.status === 'open' ? '' : 'filled'}"><td>${o.id.replace(/^p2p/, '')}</td><td>${give}</td><td>${want}</td><td class="act-cell">${act}</td></tr>`;
       }
       for (const w of loadMySwaps()) {
         const past = state.mine.height > w.T1;
-        swapRows += `<tr class="swap ${past ? '' : 'filled'}"><td>⇄</td><td>${Number(BigInt(w.funding.value)) / 1e8} FRC</td><td>BTC</td><td class="act-cell sub">${past ? tr('refundable') : tr('in progress')}</td></tr>`;
+        swapRows += `<tr class="swap ${past ? '' : 'filled'}"><td></td><td>${Number(BigInt(w.funding.value)) / 1e8} FRC</td><td>BTC</td><td class="act-cell sub">${past ? tr('refundable') : tr('in progress')}</td></tr>`;
       }
     }
     $('#bookBody').innerHTML = (rows.map(bookRow).join('') + swapRows)
