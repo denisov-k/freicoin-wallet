@@ -101,8 +101,10 @@ async function doRefresh() {
   // and drop them, or ghosts of the old chain's swaps haunt the balance/activity forever.
   try {
     if (info.chainId && localStorage.getItem('fw_mkt_chain') !== info.chainId) {
+      // NB: fw_btc_nonces survives — it derives BTC-side addresses, and the BTC chain (signet)
+      // is NOT wiped with the test chain; dropping it would orphan real proceeds.
       if (localStorage.getItem('fw_mkt_chain'))
-        for (const k of ['fw_p2p', 'fw_swap_hist', 'fw_btc_nonces', 'fw_swaps', 'fw_reldefs']) localStorage.removeItem(k);
+        for (const k of ['fw_p2p', 'fw_swap_hist', 'fw_swaps', 'fw_reldefs']) localStorage.removeItem(k);
       localStorage.setItem('fw_mkt_chain', info.chainId);
       btcRecoveredKey = '';   // let recovery re-run against the new chain
     }
