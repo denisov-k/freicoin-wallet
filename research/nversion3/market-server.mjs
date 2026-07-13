@@ -624,6 +624,27 @@ const api = {
     saveBook();
     return {};
   },
+  // ---- in-wallet BTC account (non-custodial): the relay is a watch-only indexer + broadcaster.
+  // It holds NO keys and NO funds — the wallet derives its BTC addresses and signs sends locally.
+  // Here we only import those addresses watch-only, report their UTXOs, and rebroadcast signed txs.
+  async btcAccount({ addresses }) {
+    if (!btcAvail()) throw new Error('нет BTC-узла');
+    if (!Array.isArray(addresses) || !addresses.length) return { balance: '0', utxos: [], hrp: BTC_HRP, net: BTC_NET };
+    const addrs = addresses.filter(a => /^(bc|tb|bcrt)1[0-9a-z]{6,90}$/i.test(a)).slice(0, 200);
+    await ensureWatchWallet();
+    for (const a of addrs) await watchAddress(a).catch(() => {});
+    const list = await btcWatch('listunspent', 0, 9999999, addrs).catch(() => []);
+    let bal = 0n;
+    const utxos = list.map(u => { const sats = BigInt(Math.round(u.amount * 1e8)); bal += sats;
+      return { txid: u.txid, vout: u.vout, address: u.address, spk: u.scriptPubKey, value: String(sats), confirmations: u.confirmations }; });
+    return { balance: String(bal), utxos, hrp: BTC_HRP, net: BTC_NET };
+  },
+  async btcBroadcast({ rawtx }) {
+    if (!btcAvail()) throw new Error('нет BTC-узла');
+    if (!/^[0-9a-f]+$/i.test(rawtx || '')) throw new Error('плохая транзакция');
+    const txid = await btcRpc('sendrawtransaction', rawtx);
+    return { txid };
+  },
   // ---- cross-chain swap (FRC -> BTC), relay = BTC liquidity bot ----
   async swapInfo() {
     return { available: btcAvail(), rate: SWAP_RATE, t1: SWAP_T1, t2: SWAP_T2, btcNet: BTC_NET, btcHrp: BTC_HRP,

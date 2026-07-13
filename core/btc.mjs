@@ -5,8 +5,8 @@
 // may leak in here: if bitcoind accepts these transactions they are genuinely
 // Bitcoin-consensus-valid. Ported from research/lightning/ln_phase3_btc_swap.py, which
 // proved the byte layout against a real bitcoind.
-import { sha256, sha256d } from './crypto.mjs';
-import { signEcdsa } from './ecdsa.mjs';
+import { sha256, sha256d, hash160 } from './crypto.mjs';
+import { signEcdsa, pubkeyCompressed } from './ecdsa.mjs';
 
 const hex = b => [...b].map(x => x.toString(16).padStart(2, '0')).join('');
 const bin = h => Uint8Array.from((h.match(/../g) || []).map(x => parseInt(x, 16)));
@@ -90,4 +90,45 @@ export function btcHtlcClaim({ prevTxid, vout, valueSats, leafHex, preimage, cla
 /** Refund the BTC HTLC after its timeout. */
 export function btcHtlcRefund({ prevTxid, vout, valueSats, leafHex, cltv, refundKey, toSpk, fee }) {
   return btcSpend({ prevTxid, vout, valueSats, leafHex, toSpk, key: refundKey, satisfier: [''], nLockTime: cltv, fee });
+}
+
+// ---- plain wallet account (native SegWit v0, P2WPKH) — the in-wallet BTC balance ----
+// The HTLC helpers above cover the swap legs; these cover an ordinary "hold + send BTC"
+// account derived from the same seed. scriptCode for a P2WPKH input is the classic
+// 0x76a914{20B}88ac (BIP143), NOT the witness program.
+
+/** P2WPKH scriptPubKey / address for a compressed pubkey. */
+export const btcP2wpkhSpk = pubHex => '0014' + hex(hash160(bin(pubHex)));
+export const btcP2wpkhAddress = (pubHex, hrp = 'bcrt') => btcAddress(hex(hash160(bin(pubHex))), hrp);
+
+/** Decode a bech32(m) segwit address to its scriptPubKey hex; validates the HRP (network). */
+export function btcDecodeAddress(addr, hrp = 'bcrt') {
+  const s = String(addr).toLowerCase();
+  const pos = s.lastIndexOf('1');
+  if (pos < 1) throw new Error('bad address');
+  if (s.slice(0, pos) !== hrp) throw new Error('address is for a different network');
+  const REV = {}; [...CHARSET].forEach((c, i) => REV[c] = i);
+  const vals = [...s.slice(pos + 1)].map(c => { const v = REV[c]; if (v === undefined) throw new Error('bad address'); return v; });
+  if (vals.length < 7) throw new Error('bad address');
+  const ver = vals[0], prog5 = vals.slice(1, -6);
+  const prog = convertBits(prog5, 5, 8).slice(0, Math.floor(prog5.length * 5 / 8));
+  if (prog.length < 2 || prog.length > 40) throw new Error('bad address');
+  return (ver === 0 ? '00' : op(0x50 + ver)) + push(hex(Uint8Array.from(prog)));
+}
+
+/** Build + sign a plain P2WPKH send. inputs:[{prevTxid,vout,valueSats,key}] (each key spends its
+ *  own input), outputs:[{spk,value}] (caller sizes the fee into the outputs). SIGHASH_ALL. */
+export function btcP2wpkhSend({ inputs, outputs, nLockTime = 0 }) {
+  const tx = {
+    version: 2, nLockTime,
+    vin: inputs.map(i => ({ prevout: { txid: i.prevTxid, vout: i.vout }, scriptSig: '', sequence: 0xfffffffd, witness: [] })),
+    vout: outputs.map(o => ({ value: BigInt(o.value), scriptPubKey: o.spk })),
+  };
+  inputs.forEach((inp, idx) => {
+    const pub = pubkeyCompressed(inp.key);
+    const scriptCode = '76a914' + hex(hash160(bin(pub))) + '88ac';   // BIP143 P2WPKH scriptCode
+    const sig = signEcdsa(inp.key, bip143Sighash(tx, idx, scriptCode, BigInt(inp.valueSats))) + '01';
+    tx.vin[idx].witness = [sig, pub];
+  });
+  return { rawtx: serializeBtcTx(tx), txid: btcTxid(tx) };
 }
