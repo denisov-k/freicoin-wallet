@@ -403,8 +403,8 @@ function openOfferModal() {
     <div class="row offer-row"><label>${tr('I sell')}<select id="rAsset"></select></label><label class="numfield">${tr('Quantity')}<input id="rQty" type="text" inputmode="decimal"></label></div>
     <div class="row offer-row"><label>${tr('I want')}<select id="rWant"></select></label><label id="rPriceLbl" class="numfield">${tr('Quantity')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
     <label class="chk" id="rPartialLbl"><input type="checkbox" id="rPartial" checked>${tr('allow partial fills')}</label>
-    <button id="rOfferBtn">${tr('Post offer')}</button>
-    <p class="sub" style="font-size:12px" id="rHint">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p></div>`;
+    <p class="sub" style="font-size:12px;margin-top:0" id="rHint">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p>
+    <button id="rOfferBtn">${tr('Post offer')}</button></div>`;
   document.body.appendChild(m);
   m.onclick = e => { if (e.target === m) m.remove(); };   // tap outside the card = close
   q(m, '#offerClose').onclick = () => m.remove();
