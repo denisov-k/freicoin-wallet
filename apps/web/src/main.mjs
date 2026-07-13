@@ -408,6 +408,7 @@ function paintActivity(txs, final = true) {
         confirmations: Math.min(...legs.map(l => l.confirmations)) });
     } else items.push(...legs);
   }
+  items.sort((a, b) => (b.time || 0) - (a.time || 0));   // newest first — interleave BTC legs by time, not at the end
   // the currency filter offers exactly what the history contains (options refresh in place,
   // selection preserved; a selection filtered out of existence falls back to 'all')
   const cur = $('#afCur');
