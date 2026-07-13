@@ -568,7 +568,15 @@ async function takeP2p(offer, log) {
 }
 
 // DRIVE: advance each of MY p2p swaps on every refresh, acting only on my turn.
+// Serialized: overlapping invocations (interval + visibility kick) must not both act on the same
+// swap — that is how an HTLC got funded twice when a report to the relay failed mid-cycle.
+let p2pDriving = false;
 async function driveP2p() {
+  if (p2pDriving) return;
+  p2pDriving = true;
+  try { await driveP2pInner(); } finally { p2pDriving = false; }
+}
+async function driveP2pInner() {
   const mine = loadP2p(); if (!mine.length || !state) return;
   let info; try { info = await api('p2pList'); } catch { return; }
   const byId = new Map(info.swaps.map(s => [s.id, s]));
@@ -578,6 +586,13 @@ async function driveP2p() {
       if (rec.dir === 'sellBtc') { await driveP2pRev(rec, w, info); if (w.status === 'done') dropP2p(rec.id); continue; }
       if (rec.role === 'maker') {
         if (w.status === 'taken') {                       // taker committed → fund the FRC HTLC
+          // IDEMPOTENT: if we already funded but the report never reached the relay (restart,
+          // network), RE-REPORT the existing funding — never fund the same swap twice.
+          if (rec.status === 'frc_funded' && rec.funding?.txid) {
+            await api('p2pFrcFunded', { id: rec.id, txid: rec.funding.txid, vout: rec.funding.vout, t1: rec.T1 });
+            toast(`${w.id}: ${tr('FRC locked — awaiting BTC')}`, 'ok'); mvRefresh();
+            continue;
+          }
           const H = w.paymentHash, T1 = state.mine.height + (info.t1 || 40);
           const leg = frcLeg({ role: 'give', ourKey: p2pKey(rec.nonce, 'frc'), theirPub: w.taker.frcPub, paymentHash: H, cltv: T1, net: 'regtest' });
           const fund = await sendFrcToSpk(leg.spk, BigInt(w.frcAmount));
@@ -625,6 +640,13 @@ const driveErr = new Map();   // last surfaced error per (id,status) — avoid t
 async function driveP2pRev(rec, w, info) {
   if (rec.role === 'maker') {
     if (w.status === 'taken') {                                   // taker committed → lock BTC first
+      // IDEMPOTENT: already funded but the report didn't land (relay restart) → re-report, never
+      // fund twice (this exact race once double-funded an HTLC).
+      if (rec.status === 'btc_funded_rev' && rec.btcHtlc?.txid) {
+        await api('p2pBtcFundedB', { id: rec.id, btcTxid: rec.btcHtlc.txid, tb: rec.btcHtlc.cltv });
+        toast(`${w.id}: ${tr('BTC locked — awaiting FRC')}`, 'ok'); mvRefresh();
+        return;
+      }
       const tb = (info.btcHeight || 0) + (info.revTb || 12);
       const bleaf = btcHtlcLeaf({ paymentHash: w.paymentHash, claimPub: w.taker.btcPub, refundPub: pubkeyCompressed(p2pKey(rec.nonce, 'btc')), cltv: tb });
       const baddr = btcHtlcAddress(bleaf, btcHrp());
@@ -645,8 +667,12 @@ async function driveP2pRev(rec, w, info) {
       const leg = frcLeg({ role: 'give', ourKey: p2pKey(rec.nonce, 'frc'), theirPub: w.maker.frcPub, paymentHash: w.paymentHash, cltv: w.frcHtlc.cltv, net: 'regtest' });
       if (leg.spk !== w.frcHtlc.spk) throw new Error(tr('FRC HTLC mismatch'));
       const fund = await sendFrcToSpk(leg.spk, BigInt(w.frcAmount));
-      putP2p({ ...rec, status: 'frc_funded_rev', funding: { txid: fund.txid } });
+      putP2p({ ...rec, status: 'frc_funded_rev', funding: { txid: fund.txid, vout: fund.vout } });
       await api('p2pFrcFundedB', { id: rec.id, txid: fund.txid, vout: fund.vout });
+      toast(`${w.id}: ${tr('FRC locked — awaiting the secret')}`, 'ok'); mvRefresh();
+    } else if (w.status === 'btc_funded_rev' && rec.status === 'frc_funded_rev' && rec.funding?.txid && !w.frcHtlc?.txid) {
+      // IDEMPOTENT: funded but the report never landed — re-report the existing funding
+      await api('p2pFrcFundedB', { id: rec.id, txid: rec.funding.txid, vout: rec.funding.vout ?? 0 });
       toast(`${w.id}: ${tr('FRC locked — awaiting the secret')}`, 'ok'); mvRefresh();
     } else if ((w.status === 'frc_claimed_rev' || w.preimage) && rec.status !== 'done') {   // R revealed → claim BTC
       const R = w.preimage; if (!R) return;
