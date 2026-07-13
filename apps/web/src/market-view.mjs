@@ -461,10 +461,10 @@ function openP2pTakeModal(offer) {
   const btcHrp = state.swap?.btcHrp || 'tb';
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Take swap')} ${offer.id}</b><button id="tkClose" class="icon">✕</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} BTC</b><button id="tkClose" class="icon">✕</button></div>
     <div class="rrow"><span>${tr('You receive')}</span><b>${Number(BigInt(offer.frcAmount)) / 1e8} FRC</b></div>
     <div class="rrow"><span>${tr('You pay')}</span><b>${Number(BigInt(offer.btcAmount)) / 1e8} BTC</b></div>
-    <button id="tkGo">${tr('Take')}</button>
+    <button id="tkGo">${tr('Buy')}</button>
     <div id="tkLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
     <p class="warn" style="font-size:12px">${tr('You will pay BTC from your own wallet to the shown address. Experimental.')}</p></div>`;
   document.body.appendChild(m);
@@ -484,7 +484,7 @@ async function takeP2p(offer, log) {
     putP2p({ id: offer.id, role: 'taker', nonce, status: 'taken', frcAmount: offer.frcAmount, btcAmount: offer.btcAmount, paymentHash: offer.paymentHash, funded: false });
     log(tr('waiting for the seller to lock FRC…'));
     toast(tr('offer taken — follow the steps'), 'ok'); mvRefresh();
-  } catch (e) { log('⚠ ' + e.message); toast(e.message, 'err'); if (go) { go.disabled = false; go.textContent = tr('Take'); } }
+  } catch (e) { log('⚠ ' + e.message); toast(e.message, 'err'); if (go) { go.disabled = false; go.textContent = tr('Buy'); } }
 }
 
 // DRIVE: advance each of MY p2p swaps on every refresh, acting only on my turn.
