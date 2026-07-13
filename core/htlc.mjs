@@ -8,7 +8,7 @@
 // and lock_height; CLTV CONSUMES its argument (no OP_DROP). Amounts are BigInt kria.
 import { sha256, sha256d } from './crypto.mjs';
 import { signEcdsa } from './ecdsa.mjs';
-import { segwitV0Sighash, SIGHASH_ALL } from './sighash.mjs';
+import { segwitV0Sighash, SIGHASH_ALL, SIGHASH_NONE, SIGHASH_ANYONECANPAY } from './sighash.mjs';
 import { serializeTx, txid, NV3_TX_VERSION } from './tx.mjs';
 import { encodeWitness } from './address.mjs';
 
@@ -142,5 +142,51 @@ export function htlcCoopRefund({ prevTxid, vout, value, refheight, leafHex, refu
   const sh = segwitV0Sighash(tx, 0, leafHex, value, refheight, SIGHASH_ALL);
   const claimSig = signEcdsa(claimKey, sh) + '01', refundSig = signEcdsa(refundKey, sh) + '01';
   tx.vin[0].witness = [refundSig, claimSig, ...SEL_COOP, '00' + leafHex, ''];
+  return { rawtx: serializeTx(tx), txid: txid(tx) };
+}
+
+// ---- TWO-PARTY cooperative cancel (the taker signs once, the maker completes and broadcasts) ----
+const revh = h => h.match(/../g).reverse().join('');
+/** The party BACKING OUT signs the HTLC input with NONE|ANYONECANPAY at lockHeight = the coin's own
+ *  refheight — this commits ONLY that input (not outputs/other inputs), so the counterparty can
+ *  finish the refund tx however they need. It's a one-way authorization: "you may take this coin
+ *  back." Returns the sig (with its hashtype byte). Give it to the counterparty via the relay. */
+export function htlcCoopSig({ funding, leafHex, key }) {
+  const ht = SIGHASH_NONE | SIGHASH_ANYONECANPAY, L = Number(funding.refheight);
+  // NV3 version so the sighash matches the counterparty's completed tx (host OR asset — both NV3)
+  const tx = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0,
+    vin: [{ prevout: { txid: revh(funding.txid), vout: funding.vout }, scriptSig: '', sequence: 0xfffffffd, witness: [] }], vout: [] };
+  const sh = segwitV0Sighash(tx, 0, leafHex, BigInt(funding.value), L, ht);
+  return signEcdsa(key, sh) + op(ht);
+}
+/** The party GETTING their coin back completes the coop refund: lockHeight = the coin's refheight
+ *  (age 0 → the asset payout is the nominal, no present-value drift), their own SIGHASH_ALL sig +
+ *  the counterparty's coop sig. Host variant (no fee coin — fee from the coin itself). */
+export function htlcCoopRefundHost({ funding, leafHex, refundKey, otherSig, toSpk, fee = 10000n }) {
+  const L = Number(funding.refheight);
+  const tx = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0,
+    vin: [{ prevout: { txid: revh(funding.txid), vout: funding.vout }, scriptSig: '', sequence: 0xfffffffd, witness: [] }],
+    vout: [{ value: BigInt(funding.value) - fee, scriptPubKey: toSpk }] };
+  const sh = segwitV0Sighash(tx, 0, leafHex, BigInt(funding.value), L, SIGHASH_ALL);
+  tx.vin[0].witness = [signEcdsa(refundKey, sh) + '01', otherSig, ...SEL_COOP, '00' + leafHex, ''];
+  return { rawtx: serializeTx(tx), txid: txid(tx) };
+}
+/** Asset variant: whole asset (nominal) back to `toSpk`, fee from a separate host coin whose
+ *  refheight is ≤ the HTLC coin's (so lockHeight = that refheight is valid for both inputs). */
+export function htlcCoopRefundAsset({ funding, leafHex, refundKey, otherSig, toSpk, assetTag, feeCoin, fee = 10000n }) {
+  const L = Number(funding.refheight);
+  const tx = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0,   // NV3 version → the per-output assetTag serializes
+    vin: [
+      { prevout: { txid: revh(funding.txid), vout: funding.vout }, scriptSig: '', sequence: 0xfffffffd, witness: [] },
+      { prevout: { txid: revh(feeCoin.txid), vout: feeCoin.vout }, scriptSig: '', sequence: 0xfffffffd, witness: [] },
+    ],
+    vout: [{ value: BigInt(funding.value), scriptPubKey: toSpk, assetTag }],
+  };
+  const change = BigInt(feeCoin.pv) - fee;
+  if (change > 0n) tx.vout.push({ value: change, scriptPubKey: feeCoin.changeSpk, assetTag: '00'.repeat(20) });
+  const sh0 = segwitV0Sighash(tx, 0, leafHex, BigInt(funding.value), L, SIGHASH_ALL);
+  tx.vin[0].witness = [signEcdsa(refundKey, sh0) + '01', otherSig, ...SEL_COOP, '00' + leafHex, ''];
+  const sh1 = segwitV0Sighash(tx, 1, feeCoin.script, BigInt(feeCoin.value), BigInt(feeCoin.refheight), SIGHASH_ALL);
+  tx.vin[1].witness = [signEcdsa(feeCoin.key, sh1) + '01', '00' + feeCoin.script, ''];
   return { rawtx: serializeTx(tx), txid: txid(tx) };
 }
