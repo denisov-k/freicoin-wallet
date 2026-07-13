@@ -628,12 +628,12 @@ function openBuyModal(o) {
   if ($('#modal')) return;
   const giveTag = o.give.assetTag ?? null;
   const wantTag = (o.desc.payoutAsset && o.desc.payoutAsset !== HOST_TAG) ? o.desc.payoutAsset : null;
-  const num = BigInt(o.desc.priceNum), den = BigInt(o.desc.priceDen);
+  const pn = BigInt(o.desc.priceNum), pd = BigInt(o.desc.priceDen);   // NB: not `num` — that's the global comma-parser
   const L = o.lockHeight;
   const maxK = assetPresentValue(BigInt(o.give.value), L - o.give.refheight, rateOf(o.give.assetTag));
   const maxU = Number(maxK) / scaleOf(giveTag);
   const whole = BigInt(o.desc.minFill) > 0n && BigInt(o.desc.minFill) >= maxK;   // all-or-nothing offer
-  const costOf = u => { let f = BigInt(Math.round(u * scaleOf(giveTag))); if (f > maxK) f = maxK; return (f * num + den - 1n) / den; };
+  const costOf = u => { let f = BigInt(Math.round(u * scaleOf(giveTag))); if (f > maxK) f = maxK; return (f * pn + pd - 1n) / pd; };
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} ${assetName(giveTag)}</b><button id="bClose" class="icon">✕</button></div>
