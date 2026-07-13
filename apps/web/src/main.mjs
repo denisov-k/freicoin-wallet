@@ -416,7 +416,9 @@ function paintActivity(txs, final = true) {
     const a = Math.abs(+leg.amount);
     if (!t.recv.btc) t.recv.amount = a; else t.paid.amount = -a;
   }
-  txs = [...txs.filter(t => !t.btc && !t.trade && !btcActHide.has(t.txid)), ...btcActLegs];   // FRC/asset legs (minus those a trade row replaces) + cached BTC legs/trades
+  // a trade that never anchored to the chain (no real time after adopting its legs) is a phantom
+  // from an incomplete/stale swap record — hide it instead of showing a 01.01.1970 ghost row
+  txs = [...txs.filter(t => !t.btc && !t.trade && !btcActHide.has(t.txid)), ...btcActLegs.filter(t => !(t.trade && !t.time))];
   actLastTxs = txs;
   // A tx whose legs move DIFFERENT currencies in opposite directions is a trade — collapse
   // its legs into one Purchase/Sale/Swap item (display-level; the raw legs stay in history).

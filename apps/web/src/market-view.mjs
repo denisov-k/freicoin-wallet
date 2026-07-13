@@ -1345,6 +1345,12 @@ const addSwapHist = e => { try {
   else a.push(e);
   localStorage.setItem(SWHIST_LS, JSON.stringify(a));
 } catch {} };
+// drop swap-hist entries that can never render as a real trade — no chain reference at all
+// (no btc receive/claim txid, no FRC claim/funding txid, no time): incomplete/stale ghosts.
+const pruneSwapHist = () => { try {
+  const a = loadSwapHist().filter(h => h.btcTxid || h.frcTxid || h.btcFundTxid || h.btcAddr || h.time);
+  localStorage.setItem(SWHIST_LS, JSON.stringify(a));
+} catch {} };
 
 // Every BTC address this wallet controls → its private key: the fixed account PLUS each P2P swap's
 // per-nonce BTC key (live records AND the persistent address book). Balance sums them; sends spend any.
@@ -1429,6 +1435,7 @@ export async function mvBtcHistory() {
     await recoverBtcNonces();
     const r = await api('btcHistory', { addresses: Object.keys(btcKeyring()) });
     const all = (r.txs || []).map(t => ({ txid: t.txid, category: t.category, amount: t.amount, confirmations: t.confirmations, time: t.time, addresses: t.addresses || [], assetTag: null, btc: true }));
+    pruneSwapHist();
     const hist = loadSwapHist(), used = new Set(), items = [];
     const receives = all.filter(t => t.category === 'receive');
     // sends already represented by a trade row (the maker's HTLC funding) must not show twice
