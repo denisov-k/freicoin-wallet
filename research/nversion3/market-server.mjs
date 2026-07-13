@@ -16,7 +16,7 @@ import { serializeTx, parseTx, txid as computeTxid, NV3_TX_VERSION } from '../..
 import { assetPresentValue } from '../../core/assets.mjs';
 import { pubkeyCompressed, signEcdsa } from '../../core/ecdsa.mjs';
 import { frcLeg, claimReceived } from '../../core/swap.mjs';
-import { htlcSpk } from '../../core/htlc.mjs';
+import { htlcSpk, htlcLeaf } from '../../core/htlc.mjs';
 import { btcHtlcLeaf, btcHtlcSpk, btcHtlcAddress, btcHtlcRefund } from '../../core/btc.mjs';
 
 const DATADIR = process.env.NV3_DATADIR ?? '/root/nv3-playground/chain';
@@ -243,6 +243,17 @@ async function matchCrosses() {
 
 // Swap watcher: for a BTC-funded swap, detect the user's claim on the BTC chain, read the
 // revealed preimage from its witness, and claim the escrowed FRC. Also refund expired swaps.
+async function watchP2p() {
+  if (!btcAvail()) return;
+  for (const w of p2p) {
+    try {
+      if (w.status === 'btc_funded' && w.btcClaimTxid && !w.preimage) {
+        const R = await preimageFromTx(w.btcClaimTxid, w.paymentHash);
+        if (R) { w.preimage = R; w.status = 'btc_claimed'; saveP2p(); }
+      }
+    } catch {}
+  }
+}
 async function watchSwaps() {
   if (!btcAvail()) return;
   const h = await rpc('getblockcount').catch(() => 0);
@@ -316,6 +327,18 @@ const relayKey = (id, leg) => sha256(Buffer.from(RELAY_SEED + id + leg, 'utf8'))
 // ---- swap board: persisted like the offer book ----
 const swaps = [];
 let swapSeq = 1;
+const p2p = [];
+let p2pSeq = 1;
+const P2P_FILE = `${DATADIR}/market-p2p.json`;
+let p2pSaveTimer = null;
+function saveP2p() {
+  if (p2pSaveTimer) return;
+  p2pSaveTimer = setTimeout(() => { p2pSaveTimer = null;
+    try { writeFileSync(P2P_FILE, JSON.stringify({ p2pSeq, p2p })); } catch {} }, 250);
+}
+function loadP2p() {
+  try { const j = JSON.parse(readFileSync(P2P_FILE, 'utf8')); if (Array.isArray(j.p2p)) { p2p.push(...j.p2p); p2pSeq = Number(j.p2pSeq) || p2p.length + 1; } } catch {}
+}
 const SWAP_FILE = `${DATADIR}/market-swaps.json`;
 let swapSaveTimer = null;
 function saveSwaps() {
@@ -371,7 +394,7 @@ async function bootstrap() {
   try { await rpc('loadwallet', 'w'); } catch {}
   mineAddr = await rpc('getnewaddress');
   if (await rpc('getblockcount') < 120) await rpc('generatetoaddress', 120, mineAddr);
-  loadBook(); loadSwaps();
+  loadBook(); loadSwaps(); loadP2p();
   await catchUp();
   reconcileBook();   // retire offers whose coins were spent / expired while the relay was down
   say('маркет запущен (релей книги + майнер + автомэтчер)');
@@ -384,6 +407,7 @@ async function bootstrap() {
       await ensureMatcherFuel();
       await matchCrosses();
       await watchSwaps();
+      await watchP2p();
     } catch (e) { say('майнер: ' + String(e.message).slice(0, 80)); }
   }, MINE_EVERY_MS);
 }
@@ -623,6 +647,93 @@ const api = {
     say(`своп ${id}: пользователь выкупил BTC (${btcId.slice(0, 12)}…)`);
     await watchSwaps();   // immediate: read R (works at 0-conf) and settle the FRC leg
     return { btcClaim: btcId, status: w.status };
+  },
+
+  // ===== P2P SWAP BOARD: maker-priced FRC↔BTC, user-to-user. The relay coordinates and
+  // watches both chains but holds NO keys and NO funds — real price discovery, non-custodial.
+  // V1 direction: maker SELLS FRC for BTC (the "exit"). Maker is the initiator (holds R). =====
+  async p2pList() {
+    const fh = await rpc('getblockcount').catch(() => 0);
+    return { available: btcAvail(), t1: SWAP_T1, t2: SWAP_T2, btcNet: BTC_NET, btcHrp: BTC_HRP, frcHeight: fh,
+      swaps: p2p.slice(-60).map(w => ({ id: w.id, status: w.status, frcAmount: w.frcAmount, btcAmount: w.btcAmount,
+        maker: w.maker, taker: w.taker, paymentHash: w.paymentHash, t1: w.t1, t2: w.t2,
+        frcHtlc: w.frcHtlc, btcHtlc: w.btcHtlc, preimage: w.preimage ?? null })) };
+  },
+  // maker posts an offer at THEIR price. makerBtcAddr = where the maker will receive BTC.
+  async p2pPost({ frcAmount, btcAmount, makerFrcPub, makerBtcPub, makerBtcAddr, paymentHash }) {
+    if (!btcAvail()) throw new Error('своп недоступен: нет BTC-узла');
+    if (!/^[0-9a-f]{64}$/.test(paymentHash || '')) throw new Error('плохой paymentHash');
+    if (!/^[0-9a-f]{66}$/.test(makerFrcPub || '') || !/^[0-9a-f]{66}$/.test(makerBtcPub || '')) throw new Error('плохие ключи');
+    const frc = BigInt(frcAmount), btc = BigInt(btcAmount);
+    if (frc <= 0n || btc <= 0n) throw new Error('плохие суммы');
+    const id = 'p2p' + (p2pSeq++);
+    const w = { id, status: 'open', frcAmount: String(frc), btcAmount: String(btc), paymentHash,
+      maker: { frcPub: makerFrcPub, btcPub: makerBtcPub, btcAddr: makerBtcAddr },
+      taker: null, frcHtlc: null, btcHtlc: null, preimage: null, t1: 0, t2: 0 };
+    p2p.push(w); saveP2p();
+    say(`P2P-оффер ${id}: продаю ${Number(frc)/1e8} FRC за ${Number(btc)/1e8} BTC`);
+    return { id };
+  },
+  // a taker accepts: commits their receive keys. takerFrcAddr = where the taker receives FRC.
+  async p2pTake({ id, takerFrcPub, takerBtcPub, takerFrcAddr }) {
+    const w = p2p.find(x => x.id === id); if (!w) throw new Error('нет такого оффера');
+    if (w.status !== 'open') throw new Error('оффер уже взят');
+    if (!/^[0-9a-f]{66}$/.test(takerFrcPub || '') || !/^[0-9a-f]{66}$/.test(takerBtcPub || '')) throw new Error('плохие ключи');
+    w.taker = { frcPub: takerFrcPub, btcPub: takerBtcPub, frcAddr: takerFrcAddr };
+    w.status = 'taken'; saveP2p();
+    say(`P2P-оффер ${id}: взят — стороны обмениваются HTLC`);
+    return { id, maker: w.maker, frcAmount: w.frcAmount, btcAmount: w.btcAmount, paymentHash: w.paymentHash };
+  },
+  // maker funded the FRC HTLC (claim=taker, refund=maker, cltv=T1). Relay VERIFIES on fc-nv3,
+  // then hands the taker the BTC HTLC address to fund (claim=maker, refund=taker, cltv=T2<T1).
+  async p2pFrcFunded({ id, txid, vout, t1 }) {
+    const w = p2p.find(x => x.id === id); if (!w) throw new Error('нет такого оффера');
+    if (w.status !== 'taken') throw new Error('оффер не на этой стадии');
+    await catchUp();
+    const leaf = htlcLeaf({ paymentHash: w.paymentHash, claimPub: w.taker.frcPub, refundPub: w.maker.frcPub, cltv: Number(t1) });
+    const u = utxos.get(`${txid}:${vout}`);
+    if (!u || u.assetTag !== null || u.spk !== htlcSpk(leaf)) throw new Error('FRC HTLC не найден/не совпал');
+    if (u.value < BigInt(w.frcAmount)) throw new Error('в FRC HTLC меньше оговоренного');
+    const h = await rpc('getblockcount');
+    if (Number(t1) < h + SWAP_T1 - 5) throw new Error('слишком близкий таймаут T1');
+    const bh = await btcRpc('getblockcount'); const t2 = bh + SWAP_T2;
+    const bleaf = btcHtlcLeaf({ paymentHash: w.paymentHash, claimPub: w.maker.btcPub, refundPub: w.taker.btcPub, cltv: t2 });
+    w.frcHtlc = { txid, vout, value: String(u.value), refheight: u.refheight, leaf, cltv: Number(t1) }; w.t1 = Number(t1);
+    w.btcHtlc = { addr: btcHtlcAddress(bleaf, BTC_HRP), leaf: bleaf, cltv: t2, value: w.btcAmount, txid: null, vout: null }; w.t2 = t2;
+    w.status = 'frc_funded'; saveP2p();
+    say(`P2P ${id}: FRC заперт — тейкер финансирует BTC HTLC ${w.btcHtlc.addr}`);
+    return { btcHtlc: w.btcHtlc };
+  },
+  // taker funded the BTC HTLC from their own wallet — reports the txid; relay verifies on-chain.
+  async p2pBtcFunded({ id, btcTxid }) {
+    const w = p2p.find(x => x.id === id); if (!w) throw new Error('нет такого оффера');
+    if (w.status !== 'frc_funded') throw new Error('оффер не на этой стадии');
+    const tx = await btcRpc('getrawtransaction', btcTxid, true).catch(() => null);
+    if (!tx) throw new Error('BTC-транзакция не найдена');
+    const vout = tx.vout.findIndex(o => o.scriptPubKey.address === w.btcHtlc.addr);
+    if (vout < 0) throw new Error('транзакция не платит на HTLC-адрес');
+    if (BigInt(Math.round(tx.vout[vout].value * 1e8)) < BigInt(w.btcAmount)) throw new Error('в BTC HTLC меньше оговоренного');
+    w.btcHtlc.txid = btcTxid; w.btcHtlc.vout = vout; w.btcHtlc.value = String(Math.round(tx.vout[vout].value * 1e8));
+    w.status = 'btc_funded'; saveP2p();
+    say(`P2P ${id}: BTC заперт — мейкер забирает BTC (раскроет секрет)`);
+    return { ok: true };
+  },
+  // maker built their BTC claim (reveals R). Relay broadcasts; the watcher surfaces R for the taker.
+  async p2pBtcClaim({ id, rawtx }) {
+    const w = p2p.find(x => x.id === id); if (!w) throw new Error('нет такого оффера');
+    if (w.status !== 'btc_funded') throw new Error('оффер не на этой стадии');
+    const btcId = await btcRpc('sendrawtransaction', rawtx);
+    w.btcClaimTxid = btcId; await btcMine(1); saveP2p();
+    const R = await preimageFromTx(btcId, w.paymentHash);
+    if (R) { w.preimage = R; w.status = 'btc_claimed'; saveP2p(); }
+    say(`P2P ${id}: мейкер забрал BTC (${btcId.slice(0, 12)}…) — секрет раскрыт`);
+    return { btcClaim: btcId, preimage: w.preimage };
+  },
+  // taker reports they claimed the FRC with R (relay marks done; the coin is theirs on-chain).
+  async p2pDone({ id }) {
+    const w = p2p.find(x => x.id === id); if (!w) throw new Error('нет такого оффера');
+    if (!utxos.has(`${w.frcHtlc.txid}:${w.frcHtlc.vout}`)) { w.status = 'done'; saveP2p(); }
+    return { status: w.status };
   },
 
   async name({ tag }) { return { name: assets.get(tag)?.name ?? null }; },
