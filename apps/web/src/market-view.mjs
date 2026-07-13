@@ -1433,11 +1433,11 @@ function paint() {
 
   // "I sell": the assets I hold + BTC. NO balance in the option label — the selected balance shows
   // in the form (paintOfferAvail); everything is toppable externally, so a fixed label misleads.
-  const sellOpt = ([k]) => `<option value="${k}">${assetName(k === 'FRC' ? null : k)}</option>`;
+  const sellOpt = k => `<option value="${k}">${assetName(k === 'FRC' ? null : k)}</option>`;
   const frcHeld = byAsset.get('FRC'), heldAssets = [...byAsset.entries()].filter(([k]) => k !== 'FRC');
-  const sellCur = (frcHeld ? sellOpt(['FRC']) : '') + btcCur;
+  const sellCur = (frcHeld ? sellOpt('FRC') : '') + btcCur;
   setOptions('#rAsset', ((sellCur ? `<optgroup label="${tr('Currency')}">${sellCur}</optgroup>` : '')
-    + (heldAssets.length ? `<optgroup label="${tr('Assets')}">${heldAssets.map(sellOpt).join('')}</optgroup>` : ''))
+    + (heldAssets.length ? `<optgroup label="${tr('Assets')}">${heldAssets.map(([k]) => sellOpt(k)).join('')}</optgroup>` : ''))
     || `<option value="">${tr('no coins yet')}</option>`);
   setOptions('#rWant', grouped('<option value="FRC">FRC</option>'));
   paintOfferAvail();   // reflect the selected sell asset's available balance in the form
