@@ -668,9 +668,25 @@ function openP2pTakeModal(offer) {
     <button id="tkGo">${tr('Buy')}</button>
     <div id="tkLog" class="sub" style="font-size:12px;white-space:pre-line"></div></div>`;
   document.body.appendChild(m);
-  m.onclick = e => { if (e.target === m) m.remove(); };
-  q(m, '#tkClose').onclick = () => m.remove();
-  q(m, '#tkGo').onclick = () => takeP2p(offer, t => { const el = $('#tkLog'); if (el) el.textContent += (el.textContent ? '\n' : '') + t; });
+  const stop = () => { clearInterval(m._wait); m.remove(); };
+  m.onclick = e => { if (e.target === m) stop(); };
+  q(m, '#tkClose').onclick = stop;
+  q(m, '#tkGo').onclick = async () => {
+    await takeP2p(offer, t => { const el = $('#tkLog'); if (el) el.textContent += (el.textContent ? '\n' : '') + t; });
+    // stay in THIS window: wait for the seller to lock, then morph into the pay-BTC step in place
+    m._wait = setInterval(async () => {
+      if (!document.body.contains(m)) { clearInterval(m._wait); return; }
+      try {
+        const w = (await api('p2pList')).swaps.find(x => x.id === offer.id);
+        if (w?.status === 'frc_funded' && w.btcHtlc?.addr) {
+          clearInterval(m._wait);
+          const rec = { ...(loadP2p().find(x => x.id === offer.id) || { id: offer.id }), status: 'need_btc', btcHtlc: w.btcHtlc, btcAmount: offer.btcAmount };
+          putP2p(rec);
+          renderP2pPay(m, rec);
+        }
+      } catch {}
+    }, 3000);
+  };
 }
 
 // TAKER (reverse): sell BTC-buyer's counter-asset — you receive BTC, pay FRC or an asset. You lock
@@ -750,7 +766,8 @@ async function driveP2pInner() {
       } else {   // taker
         if (w.status === 'frc_funded' && rec.status !== 'need_btc' && !w.btcHtlc?.txid) {   // seller locked FRC → I must fund BTC
           putP2p({ ...rec, status: 'need_btc', btcHtlc: w.btcHtlc });
-          toast(`${w.id}: ${tr('pay BTC to complete — tap the swap')}`, 'warn');
+          // the take window morphs itself into the pay step (its own poll); this hint is for when it's closed
+          toast(`${w.id}: ${tr('seller locked — pay the BTC')}`, 'warn');
         } else if ((w.status === 'btc_claimed' || w.preimage) && rec.status !== 'done') {   // R revealed → claim FRC/asset
           const R = w.preimage; if (!R) continue;
           const f = w.frcHtlc, tag = w.assetTag ?? f.assetTag ?? null;
@@ -864,8 +881,15 @@ async function btcFundHtlc(toAddr, sats) {
 // TAKER: pay the BTC HTLC from your own wallet (manual), then report the txid to the relay.
 function openP2pPayModal(rec) {
   if ($('#modal')) return;
-  const b = rec.btcHtlc; if (!b) return;
   const m = document.createElement('div'); m.id = 'modal';
+  document.body.appendChild(m);
+  renderP2pPay(m, rec);
+}
+// Render the pay-BTC step INTO an existing modal `m` (used both standalone and as the in-window
+// continuation of the take modal) — HTLC address, auto-detect polling, cooperative cancel.
+function renderP2pPay(m, rec) {
+  clearInterval(m._wait);
+  const b = rec.btcHtlc; if (!b) return;
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Pay BTC')} ${rec.id}</b><button id="pyClose" class="icon">✕</button></div>
     <p class="sub">${tr('Send exactly this amount from your Bitcoin wallet to the address. The swap continues automatically once the payment is seen.')}</p>
@@ -873,7 +897,6 @@ function openP2pPayModal(rec) {
     <label>${tr('HTLC address')}<div class="addr" style="user-select:all">${b.addr}</div></label>
     <div id="pyStatus" class="sub" style="font-size:13px"></div>
     <button id="pyCancel" class="ghost">${tr('Cancel purchase')}</button></div>`;
-  document.body.appendChild(m);
   const close = () => { clearInterval(poll); m.remove(); };
   m.onclick = e => { if (e.target === m) close(); };
   q(m, '#pyClose').onclick = close;
