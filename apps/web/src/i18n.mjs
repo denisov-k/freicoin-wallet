@@ -79,6 +79,7 @@ const RU = {
   'btc_funded_rev': 'BTC заперт', 'frc_funded_rev': 'FRC заперт', 'frc_claimed_rev': 'FRC забран',
   'only constant assets can be swapped for BTC': 'на BTC можно менять только постоянные активы',
   'asset received ✅': 'актив получен ✅', 'asset locked — awaiting the secret': 'актив заперт — ждём секрет', 'Sell': 'Продать',
+  'asset refunded': 'актив возвращён', 'FRC refunded': 'FRC возвращены',
   'Issue asset': 'Выпустить актив',
   'Selling': 'Продают', 'Wants': 'Хотят', 'open only': 'только открытые', 'all': 'все', 'no offers match': 'нет офферов по фильтру',
   'Currency': 'Валюта',

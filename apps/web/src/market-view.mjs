@@ -11,7 +11,7 @@ import { serializeTx, NV3_TX_VERSION } from '../../../core/tx.mjs';
 import { assetPresentValue } from '../../../core/assets.mjs';
 import { sha256, hash160 } from '../../../core/crypto.mjs';
 import { frcLeg, refundGiven, claimReceived } from '../../../core/swap.mjs';
-import { paymentHashOf, htlcClaimAsset } from '../../../core/htlc.mjs';
+import { paymentHashOf, htlcClaimAsset, htlcRefundAsset, htlcSpk } from '../../../core/htlc.mjs';
 import { btcHtlcClaim, btcAddress, btcHtlcRefund, btcHtlcLeaf, btcHtlcAddress, btcP2wpkhAddress, btcP2wpkhSpk, btcDecodeAddress, btcP2wpkhSend } from '../../../core/btc.mjs';
 import { tr, getLang } from './i18n.mjs';
 
@@ -118,9 +118,49 @@ async function doRefresh() {
   if ($('#bookBody')) paint();                 // Exchange tab mounted → repaint the book
   if ($('#assetBalBody')) paintAssetBalance(); // Freimarkets Balance tab mounted → per-asset table
   maybeResignRanged();                                      // keep my ranged offers alive after partial fills
-  checkMySwaps();                                           // refund any of my swaps stalled past their timeout
+  checkMySwaps();                                           // refund any of my LP swaps stalled past their timeout
+  checkP2pRefunds();                                        // auto-refund a P2P HTLC I locked once its CLTV passes
   driveP2p();                                               // advance my P2P swaps (both roles) on my turn
   refreshBtc();                                             // refresh the in-wallet BTC balance (watch-only)
+}
+
+// AUTO-REFUND: a P2P HTLC I locked (forward maker: FRC/asset; reverse taker: FRC/asset) that never
+// completed comes back to me once its CLTV passes — a plain HTLC refund can't be instant (the
+// timelock IS the atomic-swap safety), but the funds must not sit locked forever either.
+async function checkP2pRefunds() {
+  const h = state.mine.height;
+  for (const rec of loadP2p()) {
+    try {
+      // forward maker (frc_funded) and reverse taker (frc_funded_rev) both lock the FRC/asset HTLC
+      const isMaker = rec.role === 'maker' && rec.status === 'frc_funded' && rec.leaf && rec.funding?.txid;
+      const isRevTaker = rec.dir === 'sellBtc' && rec.role === 'taker' && rec.status === 'frc_funded_rev' && rec.funding?.txid;
+      if (!isMaker && !isRevTaker) continue;
+      // reverse taker's leaf/cltv come from the relay record (its own funding stored only txid/vout)
+      let leaf = rec.leaf, cltv = rec.T1, funding = rec.funding, tag = rec.assetTag ?? null;
+      if (isRevTaker) {
+        let w; try { w = (await api('p2pList')).swaps.find(s => s.id === rec.id); } catch { continue; }
+        if (!w?.frcHtlc) continue;
+        leaf = w.frcHtlc.leaf; cltv = w.frcHtlc.cltv; tag = w.assetTag ?? w.frcHtlc.assetTag ?? null;
+        funding = { txid: rec.funding.txid, vout: rec.funding.vout ?? 0, value: w.frcHtlc.value, refheight: w.frcHtlc.refheight };
+      }
+      if (h <= cltv + 1) continue;                          // CLTV not reached yet — nothing to do
+      const live = await api('utxos', { spks: [htlcSpk(leaf)] }).then(r => (r.utxos || []).find(u => u.outpoint === `${funding.txid}:${funding.vout}`)).catch(() => null);
+      if (!live) { dropP2p(rec.id); continue; }             // already spent (claimed or refunded)
+      const ourKey = p2pKey(rec.nonce, 'frc');
+      let rf;
+      if (tag) {   // asset refund: whole asset back to me (present-valued), fee from a host coin
+        const feeCoin = hostFeeCoin(h, 11000n);
+        if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
+        const payout = assetPresentValue(BigInt(live.value), h - Number(funding.refheight), rateOf(tag));
+        rf = htlcRefundAsset({ funding: { txid: funding.txid, vout: funding.vout, value: BigInt(live.value), refheight: Number(funding.refheight) }, leafHex: leaf, cltv, refundKey: ourKey, toSpk: spks[0], assetTag: tag, payout, feeCoin, fee: 10000n, lockHeight: h });
+      } else {
+        rf = refundGiven({ funding: { txid: funding.txid, vout: funding.vout, value: BigInt(live.value), refheight: Number(funding.refheight) }, leaf, cltv, ourKey, toSpk: spks[0], fee: 10000n });
+      }
+      await api('tx', { rawtx: rf.rawtx, kind: 'send' });
+      dropP2p(rec.id);
+      toast(`${rec.id}: ${tr(tag ? 'asset refunded' : 'FRC refunded')}`, 'ok'); mvRefresh();
+    } catch (e) { /* too early, coin gone, or missing fee coin — retry next cycle */ }
+  }
 }
 
 // ---- actions ----
