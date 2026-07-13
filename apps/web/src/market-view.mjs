@@ -1014,11 +1014,14 @@ function btcKeyring() {
 // Recover BTC addresses of PAST swaps whose local record was already dropped: match each live relay
 // offer against my derivable keys — the taker nonce is deterministic (from the offer id); the maker
 // nonce brute-forces the post height. Found nonces go into the address book. One-time per session.
-let btcRecovered = false;
+let btcRecoveredKey = '';
 async function recoverBtcNonces() {
   const offers = [...(state?.p2p?.swaps || []), ...(state?.p2p?.archive || [])];   // live board + completed archive
-  if (btcRecovered || !offers.length) return;
-  btcRecovered = true;
+  // re-run whenever the offer set (or its statuses/known fundings) changes — a one-shot flag left
+  // stale synthesis in place when the archive was corrected under a long-lived tab
+  const key = offers.map(o => `${o.id}:${o.status}:${(o.btcHtlc || {}).txid || ''}`).join(',');
+  if (!offers.length || key === btcRecoveredKey) return;
+  btcRecoveredKey = key;
   const tip = state.mine.height, known = new Set(loadBtcNonces());
   // A completed swap whose local record is gone still deserves a trade row — synthesize the
   // history entry from the relay offer once we prove the role (keys match). Idempotent (by id).
