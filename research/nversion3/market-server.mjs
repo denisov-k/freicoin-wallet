@@ -247,6 +247,16 @@ async function watchP2p() {
   if (!btcAvail()) return;
   for (const w of p2p) {
     try {
+      // auto-detect the taker's BTC funding to the HTLC address (mempool + confirmed) — no txid
+      if (w.status === 'frc_funded' && w.btcHtlc && !w.btcHtlc.txid) {
+        const utxo = await btcWatch('listunspent', 0, 9999999, [w.btcHtlc.addr]).catch(() => []);
+        const hit = (utxo || []).find(u => BigInt(Math.round(u.amount * 1e8)) >= BigInt(w.btcAmount));
+        if (hit) {
+          w.btcHtlc.txid = hit.txid; w.btcHtlc.vout = hit.vout; w.btcHtlc.value = String(Math.round(hit.amount * 1e8));
+          w.status = 'btc_funded'; saveP2p();
+          say(`P2P ${w.id}: BTC-платёж определён автоматически (${hit.txid.slice(0, 12)}…)`);
+        }
+      }
       if (w.status === 'btc_funded' && w.btcClaimTxid && !w.preimage) {
         const R = await preimageFromTx(w.btcClaimTxid, w.paymentHash);
         if (R) { w.preimage = R; w.status = 'btc_claimed'; saveP2p(); }
@@ -305,15 +315,29 @@ const pvOf = (u, h) => assetPresentValue(u.value, h - u.refheight, rateOf(u.asse
 let btcCookie = '';
 const BTC_COOKIE = `${BTC_DATADIR}/${BTC_NET === 'main' ? '' : BTC_NET + '/'}.cookie`;
 const btcAvail = () => existsSync(BTC_COOKIE);
-async function btcRpc(method, ...params) {
+async function btcRpcOn(path, method, ...params) {
   btcCookie = Buffer.from(readFileSync(BTC_COOKIE)).toString('base64');
-  const res = await fetch(`http://127.0.0.1:${BTC_PORT}/wallet/${BTC_WALLET}`, {
+  const res = await fetch(`http://127.0.0.1:${BTC_PORT}${path}`, {
     method: 'POST', headers: { Authorization: `Basic ${btcCookie}` },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
   });
   const j = await res.json();
   if (j.error) throw new Error(`btc ${method}: ${j.error.message ?? JSON.stringify(j.error)}`);
   return j.result;
+}
+const btcRpc = (m, ...p) => btcRpcOn(`/wallet/${BTC_WALLET}`, m, ...p);
+// a watch-only wallet the relay uses to auto-detect HTLC funding (no keys, no rescan)
+const WATCH = 'p2pwatch';
+const btcWatch = (m, ...p) => btcRpcOn(`/wallet/${WATCH}`, m, ...p);
+async function ensureWatchWallet() {
+  try { await btcRpcOn('', 'loadwallet', WATCH); } catch {}
+  // wallet_name, disable_private_keys=true, blank=true, passphrase, avoid_reuse, descriptors=true
+  try { await btcRpcOn('', 'createwallet', WATCH, true, true, '', false, true); } catch {}
+}
+async function watchAddress(addr) {
+  const info = await btcRpc('getdescriptorinfo', `addr(${addr})`).catch(() => null);
+  const desc = info ? `addr(${addr})#${info.checksum}` : `addr(${addr})`;
+  try { await btcWatch('importdescriptors', [{ desc, timestamp: 'now', label: 'p2p' }]); } catch {}
 }
 const btcMine = async n => { if (BTC_ONDEMAND) return btcRpc('generatetoaddress', n, await btcRpc('getnewaddress')); };
 
@@ -395,6 +419,8 @@ async function bootstrap() {
   mineAddr = await rpc('getnewaddress');
   if (await rpc('getblockcount') < 120) await rpc('generatetoaddress', 120, mineAddr);
   loadBook(); loadSwaps(); loadP2p();
+  if (btcAvail()) { await ensureWatchWallet();
+    for (const w of p2p) if (w.status === 'frc_funded' && w.btcHtlc && !w.btcHtlc.txid) await watchAddress(w.btcHtlc.addr).catch(() => {}); }
   await catchUp();
   reconcileBook();   // retire offers whose coins were spent / expired while the relay was down
   say('маркет запущен (релей книги + майнер + автомэтчер)');
@@ -701,6 +727,7 @@ const api = {
     w.frcHtlc = { txid, vout, value: String(u.value), refheight: u.refheight, leaf, cltv: Number(t1) }; w.t1 = Number(t1);
     w.btcHtlc = { addr: btcHtlcAddress(bleaf, BTC_HRP), leaf: bleaf, cltv: t2, value: w.btcAmount, txid: null, vout: null }; w.t2 = t2;
     w.status = 'frc_funded'; saveP2p();
+    await watchAddress(w.btcHtlc.addr);   // start watching so the payment is auto-detected (no txid needed)
     say(`P2P ${id}: FRC заперт — тейкер финансирует BTC HTLC ${w.btcHtlc.addr}`);
     return { btcHtlc: w.btcHtlc };
   },

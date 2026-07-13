@@ -537,20 +537,34 @@ function openP2pPayModal(rec) {
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Pay BTC')} ${rec.id}</b><button id="pyClose" class="icon">✕</button></div>
-    <p class="sub">${tr('Send exactly this amount from your Bitcoin wallet to the address, then paste the txid.')}</p>
+    <p class="sub">${tr('Send exactly this amount from your Bitcoin wallet to the address. The swap continues automatically once the payment is seen.')}</p>
     <div class="rrow"><span>${tr('Amount')}</span><b>${Number(BigInt(rec.btcAmount)) / 1e8} BTC</b></div>
     <label>${tr('HTLC address')}<div class="addr" style="user-select:all">${b.addr}</div></label>
-    <label>txid<input id="pyTxid" placeholder="…" autocomplete="off"></label>
-    <button id="pyGo">${tr('I paid — verify')}</button>
-    <div id="pyLog" class="sub" style="font-size:12px"></div></div>`;
+    <div id="pyStatus" class="sub" style="font-size:13px">${tr('waiting for your payment…')}</div>
+    <details style="font-size:12px"><summary class="sub">${tr('paste a txid manually')}</summary>
+      <label>txid<input id="pyTxid" placeholder="…" autocomplete="off"></label>
+      <button id="pyGo" class="ghost">${tr('I paid — verify')}</button></details></div>`;
   document.body.appendChild(m);
   m.onclick = e => { if (e.target === m) m.remove(); };
   q(m, '#pyClose').onclick = () => m.remove();
-  q(m, '#pyGo').onclick = async () => {
+  // auto-detect: poll the relay until it sees the payment, then close (drive loop finishes it)
+  const poll = setInterval(async () => {
+    try {
+      const w = (await api('p2pList')).swaps.find(x => x.id === rec.id);
+      if (w && w.status !== 'frc_funded' && w.status !== 'need_btc') {
+        clearInterval(poll); putP2p({ ...rec, status: 'btc_funded' });
+        const st = $('#pyStatus'); if (st) st.textContent = tr('payment seen ✓ — finishing the swap');
+        setTimeout(() => m.remove(), 1500); mvRefresh();
+      }
+    } catch {}
+  }, 4000);
+  q(m, '#pyClose').onclick = () => { clearInterval(poll); m.remove(); };
+  // manual fallback (paste txid) stays available under the details toggle
+  const g = q(m, '#pyGo'); if (g) g.onclick = async () => {
     const txid = $('#pyTxid').value.trim(); if (!/^[0-9a-f]{64}$/.test(txid)) return toast(tr('bad txid'), 'err');
-    const g = $('#pyGo'); g.disabled = true;
-    try { await api('p2pBtcFunded', { id: rec.id, btcTxid: txid }); putP2p({ ...rec, status: 'btc_funded' }); m.remove(); toast(tr('BTC verified — awaiting your FRC'), 'ok'); mvRefresh(); }
-    catch (e) { $('#pyLog').textContent = '⚠ ' + e.message; g.disabled = false; }
+    g.disabled = true;
+    try { await api('p2pBtcFunded', { id: rec.id, btcTxid: txid }); clearInterval(poll); putP2p({ ...rec, status: 'btc_funded' }); m.remove(); toast(tr('BTC verified — awaiting your FRC'), 'ok'); mvRefresh(); }
+    catch (e) { toast('⚠ ' + e.message, 'err'); g.disabled = false; }
   };
 }
 
