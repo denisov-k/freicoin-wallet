@@ -11,7 +11,7 @@ import { serializeTx, NV3_TX_VERSION } from '../../../core/tx.mjs';
 import { assetPresentValue } from '../../../core/assets.mjs';
 import { sha256, hash160 } from '../../../core/crypto.mjs';
 import { frcLeg, refundGiven, claimReceived } from '../../../core/swap.mjs';
-import { paymentHashOf } from '../../../core/htlc.mjs';
+import { paymentHashOf, htlcClaimAsset } from '../../../core/htlc.mjs';
 import { btcHtlcClaim, btcAddress, btcHtlcRefund, btcHtlcLeaf, btcHtlcAddress, btcP2wpkhAddress, btcP2wpkhSpk, btcDecodeAddress, btcP2wpkhSend } from '../../../core/btc.mjs';
 import { tr, getLang } from './i18n.mjs';
 
@@ -429,6 +429,40 @@ async function sendFrcToSpk(spk, amount) {
   return { txid, vout: 0 };
 }
 
+// pick an unreserved host coin worth ≥ `need` (present value) for a network fee, with the material
+// the asset-HTLC spend builder needs (its private key + witness scriptCode).
+function hostFeeCoin(L, need, reserved = committedOutpoints()) {
+  const c = state.mine.utxos.find(u => (u.assetTag ?? null) === null && u.refheight <= L && !reserved.has(u.outpoint)
+    && assetPresentValue(BigInt(u.value), L - u.refheight, { k: 20, interest: false }) >= need);
+  if (!c) return null;
+  const sec = km[c.spk].priv.toString(16).padStart(64, '0');
+  const [txid, vout] = c.outpoint.split(':');
+  return { txid, vout: +vout, value: BigInt(c.value), refheight: c.refheight, spk: c.spk,
+    pv: assetPresentValue(BigInt(c.value), L - c.refheight, { k: 20, interest: false }),
+    key: sec, script: '21' + pubkeyCompressed(sec) + 'ac', changeSpk: spks[0] };
+}
+
+// lock exactly `amount` base units of `tag` into the HTLC spk. Like mvSendAsset but paying an HTLC
+// (asset conserves; the fee is a separate host coin). Returns the funding outpoint for the swap.
+async function lockAssetToHtlc(spk, tag, amount) {
+  const L = state.mine.height, fee = 10000n, reserved = committedOutpoints();
+  const coins = myCoinsOf(tag, L, reserved);
+  if (coins.reduce((s, c) => s + c.pv, 0n) < amount) throw new Error(tr('not enough of that asset'));
+  const picked = []; let S = 0n;
+  for (const c of [...coins].sort((a, b) => (b.pv > a.pv ? 1 : b.pv < a.pv ? -1 : 0))) { picked.push(c); S += c.pv; if (S >= amount) break; }
+  const feeCoin = hostFeeCoin(L, fee + 1000n, new Set([...reserved, ...picked.map(c => c.outpoint)]));
+  if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
+  const vout = [{ value: amount, scriptPubKey: spk, assetTag: tag }];
+  if (S - amount > 0n) vout.push({ value: S - amount, scriptPubKey: spks[0], assetTag: tag });   // asset change
+  if (feeCoin.pv - fee > 0n) vout.push({ value: feeCoin.pv - fee, scriptPubKey: spks[0], assetTag: HOST_TAG });   // host change
+  const inputs = [...picked.map(c => ({ outpoint: c.outpoint, spk: c.spk, value: c.value, refheight: c.refheight })),
+    { outpoint: `${feeCoin.txid}:${feeCoin.vout}`, spk: feeCoin.spk, value: feeCoin.value, refheight: feeCoin.refheight }];
+  const tx = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(c => opIn(c.outpoint)), vout };
+  inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
+  const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+  return { txid, vout: 0, value: String(amount), refheight: L };
+}
+
 function openSwapModal(prefill) {
   if ($('#modal')) return;
   const m = document.createElement('div'); m.id = 'modal';
@@ -609,8 +643,9 @@ async function driveP2pInner() {
           }
           const H = w.paymentHash, T1 = state.mine.height + (info.t1 || 40);
           const leg = frcLeg({ role: 'give', ourKey: p2pKey(rec.nonce, 'frc'), theirPub: w.taker.frcPub, paymentHash: H, cltv: T1, net: 'regtest' });
-          const fund = await sendFrcToSpk(leg.spk, BigInt(w.frcAmount));
-          putP2p({ ...rec, status: 'frc_funded', leaf: leg.leaf, T1, funding: { txid: fund.txid, vout: fund.vout, value: w.frcAmount, refheight: state.mine.height } });
+          // FRC HTLC (host coin) OR an asset HTLC (asset coin + separate FRC fee coin)
+          const fund = w.assetTag ? await lockAssetToHtlc(leg.spk, w.assetTag, BigInt(w.frcAmount)) : await sendFrcToSpk(leg.spk, BigInt(w.frcAmount));
+          putP2p({ ...rec, status: 'frc_funded', leaf: leg.leaf, T1, funding: { txid: fund.txid, vout: fund.vout, value: w.frcAmount, refheight: fund.refheight ?? state.mine.height } });
           await api('p2pFrcFunded', { id: rec.id, txid: fund.txid, vout: fund.vout, t1: T1 });
           toast(`${w.id}: ${tr('FRC locked — awaiting BTC')}`, 'ok'); mvRefresh();
         } else if (w.status === 'btc_funded' && w.btcHtlc?.txid) {   // taker funded BTC → claim it with R
@@ -627,13 +662,22 @@ async function driveP2pInner() {
         if (w.status === 'frc_funded' && rec.status !== 'need_btc' && !w.btcHtlc?.txid) {   // seller locked FRC → I must fund BTC
           putP2p({ ...rec, status: 'need_btc', btcHtlc: w.btcHtlc });
           toast(`${w.id}: ${tr('pay BTC to complete — tap the swap')}`, 'warn');
-        } else if ((w.status === 'btc_claimed' || w.preimage) && rec.status !== 'done') {   // R revealed → claim FRC
+        } else if ((w.status === 'btc_claimed' || w.preimage) && rec.status !== 'done') {   // R revealed → claim FRC/asset
           const R = w.preimage; if (!R) continue;
-          const f = w.frcHtlc;
-          const cF = claimReceived({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leaf: f.leaf, preimage: R, ourKey: p2pKey(rec.nonce, 'frc'), toSpk: spks[0], fee: 10000n });
+          const f = w.frcHtlc, tag = w.assetTag ?? f.assetTag ?? null;
+          let cF;
+          if (tag) {   // asset HTLC → claim the asset's PRESENT VALUE (demurrage haircut, even for
+            // "constant" k=64 there's a one-off rounding unit), fee from a separate host coin
+            const feeCoin = hostFeeCoin(state.mine.height, 11000n);
+            if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
+            const payout = assetPresentValue(BigInt(f.value), state.mine.height - f.refheight, rateOf(tag));
+            cF = htlcClaimAsset({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leafHex: f.leaf, preimage: R, claimKey: p2pKey(rec.nonce, 'frc'), toSpk: spks[0], assetTag: tag, payout, feeCoin, fee: 10000n, lockHeight: state.mine.height });
+          } else {
+            cF = claimReceived({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leaf: f.leaf, preimage: R, ourKey: p2pKey(rec.nonce, 'frc'), toSpk: spks[0], fee: 10000n });
+          }
           await api('tx', { rawtx: cF.rawtx, kind: 'send' });
           await api('p2pDone', { id: rec.id });
-          addSwapHist({ id: rec.id, category: 'sale', frcAmount: w.frcAmount, btcAmount: w.btcAmount, btcTxid: null, frcTxid: cF.txid ?? null, time: Math.floor(Date.now() / 1000) });
+          addSwapHist({ id: rec.id, category: 'sale', assetTag: tag, frcAmount: w.frcAmount, btcAmount: w.btcAmount, btcTxid: null, btcFundTxid: rec.btcHtlc?.txid ?? null, frcTxid: cF.txid ?? null, time: Math.floor(Date.now() / 1000) });
           dropP2p(rec.id);
           toast(`${w.id}: ${tr('FRC received ✅')}`, 'ok'); mvRefresh();
         }

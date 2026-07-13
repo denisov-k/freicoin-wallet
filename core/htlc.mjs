@@ -9,7 +9,7 @@
 import { sha256, sha256d } from './crypto.mjs';
 import { signEcdsa } from './ecdsa.mjs';
 import { segwitV0Sighash, SIGHASH_ALL } from './sighash.mjs';
-import { serializeTx, txid } from './tx.mjs';
+import { serializeTx, txid, NV3_TX_VERSION } from './tx.mjs';
 import { encodeWitness } from './address.mjs';
 
 const OP = { IF: 0x63, ELSE: 0x67, ENDIF: 0x68, SHA256: 0xa8, EQUALVERIFY: 0x88, CHECKSIG: 0xac, CLTV: 0xb1 };
@@ -76,3 +76,39 @@ export function htlcRefund({ prevTxid, vout, value, refheight, leafHex, cltv, re
 
 /** paymentHash = SHA256(preimage), both hex. */
 export const paymentHashOf = preimageHex => bytesToHex(sha256(hexToBytes(preimageHex)));
+
+// ---- ASSET HTLC spend: the locked coin carries an nV3 assetTag, so the fee cannot come out of
+// the payout (it is not host currency). Two inputs — [HTLC asset coin, host fee coin] — and the
+// asset passes WHOLE to `toSpk` with its tag preserved; host change returns to the fee owner.
+// `payout` is the asset value to emit (present value at lockHeight — for constant assets, the
+// nominal). feeCoin: {txid, vout, value, refheight, pv, key, script, changeSpk} — pv is the host
+// coin's present value at lockHeight; script is its witness script hex ('21<pub>ac'-style).
+const HOST20 = '00'.repeat(20);
+function spendAsset({ funding, leafHex, toSpk, key, satisfier, assetTag, payout, feeCoin, fee = 10000n, lockHeight, nLockTime = 0 }) {
+  const revh = h => h.match(/../g).reverse().join('');
+  const tx = {
+    // NV3 version (high-bit set) is REQUIRED: only then does serializeTx emit the per-output
+    // assetTag — with plain version 2 the tag is dropped and the asset appears not-conserved.
+    version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime, lockHeight, nExpireTime: 0,
+    vin: [
+      { prevout: { txid: revh(funding.txid), vout: funding.vout }, scriptSig: '', sequence: 0xfffffffd, witness: [] },
+      { prevout: { txid: revh(feeCoin.txid), vout: feeCoin.vout }, scriptSig: '', sequence: 0xfffffffd, witness: [] },
+    ],
+    vout: [{ value: payout, scriptPubKey: toSpk, assetTag }],
+  };
+  const change = BigInt(feeCoin.pv) - fee;
+  if (change > 0n) tx.vout.push({ value: change, scriptPubKey: feeCoin.changeSpk, assetTag: HOST20 });
+  const sh0 = segwitV0Sighash(tx, 0, leafHex, BigInt(funding.value), BigInt(funding.refheight), SIGHASH_ALL);
+  tx.vin[0].witness = [signEcdsa(key, sh0) + '01', ...satisfier, '00' + leafHex, ''];
+  const sh1 = segwitV0Sighash(tx, 1, feeCoin.script, BigInt(feeCoin.value), BigInt(feeCoin.refheight), SIGHASH_ALL);
+  tx.vin[1].witness = [signEcdsa(feeCoin.key, sh1) + '01', '00' + feeCoin.script, ''];
+  return { rawtx: serializeTx(tx), txid: txid(tx) };
+}
+/** Claim an asset HTLC with the preimage (claimant signs; fee from a separate host coin). */
+export function htlcClaimAsset({ funding, leafHex, preimage, claimKey, toSpk, assetTag, payout, feeCoin, fee, lockHeight }) {
+  return spendAsset({ funding, leafHex, toSpk, key: claimKey, satisfier: [preimage, '01'], assetTag, payout, feeCoin, fee, lockHeight });
+}
+/** Refund an asset HTLC after its timeout. */
+export function htlcRefundAsset({ funding, leafHex, cltv, refundKey, toSpk, assetTag, payout, feeCoin, fee, lockHeight }) {
+  return spendAsset({ funding, leafHex, toSpk, key: refundKey, satisfier: [''], assetTag, payout, feeCoin, fee, lockHeight, nLockTime: cltv });
+}
