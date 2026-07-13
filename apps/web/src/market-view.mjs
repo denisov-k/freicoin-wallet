@@ -92,8 +92,8 @@ export function mvRefresh() {
 }
 async function doRefresh() {
   if (!_ds || !seed) return;
-  const [info, r, swap] = await Promise.all([api('info'), _ds().assets(), api('swapInfo').catch(() => null)]);
-  state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos: r.assetUtxos }, swap };
+  const [info, r, swap, p2p] = await Promise.all([api('info'), _ds().assets(), api('swapInfo').catch(() => null), api('p2pList').catch(() => null)]);
+  state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos: r.assetUtxos }, swap, p2p };
   // cache relay defs for the light client's next boot (seedDefs) — rates for history valuation
   try { localStorage.setItem('fw_reldefs', JSON.stringify(Object.fromEntries(
     (info.assets || []).map(a => [a.tag, { shift: a.shift, interest: a.interest, name: a.name, decimals: a.decimals }])))); } catch {}
