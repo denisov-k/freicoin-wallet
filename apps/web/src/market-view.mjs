@@ -1366,11 +1366,20 @@ export async function mvSendBtc(dest, amountBtc) {
   return txid;
 }
 
+// filter options from CACHED relay defs — shown instantly (before the first sync populates state);
+// paint() refines them once state loads (drops BTC if no node, adds newly-seen assets).
+function cachedFilterOpts() {
+  let defs = {}; try { defs = JSON.parse(localStorage.getItem('fw_reldefs') || '{}'); } catch {}
+  const assetOpts = Object.entries(defs).map(([tag, d]) => `<option value="${tag}">${d.name || tag.slice(0, 8) + '…'}</option>`).join('');
+  return `<option value="">${tr('all')}</option><optgroup label="${tr('Currency')}"><option value="FRC">FRC</option><option value="BTC">BTC</option></optgroup>`
+    + (assetOpts ? `<optgroup label="${tr('Assets')}">${assetOpts}</optgroup>` : '');
+}
 export function renderExchange(el) {
+  const fopt = cachedFilterOpts();
   el.innerHTML = `
     <div class="row">
-      <label>${tr('Selling')}<select id="fGive"></select></label>
-      <label>${tr('Wants')}<select id="fWant"></select></label>
+      <label>${tr('Selling')}<select id="fGive">${fopt}</select></label>
+      <label>${tr('Wants')}<select id="fWant">${fopt}</select></label>
     </div>
     <label class="chk"><input type="checkbox" id="fOpen" checked>${tr('open only')}</label>
     <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>
