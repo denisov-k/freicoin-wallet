@@ -251,7 +251,7 @@ async function postRangedOffer() {
       if ($('#rAsset').value !== 'FRC') throw new Error(tr('BTC swaps sell FRC — pick FRC to sell'));
       const frcQ = num($('#rQty').value), btcQ = num($('#rPrice').value);
       if (!(frcQ > 0)) throw new Error(tr('enter a quantity'));
-      if (!(btcQ > 0)) throw new Error(tr('enter the BTC price'));
+      if (!(btcQ > 0)) throw new Error(tr('enter a quantity'));
       $('#modal')?.remove();
       return postP2pOffer(frcQ, btcQ);
     }
@@ -307,7 +307,7 @@ function openOfferModal() {
     const btc = e.target.value === 'BTC';
     $('#rPartialLbl').hidden = btc;                                   // no partial fills on a swap
     $('#rPriceLbl').querySelector('label,span') || 0;
-    $('#rPriceLbl').childNodes[0].textContent = btc ? tr('BTC price') : tr('Quantity');   // the want field IS your price
+    $('#rPriceLbl').childNodes[0].textContent = tr('Quantity');   // the want field IS your price
     $('#rHint').textContent = btc
       ? tr('You post a swap offer at your price; a taker fills it non-custodially (refundable).')
       : tr('Buyers fill any amount; the remainder keeps trading while you are online.');
