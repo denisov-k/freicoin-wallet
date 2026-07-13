@@ -1406,25 +1406,25 @@ function paint() {
     byAsset.set(k, e);
   }
 
-  // grouped asset options (used by the offer form and the filters): the host currency in a
+  // grouped asset options (used by the offer form and the filters): the currencies (FRC + BTC) in a
   // Currency group, user-issued assets in an Assets group.
   const assetOpts = state.info.assets.map(a => `<option value="${a.tag}">${assetName(a.tag)}</option>`).join('');
-  const grouped = curOpt => `<optgroup label="${tr('Currency')}">${curOpt}</optgroup>`
+  const btcCur = state.swap?.available ? '<option value="BTC">BTC</option>' : '';   // BTC is a currency here, not a separate group
+  const grouped = curOpt => `<optgroup label="${tr('Currency')}">${curOpt}${btcCur}</optgroup>`
     + (assetOpts ? `<optgroup label="${tr('Assets')}">${assetOpts}</optgroup>` : '');
 
-  // "I sell": only the assets I actually hold, with my balance (present value, in units)
+  // "I sell": only the assets I actually hold, with my balance (present value, in units); + BTC
   const sellOpt = ([k, e]) => `<option value="${k}">${assetName(k === 'FRC' ? null : k)} (${(Number(e.pv) / scaleOf(k)).toLocaleString(getLang())})</option>`;
   const frcHeld = byAsset.get('FRC'), heldAssets = [...byAsset.entries()].filter(([k]) => k !== 'FRC');
-  // BTC is a cross-chain leg (settled by swap, not a ranged offer) — only when a BTC node is up
-  const btcOpt = state.swap?.available ? `<optgroup label="${tr('Cross-chain')}"><option value="BTC">BTC</option></optgroup>` : '';
-  setOptions('#rAsset', (((frcHeld ? `<optgroup label="${tr('Currency')}">${sellOpt(['FRC', frcHeld])}</optgroup>` : '')
-    + (heldAssets.length ? `<optgroup label="${tr('Assets')}">${heldAssets.map(sellOpt).join('')}</optgroup>` : '')) + btcOpt)   // + sell BTC
+  const sellCur = (frcHeld ? sellOpt(['FRC', frcHeld]) : '') + btcCur;
+  setOptions('#rAsset', ((sellCur ? `<optgroup label="${tr('Currency')}">${sellCur}</optgroup>` : '')
+    + (heldAssets.length ? `<optgroup label="${tr('Assets')}">${heldAssets.map(sellOpt).join('')}</optgroup>` : ''))
     || `<option value="">${tr('no coins yet')}</option>`);
-  setOptions('#rWant', grouped('<option value="FRC">FRC</option>') + btcOpt);
+  setOptions('#rWant', grouped('<option value="FRC">FRC</option>'));
 
-  // order-book filters (grouped the same way; 'all' stays ungrouped at the top)
+  // order-book filters (grouped the same way — BTC lives in Currency; 'all' stays ungrouped at the top)
   const fopt = `<option value="">${tr('all')}</option>` + grouped('<option value="FRC">FRC</option>');
-  setOptions('#fGive', fopt); setOptions('#fWant', fopt + btcOpt);
+  setOptions('#fGive', fopt); setOptions('#fWant', fopt);
 
   // skip repainting the book while a fill amount is being typed into it (else the 15s refresh
   // wipes the input) — same reason the offer selects are preserved.
