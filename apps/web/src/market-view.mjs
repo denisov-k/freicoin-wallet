@@ -100,13 +100,14 @@ async function doRefresh() {
   // A wiped/replaced test chain invalidates every local swap record — detect via the genesis hash
   // and drop them, or ghosts of the old chain's swaps haunt the balance/activity forever.
   try {
-    if (info.chainId && localStorage.getItem('fw_mkt_chain') !== info.chainId) {
+    // versioned marker: v2 forces ONE clear on devices where an earlier build recorded the new
+    // chainId without clearing (its guard skipped pre-feature records) — then behaves normally
+    const mark = 'v2:' + info.chainId;
+    if (info.chainId && localStorage.getItem('fw_mkt_chain') !== mark) {
       // NB: fw_btc_nonces survives — it derives BTC-side addresses, and the BTC chain (signet)
       // is NOT wiped with the test chain; dropping it would orphan real proceeds.
-      // No "was a chainId recorded before" guard: records of unknown provenance (pre-feature)
-      // are equally stale — on a genuinely fresh install these stores are empty anyway.
       for (const k of ['fw_p2p', 'fw_swap_hist', 'fw_swaps', 'fw_reldefs']) localStorage.removeItem(k);
-      localStorage.setItem('fw_mkt_chain', info.chainId);
+      localStorage.setItem('fw_mkt_chain', mark);
       btcRecoveredKey = '';   // let recovery re-run against the new chain
     }
   } catch {}
