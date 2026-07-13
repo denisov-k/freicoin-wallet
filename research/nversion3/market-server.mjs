@@ -682,6 +682,28 @@ const api = {
     const txid = await btcRpc('sendrawtransaction', rawtx);
     return { txid };
   },
+  // BTC transaction history for the wallet's addresses (watch-only) — send/receive legs the
+  // Activity view merges alongside FRC/asset history. Collapsed per (txid, category).
+  async btcHistory({ addresses }) {
+    if (!btcAvail()) return { txs: [] };
+    const addrs = (addresses || []).filter(a => /^(bc|tb|bcrt)1[0-9a-z]{6,90}$/i.test(a)).slice(0, 200);
+    if (!addrs.length) return { txs: [] };
+    const set = new Set(addrs);
+    await ensureWatchWallet();
+    for (const a of addrs) await watchAddress(a).catch(() => {});
+    btcDeepScan(addrs);
+    const list = await btcWatch('listtransactions', '*', 300, 0, true).catch(() => []);
+    // Incoming only: the shared watch wallet also watches HTLC escrows, so a claim to one of my
+    // addresses spuriously shows a 'send' leg too (an internal move between watched addresses).
+    // Receives to my addresses are unambiguous — that's the BTC I actually got. Sum per txid.
+    const seen = new Map();
+    for (const t of list) {
+      if (t.category !== 'receive' || !set.has(t.address)) continue;
+      const e = seen.get(t.txid) || { txid: t.txid, category: 'receive', amount: 0, confirmations: t.confirmations ?? 0, time: t.time ?? 0 };
+      e.amount += t.amount; e.confirmations = t.confirmations ?? e.confirmations; seen.set(t.txid, e);
+    }
+    return { txs: [...seen.values()] };
+  },
   // ---- cross-chain swap (FRC -> BTC), relay = BTC liquidity bot ----
   async swapInfo() {
     return { available: btcAvail(), rate: SWAP_RATE, t1: SWAP_T1, t2: SWAP_T2, btcNet: BTC_NET, btcHrp: BTC_HRP,

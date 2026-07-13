@@ -999,6 +999,15 @@ async function refreshBtc() {
 // ---- exports so BTC lives in the wallet's MAIN flow (assets table + Send/Receive), not a side panel ----
 /** Is a BTC account available, and its current balance (sats) + address prefix. */
 export function mvBtc() { return { available: !!state?.swap?.available, balance: btcAcct?.balance ?? null, hrp: btcHrp() }; }
+/** BTC receive history for the Activity feed — merged INTO the existing list as `btc` legs. */
+export async function mvBtcHistory() {
+  if (!state?.swap?.available) return [];
+  try {
+    await recoverBtcNonces();
+    const r = await api('btcHistory', { addresses: Object.keys(btcKeyring()) });
+    return (r.txs || []).map(t => ({ txid: t.txid, category: t.category, amount: t.amount, confirmations: t.confirmations, time: t.time, assetTag: null, btc: true }));
+  } catch { return []; }
+}
 /** The account's receive address (and start watching it so incoming funds are seen). */
 export function mvBtcAddress() { const a = btcAcctAddr(); api('btcAccount', { addresses: [a] }).catch(() => {}); return a; }
 /** True if `a` is a valid address on the BTC network we're on. */

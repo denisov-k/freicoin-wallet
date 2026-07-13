@@ -7,7 +7,7 @@ import { encryptSecret, decryptSecret } from './vault.mjs';
 import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS, CHECKPOINT } from './netparams.mjs';
 import { tr, getLang, setLang, LANGS } from './i18n.mjs';
 // Freimarkets (Issue + Exchange) — mounted as extra tabs only on the nv3 network.
-import { initMarketView, mvSetSeed, mvRefresh, openIssueModal, renderExchange, renderAssetBalance, mvOwnedAssets, mvSendAsset, mvRelayAssets, mvBtc, mvBtcAddress, mvSendBtc, mvBtcValidAddr } from './market-view.mjs';
+import { initMarketView, mvSetSeed, mvRefresh, openIssueModal, renderExchange, renderAssetBalance, mvOwnedAssets, mvSendAsset, mvRelayAssets, mvBtc, mvBtcAddress, mvSendBtc, mvBtcValidAddr, mvBtcHistory } from './market-view.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
@@ -408,6 +408,7 @@ function paintActivity(txs, final = true) {
   const cur = $('#afCur');
   if (cur) {
     const opts = `<option value="">${tr('all')}</option><option value="FRC">FRC</option>`
+      + (txs.some(t => t.btc) ? `<option value="BTC">BTC</option>` : '')
       + [...new Set(txs.map(t => t.assetTag).filter(Boolean))].map(tg => `<option value="${tg}">${actAssetName(tg)}</option>`).join('');
     if (cur.dataset.opts !== opts) {
       cur.dataset.opts = opts; const v = cur.value; cur.innerHTML = opts;
@@ -418,8 +419,10 @@ function paintActivity(txs, final = true) {
   const shown = items.filter(i =>
     (!actFilter.cat || (i.trade ? actFilter.cat === 'trade'
       : actFilter.cat === 'generate' ? (i.category === 'generate' || i.category === 'immature') : i.category === actFilter.cat))
-    && (!actFilter.cur || ((i.trade ? [i.recv, i.paid] : [i]).some(l => actFilter.cur === 'FRC' ? !l.assetTag : l.assetTag === actFilter.cur))));
-  const amtStr = t => `${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount / (t.assetTag ? 10 ** Number(actDefs[t.assetTag]?.decimals ?? 0) : 1))} <small>${t.assetTag ? actAssetName(t.assetTag) : 'FRC'}</small>`;
+    && (!actFilter.cur || ((i.trade ? [i.recv, i.paid] : [i]).some(l => actFilter.cur === 'FRC' ? (!l.assetTag && !l.btc) : actFilter.cur === 'BTC' ? l.btc : l.assetTag === actFilter.cur))));
+  const amtStr = t => t.btc
+    ? `${(+t.amount) > 0 ? '+' : ''}${(+t.amount).toLocaleString(getLang(), { maximumFractionDigits: 8 })} <small>BTC</small>`
+    : `${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount / (t.assetTag ? 10 ** Number(actDefs[t.assetTag]?.decimals ?? 0) : 1))} <small>${t.assetTag ? actAssetName(t.assetTag) : 'FRC'}</small>`;
   const rowHtml = i =>
     `<div class="act-i ${i.trade ? 'trade' : i.category}">${CAT[i.category] || '•'}</div>
      <div class="act-m"><b>${tr(i.category)}</b><span class="sub">${i.confirmations > 0 ? '' : tr('pending') + ' · '}${timeAgo(i.time)}</span></div>
@@ -721,7 +724,9 @@ const render = {
     try {
       const { txs } = await ds().history();
       if (gen !== renderGen) return;
-      painted = paintActivity(txs) || painted;
+      const btcTxs = MKT() ? await mvBtcHistory() : [];   // BTC legs merged INTO the same list
+      if (gen !== renderGen) return;
+      painted = paintActivity([...txs, ...btcTxs]) || painted;
       setStatus('ok');
     } catch (e) {
       if (gen !== renderGen) return;
