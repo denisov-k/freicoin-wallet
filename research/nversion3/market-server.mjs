@@ -703,6 +703,7 @@ const api = {
     for (const a of addrs) await watchAddress(a).catch(() => {});
     btcDeepScan(addrs);
     const utxos = await btcWatch('listunspent', 0, 9999999, addrs).catch(() => []);
+    const set = new Set(addrs);
     const byTx = new Map();
     for (const u of utxos) {
       const e = byTx.get(u.txid) || { txid: u.txid, category: 'receive', amount: 0, confirmations: u.confirmations ?? 0, time: 0, addresses: [] };
@@ -710,8 +711,22 @@ const api = {
       if (!e.addresses.includes(u.address)) e.addresses.push(u.address);   // lets the client tie a receive to its swap
       byTx.set(u.txid, e);
     }
-    for (const e of byTx.values()) { const tx = await btcWatch('gettransaction', e.txid, true).catch(() => null); e.time = tx?.blocktime ?? tx?.time ?? 0; }
-    return { txs: [...byTx.values()] };
+    const txs = [];
+    for (const e of byTx.values()) {
+      const tx = await btcWatch('gettransaction', e.txid, true, true).catch(() => null);   // (include_watchonly, verbose→.decoded)
+      e.time = tx?.blocktime ?? tx?.time ?? 0;
+      // CHANGE is not income: if the tx also SPENDS one of these addresses, the "receive" is the
+      // client's own change coming back (e.g. funding a swap HTLC from the account) — skip it.
+      let self = false;
+      const raw = tx?.decoded ?? null;
+      if (raw) for (const vin of raw.vin || []) {
+        const pt = await btcRpc('getrawtransaction', vin.txid, true).catch(() => null);
+        const a = pt?.vout?.[vin.vout]?.scriptPubKey?.address;
+        if (a && set.has(a)) { self = true; break; }
+      }
+      if (!self) txs.push(e);
+    }
+    return { txs };
   },
   // ---- cross-chain swap (FRC -> BTC), relay = BTC liquidity bot ----
   async swapInfo() {
