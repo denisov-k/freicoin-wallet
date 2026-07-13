@@ -405,6 +405,17 @@ function paintActivity(txs, final = true) {
   // show a BTC-only list — hold the skeleton until real FRC legs arrive or the FINAL paint says
   // the history is truly empty.
   if (!final && !txs.filter(t => !t.btc).length) { if (!list.querySelector('.skel')) list.innerHTML = skel(4); return false; }
+  // A cross-chain trade knows the raw FRC leg it replaces (frcTxid) — adopt that leg's real
+  // time/confirmations/amount (actual received/paid incl. fee) before the leg itself is hidden.
+  for (const t of btcActLegs) {
+    if (!t.trade || !t.frcTxid) continue;
+    const leg = txs.find(l => !l.btc && !l.assetTag && l.txid === t.frcTxid);
+    if (!leg) continue;
+    if (!t.time) t.time = leg.time;
+    t.confirmations = leg.confirmations;
+    const a = Math.abs(+leg.amount);
+    if (!t.recv.btc) t.recv.amount = a; else t.paid.amount = -a;
+  }
   txs = [...txs.filter(t => !t.btc && !t.trade && !btcActHide.has(t.txid)), ...btcActLegs];   // FRC/asset legs (minus those a trade row replaces) + cached BTC legs/trades
   actLastTxs = txs;
   // A tx whose legs move DIFFERENT currencies in opposite directions is a trade — collapse

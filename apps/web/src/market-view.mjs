@@ -968,7 +968,14 @@ const addBtcNonce = n => { try { const a = loadBtcNonces(); if (!a.includes(n)) 
 // BTC receive to the swap. category: 'purchase' = bought BTC (paid FRC), 'sale' = sold BTC.
 const SWHIST_LS = 'fw_swap_hist';
 const loadSwapHist = () => { try { return JSON.parse(localStorage.getItem(SWHIST_LS) || '[]'); } catch { return []; } };
-const addSwapHist = e => { try { const a = loadSwapHist(); if (!a.some(x => x.id === e.id)) { a.push(e); localStorage.setItem(SWHIST_LS, JSON.stringify(a)); } } catch {} };
+// upsert by id: a later, better-informed write (e.g. recovery learning the claim txid) fills the
+// blanks of an earlier entry instead of being dropped
+const addSwapHist = e => { try {
+  const a = loadSwapHist(), i = a.findIndex(x => x.id === e.id);
+  if (i >= 0) { for (const [k, v] of Object.entries(e)) if (v != null && v !== 0 && a[i][k] == null) a[i][k] = v; }
+  else a.push(e);
+  localStorage.setItem(SWHIST_LS, JSON.stringify(a));
+} catch {} };
 
 // Every BTC address this wallet controls → its private key: the fixed account PLUS each P2P swap's
 // per-nonce BTC key (live records AND the persistent address book). Balance sums them; sends spend any.
@@ -992,9 +999,17 @@ async function recoverBtcNonces() {
   const synth = (o, role, nonce) => {
     if (!doneish(o)) return;
     const boughtBtc = (role === 'maker') !== (o.dir === 'sellBtc');   // forward maker & reverse taker BUY btc
+    // The FRC leg's txid: the maker's HTLC funding is on the offer; a CLAIM (forward taker /
+    // reverse maker) is rebuilt deterministically (RFC6979) to learn its txid without broadcasting.
+    let frcTxid = (role === 'maker' && o.dir !== 'sellBtc') ? (o.frcHtlc?.txid ?? null) : null;
+    const claimsFrc = (role === 'taker') !== (o.dir === 'sellBtc');   // forward taker & reverse maker claim FRC
+    if (claimsFrc && o.preimage && o.frcHtlc?.txid != null) {
+      try { frcTxid = claimReceived({ funding: { txid: o.frcHtlc.txid, vout: o.frcHtlc.vout, value: BigInt(o.frcHtlc.value), refheight: o.frcHtlc.refheight },
+        leaf: o.frcHtlc.leaf, preimage: o.preimage, ourKey: p2pKey(nonce, 'frc'), toSpk: spks[0], fee: 10000n }).txid; } catch {}
+    }
     addSwapHist({ id: o.id, category: boughtBtc ? 'purchase' : 'sale', frcAmount: o.frcAmount, btcAmount: o.btcHtlc?.value || o.btcAmount,
       btcTxid: null, btcAddr: boughtBtc ? btcP2wpkhAddress(pubkeyCompressed(p2pKey(nonce, 'btc')), btcHrp()) : null,
-      frcTxid: (role === 'maker' && o.dir !== 'sellBtc') ? (o.frcHtlc?.txid ?? null) : null, time: 0 });
+      frcTxid, time: 0 });
   };
   for (const o of state.p2p.swaps) {
     try {
@@ -1038,7 +1053,7 @@ export async function mvBtcHistory() {
       if (recv) used.add(recv.txid);
       const frcAmt = Number(BigInt(h.frcAmount)) / 1e8, btcAmt = recv ? recv.amount : Number(BigInt(h.btcAmount)) / 1e8;
       const buy = h.category === 'purchase';   // bought BTC (recv BTC, paid FRC) vs sold BTC
-      items.push({ trade: true, txid: recv?.txid || h.btcTxid || h.id, time: recv?.time || h.time || 0, confirmations: recv?.confirmations ?? 1, category: h.category,
+      items.push({ trade: true, txid: recv?.txid || h.btcTxid || h.id, time: recv?.time || h.time || 0, confirmations: recv?.confirmations ?? 1, category: h.category, frcTxid: h.frcTxid ?? null,
         recv: buy ? { amount: btcAmt, btc: true } : { amount: frcAmt },
         paid: buy ? { amount: -frcAmt } : { amount: -btcAmt, btc: true } });
     }
