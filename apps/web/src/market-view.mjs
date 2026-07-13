@@ -918,12 +918,16 @@ function paint() {
     if (btcMatch && state.swap) {
       // P2P board offers: open ones from OTHERS get a Take button; mine/in-flight show status
       // (the fixed-rate relay-LP listing was removed — the board is a pure maker-priced market)
-      for (const o of (state.p2p?.swaps || [])) {
+      // newest first (mirror the ranged book's .reverse())
+      for (const o of [...(state.p2p?.swaps || [])].reverse()) {
         const mineRec = myP2p.get(o.id);
         const give = `${frc(o.frcAmount)} FRC`, want = `${(Number(BigInt(o.btcAmount)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`;
+        // drop my finished/dead offers from view (don't clutter with done/cancelled/expired)
+        if (mineRec && ['done', 'btc_claimed'].includes(o.status)) { dropP2p(o.id); continue; }
         let act;
-        if (mineRec) act = mineRec.status === 'need_btc'
-          ? `<button class="p2ppay rbtn" data-id="${o.id}">${tr('Pay BTC')}</button>`
+        if (mineRec) act = mineRec.status === 'need_btc' ? `<button class="p2ppay rbtn" data-id="${o.id}">${tr('Pay BTC')}</button>`
+          // my own OPEN offer (nothing locked yet) → let me cancel it
+          : (o.status === 'open' && !o.frcHtlc) ? `<button class="p2pcancel" data-id="${o.id}">${tr('Cancel')}</button>`
           : `<span class="sub">${tr(o.status)}</span>`;
         else act = o.status === 'open' ? `<button class="p2ptake rbtn" data-id="${o.id}">${tr('Buy')}</button>` : `<span class="sub">${tr(o.status)}</span>`;
         if (o.status === 'open' || mineRec)
@@ -942,6 +946,11 @@ function paint() {
     });
     $('#bookBody').querySelectorAll('.p2ppay').forEach(b => b.onclick = () => {
       const rec = loadP2p().find(x => x.id === b.dataset.id); if (rec) openP2pPayModal(rec);
+    });
+    $('#bookBody').querySelectorAll('.p2pcancel').forEach(b => b.onclick = async () => {
+      const rec = loadP2p().find(x => x.id === b.dataset.id); if (!rec) return;
+      try { await api('p2pCancel', { id: rec.id, makerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')) }); dropP2p(rec.id); toast(tr('offer cancelled'), 'ok'); mvRefresh(); }
+      catch (e) { toast(e.message, 'err'); }
     });
     $('#bookBody').querySelectorAll('.rbtn:not(.p2ptake):not(.p2ppay)').forEach(b => b.onclick = () => {
       const offer = state.info.book.find(o => o.id === +b.dataset.id);

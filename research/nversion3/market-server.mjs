@@ -243,7 +243,24 @@ async function matchCrosses() {
 
 // Swap watcher: for a BTC-funded swap, detect the user's claim on the BTC chain, read the
 // revealed preimage from its witness, and claim the escrowed FRC. Also refund expired swaps.
+function reconcileP2p() {
+  // Prune the board of anything settled or dead so it only ever shows live offers:
+  //   - terminal states (done/cancelled/expired) go immediately;
+  //   - a completed swap: btc_claimed whose FRC HTLC coin was spent (taker claimed) is done;
+  //   - a 'taken' offer the maker never funded within a grace window is a zombie.
+  const GRACE = 30;
+  let changed = false;
+  for (let i = p2p.length - 1; i >= 0; i--) {
+    const w = p2p[i];
+    const settled = ['done', 'cancelled', 'expired'].includes(w.status);
+    const takerClaimed = w.status === 'btc_claimed' && w.frcHtlc && !utxos.has(`${w.frcHtlc.txid}:${w.frcHtlc.vout}`);
+    const zombie = w.status === 'taken' && !w.frcHtlc && w.takenAt != null && indexedHeight - w.takenAt > GRACE;
+    if (settled || takerClaimed || zombie) { p2p.splice(i, 1); changed = true; }
+  }
+  if (changed) saveP2p();
+}
 async function watchP2p() {
+  reconcileP2p();
   if (!btcAvail()) return;
   for (const w of p2p) {
     try {
@@ -678,6 +695,17 @@ const api = {
   // ===== P2P SWAP BOARD: maker-priced FRC↔BTC, user-to-user. The relay coordinates and
   // watches both chains but holds NO keys and NO funds — real price discovery, non-custodial.
   // V1 direction: maker SELLS FRC for BTC (the "exit"). Maker is the initiator (holds R). =====
+  // cancel/remove MY p2p offer (soft-owned by the maker's pubkey). Only if no FRC is locked yet.
+  async p2pCancel({ id, makerFrcPub }) {
+    const i = p2p.findIndex(x => x.id === id);
+    if (i < 0) throw new Error('нет такого оффера');
+    const w = p2p[i];
+    if (w.maker.frcPub !== makerFrcPub) throw new Error('оффер не ваш');
+    if (w.frcHtlc) throw new Error('FRC уже заперт — дождитесь завершения или возврата');
+    p2p.splice(i, 1); saveP2p();
+    say(`P2P ${id}: снят мейкером`);
+    return { ok: true };
+  },
   async p2pList() {
     const fh = await rpc('getblockcount').catch(() => 0);
     return { available: btcAvail(), t1: SWAP_T1, t2: SWAP_T2, btcNet: BTC_NET, btcHrp: BTC_HRP, frcHeight: fh,
@@ -706,7 +734,7 @@ const api = {
     if (w.status !== 'open') throw new Error('оффер уже взят');
     if (!/^[0-9a-f]{66}$/.test(takerFrcPub || '') || !/^[0-9a-f]{66}$/.test(takerBtcPub || '')) throw new Error('плохие ключи');
     w.taker = { frcPub: takerFrcPub, btcPub: takerBtcPub, frcAddr: takerFrcAddr };
-    w.status = 'taken'; saveP2p();
+    w.status = 'taken'; w.takenAt = indexedHeight; saveP2p();
     say(`P2P-оффер ${id}: взят — стороны обмениваются HTLC`);
     return { id, maker: w.maker, frcAmount: w.frcAmount, btcAmount: w.btcAmount, paymentHash: w.paymentHash };
   },
