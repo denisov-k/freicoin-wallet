@@ -637,7 +637,7 @@ async function driveP2pRev(rec, w, info) {
       const cF = claimReceived({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leaf: f.leaf, preimage: R, ourKey: p2pKey(rec.nonce, 'frc'), toSpk: spks[0], fee: 10000n });
       await api('p2pFrcClaimB', { id: rec.id, rawtx: cF.rawtx });
       putP2p({ ...rec, status: 'frc_claimed_rev' });
-      addSwapHist({ id: rec.id, category: 'sale', frcAmount: w.frcAmount, btcAmount: w.btcAmount, btcTxid: null, frcTxid: cF.txid ?? null, time: Math.floor(Date.now() / 1000) });
+      addSwapHist({ id: rec.id, category: 'sale', frcAmount: w.frcAmount, btcAmount: w.btcAmount, btcTxid: null, btcFundTxid: rec.btcHtlc?.txid ?? null, frcTxid: cF.txid ?? null, time: Math.floor(Date.now() / 1000) });
       toast(`${w.id}: ${tr('FRC received ✅')}`, 'ok'); mvRefresh();
     }
   } else {   // taker
@@ -1009,7 +1009,8 @@ async function recoverBtcNonces() {
         leaf: o.frcHtlc.leaf, preimage: o.preimage, ourKey: p2pKey(nonce, 'frc'), toSpk: spks[0], fee: 10000n }).txid; } catch {}
     }
     addSwapHist({ id: o.id, category: boughtBtc ? 'purchase' : 'sale', frcAmount: o.frcAmount, btcAmount: o.btcHtlc?.value || o.btcAmount,
-      btcTxid: null, btcAddr: boughtBtc ? btcP2wpkhAddress(pubkeyCompressed(p2pKey(nonce, 'btc')), btcHrp()) : null,
+      btcTxid: null, btcFundTxid: boughtBtc ? null : (o.btcHtlc?.txid ?? null),   // the maker's HTLC-funding spend, covered by the trade row
+      btcAddr: boughtBtc ? btcP2wpkhAddress(pubkeyCompressed(p2pKey(nonce, 'btc')), btcHrp()) : null,
       frcTxid, time: 0 });
   };
   for (const o of offers) {
@@ -1055,8 +1056,12 @@ export async function mvBtcHistory() {
   try {
     await recoverBtcNonces();
     const r = await api('btcHistory', { addresses: Object.keys(btcKeyring()) });
-    const receives = (r.txs || []).map(t => ({ txid: t.txid, category: 'receive', amount: t.amount, confirmations: t.confirmations, time: t.time, addresses: t.addresses || [], assetTag: null, btc: true }));
+    const all = (r.txs || []).map(t => ({ txid: t.txid, category: t.category, amount: t.amount, confirmations: t.confirmations, time: t.time, addresses: t.addresses || [], assetTag: null, btc: true }));
     const hist = loadSwapHist(), used = new Set(), items = [];
+    const receives = all.filter(t => t.category === 'receive');
+    // sends already represented by a trade row (the maker's HTLC funding) must not show twice
+    const fundTxids = new Set(hist.map(h => h.btcFundTxid).filter(Boolean));
+    const sends = all.filter(t => t.category === 'send' && !fundTxids.has(t.txid));
     for (const h of hist) {
       const buy = h.category === 'purchase';   // bought BTC (recv BTC, paid FRC) vs sold BTC
       // tie the swap to its BTC receive: by claim txid; by the per-swap address (old claims); or by
@@ -1070,7 +1075,7 @@ export async function mvBtcHistory() {
         recv: buy ? { amount: btcAmt, btc: true } : { amount: frcAmt },
         paid: buy ? { amount: -frcAmt } : { amount: -btcAmt, btc: true } });
     }
-    items.push(...receives.filter(t => !used.has(t.txid)));   // non-swap receives stay as plain legs
+    items.push(...receives.filter(t => !used.has(t.txid)), ...sends);   // non-swap receives + real outgoing sends
     return { legs: items, hideFrc: hist.map(h => h.frcTxid).filter(Boolean) };
   } catch { return { legs: [], hideFrc: [] }; }
 }

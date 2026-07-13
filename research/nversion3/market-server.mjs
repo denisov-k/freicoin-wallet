@@ -702,29 +702,28 @@ const api = {
     await ensureWatchWallet();
     for (const a of addrs) await watchAddress(a).catch(() => {});
     btcDeepScan(addrs);
-    const utxos = await btcWatch('listunspent', 0, 9999999, addrs).catch(() => []);
+    // Full history, not just unspent coins: each touching tx contributes its NET effect on these
+    // addresses (outputs to them − inputs from them). A deposit stays visible forever even after
+    // its coin is spent; a spend (e.g. locking a swap HTLC from the account) is one 'send' of the
+    // true outflow (amount + fee, change already netted out). net==0 (pure pass-through) is noise.
     const set = new Set(addrs);
-    const byTx = new Map();
-    for (const u of utxos) {
-      const e = byTx.get(u.txid) || { txid: u.txid, category: 'receive', amount: 0, confirmations: u.confirmations ?? 0, time: 0, addresses: [] };
-      e.amount += u.amount; e.confirmations = u.confirmations ?? e.confirmations;
-      if (!e.addresses.includes(u.address)) e.addresses.push(u.address);   // lets the client tie a receive to its swap
-      byTx.set(u.txid, e);
-    }
+    const list = await btcWatch('listtransactions', '*', 500, 0, true).catch(() => []);
+    const cand = new Set();
+    for (const t of list) { if (t.address && set.has(t.address)) cand.add(t.txid); else if (t.category === 'send') cand.add(t.txid); }
     const txs = [];
-    for (const e of byTx.values()) {
-      const tx = await btcWatch('gettransaction', e.txid, true, true).catch(() => null);   // (include_watchonly, verbose→.decoded)
-      e.time = tx?.blocktime ?? tx?.time ?? 0;
-      // CHANGE is not income: if the tx also SPENDS one of these addresses, the "receive" is the
-      // client's own change coming back (e.g. funding a swap HTLC from the account) — skip it.
-      let self = false;
-      const raw = tx?.decoded ?? null;
-      if (raw) for (const vin of raw.vin || []) {
+    for (const txid of cand) {
+      const tx = await btcWatch('gettransaction', txid, true, true).catch(() => null);   // (include_watchonly, verbose→.decoded)
+      const raw = tx?.decoded; if (!raw) continue;
+      let recv = 0, spent = 0; const recvAddrs = [];
+      for (const o of raw.vout || []) { const a = o.scriptPubKey?.address; if (a && set.has(a)) { recv += o.value; recvAddrs.push(a); } }
+      for (const vin of raw.vin || []) {
         const pt = await btcRpc('getrawtransaction', vin.txid, true).catch(() => null);
-        const a = pt?.vout?.[vin.vout]?.scriptPubKey?.address;
-        if (a && set.has(a)) { self = true; break; }
+        const po = pt?.vout?.[vin.vout], a = po?.scriptPubKey?.address;
+        if (a && set.has(a)) spent += po.value;
       }
-      if (!self) txs.push(e);
+      const net = +(recv - spent).toFixed(8);
+      if (!net) continue;
+      txs.push({ txid, category: net > 0 ? 'receive' : 'send', amount: net, confirmations: tx.confirmations ?? 0, time: tx.blocktime ?? tx.time ?? 0, addresses: recvAddrs });
     }
     return { txs };
   },
