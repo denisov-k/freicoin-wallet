@@ -1413,13 +1413,11 @@ function paint() {
   const grouped = curOpt => `<optgroup label="${tr('Currency')}">${curOpt}${btcCur}</optgroup>`
     + (assetOpts ? `<optgroup label="${tr('Assets')}">${assetOpts}</optgroup>` : '');
 
-  // "I sell": only the assets I actually hold, with my balance (present value, in units); + BTC
-  // with its account balance (loads async — shows plain 'BTC' until the balance lands, then adds it)
+  // "I sell": only the assets I actually hold, with my balance (present value, in units). BTC shows
+  // no balance — it can be topped up from an external wallet, so a fixed balance would mislead.
   const sellOpt = ([k, e]) => `<option value="${k}">${assetName(k === 'FRC' ? null : k)} (${(Number(e.pv) / scaleOf(k)).toLocaleString(getLang())})</option>`;
   const frcHeld = byAsset.get('FRC'), heldAssets = [...byAsset.entries()].filter(([k]) => k !== 'FRC');
-  const btcSell = state.swap?.available
-    ? `<option value="BTC">BTC${btcAcct ? ` (${(Number(BigInt(btcAcct.balance)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })})` : ''}</option>` : '';
-  const sellCur = (frcHeld ? sellOpt(['FRC', frcHeld]) : '') + btcSell;
+  const sellCur = (frcHeld ? sellOpt(['FRC', frcHeld]) : '') + btcCur;
   setOptions('#rAsset', ((sellCur ? `<optgroup label="${tr('Currency')}">${sellCur}</optgroup>` : '')
     + (heldAssets.length ? `<optgroup label="${tr('Assets')}">${heldAssets.map(sellOpt).join('')}</optgroup>` : ''))
     || `<option value="">${tr('no coins yet')}</option>`);
