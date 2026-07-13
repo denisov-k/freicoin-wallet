@@ -12,7 +12,7 @@ import { segwitV0Sighash, SIGHASH_ALL } from './sighash.mjs';
 import { serializeTx, txid, NV3_TX_VERSION } from './tx.mjs';
 import { encodeWitness } from './address.mjs';
 
-const OP = { IF: 0x63, ELSE: 0x67, ENDIF: 0x68, SHA256: 0xa8, EQUALVERIFY: 0x88, CHECKSIG: 0xac, CLTV: 0xb1 };
+const OP = { IF: 0x63, ELSE: 0x67, ENDIF: 0x68, SHA256: 0xa8, EQUALVERIFY: 0x88, CHECKSIG: 0xac, CHECKSIGVERIFY: 0xad, CLTV: 0xb1 };
 const op = x => x.toString(16).padStart(2, '0');
 const bytesToHex = b => [...b].map(x => x.toString(16).padStart(2, '0')).join('');
 const hexToBytes = h => Uint8Array.from(h.match(/../g).map(x => parseInt(x, 16)));
@@ -34,11 +34,23 @@ function scriptNum(n) {
   return push(bytesToHex(Uint8Array.from(b)));
 }
 
-/** The HTLC witness script (hex): claim with (preimage, claimPub) or refund after cltv with refundPub. */
+/** The HTLC witness script (hex). THREE spend paths:
+ *   1. claim  — SHA256(preimage)==H, claimPub signs         (the swap settles)
+ *   2. timeout — after cltv, refundPub signs                 (unilateral refund, timelocked)
+ *   3. coop   — claimPub AND refundPub both sign, ANYTIME    (instant cooperative cancel)
+ * The coop branch needs BOTH signatures, so neither party can move funds alone — it only enables
+ * an instant refund when both agree (e.g. the taker backs out before committing their leg).
+ *   IF  SHA256 <H> EQUALVERIFY <claimPub> CHECKSIG
+ *   ELSE IF  <cltv> CLTV <refundPub> CHECKSIG
+ *        ELSE <claimPub> CHECKSIGVERIFY <refundPub> CHECKSIG  ENDIF
+ *   ENDIF                                                      (Freicoin CLTV consumes its arg) */
 export function htlcLeaf({ paymentHash, claimPub, refundPub, cltv }) {
-  return op(OP.IF) + op(OP.SHA256) + push(paymentHash) + op(OP.EQUALVERIFY) + push(claimPub)
-       + op(OP.ELSE) + scriptNum(cltv) + op(OP.CLTV) + push(refundPub)   // Freicoin CLTV: no OP_DROP
-       + op(OP.ENDIF) + op(OP.CHECKSIG);
+  return op(OP.IF) + op(OP.SHA256) + push(paymentHash) + op(OP.EQUALVERIFY) + push(claimPub) + op(OP.CHECKSIG)
+       + op(OP.ELSE)
+       +   op(OP.IF) + scriptNum(cltv) + op(OP.CLTV) + push(refundPub) + op(OP.CHECKSIG)
+       +   op(OP.ELSE) + push(claimPub) + op(OP.CHECKSIGVERIFY) + push(refundPub) + op(OP.CHECKSIG)
+       +   op(OP.ENDIF)
+       + op(OP.ENDIF);
 }
 
 // P2WSH-MAST for a single-leaf tree: program = HASH256(0x00 || leaf); reveal = 0x00 || leaf, empty proof.
@@ -67,11 +79,16 @@ export function htlcClaim({ prevTxid, vout, value, refheight, leafHex, preimage,
     satisfier: [preimage, '01'], fee });
 }
 
+// Branch selectors below the script reveal (the LAST item is on top, popped first):
+//   claim   → outer IF true:                 [preimage, TRUE]
+//   timeout → outer false, inner true:        [TRUE, FALSE]
+//   coop    → outer false, inner false:       [FALSE, FALSE]  (with BOTH sigs below)
+const SEL_TIMEOUT = ['01', ''], SEL_COOP = ['', ''];
+
 /** Refund a funded HTLC after its timeout (maker signs; requires chain height ≥ cltv). */
 export function htlcRefund({ prevTxid, vout, value, refheight, leafHex, cltv, refundKey, toSpk, fee }) {
-  // satisfier: [FALSE] → OP_IF takes the refund branch; nLockTime = cltv enforces the timelock.
   return spend({ prevTxid, vout, value, refheight, leafHex, toSpk, key: refundKey,
-    satisfier: [''], nLockTime: cltv, fee });
+    satisfier: SEL_TIMEOUT, nLockTime: cltv, fee });
 }
 
 /** paymentHash = SHA256(preimage), both hex. */
@@ -110,5 +127,20 @@ export function htlcClaimAsset({ funding, leafHex, preimage, claimKey, toSpk, as
 }
 /** Refund an asset HTLC after its timeout. */
 export function htlcRefundAsset({ funding, leafHex, cltv, refundKey, toSpk, assetTag, payout, feeCoin, fee, lockHeight }) {
-  return spendAsset({ funding, leafHex, toSpk, key: refundKey, satisfier: [''], assetTag, payout, feeCoin, fee, lockHeight, nLockTime: cltv });
+  return spendAsset({ funding, leafHex, toSpk, key: refundKey, satisfier: SEL_TIMEOUT, assetTag, payout, feeCoin, fee, lockHeight, nLockTime: cltv });
+}
+
+/** COOPERATIVE refund (FRC): BOTH parties sign the same tx → the locked coin returns instantly, no
+ *  timelock. This variant holds both keys (test / same-wallet); the two-party flow signs separately
+ *  and assembles the two sigs. Witness for the coop branch: [refundSig, claimSig, FALSE, FALSE]. */
+export function htlcCoopRefund({ prevTxid, vout, value, refheight, leafHex, refundKey, claimKey, toSpk, fee }) {
+  const tx = {
+    version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: refheight,
+    vin: [{ prevout: { txid: prevTxid.match(/../g).reverse().join(''), vout }, scriptSig: '', sequence: 0xfffffffd, witness: [] }],
+    vout: [{ value: value - fee, scriptPubKey: toSpk }],
+  };
+  const sh = segwitV0Sighash(tx, 0, leafHex, value, refheight, SIGHASH_ALL);
+  const claimSig = signEcdsa(claimKey, sh) + '01', refundSig = signEcdsa(refundKey, sh) + '01';
+  tx.vin[0].witness = [refundSig, claimSig, ...SEL_COOP, '00' + leafHex, ''];
+  return { rawtx: serializeTx(tx), txid: txid(tx) };
 }
