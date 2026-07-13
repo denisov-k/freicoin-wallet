@@ -288,10 +288,20 @@ async function postRangedOffer() {
     // want = BTC ⇒ post a P2P swap offer at YOUR price (FRC quantity → BTC amount). The board
     // matches it with a taker; the HTLC dance runs non-custodially. (Not a ranged offer.)
     if ($('#rWant').value === 'BTC') {
-      if ($('#rAsset').value !== 'FRC') throw new Error(tr('BTC swaps sell FRC — pick FRC to sell'));
-      const frcQ = num($('#rQty').value), btcQ = num($('#rPrice').value);
-      if (!(frcQ > 0)) throw new Error(tr('enter a quantity'));
+      const sell = $('#rAsset').value, btcQ = num($('#rPrice').value);
       if (!(btcQ > 0)) throw new Error(tr('enter a quantity'));
+      if (sell !== 'FRC') {   // sell a user-issued CONSTANT asset for BTC
+        if (!(rateOf(sell).k >= 64)) throw new Error(tr('only constant assets can be swapped for BTC'));
+        const qty = num($('#rQty').value);
+        const units = BigInt(Math.round(qty * scaleOf(sell)));
+        if (!(units > 0n)) throw new Error(tr('enter a quantity'));
+        const held = myCoinsOf(sell, state.mine.height).reduce((s, c) => s + c.pv, 0n);
+        if (units > held) throw new Error(`${tr('only')} ${(Number(held) / scaleOf(sell)).toLocaleString(getLang())} ${assetName(sell)} ${tr('free to lock (rest backs your open offers)')}`);
+        $('#modal')?.remove();
+        return postP2pOffer(qty, btcQ, sell);
+      }
+      const frcQ = num($('#rQty').value);
+      if (!(frcQ > 0)) throw new Error(tr('enter a quantity'));
       const maxK = freeFrcKria() - 10000n;                             // fee-reserved free FRC
       if (BigInt(Math.round(frcQ * 1e8)) > maxK)                       // can't lock more than we have free
         throw new Error(`${tr('only')} ${frc(maxK > 0n ? maxK : 0n)} FRC ${tr('free to lock (rest backs your open offers)')}`);
@@ -345,32 +355,45 @@ function openOfferModal() {
   q(m, '#rPartial').onchange = e => { $('#rHint').textContent = e.target.checked
     ? tr('Buyers fill any amount; the remainder keeps trading while you are online.')
     : tr('The offer can only be taken whole — one buyer, the full quantity.'); };
-  // I sell = BTC ⇒ reverse cross-chain swap: want is FRC, no partial, price is FRC wanted.
-  q(m, '#rAsset').onchange = e => {
-    if (e.target.value !== 'BTC') { paint(); $('#rPartialLbl').hidden = false; $('#rHint').textContent = tr('Buyers fill any amount; the remainder keeps trading while you are online.'); return; }
-    setOptions('#rWant', '<option value="FRC">FRC</option>');
-    $('#rPartialLbl').hidden = true;
-    $('#rPriceLbl').childNodes[0].textContent = tr('Quantity');
-    const bal = mvBtc().balance, maxSats = bal ? BigInt(bal) - 1000n : 0n;
-    $('#rHint').innerHTML = `${tr('You post a swap offer at your price; a taker fills it non-custodially (refundable).')}`
-      + `<br><b>${tr('Free to lock')}: ${(Number(maxSats > 0n ? maxSats : 0n) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC</b>`;
+  // update the "Free to lock" hint for a →BTC swap based on what's selected in "I sell"
+  const swapHint = () => {
+    const sell = $('#rAsset').value, pre = tr('You post a swap offer at your price; a taker fills it non-custodially (refundable).');
+    let free;
+    if (sell === 'BTC') { const b = mvBtc().balance, s = b ? BigInt(b) - 1000n : 0n; free = `${(Number(s > 0n ? s : 0n) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`; }
+    else if (sell === 'FRC') { const k = freeFrcKria() - 10000n; free = `${frc(k > 0n ? k : 0n)} FRC`; }
+    else { const pv = myCoinsOf(sell, state.mine.height).reduce((s, c) => s + c.pv, 0n); free = `${(Number(pv) / scaleOf(sell)).toLocaleString(getLang())} ${assetName(sell)}`; }
+    $('#rHint').innerHTML = `${pre}<br><b>${tr('Free to lock')}: ${free}</b>`;
   };
-  // want = BTC ⇒ cross-chain swap: no price/partial (rate is the relay's), give is FRC.
+  // I sell = BTC ⇒ reverse swap (want FRC). I sell = FRC/asset with want=BTC ⇒ forward swap.
+  q(m, '#rAsset').onchange = e => {
+    if (e.target.value === 'BTC') { setOptions('#rWant', '<option value="FRC">FRC</option>'); $('#rPartialLbl').hidden = true; $('#rPriceLbl').childNodes[0].textContent = tr('Quantity'); swapHint(); return; }
+    if ($('#rWant').value === 'BTC') { swapHint(); return; }             // still a →BTC swap, just a different sell asset
+    paint(); $('#rPartialLbl').hidden = false; $('#rHint').textContent = tr('Buyers fill any amount; the remainder keeps trading while you are online.');
+  };
+  // want = BTC ⇒ cross-chain swap: no partial; sell side may be FRC or a held CONSTANT asset.
   q(m, '#rWant').onchange = e => {
     const btc = e.target.value === 'BTC';
-    $('#rPartialLbl').hidden = btc;                                   // no partial fills on a swap
-    $('#rPriceLbl').querySelector('label,span') || 0;
+    $('#rPartialLbl').hidden = btc;
     $('#rPriceLbl').childNodes[0].textContent = tr('Quantity');   // the want field IS your price
     if (btc) {
-      const maxK = freeFrcKria() - 10000n;
-      $('#rHint').innerHTML = `${tr('You post a swap offer at your price; a taker fills it non-custodially (refundable).')}`
-        + `<br><b>${tr('Free to lock')}: ${frc(maxK > 0n ? maxK : 0n)} FRC</b>`;
-      setOptions('#rAsset', '<option value="FRC">FRC</option>');
+      const consts = heldConstAssets();
+      setOptions('#rAsset', '<option value="FRC">FRC</option>'
+        + consts.map(([t, pv]) => `<option value="${t}">${assetName(t)} (${(Number(pv) / scaleOf(t)).toLocaleString(getLang())})</option>`).join(''));
+      swapHint();
     } else {
       $('#rHint').textContent = tr('Buyers fill any amount; the remainder keeps trading while you are online.');
     }
   };
   paint();                                 // populate #rAsset / #rWant now
+}
+// held user-issued CONSTANT assets (k>=64) with present-valued balance — the only ones swappable for BTC
+function heldConstAssets() {
+  const L = state.mine.height, m = new Map();
+  for (const u of state.mine.utxos) {
+    const t = u.assetTag ?? null; if (!t || rateOf(t).k < 64) continue;
+    m.set(t, (m.get(t) ?? 0n) + assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(t)));
+  }
+  return [...m.entries()];
 }
 
 // ---- cross-chain swap FRC → BTC (relay = BTC liquidity bot; we stay non-custodial) ----
@@ -529,17 +552,19 @@ const putP2p = rec => { const a = loadP2p().filter(x => x.id !== rec.id); a.push
 const dropP2p = id => saveP2pLocal(loadP2p().filter(x => x.id !== id));
 const p2pKey = (nonce, leg) => sha256(Buffer.from(seed + 'fw-p2p:' + nonce + ':' + leg, 'utf8')).toString('hex');
 
-// MAKER: post an FRC→BTC offer at my price. I hold R; my keys derive from a fresh nonce.
-async function postP2pOffer(frcUnits, btcUnits) {
+// MAKER: post an FRC→BTC (or ASSET→BTC) offer at my price. I hold R; keys from a fresh nonce.
+// `sellTag` set ⇒ sell that user-issued asset; sellUnits are display units (scaled to base units).
+async function postP2pOffer(sellUnits, btcUnits, sellTag = null) {
   try {
-    const frcAmount = BigInt(Math.round(frcUnits * 1e8)), btcAmount = BigInt(Math.round(btcUnits * 1e8));
-    const nonce = sha256(Buffer.from(seed + 'fw-p2p-nonce:' + frcAmount + ':' + btcAmount + ':' + state.mine.height, 'utf8')).toString('hex').slice(0, 16);
+    const amount = sellTag ? BigInt(Math.round(sellUnits * scaleOf(sellTag))) : BigInt(Math.round(sellUnits * 1e8));
+    const btcAmount = BigInt(Math.round(btcUnits * 1e8));
+    const nonce = sha256(Buffer.from(seed + 'fw-p2p-nonce:' + (sellTag || '') + amount + ':' + btcAmount + ':' + state.mine.height, 'utf8')).toString('hex').slice(0, 16);
     const R = p2pKey(nonce, 'R'), H = paymentHashOf(R);
     const frcPub = pubkeyCompressed(p2pKey(nonce, 'frc')), btcPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
     const myBtcAddr = btcAddress(hash160(Buffer.from(btcPub, 'hex')).toString('hex'), state.swap?.btcHrp || 'tb');
-    const r = await api('p2pPost', { frcAmount: String(frcAmount), btcAmount: String(btcAmount), makerFrcPub: frcPub, makerBtcPub: btcPub, makerBtcAddr: myBtcAddr, paymentHash: H });
+    const r = await api('p2pPost', { assetTag: sellTag || undefined, frcAmount: String(amount), btcAmount: String(btcAmount), makerFrcPub: frcPub, makerBtcPub: btcPub, makerBtcAddr: myBtcAddr, paymentHash: H });
     addBtcNonce(nonce);
-    putP2p({ id: r.id, role: 'maker', nonce, status: 'open', frcAmount: String(frcAmount), btcAmount: String(btcAmount) });
+    putP2p({ id: r.id, role: 'maker', nonce, status: 'open', assetTag: sellTag || null, frcAmount: String(amount), btcAmount: String(btcAmount) });
     toast(tr('offer posted'), 'ok'); mvRefresh();
   } catch (e) { toast(e.message, 'err'); }
 }
@@ -574,9 +599,10 @@ function openP2pTakeModal(offer) {
   if ($('#modal')) return;
   const btcHrp = state.swap?.btcHrp || 'tb';
   const m = document.createElement('div'); m.id = 'modal';
+  const getStr = offer.assetTag ? `${(Number(BigInt(offer.frcAmount)) / scaleOf(offer.assetTag)).toLocaleString(getLang())} ${assetName(offer.assetTag)}` : `${Number(BigInt(offer.frcAmount)) / 1e8} FRC`;
   m.innerHTML = `<div class="review">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} FRC</b><button id="tkClose" class="icon">✕</button></div>
-    <div class="rrow"><span>${tr('You receive')}</span><b>${Number(BigInt(offer.frcAmount)) / 1e8} FRC</b></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} ${offer.assetTag ? assetName(offer.assetTag) : 'FRC'}</b><button id="tkClose" class="icon">✕</button></div>
+    <div class="rrow"><span>${tr('You receive')}</span><b>${getStr}</b></div>
     <div class="rrow"><span>${tr('You pay')}</span><b>${Number(BigInt(offer.btcAmount)) / 1e8} BTC</b></div>
     <button id="tkGo">${tr('Buy')}</button>
     <div id="tkLog" class="sub" style="font-size:12px;white-space:pre-line"></div></div>`;
@@ -610,7 +636,7 @@ async function takeP2p(offer, log) {
     const myFrcAddr = deriveAddress(seed, 0, 0);
     await api('p2pTake', { id: offer.id, takerFrcPub: frcPub, takerBtcPub: btcPub, takerFrcAddr: myFrcAddr });
     addBtcNonce(nonce);
-    putP2p({ id: offer.id, role: 'taker', nonce, status: 'taken', frcAmount: offer.frcAmount, btcAmount: offer.btcAmount, paymentHash: offer.paymentHash, funded: false });
+    putP2p({ id: offer.id, role: 'taker', nonce, status: 'taken', assetTag: offer.assetTag ?? null, frcAmount: offer.frcAmount, btcAmount: offer.btcAmount, paymentHash: offer.paymentHash, funded: false });
     toast(tr('offer taken — follow the steps'), 'ok'); mvRefresh();
   } catch (e) { log('⚠ ' + e.message); toast(e.message, 'err'); if (go) { go.disabled = false; go.textContent = tr('Buy'); } }
 }
@@ -1311,8 +1337,9 @@ function paint() {
         const isRev = o.dir === 'sellBtc', gTag = isRev ? 'BTC' : 'FRC', wTag = isRev ? 'FRC' : 'BTC';
         if ((fg && fg !== gTag) || (fw && fw !== wTag)) continue;   // per-offer filter, both directions
         const mineRec = myP2p.get(o.id);
-        const btcStr = `${(Number(BigInt(o.btcAmount)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`, frcStr = `${frc(o.frcAmount)} FRC`;
-        const give = isRev ? btcStr : frcStr, want = isRev ? frcStr : btcStr;
+        const btcStr = `${(Number(BigInt(o.btcAmount)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`;
+        const sellStr = o.assetTag ? `${(Number(BigInt(o.frcAmount)) / scaleOf(o.assetTag)).toLocaleString(getLang())} ${assetName(o.assetTag)}` : `${frc(o.frcAmount)} FRC`;
+        const give = isRev ? btcStr : sellStr, want = isRev ? sellStr : btcStr;
         // drop my FINISHED offers (role-aware!): btc_claimed/frc_claimed_rev end the MAKER's part,
         // but the TAKER still has a claim to make — dropping their record there orphans locked coins
         const makerDone = mineRec?.role === 'maker' && ((!isRev && o.status === 'btc_claimed') || (isRev && o.status === 'frc_claimed_rev'));
