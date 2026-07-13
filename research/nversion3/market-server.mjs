@@ -474,10 +474,12 @@ function reconcileBook() {
 
 // ---- lifecycle ----
 let mineAddr = null;
+let chainId = null;   // genesis hash — clients detect a wiped/replaced chain and drop stale local records
 async function bootstrap() {
   refreshCookie();
   try { await rpc('createwallet', 'w'); } catch {}
   try { await rpc('loadwallet', 'w'); } catch {}
+  chainId = await rpc('getblockhash', 0).catch(() => null);
   mineAddr = await rpc('getnewaddress');
   if (await rpc('getblockcount') < 120) await rpc('generatetoaddress', 120, mineAddr);
   loadBook(); loadSwaps(); loadP2p();
@@ -505,7 +507,7 @@ const api = {
   async info() {
     const h = await rpc('getblockcount');
     return {
-      height: h, mineEveryMs: MINE_EVERY_MS,
+      height: h, mineEveryMs: MINE_EVERY_MS, chainId,
       assets: [...assets.entries()].map(([tag, a]) => ({ tag, ...a, supply: String(a.supply) })),
       // the book exposes EVERYTHING a client needs to splice a cross itself: the give
       // outpoint, the maker's partial witness, terms. The witness is a SINGLE|ACP signature —

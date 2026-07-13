@@ -97,6 +97,16 @@ export function mvRefresh() {
 async function doRefresh() {
   if (!_ds || !seed) return;
   const [info, r, swap, p2p] = await Promise.all([api('info'), _ds().assets(), api('swapInfo').catch(() => null), api('p2pList').catch(() => null)]);
+  // A wiped/replaced test chain invalidates every local swap record — detect via the genesis hash
+  // and drop them, or ghosts of the old chain's swaps haunt the balance/activity forever.
+  try {
+    if (info.chainId && localStorage.getItem('fw_mkt_chain') !== info.chainId) {
+      if (localStorage.getItem('fw_mkt_chain'))
+        for (const k of ['fw_p2p', 'fw_swap_hist', 'fw_btc_nonces', 'fw_swaps', 'fw_reldefs']) localStorage.removeItem(k);
+      localStorage.setItem('fw_mkt_chain', info.chainId);
+      btcRecoveredKey = '';   // let recovery re-run against the new chain
+    }
+  } catch {}
   state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos: r.assetUtxos }, swap, p2p };
   // cache relay defs for the light client's next boot (seedDefs) — rates for history valuation
   try { localStorage.setItem('fw_reldefs', JSON.stringify(Object.fromEntries(
