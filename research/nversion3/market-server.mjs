@@ -260,7 +260,11 @@ function reconcileP2p() {
     const settled = ['done', 'cancelled', 'expired'].includes(w.status);
     const takerClaimed = w.status === 'btc_claimed' && w.frcHtlc && !utxos.has(`${w.frcHtlc.txid}:${w.frcHtlc.vout}`);
     const zombie = w.status === 'taken' && !w.frcHtlc && w.takenAt != null && indexedHeight - w.takenAt > GRACE;
-    if (settled || takerClaimed || zombie) { p2p.splice(i, 1); changed = true; }
+    if (settled || takerClaimed || zombie) {
+      // completed swaps go to the archive (clients rebuild trade history from it); dead ones just go
+      if (w.status === 'done' || takerClaimed) p2pArchive.push({ ...w, archivedAt: Date.now() });
+      p2p.splice(i, 1); changed = true;
+    }
   }
   if (changed) saveP2p();
 }
@@ -405,16 +409,21 @@ const relayKey = (id, leg) => sha256(Buffer.from(RELAY_SEED + id + leg, 'utf8'))
 const swaps = [];
 let swapSeq = 1;
 const p2p = [];
+const p2pArchive = [];   // COMPLETED swaps, pruned off the live board but kept (cap 100) so clients
+                         // can reconstruct their trade history even if their record was lost
 let p2pSeq = 1;
 const P2P_FILE = `${DATADIR}/market-p2p.json`;
 let p2pSaveTimer = null;
 function saveP2p() {
   if (p2pSaveTimer) return;
   p2pSaveTimer = setTimeout(() => { p2pSaveTimer = null;
-    try { writeFileSync(P2P_FILE, JSON.stringify({ p2pSeq, p2p })); } catch {} }, 250);
+    try { writeFileSync(P2P_FILE, JSON.stringify({ p2pSeq, p2p, archive: p2pArchive.slice(-100) })); } catch {} }, 250);
 }
 function loadP2p() {
-  try { const j = JSON.parse(readFileSync(P2P_FILE, 'utf8')); if (Array.isArray(j.p2p)) { p2p.push(...j.p2p); p2pSeq = Number(j.p2pSeq) || p2p.length + 1; } } catch {}
+  try { const j = JSON.parse(readFileSync(P2P_FILE, 'utf8'));
+    if (Array.isArray(j.p2p)) { p2p.push(...j.p2p); p2pSeq = Number(j.p2pSeq) || p2p.length + 1; }
+    if (Array.isArray(j.archive)) p2pArchive.push(...j.archive);
+  } catch {}
 }
 const SWAP_FILE = `${DATADIR}/market-swaps.json`;
 let swapSaveTimer = null;
@@ -792,7 +801,10 @@ const api = {
     return { available: btcAvail(), t1: SWAP_T1, t2: SWAP_T2, revTf: REV_TF, revTb: REV_TB, btcNet: BTC_NET, btcHrp: BTC_HRP, frcHeight: fh, btcHeight: bh,
       swaps: p2p.slice(-60).map(w => ({ id: w.id, dir: w.dir ?? 'sellFrc', status: w.status, frcAmount: w.frcAmount, btcAmount: w.btcAmount,
         maker: w.maker, taker: w.taker, paymentHash: w.paymentHash, t1: w.t1, t2: w.t2,
-        frcHtlc: w.frcHtlc, btcHtlc: w.btcHtlc, preimage: w.preimage ?? null })) };
+        frcHtlc: w.frcHtlc, btcHtlc: w.btcHtlc, preimage: w.preimage ?? null })),
+      archive: p2pArchive.slice(-30).map(w => ({ id: w.id, dir: w.dir ?? 'sellFrc', status: 'done', frcAmount: w.frcAmount, btcAmount: w.btcAmount,
+        maker: w.maker, taker: w.taker, paymentHash: w.paymentHash,
+        frcHtlc: w.frcHtlc, btcHtlc: w.btcHtlc, preimage: w.preimage ?? null, archivedAt: w.archivedAt ?? null })) };
   },
   // maker posts an offer at THEIR price. makerBtcAddr = where the maker will receive BTC.
   async p2pPost({ frcAmount, btcAmount, makerFrcPub, makerBtcPub, makerBtcAddr, paymentHash }) {

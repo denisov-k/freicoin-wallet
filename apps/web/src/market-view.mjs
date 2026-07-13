@@ -990,7 +990,8 @@ function btcKeyring() {
 // nonce brute-forces the post height. Found nonces go into the address book. One-time per session.
 let btcRecovered = false;
 async function recoverBtcNonces() {
-  if (btcRecovered || !state?.p2p?.swaps?.length) return;
+  const offers = [...(state?.p2p?.swaps || []), ...(state?.p2p?.archive || [])];   // live board + completed archive
+  if (btcRecovered || !offers.length) return;
   btcRecovered = true;
   const tip = state.mine.height, known = new Set(loadBtcNonces());
   // A completed swap whose local record is gone still deserves a trade row — synthesize the
@@ -1011,7 +1012,7 @@ async function recoverBtcNonces() {
       btcTxid: null, btcAddr: boughtBtc ? btcP2wpkhAddress(pubkeyCompressed(p2pKey(nonce, 'btc')), btcHrp()) : null,
       frcTxid, time: 0 });
   };
-  for (const o of state.p2p.swaps) {
+  for (const o of offers) {
     try {
       const tn = sha256(Buffer.from(seed + 'fw-p2p-take:' + o.id, 'utf8')).toString('hex').slice(0, 16);
       if (o.taker && pubkeyCompressed(p2pKey(tn, 'frc')) === o.taker.frcPub) {
@@ -1057,11 +1058,14 @@ export async function mvBtcHistory() {
     const receives = (r.txs || []).map(t => ({ txid: t.txid, category: 'receive', amount: t.amount, confirmations: t.confirmations, time: t.time, addresses: t.addresses || [], assetTag: null, btc: true }));
     const hist = loadSwapHist(), used = new Set(), items = [];
     for (const h of hist) {
-      // tie the swap to its BTC receive (by claim txid, or by the per-swap address for recovered ones)
-      const recv = receives.find(t => t.txid === h.btcTxid) || (h.btcAddr ? receives.find(t => t.addresses.includes(h.btcAddr)) : null);
+      const buy = h.category === 'purchase';   // bought BTC (recv BTC, paid FRC) vs sold BTC
+      // tie the swap to its BTC receive: by claim txid; by the per-swap address (old claims); or by
+      // amount at the ACCOUNT address (new claims land there) — each receive consumed at most once
+      const recv = receives.find(t => t.txid === h.btcTxid)
+        || (h.btcAddr ? receives.find(t => !used.has(t.txid) && t.addresses.includes(h.btcAddr)) : null)
+        || (buy ? receives.find(t => !used.has(t.txid) && t.addresses.includes(btcAcctAddr()) && Math.abs(Math.round(t.amount * 1e8) - (Number(h.btcAmount) - 2000)) <= 1) : null);
       if (recv) used.add(recv.txid);
       const frcAmt = Number(BigInt(h.frcAmount)) / 1e8, btcAmt = recv ? recv.amount : Number(BigInt(h.btcAmount)) / 1e8;
-      const buy = h.category === 'purchase';   // bought BTC (recv BTC, paid FRC) vs sold BTC
       items.push({ trade: true, txid: recv?.txid || h.btcTxid || h.id, time: recv?.time || h.time || 0, confirmations: recv?.confirmations ?? 1, category: h.category, frcTxid: h.frcTxid ?? null,
         recv: buy ? { amount: btcAmt, btc: true } : { amount: frcAmt },
         paid: buy ? { amount: -frcAmt } : { amount: -btcAmt, btc: true } });
