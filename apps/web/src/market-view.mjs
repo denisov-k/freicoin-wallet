@@ -402,7 +402,7 @@ async function runSwap(frcUnits) {
     log(tr('opening the swap…'));
     const c = await api('swapCreate', { paymentHash: H, frcAmount: String(frcAmount), makerFrcPub: frcPub, makerBtcPub: btcPub });
     // 2. build + fund the FRC HTLC (claim=relay, refund=us) — same key whose pub we just sent
-    const L = state.mine.height, T1 = L + 40;
+    const L = state.mine.height, T1 = L + (state.swap?.t1 || 40);   // FRC refund offset per the relay (scaled to the BTC net)
     const leg = frcLeg({ role: 'give', ourKey: frcKey, theirPub: c.relayFrcPub, paymentHash: H, cltv: T1, net: 'regtest' });
     log(`${tr('locking')} ${frcUnits} FRC…`);
     const fund = await sendFrcToSpk(leg.spk, frcAmount);
