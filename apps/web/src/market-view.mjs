@@ -413,14 +413,9 @@ function openOfferModal() {
     ? tr('Buyers fill any amount; the remainder keeps trading while you are online.')
     : tr('The offer can only be taken whole — one buyer, the full quantity.'); };
   // update the "Free to lock" hint for a →BTC swap based on what's selected in "I sell"
-  const swapHint = () => {
-    const sell = $('#rAsset').value, pre = tr('You post a swap offer at your price; a taker fills it non-custodially (refundable).');
-    let free;
-    if (sell === 'BTC') { const b = mvBtc().balance, s = b ? BigInt(b) - 1000n : 0n; free = `${(Number(s > 0n ? s : 0n) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`; }
-    else if (sell === 'FRC') { const k = freeFrcKria() - 10000n; free = `${frc(k > 0n ? k : 0n)} FRC`; }
-    else { const pv = myCoinsOf(sell, state.mine.height).reduce((s, c) => s + c.pv, 0n); free = `${(Number(pv) / scaleOf(sell)).toLocaleString(getLang())} ${assetName(sell)}`; }
-    $('#rHint').innerHTML = `${pre}<br><b>${tr('Free to lock')}: ${free}</b>`;
-  };
+  // on a →BTC swap there's no partial-fills note, and the balance already shows in the "Available"
+  // line under the title — so the hint stays empty rather than repeating the free-to-lock amount.
+  const swapHint = () => { $('#rHint').innerHTML = ''; };
   // I sell = BTC ⇒ reverse swap (want FRC). I sell = FRC/asset with want=BTC ⇒ forward swap.
   q(m, '#rAsset').onchange = e => {
     paintOfferAvail();
