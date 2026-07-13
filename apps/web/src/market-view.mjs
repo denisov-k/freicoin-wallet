@@ -668,18 +668,19 @@ function openP2pTakeModal(offer) {
     <button id="tkGo">${tr('Buy')}</button>
     <div id="tkLog" class="sub" style="font-size:12px;white-space:pre-line"></div></div>`;
   document.body.appendChild(m);
-  const stop = () => { clearInterval(m._wait); m.remove(); };
+  let waitTimer = null;
+  const stop = () => { clearInterval(waitTimer); m.remove(); };
   m.onclick = e => { if (e.target === m) stop(); };
   q(m, '#tkClose').onclick = stop;
   q(m, '#tkGo').onclick = async () => {
     await takeP2p(offer, t => { const el = $('#tkLog'); if (el) el.textContent += (el.textContent ? '\n' : '') + t; });
     // stay in THIS window: wait for the seller to lock, then morph into the pay-BTC step in place
-    m._wait = setInterval(async () => {
-      if (!document.body.contains(m)) { clearInterval(m._wait); return; }
+    waitTimer = setInterval(async () => {
+      if (!document.body.contains(m)) { clearInterval(waitTimer); return; }
       try {
         const w = (await api('p2pList')).swaps.find(x => x.id === offer.id);
         if (w?.status === 'frc_funded' && w.btcHtlc?.addr) {
-          clearInterval(m._wait);
+          clearInterval(waitTimer);
           const rec = { ...(loadP2p().find(x => x.id === offer.id) || { id: offer.id }), status: 'need_btc', btcHtlc: w.btcHtlc, btcAmount: offer.btcAmount };
           putP2p(rec);
           renderP2pPay(m, rec);
@@ -888,7 +889,6 @@ function openP2pPayModal(rec) {
 // Render the pay-BTC step INTO an existing modal `m` (used both standalone and as the in-window
 // continuation of the take modal) — HTLC address, auto-detect polling, cooperative cancel.
 function renderP2pPay(m, rec) {
-  clearInterval(m._wait);
   const b = rec.btcHtlc; if (!b) return;
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Pay BTC')} ${rec.id}</b><button id="pyClose" class="icon">✕</button></div>
