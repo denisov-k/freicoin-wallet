@@ -7,7 +7,7 @@ import { encryptSecret, decryptSecret } from './vault.mjs';
 import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS, CHECKPOINT } from './netparams.mjs';
 import { tr, getLang, setLang, LANGS } from './i18n.mjs';
 // Freimarkets (Issue + Exchange) — mounted as extra tabs only on the nv3 network.
-import { initMarketView, mvSetSeed, mvRefresh, openIssueModal, renderExchange, renderAssetBalance, mvOwnedAssets, mvSendAsset, mvRelayAssets } from './market-view.mjs';
+import { initMarketView, mvSetSeed, mvRefresh, openIssueModal, renderExchange, renderAssetBalance, mvOwnedAssets, mvSendAsset, mvRelayAssets, mvBtc, mvBtcAddress, mvSendBtc, mvBtcValidAddr } from './market-view.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
@@ -591,29 +591,39 @@ const render = {
   async receive() {
     // Open in a loading state (shimmering QR + address placeholders), then fill in — the
     // same skeleton the tables use, so "get new address" visibly loads the fresh one.
+    const btcOn = MKT() && mvBtc().available;
     openModal(tr('Receiving'),
-      `<div id="qrBox" class="qr skel" style="margin:0 auto;height:220px"></div>
+      (btcOn ? `<label>${tr('Currency')}<select id="rcvCur"><option value="FRC">FRC</option><option value="BTC">BTC</option></select></label>` : '')
+      + `<div id="qrBox" class="qr skel" style="margin:0 auto;height:220px"></div>
        <div class="addr" id="addr"><div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div></div>
        <div class="row"><button id="copyAddr" class="ghost" disabled>⧉ ${tr('Copy')}</button></div>
-       <div class="row"><button id="newAddr" class="ghost">${tr('New address')}</button></div>`);
-    // derive+QR complete faster than a frame — without the floor the shimmer never paints
-    // and consecutive "get new address" clicks look like nothing happened
-    const t0 = performance.now();
-    let addr; try { addr = deriveAddress(hexSeed(), recvIndex, 0); } catch (e) { return toast(e.message, 'err'); }
-    const qr = await QRCode.toDataURL(addr.toUpperCase(), { margin: 1, width: 220 });
-    await new Promise(r => setTimeout(r, Math.max(0, 350 - (performance.now() - t0))));
-    const box = $('#qrBox'); if (!box) return;   // modal was closed mid-load
-    box.className = 'qr'; box.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`;
-    $('#addr').textContent = addr;
-    const cp = $('#copyAddr'); cp.disabled = false; cp.onclick = e => copy(addr, e.target);
-    // Unbounded fresh addresses: bump the index and repaint (skeleton shows at once), THEN —
+       <div class="row" id="newAddrRow"><button id="newAddr" class="ghost">${tr('New address')}</button></div>`);
+    // Fill the QR + address for the chosen currency. FRC = a fresh HD address; BTC = the single
+    // (fixed) account address, so "New address" hides for BTC. derive+QR beat a frame, so the
+    // skeleton floor keeps the shimmer visible on repeated switches/clicks.
+    const fill = async isBtc => {
+      const box0 = $('#qrBox'); if (box0) { box0.className = 'qr skel'; box0.innerHTML = ''; }
+      const a0 = $('#addr'); if (a0) a0.innerHTML = `<div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div>`;
+      const cp0 = $('#copyAddr'); if (cp0) cp0.disabled = true;
+      const nr = $('#newAddrRow'); if (nr) nr.hidden = isBtc;
+      const t0 = performance.now();
+      let addr; try { addr = isBtc ? mvBtcAddress() : deriveAddress(hexSeed(), recvIndex, 0); } catch (e) { return toast(e.message, 'err'); }
+      const qr = await QRCode.toDataURL(addr.toUpperCase(), { margin: 1, width: 220 });
+      await new Promise(r => setTimeout(r, Math.max(0, 350 - (performance.now() - t0))));
+      const box = $('#qrBox'); if (!box) return;   // modal was closed mid-load
+      box.className = 'qr'; box.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`;
+      $('#addr').textContent = addr;
+      const cp = $('#copyAddr'); if (cp) { cp.disabled = false; cp.onclick = e => copy(addr, e.target); }
+    };
+    const cur = $('#rcvCur'); if (cur) cur.onchange = () => fill(cur.value === 'BTC');
+    // Unbounded fresh FRC addresses: bump the index and repaint (skeleton shows at once), THEN —
     // off the click frame — grow the watch window: copy each network's birth record onto the
     // grown fingerprint (a fresh address has no history — the birth stays valid, no rescan)
     // and restart the light client on the wider script set. Doing the migration first froze
     // the click for the length of a few hundred HD derivations.
     $('#newAddr').onclick = () => {
       recvIndex++; store.set('fw_recv', recvIndex);
-      render.receive();
+      fill(false);
       setTimeout(() => {
         const seed = hexSeed(), cur = curNet();
         try {
@@ -627,6 +637,7 @@ const render = {
         cache = null; ds();
       }, 60);
     };
+    fill(false);
   },
   async send() {
     pending = null;
@@ -641,18 +652,23 @@ const render = {
     let sendBal = null;
     $('#maxBtn').onclick = () => {
       const sel = $('#sendAsset');
-      if (sel && sel.value) $('#amt').value = sel.selectedOptions[0].dataset.qty;
+      if (sel && sel.value === 'BTC') { const b = mvBtc().balance; $('#amt').value = b ? Math.max(0, (Number(BigInt(b)) - 1000) / 1e8).toFixed(8) : '0'; }
+      else if (sel && sel.value) $('#amt').value = sel.selectedOptions[0].dataset.qty;
       else if (sendBal != null) $('#amt').value = Math.max(0, sendBal - 0.001).toFixed(8);
     };
-    // Freimarkets: the selector offers every owned asset; assets are integer tokens (scale 1)
+    // Freimarkets: the selector offers every owned asset (+ BTC when a BTC account is available);
+    // assets are integer tokens (scale 1), BTC uses its own (non-custodial, signet) send path.
     if (MKT()) mvOwnedAssets().then(list => {
       const sel = $('#sendAsset'); if (!sel) return;
-      sel.innerHTML = `<option value="">FRC</option>` + list.map(a => `<option value="${a.tag}" data-qty="${a.qty}" data-dec="${a.decimals}">${a.name} (${a.qty.toLocaleString(getLang())})</option>`).join('');
+      const btc = mvBtc();
+      sel.innerHTML = `<option value="">FRC</option>` + list.map(a => `<option value="${a.tag}" data-qty="${a.qty}" data-dec="${a.decimals}">${a.name} (${a.qty.toLocaleString(getLang())})</option>`).join('')
+        + (btc.available ? `<option value="BTC">BTC</option>` : '');
       sel.onchange = () => {
-        const isFrc = !sel.value, dec = +(sel.selectedOptions[0]?.dataset.dec || 0);
-        $('#amtLabel').firstChild.textContent = isFrc ? tr('Amount (FRC)') : tr('Quantity');
-        const amt = $('#amt'); amt.step = isFrc ? '0.00000001' : String(1 / 10 ** dec); amt.placeholder = isFrc ? '0.0' : '0'; amt.value = '';
-        $('#avail').style.display = isFrc ? '' : 'none';   // the FRC line doesn't describe an asset
+        const v = sel.value, isBtc = v === 'BTC', isFrc = !v, dec = +(sel.selectedOptions[0]?.dataset.dec || 0);
+        $('#amtLabel').firstChild.textContent = isFrc ? tr('Amount (FRC)') : isBtc ? tr('Amount (BTC)') : tr('Quantity');
+        const amt = $('#amt'); amt.step = isBtc || isFrc ? '0.00000001' : String(1 / 10 ** dec); amt.placeholder = isBtc || isFrc ? '0.0' : '0'; amt.value = '';
+        $('#to').placeholder = isBtc ? `${btc.hrp}1…` : 'fc1…';
+        $('#avail').style.display = isFrc ? '' : 'none';   // the FRC line doesn't describe an asset/BTC
       };
     }).catch(() => {});
     $('#amt').addEventListener('keydown', e => { if (e.key === 'Enter') doReview(); });
@@ -809,6 +825,7 @@ function applyNetSettings() {
 }
 
 async function doReview() {
+  if ($('#sendAsset')?.value === 'BTC') return doReviewBtc();
   const to = $('#to').value.trim(), amt = parseFloat($('#amt').value);
   if (!isValidAddress(to)) return toast(tr('invalid Freicoin address'), 'err');
   if (!(amt > 0)) return toast(tr('enter an amount'), 'err');
@@ -852,6 +869,29 @@ async function doReview() {
     toast(tr('review the transaction'));
   } catch (e) { toast(e.message, 'err'); }
   finally { $('#reviewBtn').disabled = false; }
+}
+
+// BTC send review + confirm — signs locally in market-view, broadcasts via the relay (non-custodial).
+async function doReviewBtc() {
+  const to = $('#to').value.trim(), amt = parseFloat($('#amt').value);
+  if (!mvBtcValidAddr(to)) return toast(tr('bad address'), 'err');
+  if (!(amt > 0)) return toast(tr('enter an amount'), 'err');
+  $('#sendResult').innerHTML =
+    `<div class="review">
+       <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
+       <div class="rrow"><span>${tr('Amount')}</span><b>${amt.toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC</b></div>
+       <div class="rrow"><span>${tr('Fee')}</span><b>0.00001000 BTC</b></div>
+       <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
+     </div>`;
+  $('#cancelBtn').onclick = () => { $('#sendResult').innerHTML = ''; toast(''); };
+  $('#confirmBtn').onclick = async () => {
+    const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
+    try {
+      const txid = await mvSendBtc(to, amt);
+      $('#sendResult').innerHTML = `<div class="ok">${tr('Sent ✓')}</div><div class="txid">${txid}</div>`;
+      $('#to').value = ''; $('#amt').value = ''; toast(tr('broadcast ✓'));
+    } catch (e) { toast(tr('broadcast failed: ') + e.message, 'err'); btn.disabled = false; btn.textContent = tr('Confirm & broadcast'); }
+  };
 }
 
 async function doBroadcast() {

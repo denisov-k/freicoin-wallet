@@ -836,66 +836,38 @@ function btcKeyring() {
   return ring;
 }
 let btcAcct = null;   // last { balance, utxos, hrp, net } from the relay
+const btcToStr = sats => (Number(BigInt(sats)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 });
 async function refreshBtc() {
-  const card = $('#btcCard'); if (!card) return;
-  if (!state?.swap?.available) { card.hidden = true; return; }
-  card.hidden = false;
+  if (!state?.swap?.available) return;
   try { btcAcct = await api('btcAccount', { addresses: Object.keys(btcKeyring()) }); } catch { return; }
-  const el = $('#btcBal'); if (el) el.textContent = (Number(BigInt(btcAcct.balance)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 }) + ' BTC';
+  const cell = $('#btcBalCell'); if (cell) cell.textContent = btcToStr(btcAcct.balance);   // BTC row in the assets table
 }
-function openBtcReceive() {
-  if ($('#modal')) return;
-  const addr = btcAcctAddr();
-  const m = document.createElement('div'); m.id = 'modal';
-  m.innerHTML = `<div class="review">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Receive BTC')}</b><button id="brClose" class="icon">✕</button></div>
-    <p class="sub">${tr('Send BTC to this address; it shows in your balance once the network sees it.')}</p>
-    <div class="addr" style="user-select:all;word-break:break-all">${addr}</div>
-    <button id="brCopy" class="ghost">${tr('Copy')}</button></div>`;
-  document.body.appendChild(m);
-  m.onclick = e => { if (e.target === m) m.remove(); };
-  q(m, '#brClose').onclick = () => m.remove();
-  q(m, '#brCopy').onclick = () => { navigator.clipboard?.writeText(addr); toast(tr('Copied'), 'ok'); };
-  api('btcAccount', { addresses: [addr] }).catch(() => {});   // start watching before funds arrive
-}
-function openBtcSend() {
-  if ($('#modal')) return;
-  const bal = btcAcct ? Number(BigInt(btcAcct.balance)) / 1e8 : 0;
-  const m = document.createElement('div'); m.id = 'modal';
-  m.innerHTML = `<div class="review">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Send BTC')}</b><button id="bsClose" class="icon">✕</button></div>
-    <div class="rrow"><span>${tr('Available')}</span><b>${bal.toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC</b></div>
-    <label>${tr('To address')}<input id="bsAddr" autocomplete="off" spellcheck="false" placeholder="${btcHrp()}1…"></label>
-    <label class="numfield">${tr('Amount')}<input id="bsAmt" type="text" inputmode="decimal"></label>
-    <div class="row"><button id="bsMax" class="ghost">${tr('Max')}</button><button id="bsGo">${tr('Send')}</button></div>
-    <div id="bsLog" class="sub" style="font-size:12px"></div></div>`;
-  document.body.appendChild(m);
-  m.onclick = e => { if (e.target === m) m.remove(); };
-  q(m, '#bsClose').onclick = () => m.remove();
-  q(m, '#bsMax').onclick = () => { const max = btcAcct ? Math.max(0, (Number(BigInt(btcAcct.balance)) - 1000) / 1e8) : 0; $('#bsAmt').value = String(max); };
-  q(m, '#bsGo').onclick = () => btcSend($('#bsAddr').value.trim(), num($('#bsAmt').value));
-}
-async function btcSend(dest, amountBtc) {
-  const go = $('#bsGo'), log = t => { const el = $('#bsLog'); if (el) el.textContent = t; };
-  try {
-    if (!(amountBtc > 0)) throw new Error(tr('enter a quantity'));
-    let toSpk; try { toSpk = btcDecodeAddress(dest, btcHrp()); } catch (e) { throw new Error(tr('bad address')); }
-    const amount = BigInt(Math.round(amountBtc * 1e8)), fee = 1000n;   // signet: a flat, generous fee
-    const ring = btcKeyring();
-    const acct = await api('btcAccount', { addresses: Object.keys(ring) });
-    const coins = [...acct.utxos].filter(c => ring[c.address]).sort((a, b) => Number(BigInt(b.value) - BigInt(a.value)));
-    const picked = []; let S = 0n;
-    for (const c of coins) { picked.push(c); S += BigInt(c.value); if (S >= amount + fee) break; }
-    if (S < amount + fee) throw new Error(tr('not enough BTC'));
-    const outputs = [{ spk: toSpk, value: amount }], change = S - amount - fee;
-    if (change > 546n) outputs.push({ spk: btcP2wpkhSpk(btcAcctPub()), value: change });   // change back to the account
-    if (go) go.disabled = true; log(tr('signing…'));
-    const inputs = picked.map(c => ({ prevTxid: c.txid, vout: c.vout, valueSats: BigInt(c.value), key: ring[c.address] }));
-    const { rawtx, txid } = btcP2wpkhSend({ inputs, outputs });   // built + signed locally; the key never leaves the device
-    await api('btcBroadcast', { rawtx });
-    toast(`${tr('BTC sent')} · ${txid.slice(0, 12)}…`, 'ok');
-    $('#modal')?.remove(); refreshBtc();
-  } catch (e) { log('⚠ ' + e.message); toast(e.message, 'err'); if (go) go.disabled = false; }
+
+// ---- exports so BTC lives in the wallet's MAIN flow (assets table + Send/Receive), not a side panel ----
+/** Is a BTC account available, and its current balance (sats) + address prefix. */
+export function mvBtc() { return { available: !!state?.swap?.available, balance: btcAcct?.balance ?? null, hrp: btcHrp() }; }
+/** The account's receive address (and start watching it so incoming funds are seen). */
+export function mvBtcAddress() { const a = btcAcctAddr(); api('btcAccount', { addresses: [a] }).catch(() => {}); return a; }
+/** True if `a` is a valid address on the BTC network we're on. */
+export function mvBtcValidAddr(a) { try { btcDecodeAddress(a, btcHrp()); return true; } catch { return false; } }
+/** Build + sign a P2WPKH send LOCALLY (key never leaves the device) and broadcast via the relay. */
+export async function mvSendBtc(dest, amountBtc) {
+  if (!(amountBtc > 0)) throw new Error(tr('enter a quantity'));
+  let toSpk; try { toSpk = btcDecodeAddress(dest, btcHrp()); } catch (e) { throw new Error(tr('bad address')); }
+  const amount = BigInt(Math.round(amountBtc * 1e8)), fee = 1000n;   // signet: a flat, generous fee
+  const ring = btcKeyring();
+  const acct = await api('btcAccount', { addresses: Object.keys(ring) });
+  const coins = [...acct.utxos].filter(c => ring[c.address]).sort((a, b) => Number(BigInt(b.value) - BigInt(a.value)));
+  const picked = []; let S = 0n;
+  for (const c of coins) { picked.push(c); S += BigInt(c.value); if (S >= amount + fee) break; }
+  if (S < amount + fee) throw new Error(tr('not enough BTC'));
+  const outputs = [{ spk: toSpk, value: amount }], change = S - amount - fee;
+  if (change > 546n) outputs.push({ spk: btcP2wpkhSpk(btcAcctPub()), value: change });   // change back to the account
+  const inputs = picked.map(c => ({ prevTxid: c.txid, vout: c.vout, valueSats: BigInt(c.value), key: ring[c.address] }));
+  const { rawtx, txid } = btcP2wpkhSend({ inputs, outputs });
+  await api('btcBroadcast', { rawtx });
+  refreshBtc();
+  return txid;
 }
 
 export function renderExchange(el) {
@@ -906,16 +878,9 @@ export function renderExchange(el) {
     </div>
     <label class="chk"><input type="checkbox" id="fOpen" checked>${tr('open only')}</label>
     <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>
-    <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>
-    <div id="btcCard" class="btc-card" hidden>
-      <div class="btc-head"><span class="sub">${tr('BTC balance')}</span><b id="btcBal">…</b></div>
-      <div class="row"><button id="btcRecv" class="ghost">${tr('Receive')}</button><button id="btcSend" class="ghost">${tr('Send')}</button></div>
-    </div>`;
+    <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>`;
   $('#openOffer').onclick = openOfferModal;
-  $('#btcRecv').onclick = openBtcReceive;
-  $('#btcSend').onclick = openBtcSend;
   ['#fGive', '#fWant', '#fOpen'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });
-  refreshBtc();
   if (state) paint(); else mvRefresh();
 }
 // per-asset balance table (FRC + user assets) — the wallet's Balance tab shows this on nv3
@@ -935,11 +900,14 @@ function paintAssetBalance() {
   for (const u of state.mine.utxos) { const k = u.assetTag ?? 'FRC'; const e = byAsset.get(k) ?? { nominal: 0n, pv: 0n }; e.nominal += BigInt(u.value); e.pv += pvU(u); byAsset.set(k, e); }
   const amt = (tag, v) => tag === 'FRC' ? frc(v)
     : (Number(BigInt(v)) / scaleOf(tag)).toLocaleString(getLang(), { maximumFractionDigits: decimalsOf(tag) });
-  body.innerHTML = [...byAsset.entries()].map(([tag, e]) => {
+  const rows = [...byAsset.entries()].map(([tag, e]) => {
     const constant = tag !== 'FRC' && rateOf(tag).k >= 64;   // k=64 ≈ constant: the one-off rounding unit isn't "melting"
     const melt = !constant && e.pv < e.nominal, grow = !constant && e.pv > e.nominal;
     return `<tr><td${tag === 'FRC' ? '' : ` title="${tag}"`}>${assetName(tag === 'FRC' ? null : tag)}</td><td class="r ${melt ? 'melt' : grow ? 'grow' : ''}">${amt(tag, e.pv)}</td></tr>`;
-  }).join('') || `<tr><td colspan="2" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
+  });
+  // BTC sits in the same table (held in-wallet on signet); the cell fills in when refreshBtc returns.
+  if (state.swap?.available) rows.push(`<tr><td>BTC</td><td class="r" id="btcBalCell">${btcAcct ? btcToStr(btcAcct.balance) : '…'}</td></tr>`);
+  body.innerHTML = rows.join('') || `<tr><td colspan="2" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
 }
 
 // fill a <select> preserving the current selection (so a refresh doesn't reset it)

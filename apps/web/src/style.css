@@ -95,10 +95,6 @@ table.mkt .r { text-align:right; }
 table.mkt .act-cell { text-align:right; white-space:nowrap; }   /* Buy/Cancel hug the right edge */
 .offer-row > label { flex:1; } .offer-row .numfield { flex:0 0 90px; }   /* number fields narrow + equal, selects fill */
 .melt { color:var(--warn); } .grow { color:var(--ok); } .filled { opacity:.45; }
-.btc-card { display:flex; flex-direction:column; gap:8px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-top:14px; }
-.btc-card .btc-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
-.btc-card .btc-head b { font-size:18px; font-variant-numeric:tabular-nums; }
-.btc-card .row { gap:8px; } .btc-card .row button { flex:1; }
 .chk { display:inline-flex; flex-direction:row; align-items:center; gap:8px; font-size:14px; color:var(--sub); cursor:pointer; margin:2px 0 4px; width:auto; }
 .chk input { width:18px; height:18px; accent-color:var(--accent); margin:0; flex:none; cursor:pointer; }
 .fillbox { display:inline-flex; align-items:center; gap:6px; }

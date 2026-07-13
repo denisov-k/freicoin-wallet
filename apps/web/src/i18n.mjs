@@ -73,7 +73,7 @@ const RU = {
   'Cancel purchase': 'Отменить покупку', 'swap declined': 'обмен отменён',
   'BTC balance': 'Баланс BTC', 'Receive BTC': 'Получить BTC', 'Send BTC': 'Отправить BTC', 'BTC sent': 'BTC отправлены',
   'Available': 'Доступно', 'Copied': 'Скопировано', 'bad address': 'плохой адрес', 'not enough BTC': 'недостаточно BTC', 'signing…': 'подписываем…',
-  'Send BTC to this address; it shows in your balance once the network sees it.': 'Отправьте BTC на этот адрес — он появится в балансе, как только его увидит сеть.',
+  'Send BTC to this address; it shows in your balance once the network sees it.': 'Отправьте BTC на этот адрес — он появится в балансе, как только его увидит сеть.', 'Amount (BTC)': 'Сумма (BTC)',
   'Issue asset': 'Выпустить актив',
   'Selling': 'Продают', 'Wants': 'Хотят', 'open only': 'только открытые', 'all': 'все', 'no offers match': 'нет офферов по фильтру',
   'Currency': 'Валюта',
