@@ -972,7 +972,7 @@ const loadSwapHist = () => { try { return JSON.parse(localStorage.getItem(SWHIST
 // blanks of an earlier entry instead of being dropped
 const addSwapHist = e => { try {
   const a = loadSwapHist(), i = a.findIndex(x => x.id === e.id);
-  if (i >= 0) { for (const [k, v] of Object.entries(e)) if (v != null && v !== 0 && a[i][k] == null) a[i][k] = v; }
+  if (i >= 0) { for (const [k, v] of Object.entries(e)) if (v != null && v !== 0 && (a[i][k] == null || a[i][k] === 0)) a[i][k] = v; }
   else a.push(e);
   localStorage.setItem(SWHIST_LS, JSON.stringify(a));
 } catch {} };
@@ -1014,7 +1014,16 @@ async function recoverBtcNonces() {
   for (const o of state.p2p.swaps) {
     try {
       const tn = sha256(Buffer.from(seed + 'fw-p2p-take:' + o.id, 'utf8')).toString('hex').slice(0, 16);
-      if (o.taker && pubkeyCompressed(p2pKey(tn, 'frc')) === o.taker.frcPub) { if (!known.has(tn)) { addBtcNonce(tn); known.add(tn); } synth(o, 'taker', tn); continue; }
+      if (o.taker && pubkeyCompressed(p2pKey(tn, 'frc')) === o.taker.frcPub) {
+        if (!known.has(tn)) { addBtcNonce(tn); known.add(tn); }
+        synth(o, 'taker', tn);
+        // RESURRECT an unclaimed taker swap whose local record was dropped: the offer still on the
+        // board at *_claimed means MY payout is still locked (the relay prunes once it's spent) —
+        // put the record back so driveP2p claims it on the next cycle.
+        if (o.preimage && ['btc_claimed', 'frc_claimed_rev'].includes(o.status) && !loadP2p().some(r => r.id === o.id))
+          putP2p({ id: o.id, role: 'taker', ...(o.dir === 'sellBtc' ? { dir: 'sellBtc' } : {}), nonce: tn, status: 'taken', frcAmount: o.frcAmount, btcAmount: o.btcAmount, paymentHash: o.paymentHash });
+        continue;
+      }
       const prefix = o.dir === 'sellBtc' ? 'fw-p2p-nonce:B:' : 'fw-p2p-nonce:';   // maker: brute-force the post height
       for (let h = tip + 5; h >= 0; h--) {
         const n = sha256(Buffer.from(seed + prefix + o.frcAmount + ':' + o.btcAmount + ':' + h, 'utf8')).toString('hex').slice(0, 16);
@@ -1207,8 +1216,10 @@ function paint() {
         const mineRec = myP2p.get(o.id);
         const btcStr = `${(Number(BigInt(o.btcAmount)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`, frcStr = `${frc(o.frcAmount)} FRC`;
         const give = isRev ? btcStr : frcStr, want = isRev ? frcStr : btcStr;
-        // drop my finished/dead offers from view (don't clutter with done/cancelled/expired)
-        if (mineRec && (o.status === 'done' || (!isRev && o.status === 'btc_claimed'))) { dropP2p(o.id); continue; }
+        // drop my FINISHED offers (role-aware!): btc_claimed/frc_claimed_rev end the MAKER's part,
+        // but the TAKER still has a claim to make — dropping their record there orphans locked coins
+        const makerDone = mineRec?.role === 'maker' && ((!isRev && o.status === 'btc_claimed') || (isRev && o.status === 'frc_claimed_rev'));
+        if (mineRec && (o.status === 'done' || makerDone)) { dropP2p(o.id); continue; }
         let act;
         if (mineRec) act = (!isRev && mineRec.status === 'need_btc') ? `<button class="p2ppay rbtn" data-id="${o.id}">${tr('Pay BTC')}</button>`
           // my own OPEN offer (nothing locked yet) → let me cancel it
