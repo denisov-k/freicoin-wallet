@@ -147,6 +147,17 @@ const committedOutpoints = () => new Set((state?.info?.book || [])
   .filter(o => o.ranged && o.status === 'open' && spks.includes(o.makerSpk) && o.giveOutpoint)
   .map(o => o.giveOutpoint));
 
+// spendable FRC (kria), present-valued, EXCLUDING coins that back my open ranged offers — this is
+// exactly what sendFrcToSpk can gather to fund a swap HTLC. The offer modal shows it so a maker
+// can't post a P2P swap larger than they can actually lock (which stalls the swap at 'taken').
+const freeFrcKria = () => {
+  if (!state) return 0n;
+  const L = state.mine.height, reserved = committedOutpoints();
+  return state.mine.utxos
+    .filter(u => (u.assetTag ?? null) === null && u.refheight <= L && !reserved.has(u.outpoint))
+    .reduce((a, u) => a + assetPresentValue(BigInt(u.value), L - u.refheight, { k: 20, interest: false }), 0n);
+};
+
 // my spendable coins of one asset (null tag = FRC), present-valued at height L, minus reserved ones
 function myCoinsOf(tag, L, reserved = committedOutpoints()) {
   const norm = tag === HOST_TAG ? null : tag;
@@ -255,6 +266,9 @@ async function postRangedOffer() {
       const frcQ = num($('#rQty').value), btcQ = num($('#rPrice').value);
       if (!(frcQ > 0)) throw new Error(tr('enter a quantity'));
       if (!(btcQ > 0)) throw new Error(tr('enter a quantity'));
+      const maxK = freeFrcKria() - 10000n;                             // fee-reserved free FRC
+      if (BigInt(Math.round(frcQ * 1e8)) > maxK)                       // can't lock more than we have free
+        throw new Error(`${tr('only')} ${frc(maxK > 0n ? maxK : 0n)} FRC ${tr('free to lock (rest backs your open offers)')}`);
       $('#modal')?.remove();
       return postP2pOffer(frcQ, btcQ);
     }
@@ -311,10 +325,14 @@ function openOfferModal() {
     $('#rPartialLbl').hidden = btc;                                   // no partial fills on a swap
     $('#rPriceLbl').querySelector('label,span') || 0;
     $('#rPriceLbl').childNodes[0].textContent = tr('Quantity');   // the want field IS your price
-    $('#rHint').textContent = btc
-      ? tr('You post a swap offer at your price; a taker fills it non-custodially (refundable).')
-      : tr('Buyers fill any amount; the remainder keeps trading while you are online.');
-    if (btc) setOptions('#rAsset', '<option value="FRC">FRC</option>');
+    if (btc) {
+      const maxK = freeFrcKria() - 10000n;
+      $('#rHint').innerHTML = `${tr('You post a swap offer at your price; a taker fills it non-custodially (refundable).')}`
+        + `<br><b>${tr('Free to lock')}: ${frc(maxK > 0n ? maxK : 0n)} FRC</b>`;
+      setOptions('#rAsset', '<option value="FRC">FRC</option>');
+    } else {
+      $('#rHint').textContent = tr('Buyers fill any amount; the remainder keeps trading while you are online.');
+    }
   };
   paint();                                 // populate #rAsset / #rWant now
 }

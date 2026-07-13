@@ -69,6 +69,7 @@ const RU = {
   'Ranged offer (sell part, buyers fill any amount)': 'Диапазонный оффер (продать часть, берут любой объём)',
   'I give (coin)': 'Отдаю (монету)', 'Total price': 'Сумма за всё', 'no coins yet': 'монет пока нет',
   'I sell': 'Продаю', 'enter a price': 'укажите цену', 'enter a quantity': 'укажите количество',
+  'Free to lock': 'Свободно для запирания', 'only': 'доступно только', 'free to lock (rest backs your open offers)': 'свободно для запирания (остальное занято вашими офферами)',
   'Issue asset': 'Выпустить актив',
   'Selling': 'Продают', 'Wants': 'Хотят', 'open only': 'только открытые', 'all': 'все', 'no offers match': 'нет офферов по фильтру',
   'Currency': 'Валюта',
