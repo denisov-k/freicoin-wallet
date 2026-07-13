@@ -561,9 +561,8 @@ function openP2pPayModal(rec) {
     <p class="sub">${tr('Send exactly this amount from your Bitcoin wallet to the address. The swap continues automatically once the payment is seen.')}</p>
     <div class="rrow"><span>${tr('Amount')}</span><b>${Number(BigInt(rec.btcAmount)) / 1e8} BTC</b></div>
     <label>${tr('HTLC address')}<div class="addr" style="user-select:all">${b.addr}</div></label>
-    <div id="pyStatus" class="sub" style="font-size:13px">${tr('waiting for your payment…')}</div>
-    <button id="pyCancel" class="ghost">${tr('Back out (do not pay)')}</button>
-    <p class="sub" style="font-size:12px">${tr("You have not sent any BTC yet — backing out risks nothing. The seller's locked FRC returns to them after the timeout.")}</p></div>`;
+    <div id="pyStatus" class="sub" style="font-size:13px"></div>
+    <button id="pyCancel" class="ghost">${tr('Cancel purchase')}</button></div>`;
   document.body.appendChild(m);
   const close = () => { clearInterval(poll); m.remove(); };
   m.onclick = e => { if (e.target === m) close(); };

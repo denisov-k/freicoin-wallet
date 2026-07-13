@@ -70,7 +70,7 @@ const RU = {
   'I give (coin)': 'Отдаю (монету)', 'Total price': 'Сумма за всё', 'no coins yet': 'монет пока нет',
   'I sell': 'Продаю', 'enter a price': 'укажите цену', 'enter a quantity': 'укажите количество',
   'Free to lock': 'Свободно для запирания', 'only': 'доступно только', 'free to lock (rest backs your open offers)': 'свободно для запирания (остальное занято вашими офферами)',
-  'Back out (do not pay)': 'Отказаться (не платить)', 'swap declined': 'обмен отменён', "You have not sent any BTC yet — backing out risks nothing. The seller's locked FRC returns to them after the timeout.": 'Вы ещё не отправляли BTC — отказ ничем не рискует. Запертый FRC продавца вернётся ему после таймаута.',
+  'Cancel purchase': 'Отменить покупку', 'swap declined': 'обмен отменён',
   'Issue asset': 'Выпустить актив',
   'Selling': 'Продают', 'Wants': 'Хотят', 'open only': 'только открытые', 'all': 'все', 'no offers match': 'нет офферов по фильтру',
   'Currency': 'Валюта',
