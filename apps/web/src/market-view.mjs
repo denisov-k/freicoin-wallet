@@ -562,12 +562,12 @@ function openP2pPayModal(rec) {
     <div class="rrow"><span>${tr('Amount')}</span><b>${Number(BigInt(rec.btcAmount)) / 1e8} BTC</b></div>
     <label>${tr('HTLC address')}<div class="addr" style="user-select:all">${b.addr}</div></label>
     <div id="pyStatus" class="sub" style="font-size:13px">${tr('waiting for your payment…')}</div>
-    <details style="font-size:12px"><summary class="sub">${tr('paste a txid manually')}</summary>
-      <label>txid<input id="pyTxid" placeholder="…" autocomplete="off"></label>
-      <button id="pyGo" class="ghost">${tr('I paid — verify')}</button></details></div>`;
+    <button id="pyCancel" class="ghost">${tr('Back out (do not pay)')}</button>
+    <p class="sub" style="font-size:12px">${tr("You have not sent any BTC yet — backing out risks nothing. The seller's locked FRC returns to them after the timeout.")}</p></div>`;
   document.body.appendChild(m);
-  m.onclick = e => { if (e.target === m) m.remove(); };
-  q(m, '#pyClose').onclick = () => m.remove();
+  const close = () => { clearInterval(poll); m.remove(); };
+  m.onclick = e => { if (e.target === m) close(); };
+  q(m, '#pyClose').onclick = close;
   // auto-detect: poll the relay until it sees the payment, then close (drive loop finishes it)
   const poll = setInterval(async () => {
     try {
@@ -579,14 +579,9 @@ function openP2pPayModal(rec) {
       }
     } catch {}
   }, 4000);
-  q(m, '#pyClose').onclick = () => { clearInterval(poll); m.remove(); };
-  // manual fallback (paste txid) stays available under the details toggle
-  const g = q(m, '#pyGo'); if (g) g.onclick = async () => {
-    const txid = $('#pyTxid').value.trim(); if (!/^[0-9a-f]{64}$/.test(txid)) return toast(tr('bad txid'), 'err');
-    g.disabled = true;
-    try { await api('p2pBtcFunded', { id: rec.id, btcTxid: txid }); clearInterval(poll); putP2p({ ...rec, status: 'btc_funded' }); m.remove(); toast(tr('BTC verified — awaiting your FRC'), 'ok'); mvRefresh(); }
-    catch (e) { toast('⚠ ' + e.message, 'err'); g.disabled = false; }
-  };
+  // back out: the taker committed nothing on-chain, so drop the swap locally and stop driving it.
+  // The maker's FRC is refunded to them automatically once its T1 passes (their checkMySwaps).
+  q(m, '#pyCancel').onclick = () => { dropP2p(rec.id); close(); toast(tr('swap declined'), 'ok'); mvRefresh(); };
 }
 
 // build + broadcast a partial fill of a ranged offer, in EITHER direction. The ranged bundle's
