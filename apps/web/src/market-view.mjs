@@ -399,6 +399,7 @@ function openOfferModal() {
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Post an offer')}</b><button id="offerClose" class="icon">✕</button></div>
+    <div class="sub" id="rAvail" style="font-size:13px"></div>
     <div class="row offer-row"><label>${tr('I sell')}<select id="rAsset"></select></label><label class="numfield">${tr('Quantity')}<input id="rQty" type="text" inputmode="decimal"></label></div>
     <div class="row offer-row"><label>${tr('I want')}<select id="rWant"></select></label><label id="rPriceLbl" class="numfield">${tr('Quantity')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
     <label class="chk" id="rPartialLbl"><input type="checkbox" id="rPartial" checked>${tr('allow partial fills')}</label>
@@ -422,6 +423,7 @@ function openOfferModal() {
   };
   // I sell = BTC ⇒ reverse swap (want FRC). I sell = FRC/asset with want=BTC ⇒ forward swap.
   q(m, '#rAsset').onchange = e => {
+    paintOfferAvail();
     if (e.target.value === 'BTC') {   // sell BTC → want FRC or a CONSTANT asset (buy that asset)
       const consts = (state.info.assets || []);   // any user-issued asset (melt/grow settle via present value)
       setOptions('#rWant', '<option value="FRC">FRC</option>' + consts.map(a => `<option value="${a.tag}">${assetName(a.tag)}</option>`).join(''));
@@ -454,6 +456,22 @@ function heldConstAssets() {
     m.set(t, (m.get(t) ?? 0n) + assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(t)));
   }
   return [...m.entries()];
+}
+// show the AVAILABLE balance of the currently-selected "I sell" asset as a line under the offer
+// title (updated on selection + each refresh). Everything is toppable externally, so this is
+// informational, not a hard cap (the offer-post still validates the free-to-lock amount).
+function paintOfferAvail() {
+  const el = $('#rAvail'); if (!el || !state) return;
+  const sell = $('#rAsset')?.value;
+  if (!sell) { el.textContent = ''; return; }
+  if (sell === 'BTC') {
+    const b = mvBtc().balance;
+    el.textContent = `${tr('Available')}: ${b != null ? (Number(BigInt(b)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 }) : '…'} BTC`;
+    return;
+  }
+  const tag = sell === 'FRC' ? HOST_TAG : sell;
+  const pv = myCoinsOf(tag, state.mine.height).reduce((s, c) => s + c.pv, 0n);
+  el.textContent = `${tr('Available')}: ${(Number(pv) / scaleOf(tag)).toLocaleString(getLang(), { maximumFractionDigits: sell === 'FRC' ? 8 : decimalsOf(tag) })} ${assetName(sell === 'FRC' ? null : sell)}`;
 }
 
 // ---- cross-chain swap FRC → BTC (relay = BTC liquidity bot; we stay non-custodial) ----
@@ -1413,15 +1431,16 @@ function paint() {
   const grouped = curOpt => `<optgroup label="${tr('Currency')}">${curOpt}${btcCur}</optgroup>`
     + (assetOpts ? `<optgroup label="${tr('Assets')}">${assetOpts}</optgroup>` : '');
 
-  // "I sell": only the assets I actually hold, with my balance (present value, in units). BTC shows
-  // no balance — it can be topped up from an external wallet, so a fixed balance would mislead.
-  const sellOpt = ([k, e]) => `<option value="${k}">${assetName(k === 'FRC' ? null : k)} (${(Number(e.pv) / scaleOf(k)).toLocaleString(getLang())})</option>`;
+  // "I sell": the assets I hold + BTC. NO balance in the option label — the selected balance shows
+  // in the form (paintOfferAvail); everything is toppable externally, so a fixed label misleads.
+  const sellOpt = ([k]) => `<option value="${k}">${assetName(k === 'FRC' ? null : k)}</option>`;
   const frcHeld = byAsset.get('FRC'), heldAssets = [...byAsset.entries()].filter(([k]) => k !== 'FRC');
-  const sellCur = (frcHeld ? sellOpt(['FRC', frcHeld]) : '') + btcCur;
+  const sellCur = (frcHeld ? sellOpt(['FRC']) : '') + btcCur;
   setOptions('#rAsset', ((sellCur ? `<optgroup label="${tr('Currency')}">${sellCur}</optgroup>` : '')
     + (heldAssets.length ? `<optgroup label="${tr('Assets')}">${heldAssets.map(sellOpt).join('')}</optgroup>` : ''))
     || `<option value="">${tr('no coins yet')}</option>`);
   setOptions('#rWant', grouped('<option value="FRC">FRC</option>'));
+  paintOfferAvail();   // reflect the selected sell asset's available balance in the form
 
   // order-book filters (grouped the same way — BTC lives in Currency; 'all' stays ungrouped at the top)
   const fopt = `<option value="">${tr('all')}</option>` + grouped('<option value="FRC">FRC</option>');
