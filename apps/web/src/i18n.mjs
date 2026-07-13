@@ -55,7 +55,7 @@ const RU = {
   'Log out of wallet': 'Выйти из кошелька',
   'Signed in — you can return to the market.': 'Готово — можно вернуться в маркет.',
   // ---- Freimarkets (market.mjs) ----
-  'Balance': 'Баланс', 'Issue': 'Выпуск', 'Exchange': 'Биржа', 'Log': 'Журнал',
+  'Issue': 'Выпуск', 'Exchange': 'Биржа', 'Log': 'Журнал',
   'Your receiving address': 'Ваш адрес для получения', 'Asset': 'Актив', 'Nominal': 'Номинал', 'Present value': 'Сейчас стоит',
   'empty — tap Faucet': 'пусто — нажмите «Кран»', 'Faucet (+1 FRC)': 'Кран (+1 FRC)', 'Refresh': 'Обновить',
   'Issue an asset that lives on the chain: constant, melting (demurrage) or growing (interest).':
@@ -96,8 +96,8 @@ const RU = {
   'offer coin is gone': 'монета оффера уже потрачена', 'amount is below the offer minimum': 'объём меньше минимума оффера',
   'you need an FRC coin (tap Faucet) to pay for this fill': 'нужна монета FRC (нажмите Кран), чтобы оплатить покупку',
   'no user-asset coins': 'нет монет активов', 'Buy': 'Купить', 'Bought': 'Куплено', 'You pay': 'К оплате', 'awaiting seller': 'ждёт продавца', 'allow partial fills': 'разрешить частичный выкуп', 'this offer sells only as a whole': 'этот оффер продаётся только целиком', 'The offer can only be taken whole — one buyer, the full quantity.': 'Оффер можно выкупить только целиком — один покупатель, весь объём.', '⚠ this amount is so small it will melt to zero within a few blocks — buy more': '⚠ такое количество растает в ноль за несколько блоков — купите больше', 'your coins are newer than this offer — the seller must refresh it': 'ваши монеты новее оффера — продавец должен его обновить',
-  'Account': 'Аккаунт', 'Secret phrase': 'Секретная фраза', 'Copy': 'Копировать', 'Stored only in this browser.': 'Хранится только в этом браузере.',
-  'Log out of account': 'Выйти из аккаунта', 'Restore': 'Восстановить', 'Create': 'Создать',
+  'Account': 'Аккаунт', 'Secret phrase': 'Секретная фраза', 'Stored only in this browser.': 'Хранится только в этом браузере.',
+  'Log out of account': 'Выйти из аккаунта', 'Create': 'Создать',
   'A non-custodial exchange for user-issued Freicoin assets.': 'Некастодиальная биржа пользовательских активов Freicoin.',
   'Log in with wallet': 'Войти через кошелёк',
   'The wallet opens in a popup; after you unlock it, it hands the session here directly (bypassing the server).':

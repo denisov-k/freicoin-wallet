@@ -79,6 +79,7 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     return [...m.values()];
   };
 
+  /** @type {(r: any, stale?: any) => any} */
   const toCache = (r, stale = false) => {
     const tip = r.tipHeight;
     return {

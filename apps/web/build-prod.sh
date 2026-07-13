@@ -22,6 +22,9 @@ else
   CP=""; echo "WARNING: mainnet node unreachable — building WITHOUT a fresh checkpoint (slower first sync, still correct)"
 fi
 
+# type-check (checkJs) before building — catches shadowing, missing imports, wrong shapes
+echo "typecheck…"; npx tsc -p jsconfig.json
+
 VITE_BRIDGE=wss://f.testtty.ru/ws/regtest \
 VITE_BRIDGE_NV3=wss://f.testtty.ru/ws/nv3 \
 VITE_BRIDGE_MAIN=wss://f.testtty.ru/ws/main \

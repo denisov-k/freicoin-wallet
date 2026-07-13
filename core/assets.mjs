@@ -1,3 +1,4 @@
+// @ts-nocheck  — bit-exact kernel, golden-vector tested; TS number/bigint coercion is a false positive here
 // assets.mjs — executable reference model for nVersion=3-lite: fungible, user-issued assets
 // with per-asset demurrage or interest. This is the SPEC as running, tested code — every
 // consensus rule pinned down here BEFORE any C++ touches the node. It is a deliberate STRICT

@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "checkJs": true, "noEmit": true, "allowJs": true,
+    "module": "esnext", "moduleResolution": "bundler", "target": "es2022",
+    "lib": ["es2022", "dom", "dom.iterable", "webworker"],
+    "strict": false, "noImplicitAny": false, "skipLibCheck": true, "types": ["node"]
+  },
+  "include": ["src/**/*.mjs", "src/**/*.d.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.mjs", "**/*.fuzz.mjs"]
+}

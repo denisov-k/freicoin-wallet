@@ -8,6 +8,7 @@
 const DB_VERSION = 2;          // v2: chunked headers (v1 stored one record per header)
 const CHUNK = 2048;            // headers per record
 const idb = () => { try { return globalThis.indexedDB; } catch { return null; } };
+// @ts-ignore  — false positive (DOM/Promise<void> under checkJs)
 const txDone = t => new Promise((res, rej) => { t.oncomplete = () => res(); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); });
 const reqDone = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
 

@@ -10,7 +10,7 @@ import { segwitV0Sighash, rangedSighash, SIGHASH_ALL, SIGHASH_BUNDLE } from '../
 import { serializeTx, NV3_TX_VERSION } from '../../../core/tx.mjs';
 import { assetPresentValue } from '../../../core/assets.mjs';
 import { sha256, hash160 } from '../../../core/crypto.mjs';
-import { frcLeg, refundGiven } from '../../../core/swap.mjs';
+import { frcLeg, refundGiven, claimReceived } from '../../../core/swap.mjs';
 import { paymentHashOf } from '../../../core/htlc.mjs';
 import { btcHtlcClaim, btcAddress, btcHtlcRefund } from '../../../core/btc.mjs';
 import { tr, getLang } from './i18n.mjs';
@@ -22,7 +22,10 @@ const HOST_TAG = '00'.repeat(20);
 const decimalsOf = tag => Number(state?.defs?.[tag]?.decimals ?? state?.info?.assets?.find(a => a.tag === tag)?.decimals ?? 0);
 const scaleOf = tag => (tag == null || tag === HOST_TAG || tag === 'FRC') ? 100000000 : 10 ** decimalsOf(tag);
 const ACCOUNT = "m/84'/1'/0'";              // nv3 = coin type 1 (Freimarkets shares the regtest branch)
+/** @type {(s: string) => any} */   // any: elements are used dynamically (.onclick/.value); checkJs would else flag Element
 const $ = s => document.querySelector(s);
+/** @type {(el: any, s: string) => any} */
+const q = (el, s) => el.querySelector(s);
 const rev = h => h.match(/../g).reverse().join('');
 const frc = v => (Number(BigInt(v)) / 1e8).toLocaleString('ru-RU', { maximumFractionDigits: 8 });
 const num = v => parseFloat(String(v ?? '').replace(',', '.'));   // locale-tolerant: accept a comma decimal separator
@@ -297,13 +300,13 @@ function openOfferModal() {
     <p class="sub" style="font-size:12px" id="rHint">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p></div>`;
   document.body.appendChild(m);
   m.onclick = e => { if (e.target === m) m.remove(); };   // tap outside the card = close
-  m.querySelector('#offerClose').onclick = () => m.remove();
-  m.querySelector('#rOfferBtn').onclick = postRangedOffer;
-  m.querySelector('#rPartial').onchange = e => { $('#rHint').textContent = e.target.checked
+  q(m, '#offerClose').onclick = () => m.remove();
+  q(m, '#rOfferBtn').onclick = postRangedOffer;
+  q(m, '#rPartial').onchange = e => { $('#rHint').textContent = e.target.checked
     ? tr('Buyers fill any amount; the remainder keeps trading while you are online.')
     : tr('The offer can only be taken whole — one buyer, the full quantity.'); };
   // want = BTC ⇒ cross-chain swap: no price/partial (rate is the relay's), give is FRC.
-  m.querySelector('#rWant').onchange = e => {
+  q(m, '#rWant').onchange = e => {
     const btc = e.target.value === 'BTC';
     $('#rPartialLbl').hidden = btc;                                   // no partial fills on a swap
     $('#rPriceLbl').querySelector('label,span') || 0;
@@ -384,12 +387,12 @@ function openSwapModal(prefill) {
     <p class="warn" style="font-size:12px">${tr('Experimental, on the test chains. Your FRC is refundable if the swap stalls.')}</p></div>`;
   document.body.appendChild(m);
   m.onclick = e => { if (e.target === m) m.remove(); };
-  m.querySelector('#swClose').onclick = () => m.remove();
+  q(m, '#swClose').onclick = () => m.remove();
   let rate = 0.2;
   api('swapInfo').then(s => { rate = s.rate; upd(); }).catch(() => {});
   const upd = () => { const a = num($('#swAmt').value) || 0; $('#swGet').textContent = (a * rate).toLocaleString(getLang(), { maximumFractionDigits: 8 }) + ' BTC'; };
-  m.querySelector('#swAmt').oninput = upd;
-  m.querySelector('#swGo').onclick = () => runSwap(num($('#swAmt').value));
+  q(m, '#swAmt').oninput = upd;
+  q(m, '#swGo').onclick = () => runSwap(num($('#swAmt').value));
 }
 
 async function runSwap(frcUnits) {
@@ -466,8 +469,8 @@ function openP2pTakeModal(offer) {
     <p class="warn" style="font-size:12px">${tr('You will pay BTC from your own wallet to the shown address. Experimental.')}</p></div>`;
   document.body.appendChild(m);
   m.onclick = e => { if (e.target === m) m.remove(); };
-  m.querySelector('#tkClose').onclick = () => m.remove();
-  m.querySelector('#tkGo').onclick = () => takeP2p(offer, t => { const el = $('#tkLog'); if (el) el.textContent += (el.textContent ? '\n' : '') + t; });
+  q(m, '#tkClose').onclick = () => m.remove();
+  q(m, '#tkGo').onclick = () => takeP2p(offer, t => { const el = $('#tkLog'); if (el) el.textContent += (el.textContent ? '\n' : '') + t; });
 }
 
 async function takeP2p(offer, log) {
@@ -542,8 +545,8 @@ function openP2pPayModal(rec) {
     <div id="pyLog" class="sub" style="font-size:12px"></div></div>`;
   document.body.appendChild(m);
   m.onclick = e => { if (e.target === m) m.remove(); };
-  m.querySelector('#pyClose').onclick = () => m.remove();
-  m.querySelector('#pyGo').onclick = async () => {
+  q(m, '#pyClose').onclick = () => m.remove();
+  q(m, '#pyGo').onclick = async () => {
     const txid = $('#pyTxid').value.trim(); if (!/^[0-9a-f]{64}$/.test(txid)) return toast(tr('bad txid'), 'err');
     const g = $('#pyGo'); g.disabled = true;
     try { await api('p2pBtcFunded', { id: rec.id, btcTxid: txid }); putP2p({ ...rec, status: 'btc_funded' }); m.remove(); toast(tr('BTC verified — awaiting your FRC'), 'ok'); mvRefresh(); }
@@ -650,13 +653,13 @@ function openBuyModal(o) {
     $('#bMelt').hidden = !(u > 0) || assetPresentValue(BigInt(Math.round(u * scaleOf(giveTag))), 10, rate) > 0n; };
   cost();
   m.onclick = e => { if (e.target === m) m.remove(); };
-  m.querySelector('#bClose').onclick = () => m.remove();
-  m.querySelector('#bQty').oninput = cost;
-  const bm = m.querySelector('#bMax'); if (bm) bm.onclick = () => { $('#bQty').value = maxU; cost(); };
-  m.querySelector('#bBuy').onclick = async () => {
+  q(m, '#bClose').onclick = () => m.remove();
+  q(m, '#bQty').oninput = cost;
+  const bm = q(m, '#bMax'); if (bm) bm.onclick = () => { $('#bQty').value = maxU; cost(); };
+  q(m, '#bBuy').onclick = async () => {
     const u = num($('#bQty').value);
     if (!(u > 0)) return toast(tr('enter a quantity'), 'err');
-    const btn = m.querySelector('#bBuy'); btn.disabled = true;
+    const btn = q(m, '#bBuy'); btn.disabled = true;
     if (await fillRangedNow(o, u)) m.remove(); else btn.disabled = false;
   };
 }
@@ -758,8 +761,8 @@ export function openIssueModal() {
     <button id="issueBtn">${tr('Issue asset')}</button></div>`;
   document.body.appendChild(m);
   m.onclick = e => { if (e.target === m) m.remove(); };
-  m.querySelector('#issClose').onclick = () => m.remove();
-  m.querySelector('#issueBtn').onclick = issue;
+  q(m, '#issClose').onclick = () => m.remove();
+  q(m, '#issueBtn').onclick = issue;
   const rateHint = () => {
     const kind = $('#iKind').value, el = $('#iRateHint');
     el.hidden = kind === 'c';
@@ -772,12 +775,12 @@ export function openIssueModal() {
     const f = x => { const pc = x * 100; return (!isFinite(pc) || pc > 9999) ? '∞' : pc.toLocaleString(getLang(), { maximumSignificantDigits: 3 }); };
     el.textContent = `≈ ${f(over(1))}% ${tr('per day')} · ≈ ${f(over(30))}% ${tr('per month')} · ≈ ${f(over(365))}% ${tr('per year')}`;
   };
-  m.querySelector('#iShift').oninput = e => {   // hard-clamp typed values (min/max only guard the spinner)
+  q(m, '#iShift').oninput = e => {   // hard-clamp typed values (min/max only guard the spinner)
     const v = e.target.value;
     if (v !== '') { const c = Math.min(63, Math.max(1, Math.round(+v || 1))); if (String(c) !== v) e.target.value = c; }
     rateHint();
   };
-  m.querySelector('#iKind').onchange = e => {
+  q(m, '#iKind').onchange = e => {
     $('#iRateLbl').hidden = e.target.value === 'c';        // constant has no rate at all
     // rounding hint per type: melting EATS whole units; growth STALLS below a whole unit
     const hint = $('#iMeltHint');

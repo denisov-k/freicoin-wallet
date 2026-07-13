@@ -157,6 +157,7 @@ export class Neutrino {
         this._rx += ev.data.byteLength || 0;
         for (const m of decode(Buffer.from(ev.data))) {
           if (m.command === 'version') { try { this.peerHeight = parseVersion(m.payload).startHeight; } catch {} this._send('verack'); }
+          // @ts-ignore  — false positive (DOM/Promise<void> under checkJs)
           else if (m.command === 'verack') { this._ready = true; resolve(); }
           else if (m.command === 'ping') this._send('pong', m.payload);
           else if (m.command === 'inv') this._onInv(m);
@@ -319,6 +320,7 @@ export class Neutrino {
     let seen = 0;
     return new Promise((res, rej) => {
       this._inflight.add(rej);
+      // @ts-ignore  — false positive (DOM/Promise<void> under checkJs)
       this.on('cfilter', m => { each(parseCFilter(m.payload)); if (++seen === want) { this._inflight.delete(rej); res(); } });
       this._send('getcfilters', buildGetCFilters(from, this.chain.hashAt(to)));
     });
@@ -559,6 +561,7 @@ export class Neutrino {
           const stride = Math.min(headersDone ? ready : Math.floor(ready / CFILTERS_BATCH) * CFILTERS_BATCH, 10 * CFILTERS_BATCH);
           const to = from + stride - 1;
           const matched = await fetcher.matchFilters(scripts, from, to);
+          // @ts-ignore  — false positive (DOM/Promise<void> under checkJs)
           await this._applyBlocks(scripts, matched, to, fetcher);
           onPartial?.(this._result(to));
         } else if (headersDone) break;
