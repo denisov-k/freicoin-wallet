@@ -521,8 +521,9 @@ async function driveP2p() {
           toast(`${w.id}: ${tr('FRC locked — awaiting BTC')}`, 'ok'); mvRefresh();
         } else if (w.status === 'btc_funded' && w.btcHtlc?.txid) {   // taker funded BTC → claim it with R
           const R = p2pKey(rec.nonce, 'R'), btcKey = p2pKey(rec.nonce, 'btc'), b = w.btcHtlc;
-          const myBtcSpk = '0014' + hash160(Buffer.from(pubkeyCompressed(btcKey), 'hex')).toString('hex');
-          const cB = btcHtlcClaim({ prevTxid: b.txid, vout: b.vout, valueSats: BigInt(b.value), leafHex: b.leaf, preimage: R, claimKey: btcKey, toSpk: myBtcSpk, fee: 2000n });
+          // claim straight into the in-wallet BTC ACCOUNT (not the per-nonce address) so proceeds
+          // land in the visible balance — the claim auth key stays the per-nonce swap key
+          const cB = btcHtlcClaim({ prevTxid: b.txid, vout: b.vout, valueSats: BigInt(b.value), leafHex: b.leaf, preimage: R, claimKey: btcKey, toSpk: btcP2wpkhSpk(btcAcctPub()), fee: 2000n });
           await api('p2pBtcClaim', { id: rec.id, rawtx: cB.rawtx });
           putP2p({ ...rec, status: 'btc_claimed' });
           toast(`${w.id}: ${tr('BTC received ✅')}`, 'ok'); mvRefresh();
