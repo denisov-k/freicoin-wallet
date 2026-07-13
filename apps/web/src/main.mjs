@@ -321,7 +321,7 @@ function renderApp() {
     try {
       const st = await getState(true);
       paintBalance(st);                                   // sets status ok; skips DOM when hidden
-      if (!$('#activity').hidden) { const { txs } = await ds().history(); paintActivity(txs); }
+      if (!$('#activity').hidden) { const { txs } = await ds().history(); const btcTxs = MKT() ? await mvBtcHistory() : []; paintActivity([...txs, ...btcTxs]); }
       if (MKT()) mvRefresh();                             // keep the order book + asset balance fresh on nv3
     } catch (e) {
       // the poll must also self-heal (deep reorg / lost anchor) — otherwise a wallet that
