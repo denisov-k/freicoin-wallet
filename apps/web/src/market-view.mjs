@@ -465,8 +465,7 @@ function openP2pTakeModal(offer) {
     <div class="rrow"><span>${tr('You receive')}</span><b>${Number(BigInt(offer.frcAmount)) / 1e8} FRC</b></div>
     <div class="rrow"><span>${tr('You pay')}</span><b>${Number(BigInt(offer.btcAmount)) / 1e8} BTC</b></div>
     <button id="tkGo">${tr('Buy')}</button>
-    <div id="tkLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
-    <p class="warn" style="font-size:12px">${tr('You will pay BTC from your own wallet to the shown address. Experimental.')}</p></div>`;
+    <div id="tkLog" class="sub" style="font-size:12px;white-space:pre-line"></div></div>`;
   document.body.appendChild(m);
   m.onclick = e => { if (e.target === m) m.remove(); };
   q(m, '#tkClose').onclick = () => m.remove();
@@ -474,15 +473,13 @@ function openP2pTakeModal(offer) {
 }
 
 async function takeP2p(offer, log) {
-  const go = $('#tkGo'); if (go) { go.disabled = true; go.textContent = tr('taking…'); }
+  const go = $('#tkGo'); if (go) { go.disabled = true; go.textContent = tr('awaiting the seller…'); }
   try {
     const nonce = sha256(Buffer.from(seed + 'fw-p2p-take:' + offer.id, 'utf8')).toString('hex').slice(0, 16);
     const frcPub = pubkeyCompressed(p2pKey(nonce, 'frc')), btcPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
     const myFrcAddr = deriveAddress(seed, 0, 0);
-    log(tr('accepting the offer…'));
     await api('p2pTake', { id: offer.id, takerFrcPub: frcPub, takerBtcPub: btcPub, takerFrcAddr: myFrcAddr });
     putP2p({ id: offer.id, role: 'taker', nonce, status: 'taken', frcAmount: offer.frcAmount, btcAmount: offer.btcAmount, paymentHash: offer.paymentHash, funded: false });
-    log(tr('waiting for the seller to lock FRC…'));
     toast(tr('offer taken — follow the steps'), 'ok'); mvRefresh();
   } catch (e) { log('⚠ ' + e.message); toast(e.message, 'err'); if (go) { go.disabled = false; go.textContent = tr('Buy'); } }
 }
