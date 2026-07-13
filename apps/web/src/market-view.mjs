@@ -890,16 +890,29 @@ function openP2pPayModal(rec) {
 // continuation of the take modal) — HTLC address, auto-detect polling, cooperative cancel.
 function renderP2pPay(m, rec) {
   const b = rec.btcHtlc; if (!b) return;
+  const amt = BigInt(rec.btcAmount), bal = mvBtc().balance ? BigInt(mvBtc().balance) : 0n;
+  const canWallet = mvBtc().available && bal >= amt + 1000n;   // account balance covers amount + fee
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Pay BTC')} ${rec.id}</b><button id="pyClose" class="icon">✕</button></div>
-    <p class="sub">${tr('Send exactly this amount from your Bitcoin wallet to the address. The swap continues automatically once the payment is seen.')}</p>
-    <div class="rrow"><span>${tr('Amount')}</span><b>${Number(BigInt(rec.btcAmount)) / 1e8} BTC</b></div>
+    <div class="rrow"><span>${tr('Amount')}</span><b>${Number(amt) / 1e8} BTC</b></div>
+    ${mvBtc().available ? `<button id="pyWallet"${canWallet ? '' : ' disabled'}>${canWallet ? `${tr('Pay from wallet')} · ${(Number(bal) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC` : tr('not enough BTC in wallet')}</button>` : ''}
+    <p class="sub">${tr('…or send exactly this amount from any Bitcoin wallet to the address. The swap continues automatically once the payment is seen.')}</p>
     <label>${tr('HTLC address')}<div class="addr" style="user-select:all">${b.addr}</div></label>
     <div id="pyStatus" class="sub" style="font-size:13px"></div>
     <button id="pyCancel" class="ghost">${tr('Cancel purchase')}</button></div>`;
   const close = () => { clearInterval(poll); m.remove(); };
   m.onclick = e => { if (e.target === m) close(); };
   q(m, '#pyClose').onclick = close;
+  // pay the HTLC straight from the in-wallet BTC account (one tap); auto-detect finishes the swap
+  const pw = q(m, '#pyWallet'); if (pw && canWallet) pw.onclick = async () => {
+    pw.disabled = true; pw.textContent = tr('paying…');
+    try {
+      const fund = await btcFundHtlc(b.addr, amt);
+      try { await api('p2pBtcFunded', { id: rec.id, btcTxid: fund.txid }); } catch {}   // nudge the relay; auto-detect is the fallback
+      const st = $('#pyStatus'); if (st) st.textContent = tr('paid from wallet ✓ — finishing the swap');
+      refreshBtc();
+    } catch (e) { toast(e.message, 'err'); pw.disabled = false; pw.textContent = `${tr('Pay from wallet')} · ${(Number(bal) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`; }
+  };
   // auto-detect: poll the relay until it sees the payment, then close (drive loop finishes it)
   const poll = setInterval(async () => {
     try {
