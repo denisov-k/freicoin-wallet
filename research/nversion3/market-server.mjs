@@ -257,9 +257,19 @@ function reconcileP2p() {
   let changed = false;
   for (let i = p2p.length - 1; i >= 0; i--) {
     const w = p2p[i];
+    // a partial-offer CHILD that was taken but never funded within grace: hand its reserved amount
+    // back to the parent offer's `remaining` before removing it, so the offer keeps selling.
+    const zombie = w.status === 'taken' && !w.frcHtlc && w.takenAt != null && indexedHeight - w.takenAt > GRACE;
+    if (zombie && w.parent) {
+      const o = p2p.find(x => x.id === w.parent && x.kind === 'offer');
+      if (o) { o.remaining = String(BigInt(o.remaining) + BigInt(w.frcAmount)); if (o.status === 'closed') o.status = 'open'; }
+      p2p.splice(i, 1); changed = true; continue;
+    }
+    // an offer container with nothing left and no live children → retire it
+    if (w.kind === 'offer' && BigInt(w.remaining) <= 0n && !p2p.some(x => x.parent === w.id)) { p2p.splice(i, 1); changed = true; continue; }
+    if (w.kind === 'offer') continue;   // otherwise an offer container is never itself "settled"
     const settled = ['done', 'cancelled', 'expired'].includes(w.status);
     const takerClaimed = w.status === 'btc_claimed' && w.frcHtlc && !utxos.has(`${w.frcHtlc.txid}:${w.frcHtlc.vout}`);
-    const zombie = w.status === 'taken' && !w.frcHtlc && w.takenAt != null && indexedHeight - w.takenAt > GRACE;
     if (settled || takerClaimed || zombie) {
       // completed swaps go to the archive (clients rebuild trade history from it); dead ones just go
       if (w.status === 'done' || takerClaimed) p2pArchive.push({ ...w, archivedAt: Date.now() });
@@ -825,7 +835,8 @@ const api = {
     const bh = await btcRpc('getblockcount').catch(() => 0);
     return { available: btcAvail(), t1: SWAP_T1, t2: SWAP_T2, revTf: REV_TF, revTb: REV_TB, btcNet: BTC_NET, btcHrp: BTC_HRP, frcHeight: fh, btcHeight: bh,
       assetDefs: Object.fromEntries([...assets.entries()].map(([tag, a]) => [tag, { name: a.name, decimals: a.decimals, shift: a.shift }])),
-      swaps: p2p.slice(-60).map(w => ({ id: w.id, dir: w.dir ?? 'sellFrc', status: w.status, assetTag: w.assetTag ?? null, frcAmount: w.frcAmount, btcAmount: w.btcAmount,
+      swaps: p2p.slice(-80).map(w => ({ id: w.id, kind: w.kind ?? 'swap', parent: w.parent ?? null, partial: !!w.partial, remaining: w.remaining ?? null, minFill: w.minFill ?? null, maxFill: w.maxFill ?? null,
+        dir: w.dir ?? 'sellFrc', status: w.status, assetTag: w.assetTag ?? null, frcAmount: w.frcAmount, btcAmount: w.btcAmount,
         maker: w.maker, taker: w.taker, paymentHash: w.paymentHash, t1: w.t1, t2: w.t2,
         frcHtlc: w.frcHtlc, btcHtlc: w.btcHtlc, preimage: w.preimage ?? null, coopSig: w.coopSig ?? null })),
       archive: p2pArchive.slice(-30).map(w => ({ id: w.id, dir: w.dir ?? 'sellFrc', status: 'done', assetTag: w.assetTag ?? null, frcAmount: w.frcAmount, btcAmount: w.btcAmount,
@@ -835,17 +846,28 @@ const api = {
   // maker posts an offer at THEIR price. makerBtcAddr = where the maker will receive BTC.
   // assetTag: sell a user-issued asset instead of FRC (CONSTANT assets only — melt/grow value
   // drift between fund and claim is not verified yet). frcAmount then counts asset base units.
-  async p2pPost({ frcAmount, btcAmount, makerFrcPub, makerBtcPub, makerBtcAddr, paymentHash, assetTag }) {
+  // partial ⇒ an OFFER CONTAINER (sell UP TO frcAmount for a proportional BTC price, in pieces).
+  // It holds no single HTLC/secret; each take spawns an independent child sub-swap.
+  async p2pPost({ frcAmount, btcAmount, makerFrcPub, makerBtcPub, makerBtcAddr, paymentHash, assetTag, partial, minFill, maxFill }) {
     if (!btcAvail()) throw new Error('своп недоступен: нет BTC-узла');
-    if (!/^[0-9a-f]{64}$/.test(paymentHash || '')) throw new Error('плохой paymentHash');
     if (!/^[0-9a-f]{66}$/.test(makerFrcPub || '') || !/^[0-9a-f]{66}$/.test(makerBtcPub || '')) throw new Error('плохие ключи');
     const tag = assetTag || null;
-    // any user-issued asset (constant / melting / growing) — the payout is present-valued at claim
-    // time via the asset's rate, so melt/grow settle correctly; the amount is the NOMINAL locked.
     if (tag && !assets.get(tag)) throw new Error('неизвестный актив');
     const frc = BigInt(frcAmount), btc = BigInt(btcAmount);
     if (frc <= 0n || btc <= 0n) throw new Error('плохие суммы');
     const id = 'p2p' + (p2pSeq++);
+    if (partial) {
+      const mn = minFill != null && BigInt(minFill) > 0n ? BigInt(minFill) : 1n;
+      const mx = maxFill != null && BigInt(maxFill) > 0n ? BigInt(maxFill) : frc;
+      if (mn > mx || mx > frc) throw new Error('неверные мин/макс выкупа');
+      const w = { id, kind: 'offer', partial: true, status: 'open', dir: 'sellFrc', assetTag: tag,
+        frcAmount: String(frc), btcAmount: String(btc), remaining: String(frc), minFill: String(mn), maxFill: String(mx), childSeq: 0,
+        maker: { frcPub: makerFrcPub, btcPub: makerBtcPub, btcAddr: makerBtcAddr } };
+      p2p.push(w); saveP2p();
+      say(`P2P-оффер ${id}: продаю до ${tag ? frc + ' ' + (assets.get(tag)?.name ?? 'актив') : (Number(frc)/1e8) + ' FRC'} за ${Number(btc)/1e8} BTC (частями)`);
+      return { id };
+    }
+    if (!/^[0-9a-f]{64}$/.test(paymentHash || '')) throw new Error('плохой paymentHash');
     const w = { id, status: 'open', assetTag: tag, frcAmount: String(frc), btcAmount: String(btc), paymentHash,
       maker: { frcPub: makerFrcPub, btcPub: makerBtcPub, btcAddr: makerBtcAddr },
       taker: null, frcHtlc: null, btcHtlc: null, preimage: null, t1: 0, t2: 0 };
@@ -853,21 +875,45 @@ const api = {
     say(`P2P-оффер ${id}: продаю ${tag ? frc + ' ' + (assets.get(tag)?.name ?? 'актив') : (Number(frc)/1e8) + ' FRC'} за ${Number(btc)/1e8} BTC`);
     return { id };
   },
-  // a taker accepts: commits their receive keys. takerFrcAddr = where the taker receives FRC.
-  async p2pTake({ id, takerFrcPub, takerBtcPub, takerFrcAddr }) {
-    const w = p2p.find(x => x.id === id); if (!w) throw new Error('нет такого оффера');
-    if (w.status !== 'open') throw new Error('оффер уже взят');
+  // a taker accepts. On a partial offer, `fill` (frc units, default = remaining) spawns a child
+  // sub-swap and reserves that much of the remaining; otherwise the whole offer is taken.
+  async p2pTake({ id, fill, takerFrcPub, takerBtcPub, takerFrcAddr }) {
+    const o = p2p.find(x => x.id === id); if (!o) throw new Error('нет такого оффера');
     if (!/^[0-9a-f]{66}$/.test(takerFrcPub || '') || !/^[0-9a-f]{66}$/.test(takerBtcPub || '')) throw new Error('плохие ключи');
-    w.taker = { frcPub: takerFrcPub, btcPub: takerBtcPub, frcAddr: takerFrcAddr };
-    w.status = 'taken'; w.takenAt = indexedHeight; saveP2p();
+    if (o.kind === 'offer') {
+      if (o.status !== 'open') throw new Error('оффер закрыт');
+      const rem = BigInt(o.remaining), f = fill != null ? BigInt(fill) : rem;
+      if (f <= 0n || f > rem) throw new Error('неверный объём выкупа');
+      const mn = o.minFill ? BigInt(o.minFill) : 1n, mx = o.maxFill ? BigInt(o.maxFill) : rem;
+      if (f < mn && f < rem) throw new Error('меньше минимального выкупа');   // (allow taking the whole small remainder)
+      if (f > mx) throw new Error('больше максимального выкупа');
+      const cid = `${id}.${o.childSeq++}`;
+      const btc = (BigInt(o.btcAmount) * f + BigInt(o.frcAmount) - 1n) / BigInt(o.frcAmount);   // ceil the proportional price
+      const child = { id: cid, parent: id, dir: 'sellFrc', assetTag: o.assetTag ?? null,
+        frcAmount: String(f), btcAmount: String(btc), paymentHash: null,
+        maker: { frcPub: null, btcPub: null, btcAddr: o.maker.btcAddr }, taker: { frcPub: takerFrcPub, btcPub: takerBtcPub, frcAddr: takerFrcAddr },
+        frcHtlc: null, btcHtlc: null, preimage: null, t1: 0, t2: 0, status: 'taken', takenAt: indexedHeight };
+      o.remaining = String(rem - f); if (BigInt(o.remaining) <= 0n) o.status = 'closed';
+      p2p.push(child); saveP2p();
+      say(`P2P ${cid}: частичный выкуп — под-своп создан (остаток оффера ${o.remaining})`);
+      return { id: cid, maker: child.maker, assetTag: child.assetTag, frcAmount: child.frcAmount, btcAmount: child.btcAmount, paymentHash: null };
+    }
+    if (o.status !== 'open') throw new Error('оффер уже взят');
+    o.taker = { frcPub: takerFrcPub, btcPub: takerBtcPub, frcAddr: takerFrcAddr };
+    o.status = 'taken'; o.takenAt = indexedHeight; saveP2p();
     say(`P2P-оффер ${id}: взят — стороны обмениваются HTLC`);
-    return { id, maker: w.maker, assetTag: w.assetTag ?? null, frcAmount: w.frcAmount, btcAmount: w.btcAmount, paymentHash: w.paymentHash };
+    return { id, maker: o.maker, assetTag: o.assetTag ?? null, frcAmount: o.frcAmount, btcAmount: o.btcAmount, paymentHash: o.paymentHash };
   },
   // maker funded the FRC (or ASSET) HTLC (claim=taker, refund=maker, cltv=T1). Relay VERIFIES on
   // fc-nv3, then hands the taker the BTC HTLC address to fund (claim=maker, refund=taker, T2<T1).
-  async p2pFrcFunded({ id, txid, vout, t1 }) {
-    const w = p2p.find(x => x.id === id); if (!w) throw new Error('нет такого оффера');
+  // For a child sub-swap the maker supplies its per-swap keys + secret hash here (set at fund time).
+  async p2pFrcFunded({ id, txid, vout, t1, makerFrcPub, makerBtcPub, paymentHash }) {
+    const w = p2p.find(x => x.id === id && x.kind !== 'offer'); if (!w) throw new Error('нет такого свопа');
     if (w.status !== 'taken') throw new Error('оффер не на этой стадии');
+    if (!w.maker.frcPub) {   // child sub-swap: its maker keys + H arrive with the funding report
+      if (!/^[0-9a-f]{66}$/.test(makerFrcPub || '') || !/^[0-9a-f]{66}$/.test(makerBtcPub || '') || !/^[0-9a-f]{64}$/.test(paymentHash || '')) throw new Error('нет ключей мейкера/секрета');
+      w.maker.frcPub = makerFrcPub; w.maker.btcPub = makerBtcPub; w.paymentHash = paymentHash;
+    }
     await catchUp();
     const leaf = htlcLeaf({ paymentHash: w.paymentHash, claimPub: w.taker.frcPub, refundPub: w.maker.frcPub, cltv: Number(t1) });
     const u = utxos.get(`${txid}:${vout}`);
