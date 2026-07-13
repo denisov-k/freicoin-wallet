@@ -903,7 +903,7 @@ function paint() {
       // P2P board offers: open ones from OTHERS get a Take button; mine/in-flight show status
       for (const o of (state.p2p?.swaps || [])) {
         const mineRec = myP2p.get(o.id);
-        const give = `${Number(BigInt(o.frcAmount)) / 1e8} FRC`, want = `${Number(BigInt(o.btcAmount)) / 1e8} BTC`;
+        const give = `${frc(o.frcAmount)} FRC`, want = `${(Number(BigInt(o.btcAmount)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`;
         let act;
         if (mineRec) act = mineRec.status === 'need_btc'
           ? `<button class="p2ppay rbtn" data-id="${o.id}">${tr('Pay BTC')}</button>`
