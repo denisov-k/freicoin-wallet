@@ -910,7 +910,7 @@ function paint() {
           : `<span class="sub">${tr(o.status)}</span>`;
         else act = o.status === 'open' ? `<button class="p2ptake rbtn" data-id="${o.id}">${tr('Take')}</button>` : `<span class="sub">${tr(o.status)}</span>`;
         if (o.status === 'open' || mineRec)
-          swapRows += `<tr class="swap ${o.status === 'open' ? '' : 'filled'}"><td>⇄</td><td>${give}</td><td>${want}</td><td class="act-cell">${act}</td></tr>`;
+          swapRows += `<tr class="swap ${o.status === 'open' ? '' : 'filled'}"><td>${o.id.replace(/^p2p/, '')}</td><td>⇄ ${give}</td><td>${want}</td><td class="act-cell">${act}</td></tr>`;
       }
       for (const w of loadMySwaps()) {
         const past = state.mine.height > w.T1;
