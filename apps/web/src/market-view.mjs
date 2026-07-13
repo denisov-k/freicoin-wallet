@@ -461,7 +461,7 @@ function openP2pTakeModal(offer) {
   const btcHrp = state.swap?.btcHrp || 'tb';
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} BTC</b><button id="tkClose" class="icon">✕</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} FRC</b><button id="tkClose" class="icon">✕</button></div>
     <div class="rrow"><span>${tr('You receive')}</span><b>${Number(BigInt(offer.frcAmount)) / 1e8} FRC</b></div>
     <div class="rrow"><span>${tr('You pay')}</span><b>${Number(BigInt(offer.btcAmount)) / 1e8} BTC</b></div>
     <button id="tkGo">${tr('Buy')}</button>
