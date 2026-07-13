@@ -81,7 +81,7 @@ const RU = {
   'asset received ✅': 'актив получен ✅', 'asset locked — awaiting the secret': 'актив заперт — ждём секрет', 'Sell': 'Продать',
   'asset refunded': 'актив возвращён', 'FRC refunded': 'FRC возвращены',
   'asset refunded (cancelled)': 'актив возвращён (отменено)', 'FRC refunded (cancelled)': 'FRC возвращены (отменено)', 'seller locked — pay the BTC': 'продавец запер — оплатите BTC',
-  'Pay from wallet': 'Оплатить из кошелька', 'not enough BTC in wallet': 'недостаточно BTC в кошельке', 'paying…': 'оплачиваем…', 'paid from wallet ✓ — finishing the swap': 'оплачено из кошелька ✓ — завершаем обмен',
+  'Pay from wallet': 'Оплатить из кошелька', 'not enough BTC in wallet': 'недостаточно BTC в кошельке', 'paying…': 'оплачиваем…', 'checking balance…': 'проверяем баланс…', 'paid from wallet ✓ — finishing the swap': 'оплачено из кошелька ✓ — завершаем обмен',
   '…or send exactly this amount from any Bitcoin wallet to the address. The swap continues automatically once the payment is seen.': '…или отправьте ровно эту сумму с любого Bitcoin-кошелька на адрес. Обмен продолжится автоматически, как только платёж будет виден.',
   'swap cancelled — seller refunds instantly': 'обмен отменён — продавец вернёт средства мгновенно', 'you need an older FRC coin (tap Faucet) for the network fee': 'нужна более старая FRC-монета (Кран) на комиссию',
   'Issue asset': 'Выпустить актив',
