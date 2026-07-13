@@ -351,6 +351,28 @@ async function ensureWatchWallet() {
   // wallet_name, disable_private_keys=true, blank=true, passphrase, avoid_reuse, descriptors=true
   try { await btcRpcOn('', 'createwallet', WATCH, true, true, '', false, true); } catch {}
 }
+// One-shot background deep rescan: `watchAddress` imports with timestamp "now" (fast, sees only
+// FUTURE receives), so funds an address already holds stay invisible. When a NOT-yet-deep-scanned
+// address appears, kick off a single bounded rescanblockchain over the recent window — fire and
+// forget so the request returns instantly; the funds show on a later poll. Rescans the whole
+// watch wallet, so we debounce to one in-flight rescan and only trigger on genuinely new addresses.
+const btcDeep = new Set();
+let btcRescanning = false;
+function btcDeepScan(addrs) {
+  const fresh = addrs.filter(a => !btcDeep.has(a));
+  if (!fresh.length || btcRescanning) return;
+  fresh.forEach(a => btcDeep.add(a));
+  btcRescanning = true;
+  (async () => {
+    try {
+      const tip = await btcRpc('getblockcount');
+      const start = Math.max(0, tip - 30000);   // ~months of signet — far older than anything this wallet touched
+      say(`btc: rescan watch wallet from ${start} for ${fresh.length} new addr(s)`);
+      await btcWatch('rescanblockchain', start);
+    } catch (e) { /* rescan busy or node hiccup — a later poll retries via a new address */ }
+    finally { btcRescanning = false; }
+  })();
+}
 async function watchAddress(addr) {
   const info = await btcRpc('getdescriptorinfo', `addr(${addr})`).catch(() => null);
   const desc = info ? `addr(${addr})#${info.checksum}` : `addr(${addr})`;
@@ -633,6 +655,7 @@ const api = {
     const addrs = addresses.filter(a => /^(bc|tb|bcrt)1[0-9a-z]{6,90}$/i.test(a)).slice(0, 200);
     await ensureWatchWallet();
     for (const a of addrs) await watchAddress(a).catch(() => {});
+    btcDeepScan(addrs);   // one-shot background rescan so pre-existing funds (e.g. old swap proceeds) surface
     const list = await btcWatch('listunspent', 0, 9999999, addrs).catch(() => []);
     let bal = 0n;
     const utxos = list.map(u => { const sats = BigInt(Math.round(u.amount * 1e8)); bal += sats;
