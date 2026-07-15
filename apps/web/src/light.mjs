@@ -48,7 +48,16 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     // Seed asset defs the wallet can never scan itself (an issuance block matches only the
     // ISSUER's filters): untrusted relay hints for rate/valuation of history legs — a lying
     // rate only mislabels amounts. Scan-verified defs overwrite seeds as blocks arrive.
-    try { for (const [t, p] of Object.entries(seedDefs || {})) if (!n.stateClient.assetDefs.has(t)) n.stateClient.assetDefs.set(t, p); } catch {}
+    // NB: strip `decimals` from the seed — display decimals are SELF-CERTIFIED on-chain (the "name|D"
+    // suffix hashed into the tag), so a stale/wrong seeded decimals must never set the display scale
+    // (it once made a whole "1 Test1" render as "0.0001"). Decimals come only from the trustless scan
+    // or, for non-scannable assets, the relay's freshly-read info.assets — never a cached seed.
+    try { for (const [t, p] of Object.entries(seedDefs || {})) if (!n.stateClient.assetDefs.has(t)) { const { decimals, ...rest } = p; n.stateClient.assetDefs.set(t, rest); } } catch {}
+    // Also DROP any decimals persisted in the resumed store: an old build seeded untrusted relay
+    // decimals INTO the store, and a stale/wrong one there sets the display scale (it made a whole
+    // "1 Test1" render as "0.0001"). Display decimals are self-certified on-chain, so they must come
+    // only from a live scan of the def block or fresh relay info — never a persisted hint.
+    try { for (const [t, p] of n.stateClient.assetDefs) if (p && 'decimals' in p) { const { decimals, ...rest } = p; n.stateClient.assetDefs.set(t, rest); } } catch {}
     // Fresh start: skip filters/scan below the wallet's birth height (headers still sync
     // fully — PoW trustlessness is not windowed). Crucial on mainnet: without a birth
     // height a new wallet would scan ~485k filters that cannot contain its coins.
