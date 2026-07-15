@@ -3,12 +3,13 @@
 // from the wallet's unlocked session via mvSetSeed), chain reads come from the wallet's own
 // light client (ds().assets()), and the relay (:5181, proxied at /api) provides only the order
 // book, issuance funding and broadcast — it can mislabel but never steal.
-import { deriveAddress, currentNet } from '@/services/wallet.mjs';
+import { deriveAddress, currentNet, addrToSpk } from '@/services/wallet.mjs';
 import { derivePath, ckdPriv, wpkProgramHex } from '@core/hd.mjs';
 import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
 import { segwitV0Sighash, rangedSighash, SIGHASH_ALL, SIGHASH_BUNDLE } from '@core/sighash.mjs';
 import { serializeTx, NV3_TX_VERSION } from '@core/tx.mjs';
 import { assetPresentValue } from '@core/assets.mjs';
+import { makeTokenReveal } from '@core/nv3wire.mjs';
 import { sha256, hash160 } from '@core/crypto.mjs';
 import { frcLeg, refundGiven } from '@core/swap.mjs';
 import { paymentHashOf } from '@core/htlc.mjs';
@@ -186,7 +187,7 @@ export async function mvSendAsset(tag, qty, toSpk) {
   const vout = [{ value: Q, scriptPubKey: toSpk, assetTag: tag }];
   if (S - Q > 0n) vout.push({ value: S - Q, scriptPubKey: changeSpk, assetTag: tag });   // asset conserves exactly
   const reserved = committedOutpoints();
-  const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && x.refheight <= L && !reserved.has(x.outpoint)
+  const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && !x.tokenHash && x.refheight <= L && !reserved.has(x.outpoint)
     && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
   if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
   const feePv = assetPresentValue(BigInt(feeCoin.value), L - feeCoin.refheight, { k: 20, interest: false });
@@ -197,6 +198,68 @@ export async function mvSendAsset(tag, qty, toSpk) {
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
   mvRefresh();
   return txid;
+}
+
+// Send a TOKEN-BEARING coin whole (its units + every token on it) to an address. A committed
+// coin only spends with a two-sided FRT1 reveal: the input section proves what the coin held
+// (vs its stored hash), the output section commits the same set to the recipient's new coin.
+export async function mvSendTokenCoin(outpoint, toSpk) {
+  if (!state) await doRefresh();
+  const u = state.mine.utxos.find(x => x.outpoint === outpoint);
+  if (!u || !u.tokenHash) throw new Error(tr('offer coin is gone'));
+  if (!u.tokens?.length) throw new Error(tr('this coin\u2019s token list is not recovered yet \u2014 wait for a full sync'));
+  const L = state.mine.height, fee = 10000n, changeSpk = spks[0];
+  const reserved = committedOutpoints();
+  const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && !x.tokenHash && x.refheight <= L && !reserved.has(x.outpoint)
+    && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
+  if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
+  const feePv = assetPresentValue(BigInt(feeCoin.value), L - feeCoin.refheight, { k: 20, interest: false });
+  const pv = assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(u.assetTag));
+  /** @type {{value: bigint, scriptPubKey: string, assetTag?: string|null, tokens?: string[]}[]} */
+  const vout = [{ value: pv, scriptPubKey: toSpk, assetTag: u.assetTag, tokens: u.tokens }];
+  if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: changeSpk, assetTag: HOST_TAG });
+  const reveal = makeTokenReveal(vout, [{ tokens: u.tokens }, {}]);
+  const n = reveal.length / 2;
+  vout.push({ value: 0n, scriptPubKey: '6a' + (n <= 75 ? n.toString(16).padStart(2, '0') : '4c' + n.toString(16).padStart(2, '0')) + reveal });
+  const inputs = [u, feeCoin].map(c => ({ outpoint: c.outpoint, spk: c.spk, value: BigInt(c.value), refheight: c.refheight }));
+  const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(opIn), vout };
+  inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
+  const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+  mvRefresh();
+  return txid;
+}
+
+// modal: pick the destination for a token coin (address -> spk via the wallet's decoder)
+function openTokenSendModal(outpoint) {
+  const u = state?.mine.utxos.find(x => x.outpoint === outpoint);
+  if (!u || $('#modal')) return;
+  const names = (u.tokens ?? []).map(tokLabel).join(' \u00b7 ');
+  const m = document.createElement('div'); m.id = 'modal';
+  m.innerHTML = `<div class="review">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>\ud83c\udf9f ${tr('Send tokens')}</b><button id="tsClose" class="icon">\u2715</button></div>
+    <p class="sub">${names}</p>
+    <p class="sub" style="font-size:12px">${tr('The coin moves whole: all its tokens and units go to one recipient.')}</p>
+    <label>${tr('Recipient address')}<input id="tsAddr" placeholder="fcrt1\u2026"></label>
+    <button id="tsSend">${tr('Send')}</button></div>`;
+  document.body.appendChild(m);
+  m.onclick = e => { if (e.target === m) m.remove(); };
+  q(m, '#tsClose').onclick = () => m.remove();
+  q(m, '#tsSend').onclick = async () => {
+    try {
+      const spk = addrToSpk(q(m, '#tsAddr').value.trim());
+      await mvSendTokenCoin(outpoint, spk);
+      m.remove(); toast(tr('Sent'), 'ok');
+    } catch (e) { toast(e.message, 'err'); }
+  };
+}
+
+// display label for a token bitstring: utf8 when printable, else short hex
+export function tokLabel(hex) {
+  try {
+    const s = decodeURIComponent(hex.replace(/(..)/g, '%$1'));
+    if (/^[^\x00-\x1f\x7f<>&"']+$/.test(s)) return s;
+  } catch { /* not utf8 */ }
+  return hex.slice(0, 16) + (hex.length > 16 ? '\u2026' : '');
 }
 
 async function prepareGiveCoin(giveTag, Q, L, coins) {
@@ -907,7 +970,7 @@ async function fillRangedNow(offer, fillUnits) {
     const change = givePv - fill;
     const pvAt = (c, rate) => assetPresentValue(BigInt(c.value), L - c.refheight, rate);
     const gather = (norm, rate, need, exclude) => {   // pick coins of one asset (largest first) covering `need`
-      const pool = state.mine.utxos.filter(x => (x.assetTag ?? null) === norm && x.refheight <= L && !exclude.has(x.outpoint))
+      const pool = state.mine.utxos.filter(x => (x.assetTag ?? null) === norm && !x.tokenHash && x.refheight <= L && !exclude.has(x.outpoint))
         .map(x => ({ outpoint: x.outpoint, spk: x.spk, value: BigInt(x.value), refheight: x.refheight, pv: pvAt(x, rate) }))
         .sort((a, b) => (b.pv > a.pv ? 1 : b.pv < a.pv ? -1 : 0));
       const got = []; let sum = 0n;
@@ -1122,11 +1185,18 @@ function paintAssetBalance() {
   const rows = [...byAsset.entries()].map(([tag, e]) => {
     const constant = tag !== 'FRC' && rateOf(tag).k >= 64;   // k=64 ≈ constant: the one-off rounding unit isn't "melting"
     const melt = !constant && e.pv < e.nominal, grow = !constant && e.pv > e.nominal;
-    return `<tr><td${tag === 'FRC' ? '' : ` title="${tag}"`}>${assetName(tag === 'FRC' ? null : tag)}</td><td class="r ${melt ? 'melt' : grow ? 'grow' : ''}">${amt(tag, e.pv)}</td></tr>`;
+    // token coins of this asset get their own sub-rows: the set travels whole, so each COIN
+    // (not each token) is the unit the user can act on
+    const tokRows = state.mine.utxos
+      .filter(u => (u.assetTag ?? 'FRC') === tag && u.tokenHash)
+      .map(u => `<tr class="tokrow"><td class="sub" style="padding-left:18px">\ud83c\udf9f ${(u.tokens ?? []).map(tokLabel).join(' \u00b7 ') || tr('recovering\u2026')}</td><td class="r"><button class="ghost tokSend" data-op="${u.outpoint}" ${u.tokens?.length ? '' : 'disabled'}>\u27a4</button></td></tr>`)
+      .join('');
+    return `<tr><td${tag === 'FRC' ? '' : ` title="${tag}"`}>${assetName(tag === 'FRC' ? null : tag)}</td><td class="r ${melt ? 'melt' : grow ? 'grow' : ''}">${amt(tag, e.pv)}</td></tr>` + tokRows;
   });
   // BTC sits in the same table (held in-wallet on signet); the cell fills in when refreshBtc returns.
   if (state.swap?.available) rows.push(`<tr><td>BTC</td><td class="r" id="btcBalCell">${mvBtc().balance != null ? btcToStr(mvBtc().balance) : '…'}</td></tr>`);
   body.innerHTML = rows.join('') || `<tr><td colspan="2" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
+  body.querySelectorAll('button.tokSend').forEach(b => b.onclick = () => openTokenSendModal(b.dataset.op));
 }
 
 function paint() {

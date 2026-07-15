@@ -41,7 +41,9 @@ export const freeFrcKria = () => {
 // my spendable coins of one asset (null tag = FRC), present-valued at height L, minus reserved ones
 export function myCoinsOf(tag, L, reserved = committedOutpoints()) {
   const norm = tag === HOST_TAG ? null : tag;
-  return ctx.state.mine.utxos.filter(u => (u.assetTag ?? null) === norm && u.refheight <= L && !reserved.has(u.outpoint))
+  // token-bearing coins are excluded: spending one without revealing its set is consensus-invalid,
+  // so fungible flows must never sweep them — they move only through the token-send flow
+  return ctx.state.mine.utxos.filter(u => (u.assetTag ?? null) === norm && !u.tokenHash && u.refheight <= L && !reserved.has(u.outpoint))
     .map(u => ({ outpoint: u.outpoint, spk: u.spk, value: BigInt(u.value), refheight: u.refheight,
                  pv: assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(norm)) }));
 }

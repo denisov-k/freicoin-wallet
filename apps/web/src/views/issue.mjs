@@ -13,7 +13,9 @@ async function issue() {
     // any amount — truly flat. (The demurrage side would round ONE base unit off, which on a
     // whole-unit asset is a visible token.)
     const kind = $('#iKind').value;
-    await api('issue', { name, shift: kind === 'c' ? 64 : Math.min(63, Math.max(1, Math.round(+$('#iShift').value || 16))), interest: kind === 'i' || kind === 'c', amount: $('#iAmt').value, decimals: $('#iDec')?.value ?? 0, spk: ctx.spks[0] });
+    const tokens = ($('#iToks')?.value ?? '').split('\n').map(s => s.trim()).filter(Boolean);
+    if (tokens.length !== new Set(tokens).size) throw new Error(tr('token names must be unique'));
+    await api('issue', { name, shift: kind === 'c' ? 64 : Math.min(63, Math.max(1, Math.round(+$('#iShift').value || 16))), interest: kind === 'i' || kind === 'c', amount: $('#iAmt').value, decimals: $('#iDec')?.value ?? 0, spk: ctx.spks[0], ...(tokens.length ? { tokens } : {}) });
     $('#modal')?.remove();
     toast(`«${name}» ${tr('issued to your address')}`, 'ok'); mvRefresh();
   } catch (e) { toast(e.message, 'err'); }
@@ -36,6 +38,8 @@ export function openIssueModal() {
       <label>${tr('Decimals')}<select id="iDec"><option value="2">0,01</option><option value="3">0,001</option><option value="0">${tr('whole only')}</option></select></label>
     </div>
     <p class="sub" id="iMeltHint" style="font-size:12px" hidden>${tr('Melting eats whole units on indivisible assets — decimals let it shave fractions instead.')}</p>
+    <label>${tr('Unique items (tokens)')}<textarea id="iToks" rows="2" placeholder="${tr('one per line — tickets, memberships, keys (optional)')}"></textarea></label>
+    <p class="sub" style="font-size:12px">${tr('Tokens are minted onto one coin with the asset and travel whole; each name must be unique.')}</p>
     <button id="issueBtn">${tr('Issue asset')}</button></div>`;
   document.body.appendChild(m);
   m.onclick = e => { if (e.target === m) m.remove(); };

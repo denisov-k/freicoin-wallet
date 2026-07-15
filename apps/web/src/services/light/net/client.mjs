@@ -7,7 +7,7 @@ import { encodeMessage, createDecoder, buildVersion, parseVersion, buildGetHeade
          MSG_WITNESS_BLOCK, MSG_WITNESS_TX, MSG_TX } from './p2p.mjs';
 import { filterMatchesAny } from './bip158.mjs';
 import { parseAuxPow, checkAuxPoW } from './auxpow.mjs';
-import { blockHash, parseBlock, extractAssetDefs } from './scan.mjs';
+import { blockHash, parseBlock, extractAssetDefs, txTokenMap } from './scan.mjs';
 import { HeaderChain } from './chain.mjs';
 import { makePool } from './verifypool.mjs';
 import { parseTx, txid as txidOf } from '@core/tx.mjs';
@@ -442,7 +442,8 @@ export class Neutrino {
         // the block height overvalues the coin by the demurrage of the gap (spends then
         // fail bad-txns-in-belowout). Coinbases have lock_height == height, which is why
         // mining-only wallets never tripped this.
-        tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) { add(recvBy, isHostCoin(o) ? null : o.assetTag, o.value); utxos.set(id + ':' + i, { txid: id, vout: i, value: o.value, refheight: tx.lockHeight, script: o.scriptPubKey, coinbase: txIndex === 0, assetTag: o.assetTag ?? null, tokens: o.tokens ?? [] }); } });
+        const tokMap = txTokenMap(tx);   // nV3 tokens: verified against each output's own commitment
+        tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) { add(recvBy, isHostCoin(o) ? null : o.assetTag, o.value); utxos.set(id + ':' + i, { txid: id, vout: i, value: o.value, refheight: tx.lockHeight, script: o.scriptPubKey, coinbase: txIndex === 0, assetTag: o.assetTag ?? null, tokens: tokMap.get(i) ?? [], tokenHash: o.tokenHash ?? null }); } });
         for (const tag of new Set([...recvBy.keys(), ...sentBy.keys()])) {
           const recv = recvBy.get(tag) ?? 0n, sent = sentBy.get(tag) ?? 0n;
           if (recv > sent) history.push({ txid: id, assetTag: tag, category: txIndex === 0 ? 'generate' : 'receive', amount: recv - sent, height, time });

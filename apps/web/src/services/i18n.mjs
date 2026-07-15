@@ -2,6 +2,17 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  // --- smart-property tokens ---
+  'Unique items (tokens)': 'Уникальные экземпляры (токены)',
+  'one per line — tickets, memberships, keys (optional)': 'по одному на строку — билеты, членства, ключи (необязательно)',
+  'Tokens are minted onto one coin with the asset and travel whole; each name must be unique.': 'Токены чеканятся на одну монету вместе с активом и передаются только целиком; имена не должны повторяться.',
+  'token names must be unique': 'имена токенов не должны повторяться',
+  'Send tokens': 'Отправить токены',
+  'The coin moves whole: all its tokens and units go to one recipient.': 'Монета передаётся целиком: все её токены и единицы уйдут одному получателю.',
+  'Recipient address': 'Адрес получателя',
+  'Sent': 'Отправлено',
+  'this coin\u2019s token list is not recovered yet \u2014 wait for a full sync': 'список токенов этой монеты ещё не восстановлен — дождитесь полной синхронизации',
+  'recovering\u2026': 'восстановление…',
   'Balance': 'Баланс', 'Receive': 'Получить', 'Send': 'Отправить', 'Activity': 'Активность',
   'Network': 'Сеть', 'Status': 'Статус', 'Downloaded': 'Загружено',
   'synced ✓ (verified)': 'синхронизирован ✓', 'syncing…': 'синхронизация…', 'offline': 'нет связи',

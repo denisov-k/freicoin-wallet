@@ -3,6 +3,8 @@
 import { Buffer } from 'buffer';
 import { readVarint, skipAuxPow } from './p2p.mjs';
 import { parseTx, serializeTx, txid } from '@core/tx.mjs';
+import { parseTokenReveal } from '@core/nv3wire.mjs';
+import { tokenSetHash } from '@core/asset-spk.mjs';
 import { timeAdjustValue } from '@core/demurrage.mjs';
 import { sha256, sha256d, hash160 } from '@core/crypto.mjs';
 
@@ -85,6 +87,30 @@ const revHex = h => Buffer.from(h, 'hex').reverse().toString('hex');
  * `myScripts` (hex scriptPubKeys). `heightOf(blockHashHex)` gives block heights.
  * Returns a Map "txid:vout" -> { value, refheight, script }.
  */
+// nVersion=3 tokens: a committed output's token STRINGS live only in the tx's FRT1 OP_RETURN
+// (the chainstate keeps just the 32-byte hash). Extract the reveal and return Map(vout -> tokens),
+// keeping ONLY entries whose set hashes to the output's own commitment — the reveal is
+// self-certifying against the (PoW-verified) scriptPubKey, so no server is trusted for it.
+const REVEAL_MAGIC = '46525431';   // 'FRT1'
+export function txTokenMap(tx) {
+  for (const o of tx.vout) {
+    const spk = o.scriptPubKey;
+    if (!spk || !spk.startsWith('6a')) continue;
+    const b = Buffer.from(spk.slice(2), 'hex');
+    const payload = b[0] >= 1 && b[0] <= 75 ? b.subarray(1, 1 + b[0])
+                  : b[0] === 0x4c ? b.subarray(2, 2 + b[1]) : null;
+    if (!payload || payload.subarray(0, 4).toString('hex') !== REVEAL_MAGIC) continue;
+    try {
+      const { outputs } = parseTokenReveal(payload.toString('hex'));
+      const m = new Map();
+      for (const [idx, toks] of outputs)
+        if (tx.vout[idx]?.tokenHash && tokenSetHash(toks) === tx.vout[idx].tokenHash) m.set(idx, toks);
+      return m;
+    } catch { return new Map(); }
+  }
+  return new Map();
+}
+
 export function scanBlocks(blocks, myScripts, heightOf) {
   const mine = new Set(myScripts);
   const utxos = new Map();
@@ -93,7 +119,8 @@ export function scanBlocks(blocks, myScripts, heightOf) {
     for (const tx of parseBlock(b)) {
       const id = txid(tx);
       for (const vin of tx.vin) utxos.delete(revHex(vin.prevout.txid) + ':' + vin.prevout.vout);   // spends
-      tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) utxos.set(id + ':' + i, { value: o.value, refheight: h, script: o.scriptPubKey, assetTag: o.assetTag ?? null, tokens: o.tokens ?? [] }); });
+      const tokMap = txTokenMap(tx);
+      tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) utxos.set(id + ':' + i, { value: o.value, refheight: h, script: o.scriptPubKey, assetTag: o.assetTag ?? null, tokens: tokMap.get(i) ?? [], tokenHash: o.tokenHash ?? null }); });
     }
   }
   return utxos;

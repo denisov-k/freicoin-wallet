@@ -15,6 +15,7 @@ import { randomBytes } from 'node:crypto';
 import { serializeTx, parseTx, txid as computeTxid, NV3_TX_VERSION } from '../../core/tx.mjs';
 import { loadOrCreateVapid, sendPush } from './webpush.mjs';
 import { decodeAssetSpk } from '../../core/asset-spk.mjs';
+import { makeTokenReveal } from '../../core/nv3wire.mjs';
 import { assetPresentValue } from '../../core/assets.mjs';
 import { pubkeyCompressed, signEcdsa } from '../../core/ecdsa.mjs';
 import { frcLeg, claimReceived } from '../../core/swap.mjs';
@@ -786,7 +787,14 @@ const api = {
     say(`кран: 1 FRC → ${address.slice(0, 16)}…`);
     return { txid };
   },
-  async issue({ name, shift, interest, amount, spk, decimals }) {
+  async issue({ name, shift, interest, amount, spk, decimals, tokens }) {
+    // optional smart-property tokens: short utf8 labels minted WITH the asset on the same
+    // coin (v2 suffix = tag ++ H(token set); the set itself is revealed in an FRT1 OP_RETURN)
+    const toks = Array.isArray(tokens)
+      ? [...new Set(tokens.map(s => String(s).trim()).filter(Boolean))].slice(0, 50)
+          .map(s => Buffer.from(s, 'utf8').toString('hex'))
+      : [];
+    if (toks.some(h => h.length / 2 > 64)) throw new Error('токен длиннее 64 байт');
     shift = Math.min(64, Math.max(1, Number(shift) || 16));
     const d = Math.min(8, Math.max(0, Number(decimals) || 0));
     // display decimals: one shown unit = 10^d base units — issue that many more base units so
@@ -815,13 +823,20 @@ const api = {
       version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: raw.lockheight, nExpireTime: 0,
       vin: [{ prevout: { txid: rev(ftx), vout: v }, scriptSig: '', sequence: 0xffffffff, witness: TRUE_WITNESS }],
       vout: [
-        { value: amt, scriptPubKey: spk, assetTag: tag },
+        { value: amt, scriptPubKey: spk, assetTag: tag, ...(toks.length ? { tokens: toks } : {}) },
         { value: 0n, scriptPubKey: '6a' + (4 + def.length).toString(16).padStart(2, '0') + '46524131' + def.toString('hex') },
         { value: fval - 100000n, scriptPubKey: TRUE_SPK },
       ],
     };
     // companion 'FRAN' name OP_RETURN (consensus ignores it; indexers read it from-chain). Its
     // sha256 is committed in the def above, so a reader can verify the name against the tag.
+    if (toks.length) {   // reveal the minted output's token set (mint needs no input section)
+      const reveal = makeTokenReveal(tx.vout, []);
+      const n = reveal.length / 2;
+      if (n > 255) throw new Error('токены не влезают в reveal (сократите количество/длину)');
+      // direct push <=75 bytes, PUSHDATA1 above — the light client parses exactly these two forms
+      tx.vout.push({ value: 0n, scriptPubKey: '6a' + (n <= 75 ? n.toString(16).padStart(2, '0') : '4c' + n.toString(16).padStart(2, '0')) + reveal });
+    }
     const nmeta = Buffer.from(nm, 'utf8');
     tx.vout.push({ value: 0n, scriptPubKey: '6a' + (4 + nmeta.length).toString(16).padStart(2, '0') + '4652414e' + nmeta.toString('hex') });
     await rpc('generateblock', mineAddr, [serializeTx(tx)]);
