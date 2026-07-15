@@ -1098,7 +1098,7 @@ export function renderExchange(el) {
       <label>${tr('Wants')}<select id="fWant">${fopt}</select></label>
     </div>
     <label class="chk"><input type="checkbox" id="fOpen" checked>${tr('open only')}</label>
-    <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" style="padding:16px 2px;border-bottom:none">${skel(3)}</td></tr></tbody></table>
+    <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" style="padding:14px 2px 4px;border-bottom:none">${skel(3)}</td></tr></tbody></table>
     <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>`;
   $('#openOffer').onclick = openOfferModal;
   ['#fGive', '#fWant', '#fOpen'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });

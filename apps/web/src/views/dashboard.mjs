@@ -106,10 +106,10 @@ export function paintActivity(txs, final = true) {
   const sec = $('#activity');
   if (!sec || sec.hidden) return false;
   const list = $('#actList') || sec;   // filters live above the list; partials may land before renderActivity
-  if (d.SWAP() && !btcActReady) { if (!list.querySelector('.skel')) list.innerHTML = skel(4); return false; }
+  if (d.SWAP() && !btcActReady) { if (!list.querySelector('.skel')) list.innerHTML = skel(3); return false; }
   // A PROVISIONAL paint with an empty FRC history (mid-resync) must not show a BTC-only list — hold
   // the skeleton until real FRC legs arrive or the FINAL paint says the history is truly empty.
-  if (!final && !txs.filter(t => !t.btc).length) { if (!list.querySelector('.skel')) list.innerHTML = skel(4); return false; }
+  if (!final && !txs.filter(t => !t.btc).length) { if (!list.querySelector('.skel')) list.innerHTML = skel(3); return false; }
   // A cross-chain trade knows the raw FRC leg it replaces (frcTxid) — adopt that leg's real
   // time/confirmations before the leg itself is hidden. AMOUNTS stay the trade's NOMINAL ones.
   for (const t of btcActLegs) {
@@ -178,7 +178,7 @@ export function paintActivity(txs, final = true) {
   // KEYED RECONCILE — update rows in place instead of rewriting the container, so a refresh never
   // resets the scroll position or closes the opened detail.
   if (!shown.length) {
-    if (!txs.length && !final) { if (!list.querySelector('.skel')) list.innerHTML = skel(4); return false; }
+    if (!txs.length && !final) { if (!list.querySelector('.skel')) list.innerHTML = skel(3); return false; }
     list.innerHTML = `<div class="sub">${txs.length ? tr('nothing matches the filters') : tr('no transactions yet')}</div>`;
     return true;
   }
@@ -233,7 +233,7 @@ export async function renderActivity() {
       </select></label>
       ${d.MKT() ? `<label>${tr('Asset')}<select id="afCur"><option value="">${tr('all')}</option><option value="FRC">FRC</option></select></label>` : ''}
     </div>
-    <div id="actList">${skel(4)}</div>`;
+    <div id="actList">${skel(3)}</div>`;
   $('#afCat').value = actFilter.cat;
   $('#afCat').onchange = () => { actFilter.cat = $('#afCat').value; actLastHtml = ''; paintActivity(actLastTxs, actGotFinal); };
   if (d.MKT()) {
