@@ -108,7 +108,16 @@ v1 = fungible asset, v2 = asset + token-commitment; higher reserved. Byte-parity
 the commitment (it is eaten as a shard prefix); assets are unaffected because the tag data push
 always precedes the version.
 
-**Q2 — smart-property tokens: KEEP on the current NV3 path for now (deferred, not rejected).**
+**Q2 — smart-property tokens: DONE via the TWO-SIDED FRT1 REVEAL (2026-07-15).** A token-bearing
+output commits H(token-set) in its §XI v2 spk suffix (tag ++ hash, OP_2); a coin keeps ONLY that
+commitment (chainstate is spk-derived, no token persistence). Moving tokens reveals them in one
+OP_RETURN "FRT1" payload with an OUTPUT section (checked vs each output's commitment) AND an INPUT
+section for the committed coins being spent (checked vs each spent coin's commitment) — the input
+half is required because conservation (out ⊆ in) can't be decided from hashes alone. CheckTxInputs
+treats the reveal as the sole authority. Model nv3wire-test 18/18, C++ asset_tests, live token_demo.mjs
+all green. (The text below is the SUPERSEDED earlier "deferred" decision, kept for history.)
+
+**[SUPERSEDED] Q2 — smart-property tokens: KEEP on the current NV3 path for now (deferred, not rejected).**
 The original Freimarkets 2013 spec (§3.2/§4.1) stores tokens as a plain, sorted output SUFFIX
 (bitstring list) with the rule output-tokens ⊆ input-tokens — i.e. tokens directly in the output,
 NOT a hash commitment. Our "H(token-set) in the extension push + witness reveal" is a soft-fork
