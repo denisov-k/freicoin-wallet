@@ -7,7 +7,8 @@ import { $, store, fmt, fmtBal, skel, copy } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import { loadFeeTxids } from '@/services/storage.mjs';
-import { openIssueModal, renderAssetBalance, mvRefresh, mvRelayAssets, mvBtcHistory } from '@/market-view.mjs';
+import { renderAssetBalance, mvRefresh, mvRelayAssets, mvBtcHistory } from '@/market-view.mjs';
+import { openIssueModal } from '@/views/issue.mjs';
 import { renderReceive, renderSend } from '@/views/send.mjs';
 
 /** shell store, injected by main.mjs */
