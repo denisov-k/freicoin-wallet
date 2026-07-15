@@ -22,7 +22,7 @@ import { btcHrp, btcAcctAddr, btcFundHtlc, btcToStr, refreshBtc,
   mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, initBtcAccount, btcResetAcct } from '@/services/market/btc-account.mjs';
 import { recoverBtcNonces, mvBtcHistory, initActivity, resetRecovery } from '@/services/market/activity.mjs';
 import { driveP2p, checkP2pRefunds, checkBtcRefunds, initDrive } from '@/services/market/swap-drive.mjs';
-import { $, q, rev, frc, num, setOptions, skelRows } from '@/components/dom.mjs';
+import { $, q, rev, frc, num, setOptions, skel, skelRows } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
 export { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc };   // BTC account lives in its own module; re-exported so the wallet imports stay stable
 export { mvBtcHistory };                                      // activity/recovery in mv-activity.mjs; re-exported for the wallet
@@ -1098,7 +1098,7 @@ export function renderExchange(el) {
       <label>${tr('Wants')}<select id="fWant">${fopt}</select></label>
     </div>
     <label class="chk"><input type="checkbox" id="fOpen" checked>${tr('open only')}</label>
-    <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" class="sub">${tr('first sync…')}</td></tr></tbody></table>
+    <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4">${skel(4)}</td></tr></tbody></table>
     <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>`;
   $('#openOffer').onclick = openOfferModal;
   ['#fGive', '#fWant', '#fOpen'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });
