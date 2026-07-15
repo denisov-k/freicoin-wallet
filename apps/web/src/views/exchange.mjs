@@ -237,7 +237,7 @@ export async function mvSendTokenCoin(outpoint, toSpk, picked = null) {
   const n = reveal.length / 2;
   vout.push({ value: 0n, scriptPubKey: '6a' + (n <= 75 ? n.toString(16).padStart(2, '0') : '4c' + n.toString(16).padStart(2, '0')) + reveal });
   const inputs = [u, feeCoin].map(c => ({ outpoint: c.outpoint, spk: c.spk, value: BigInt(c.value), refheight: c.refheight }));
-  const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(opIn), vout };
+  const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(c => opIn(c.outpoint)), vout };
   inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
   mvRefresh();
