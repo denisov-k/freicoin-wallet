@@ -1,0 +1,186 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Freicoin — деньги, которые работают</title>
+<meta name="description" content="Freicoin — цифровые деньги для расчётов, а не для спекуляций. Кошелёк в браузере за минуту, без регистрации. Обмен с биткоином напрямую, без посредников.">
+<style>
+:root{--bg:#0f1115;--card:#181b22;--card2:#1d212a;--fg:#e8eaed;--sub:#9aa0aa;--acc:#3ea6ff;--acc2:#63bbff;--line:#262a33;--warn:#e0a030;--ok:#4cc38a}
+*{box-sizing:border-box}
+body{margin:0;font:17px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--fg)}
+.wrap{max-width:760px;margin:0 auto;padding:40px 20px 56px}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.lang{position:absolute;top:14px;right:16px;font-size:13px;color:var(--sub)}
+.lang a{color:var(--sub);padding:4px 7px;border-radius:8px;cursor:pointer}
+.lang a.on{color:var(--fg);background:var(--card)}
+.hero{text-align:center;padding:26px 0 6px}
+.hero h1{font-size:clamp(32px,7vw,46px);margin:16px 0 8px;letter-spacing:-.5px}
+.hero .tag{font-size:clamp(18px,3.4vw,22px);color:var(--sub);max-width:34em;margin:0 auto}
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:28px 0 10px}
+.btn{display:inline-block;padding:13px 26px;border-radius:14px;font-weight:600;font-size:17px}
+.btn.pri{background:linear-gradient(135deg,var(--acc2),#1565c0);color:#fff}
+.btn.pri:hover{text-decoration:none;filter:brightness(1.1)}
+.btn.sec{border:1px solid var(--line);color:var(--fg)}
+.btn.sec:hover{text-decoration:none;border-color:var(--acc)}
+.live{font:500 14px/1.4 ui-monospace,Menlo,monospace;color:var(--sub);margin-top:16px;font-variant-numeric:tabular-nums;min-height:1.4em}
+.live b{color:var(--fg)}
+h2{font-size:22px;margin:46px 0 12px;letter-spacing:-.3px}
+p{margin:10px 0}
+.sub{color:var(--sub)}
+.steps{counter-reset:s;display:grid;gap:12px;margin:20px 0}
+.step{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px 16px 58px;position:relative}
+.step::before{counter-increment:s;content:counter(s);position:absolute;left:18px;top:16px;width:26px;height:26px;border-radius:50%;background:var(--acc);color:#fff;font-weight:700;font-size:15px;display:flex;align-items:center;justify-content:center}
+.step b{display:block;margin-bottom:2px}
+.step span{color:var(--sub);font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:18px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:block;color:var(--fg)}
+a.card:hover{text-decoration:none;border-color:var(--acc)}
+.card .t{font-weight:600;font-size:16px}
+.card .d{color:var(--sub);font-size:14px;margin-top:4px;display:block}
+.card .soon{display:inline-block;font-size:11px;font-weight:600;color:var(--warn);border:1px solid var(--warn);border-radius:20px;padding:1px 8px;margin-left:6px;vertical-align:2px}
+.faq{margin:18px 0}
+.faq details{background:var(--card);border:1px solid var(--line);border-radius:14px;margin:8px 0;padding:0 18px}
+.faq summary{cursor:pointer;font-weight:600;padding:14px 0;list-style:none}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";float:right;color:var(--sub);font-size:20px;line-height:1}
+.faq details[open] summary::after{content:"–"}
+.faq details p{color:var(--sub);font-size:15px;margin:0 0 14px}
+.hon{border-left:3px solid var(--warn);padding:2px 0 2px 14px;color:var(--sub);font-size:15px;margin:26px 0}
+.foot{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--sub)}
+</style></head><body>
+<div class="lang"><a data-lang="ru">RU</a><a data-lang="en">EN</a></div>
+<div class="wrap">
+
+<div class="hero">
+<svg width="86" height="86" viewBox="0 0 72 72" aria-hidden="true">
+  <defs><linearGradient id="coinG" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#63bbff"/><stop offset="1" stop-color="#1565c0"/>
+  </linearGradient></defs>
+  <circle cx="36" cy="36" r="34" fill="url(#coinG)"/>
+  <circle cx="36" cy="36" r="34" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/>
+  <circle cx="36" cy="36" r="27.5" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.5" stroke-dasharray="2.5 3.5"/>
+  <text x="35" y="49" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-style="italic" font-size="40" fill="#fff">ƒ</text>
+</svg>
+<h1>Freicoin</h1>
+<div class="tag" data-i="tag"></div>
+<div class="cta">
+  <a class="btn pri" href="https://freicoin.ru" data-i="ctaWallet"></a>
+  <a class="btn sec" href="#how" data-i="ctaHow"></a>
+</div>
+<div class="live" id="live"></div>
+</div>
+
+<h2 data-i="whatH"></h2>
+<p data-i="what1"></p>
+<p data-i="what2"></p>
+
+<h2 id="how" data-i="startH"></h2>
+<div class="steps">
+  <div class="step"><b data-i="s1t"></b><span data-i="s1d"></span></div>
+  <div class="step"><b data-i="s2t"></b><span data-i="s2d"></span></div>
+  <div class="step"><b data-i="s3t"></b><span data-i="s3d"></span></div>
+</div>
+
+<h2 data-i="doH"></h2>
+<div class="grid">
+  <a class="card" href="https://freicoin.ru"><span class="t" data-i="d1t"></span><span class="d" data-i="d1d"></span></a>
+  <a class="card" href="https://freicoin.ru"><span class="t"><span data-i="d2t"></span><span class="soon" data-i="soon"></span></span><span class="d" data-i="d2d"></span></a>
+  <a class="card" href="https://freicoin.ru"><span class="t" data-i="d3t"></span><span class="d" data-i="d3d"></span></a>
+  <a class="card" href="https://freicoin.ru/explorer/freigeld"><span class="t" data-i="d4t"></span><span class="d" data-i="d4d"></span></a>
+</div>
+
+<h2 data-i="faqH"></h2>
+<div class="faq">
+  <details><summary data-i="q1"></summary><p data-i="a1"></p></details>
+  <details><summary data-i="q2"></summary><p data-i="a2"></p></details>
+  <details><summary data-i="q3"></summary><p data-i="a3"></p></details>
+  <details><summary data-i="q4"></summary><p data-i="a4"></p></details>
+  <details><summary data-i="q5"></summary><p data-i="a5"></p></details>
+</div>
+
+<p class="hon" data-i="honesty"></p>
+
+<div class="foot">
+<span data-i="footFor"></span>
+<a href="https://freicoin.ru/mine" data-i="footMine"></a> ·
+<a href="https://freicoin.ru/explorer" data-i="footExp"></a> ·
+<a href="https://github.com/tradecraftio/tradecraft">GitHub</a> ·
+<a href="https://freico.in">freico.in</a>
+</div>
+</div>
+
+<script>
+const I = {
+ru: {
+tag: 'Цифровые деньги для расчётов, а не для спекуляций. Кошелёк — прямо в браузере, без регистрации и документов.',
+ctaWallet: 'Открыть кошелёк', ctaHow: 'Как начать',
+whatH: 'Что это такое?',
+what1: 'Freicoin — одна из старейших криптовалют (работает с 2012 года) с необычным свойством: монеты, которые лежат без движения, понемногу «тают» — примерно на 3,3% в год. Ровно столько же каждый день выпускается заново и достаётся тем, кто поддерживает работу сети. Поэтому общее количество денег не растёт и не падает.',
+what2: 'Зачем так? Чтобы деньгами платили, а не копили их «на всякий случай». Это идея экономиста Сильвио Гезелля, которой больше ста лет: деньги должны «стареть», как стареют товары, которые на них покупают. Для накоплений есть биткоин — Freicoin создан, чтобы ходить из рук в руки.',
+startH: 'Как начать — три шага',
+s1t: 'Откройте кошелёк', s1d: 'Нажмите «Открыть кошелёк» — он работает прямо в браузере, на телефоне или компьютере. Ни почты, ни телефона, ни паспорта не нужно.',
+s2t: 'Запишите 12 слов на бумагу', s2d: 'Кошелёк покажет 12 секретных слов. Это единственный ключ к вашим деньгам: кто знает слова — тот владеет монетами. Не фотографируйте, не пересылайте — запишите и уберите.',
+s3t: 'Получите первые монеты', s3d: 'Попросите знакомого перевести вам FRC на ваш адрес — перевод дойдёт за минуты. Или купите за биткоин прямо в кошельке, во вкладке «Биржа».',
+doH: 'Что здесь можно делать',
+d1t: '💸 Платить и получать', d1d: 'Отправляйте и принимайте FRC по адресу — быстро и с копеечной комиссией. Вся история — во вкладке «Активность».',
+d2t: '₿ Покупать и продавать за биткоин', soon: 'запускается', d2d: 'Обмен BTC ↔ FRC напрямую с другим человеком: сделка исполняется у обеих сторон одновременно, посредник не держит ваши деньги ни секунды. Уже работает в тестовом режиме, запуск на основной сети — на днях.',
+d3t: '🎟 Свои валюты и билеты', d3d: 'Любой может выпустить собственную «монету» — местную валюту, баллы, билеты — и продавать её на встроенной бирже.',
+d4t: '⏳ Смотреть, как деньги тают', d4d: 'Живой счётчик: сколько FRC в обращении прямо сейчас и как денежная масса держится у отметки 100 миллионов.',
+faqH: 'Частые вопросы',
+q1: 'Мои деньги кто-то хранит за меня?',
+a1: 'Нет. Кошелёк — некастодиальный: ключи лежат только на вашем устройстве, и никто — ни мы, ни кто-либо ещё — не может распоряжаться вашими монетами или заморозить их. Обратная сторона: если потеряете 12 слов, восстановить деньги не сможет никто.',
+q2: 'Куда деваются «растаявшие» монеты?',
+a2: 'Они не исчезают в чью-то пользу: ровно на столько же каждый день выпускаются новые монеты, и их получают участники, которые обеспечивают работу и безопасность сети. Таяние — это, по сути, небольшая плата за то, что система работает без банков.',
+q3: 'Чем это отличается от биткоина?',
+a3: 'Биткоин задуман как «цифровое золото» — его копят. Freicoin задуман как «цифровая наличность» — им платят. Технически это близкие родственники (Freicoin даже защищается совместно с сетью биткоина), но экономика противоположная: там выгодно держать, здесь выгодно тратить.',
+q4: 'Можно ли на этом заработать?',
+a4: 'Freicoin — не инвестиция и не лотерейный билет. Держать его долго невыгодно по замыслу. Это инструмент для расчётов: пользу он приносит, когда им платят, продают и покупают.',
+q5: 'Это законно? Нужно ли что-то оформлять?',
+a5: 'Freicoin — открытая сеть без компании-владельца, как электронная почта. Кошелёк не требует регистрации. Как ваши местные законы относятся к операциям с криптовалютами — проверьте самостоятельно.',
+honesty: 'Говорим честно: это маленькая сеть с маленьким рынком. Не приносите сюда деньги, которые боитесь потерять, — приносите любопытство. Взамен вы получите единственное место, где столетняя идея «стареющих денег» работает по-настоящему, блок за блоком.',
+footFor: 'Для энтузиастов: ', footMine: 'майнинг', footExp: 'обозреватель блоков',
+live: (h, s) => 'блок <b>' + h.toLocaleString('ru-RU') + '</b> · в обращении <b>' + s.toLocaleString('ru-RU', {maximumFractionDigits: 0}) + '</b> FRC',
+},
+en: {
+tag: 'Digital money for spending, not speculating. The wallet runs right in your browser — no sign-up, no documents.',
+ctaWallet: 'Open the wallet', ctaHow: 'How to start',
+whatH: 'What is this?',
+what1: 'Freicoin is one of the oldest cryptocurrencies (running since 2012) with an unusual property: coins that sit idle slowly “melt” — about 3.3% a year. Exactly that much is re-minted every day and goes to the people who keep the network running, so the total money supply neither grows nor shrinks.',
+what2: 'Why? So that money gets spent rather than hoarded “just in case”. The idea is over a century old — economist Silvio Gesell argued money should age like the goods it buys. Bitcoin is for saving; Freicoin is built to move from hand to hand.',
+startH: 'How to start — three steps',
+s1t: 'Open the wallet', s1d: 'Tap “Open the wallet” — it runs right in your browser, on a phone or a computer. No email, no phone number, no ID.',
+s2t: 'Write 12 words on paper', s2d: 'The wallet shows you 12 secret words. They are the only key to your money: whoever knows the words owns the coins. Don’t photograph or send them — write them down and put them away.',
+s3t: 'Get your first coins', s3d: 'Ask someone to send FRC to your address — it arrives in minutes. Or buy some with bitcoin right in the wallet, on the Exchange tab.',
+doH: 'What you can do here',
+d1t: '💸 Pay and get paid', d1d: 'Send and receive FRC by address — fast, with a negligible fee. Your full history lives in the Activity tab.',
+d2t: '₿ Buy and sell for bitcoin', soon: 'launching', d2d: 'Direct BTC ↔ FRC trades with another person: the swap settles for both sides at once, and no middleman ever holds your money. Live in test mode today; mainnet launch within days.',
+d3t: '🎟 Your own currencies and tickets', d3d: 'Anyone can issue their own “coin” — a local currency, loyalty points, tickets — and trade it on the built-in exchange.',
+d4t: '⏳ Watch the money melt', d4d: 'A live counter: how many FRC circulate right now, and how the supply holds at the 100-million mark.',
+faqH: 'Common questions',
+q1: 'Does someone hold my money for me?',
+a1: 'No. The wallet is non-custodial: the keys live only on your device, and nobody — not us, not anyone — can spend or freeze your coins. The flip side: if you lose the 12 words, nobody can recover the money.',
+q2: 'Where do the “melted” coins go?',
+a2: 'They don’t vanish into anyone’s pocket: the same amount is re-minted daily and paid to the participants who secure the network. The melt is, in effect, a small fee for a system that works without banks.',
+q3: 'How is this different from Bitcoin?',
+a3: 'Bitcoin is designed as “digital gold” — you hold it. Freicoin is designed as “digital cash” — you spend it. Technically they are close relatives (Freicoin is even secured jointly with Bitcoin’s network), but the economics are opposite: there, holding pays; here, spending does.',
+q4: 'Can I make money on this?',
+a4: 'Freicoin is not an investment and not a lottery ticket. Holding it long-term loses by design. It is a payments tool: it is useful when you pay, sell and buy with it.',
+q5: 'Is it legal? Do I need to register anything?',
+a5: 'Freicoin is an open network with no owning company — like email. The wallet needs no registration. How your local laws treat cryptocurrency transactions is yours to check.',
+honesty: 'Being honest: this is a small network with a thin market. Don’t bring money you can’t afford to lose — bring curiosity. In exchange you get the one place where the century-old idea of “aging money” actually runs, block by block.',
+footFor: 'For enthusiasts: ', footMine: 'mining', footExp: 'block explorer',
+live: (h, s) => 'block <b>' + h.toLocaleString('en-US') + '</b> · circulating <b>' + s.toLocaleString('en-US', {maximumFractionDigits: 0}) + '</b> FRC',
+},
+};
+let lang = localStorage.getItem('fw_landing_lang') || ((navigator.language || '').toLowerCase().startsWith('ru') ? 'ru' : 'en');
+let liveData = null;
+function apply() {
+  const d = I[lang];
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i]').forEach(el => { const v = d[el.dataset.i]; if (typeof v === 'string') el.textContent = v; });
+  document.querySelectorAll('.lang a').forEach(a => a.classList.toggle('on', a.dataset.lang === lang));
+  if (liveData) document.getElementById('live').innerHTML = d.live(liveData.height, liveData.supply);
+}
+document.querySelectorAll('.lang a').forEach(a => a.onclick = () => { lang = a.dataset.lang; localStorage.setItem('fw_landing_lang', lang); apply(); });
+apply();
+fetch('/explorer/freigeld.json').then(r => r.json()).then(j => { liveData = j; apply(); }).catch(() => {});
+</script>
+</body></html>
