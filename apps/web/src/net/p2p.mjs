@@ -3,7 +3,7 @@
 // bytes out (encodeMessage). Works over a Node TCP socket or a browser WebSocket
 // (via a WS↔TCP bridge, since browsers can't open raw TCP).
 import { Buffer } from 'buffer';
-import { sha256d } from '../../../../core/crypto.mjs';
+import { sha256d } from '@core/crypto.mjs';
 
 export const MAGIC = {
   main: [0x2c, 0xfe, 0x7e, 0x6d],

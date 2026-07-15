@@ -4,8 +4,8 @@
 // verified headers, BIP157/158 filters and the blocks they flag.
 import { Neutrino, NeutrinoPool } from './net/client.mjs';
 import { IdbStore } from './store-idb.mjs';
-import { timeAdjustValue } from '../../../core/demurrage.mjs';
-import { parseTx, txid as txidOf } from '../../../core/tx.mjs';
+import { timeAdjustValue } from '@core/demurrage.mjs';
+import { parseTx, txid as txidOf } from '@core/tx.mjs';
 
 const kriaToFrc = k => Number(k) / 1e8;
 

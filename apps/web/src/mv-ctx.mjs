@@ -2,7 +2,7 @@
 // market-view.mjs owns the session (unlock/refresh) and MIRRORS it into `ctx` here; extracted feature
 // modules (btc account, activity, swap drive) read from `ctx` instead of closing over market-view's
 // private state. Keeping this tiny and dependency-light avoids import cycles.
-import { sha256 } from '../../../core/crypto.mjs';
+import { sha256 } from '@core/crypto.mjs';
 import { NETWORKS } from './netparams.mjs';
 import { currentNet } from './wallet.mjs';
 

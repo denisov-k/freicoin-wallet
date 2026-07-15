@@ -4,15 +4,15 @@
 // light client (ds().assets()), and the relay (:5181, proxied at /api) provides only the order
 // book, issuance funding and broadcast — it can mislabel but never steal.
 import { deriveAddress, currentNet } from './wallet.mjs';
-import { derivePath, ckdPriv, wpkProgramHex } from '../../../core/hd.mjs';
-import { pubkeyCompressed, signEcdsa } from '../../../core/ecdsa.mjs';
-import { segwitV0Sighash, rangedSighash, SIGHASH_ALL, SIGHASH_BUNDLE } from '../../../core/sighash.mjs';
-import { serializeTx, NV3_TX_VERSION } from '../../../core/tx.mjs';
-import { assetPresentValue } from '../../../core/assets.mjs';
-import { sha256, hash160 } from '../../../core/crypto.mjs';
-import { frcLeg, refundGiven } from '../../../core/swap.mjs';
-import { paymentHashOf } from '../../../core/htlc.mjs';
-import { btcHtlcClaim, btcAddress } from '../../../core/btc.mjs';
+import { derivePath, ckdPriv, wpkProgramHex } from '@core/hd.mjs';
+import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
+import { segwitV0Sighash, rangedSighash, SIGHASH_ALL, SIGHASH_BUNDLE } from '@core/sighash.mjs';
+import { serializeTx, NV3_TX_VERSION } from '@core/tx.mjs';
+import { assetPresentValue } from '@core/assets.mjs';
+import { sha256, hash160 } from '@core/crypto.mjs';
+import { frcLeg, refundGiven } from '@core/swap.mjs';
+import { paymentHashOf } from '@core/htlc.mjs';
+import { btcHtlcClaim, btcAddress } from '@core/btc.mjs';
 import { tr, getLang } from './i18n.mjs';
 import { loadMySwaps, putMySwap, dropMySwap, loadP2p, putP2p, dropP2p, addBtcNonce, addFeeTxid, lsKey } from './mv-storage.mjs';
 import { refreshPushSubs } from './mv-push.mjs';

@@ -6,10 +6,10 @@ import { ctx, api, p2pKey, scaleOf, assetName } from './mv-ctx.mjs';
 import { loadBtcNonces, addBtcNonce, loadP2p, putP2p, addSwapHist, loadSwapHist, pruneSwapHist,
   addFundTxid, loadFundTxids, loadRefundedFunds } from './mv-storage.mjs';
 import { btcAcctAddr, btcKeyring, btcHrp } from './mv-btc-account.mjs';
-import { claimReceived } from '../../../core/swap.mjs';
-import { btcP2wpkhAddress } from '../../../core/btc.mjs';
-import { pubkeyCompressed } from '../../../core/ecdsa.mjs';
-import { sha256 } from '../../../core/crypto.mjs';
+import { claimReceived } from '@core/swap.mjs';
+import { btcP2wpkhAddress } from '@core/btc.mjs';
+import { pubkeyCompressed } from '@core/ecdsa.mjs';
+import { sha256 } from '@core/crypto.mjs';
 
 let refresh = null;   // market-view's doRefresh, injected (first-load bootstrap for mvBtcHistory)
 export function initActivity(doRefresh) { refresh = doRefresh; }

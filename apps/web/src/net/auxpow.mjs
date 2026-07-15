@@ -6,7 +6,7 @@
 // byte order, as uint256::begin() gives.
 import { Buffer } from 'buffer';
 import { SHA256 } from './sha256mid.mjs';
-import { sha256d } from '../../../../core/crypto.mjs';
+import { sha256d } from '@core/crypto.mjs';
 import { readVarint, readBVarint } from './p2p.mjs';
 
 const MIDSTATE_IV = Buffer.from('1e4e0f955a4bc81c08c8af1c94f34b9d0af2f450dc24a3bcef98318faf5e2506', 'hex');

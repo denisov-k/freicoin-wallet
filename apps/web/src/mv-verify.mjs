@@ -6,8 +6,8 @@
 // or mislabels an asset tag. What it can't: prove the tx is buried — BTC_MINCONF / the light client
 // handle depth. A mismatch throws; the caller must NOT proceed.
 import { api } from './mv-ctx.mjs';
-import { parseTx, txid as frcTxid } from '../../../core/tx.mjs';
-import { sha256d } from '../../../core/crypto.mjs';
+import { parseTx, txid as frcTxid } from '@core/tx.mjs';
+import { sha256d } from '@core/crypto.mjs';
 
 const HOST_TAG = '00'.repeat(20);
 const revHex = h => h.match(/../g).reverse().join('');

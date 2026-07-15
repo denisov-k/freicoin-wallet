@@ -1,12 +1,12 @@
 // wallet.mjs — client-side wallet ops built on the core. Keys never leave here.
 import { generateMnemonic as genM, mnemonicToSeedSync, validateMnemonic } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
-import { derivePath, ckdPriv, wpkProgramHex } from '../../../core/hd.mjs';
-import { pubkeyCompressed, signEcdsa } from '../../../core/ecdsa.mjs';
-import { segwitV0Sighash, SIGHASH_ALL } from '../../../core/sighash.mjs';
-import { selectCoins } from '../../../core/coinselect.mjs';
-import { serializeTx } from '../../../core/tx.mjs';
-import { encodeWitness, decodeWitness } from '../../../core/address.mjs';
+import { derivePath, ckdPriv, wpkProgramHex } from '@core/hd.mjs';
+import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
+import { segwitV0Sighash, SIGHASH_ALL } from '@core/sighash.mjs';
+import { selectCoins } from '@core/coinselect.mjs';
+import { serializeTx } from '@core/tx.mjs';
+import { encodeWitness, decodeWitness } from '@core/address.mjs';
 import { NETWORKS, DEFAULT_NET } from './netparams.mjs';
 
 // The wallet targets one network at a time. NET / ACCOUNT (BIP84 m/84'/coinType'/0')

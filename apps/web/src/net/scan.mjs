@@ -2,9 +2,9 @@
 // wallet's UTXOs, and compute a demurrage present-value balance — no backend.
 import { Buffer } from 'buffer';
 import { readVarint, skipAuxPow } from './p2p.mjs';
-import { parseTx, serializeTx, txid } from '../../../../core/tx.mjs';
-import { timeAdjustValue } from '../../../../core/demurrage.mjs';
-import { sha256, sha256d, hash160 } from '../../../../core/crypto.mjs';
+import { parseTx, serializeTx, txid } from '@core/tx.mjs';
+import { timeAdjustValue } from '@core/demurrage.mjs';
+import { sha256, sha256d, hash160 } from '@core/crypto.mjs';
 
 // nVersion=3: extract asset-definition OP_RETURNs ('FRA1' + canonical def) from a tx list.
 // Returns Map assetTag(hex) -> { shift, interest, granularity }. The tag is Hash160(def) BY

@@ -2,10 +2,10 @@
 // offer-posting/fill paths (market-view) and the swap drive (mv-swap-drive). Extracted verbatim; reads
 // the live session (utxos, spks, key map) through `ctx`.
 import { ctx, api, HOST_TAG, rateOf, isNv3Net } from './mv-ctx.mjs';
-import { assetPresentValue } from '../../../core/assets.mjs';
-import { serializeTx, NV3_TX_VERSION } from '../../../core/tx.mjs';
-import { segwitV0Sighash, SIGHASH_ALL } from '../../../core/sighash.mjs';
-import { pubkeyCompressed, signEcdsa } from '../../../core/ecdsa.mjs';
+import { assetPresentValue } from '@core/assets.mjs';
+import { serializeTx, NV3_TX_VERSION } from '@core/tx.mjs';
+import { segwitV0Sighash, SIGHASH_ALL } from '@core/sighash.mjs';
+import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
 import { tr } from './i18n.mjs';
 
 const rev = h => h.match(/../g).reverse().join('');

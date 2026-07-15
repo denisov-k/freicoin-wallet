@@ -10,10 +10,10 @@ import { parseAuxPow, checkAuxPoW } from './auxpow.mjs';
 import { blockHash, parseBlock, extractAssetDefs } from './scan.mjs';
 import { HeaderChain } from './chain.mjs';
 import { makePool } from './verifypool.mjs';
-import { parseTx, txid as txidOf } from '../../../../core/tx.mjs';
-import { timeAdjustValue } from '../../../../core/demurrage.mjs';
-import { assetPresentValue } from '../../../../core/assets.mjs';
-import { sha256d } from '../../../../core/crypto.mjs';
+import { parseTx, txid as txidOf } from '@core/tx.mjs';
+import { timeAdjustValue } from '@core/demurrage.mjs';
+import { assetPresentValue } from '@core/assets.mjs';
+import { sha256d } from '@core/crypto.mjs';
 
 const HOST20 = '0'.repeat(40);
 const isHostCoin = u => !u.assetTag || u.assetTag === HOST20;

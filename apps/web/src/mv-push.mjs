@@ -5,7 +5,7 @@
 // by the HTLC timeouts regardless.
 import { api, ctx, p2pKey } from './mv-ctx.mjs';
 import { loadP2p } from './mv-storage.mjs';
-import { pubkeyCompressed } from '../../../core/ecdsa.mjs';
+import { pubkeyCompressed } from '@core/ecdsa.mjs';
 
 const LS = 'fw_push_on';   // browser-global toggle; the subscription registers per-network relay
 export const pushSupported = () =>

@@ -4,10 +4,10 @@
 // Extracted verbatim from market-view.mjs; reads the live session through `ctx`.
 import { ctx, api, p2pKey, btcFeeFor, VB_HTLC_FUND } from './mv-ctx.mjs';
 import { loadP2p, loadBtcNonces, addFundTxid } from './mv-storage.mjs';
-import { btcP2wpkhAddress, btcP2wpkhSpk, btcP2wpkhSend, btcDecodeAddress, btcWif } from '../../../core/btc.mjs';
-import { pubkeyCompressed } from '../../../core/ecdsa.mjs';
-import { sha256 } from '../../../core/crypto.mjs';
-import { derivePath, ckdPriv } from '../../../core/hd.mjs';
+import { btcP2wpkhAddress, btcP2wpkhSpk, btcP2wpkhSend, btcDecodeAddress, btcWif } from '@core/btc.mjs';
+import { pubkeyCompressed } from '@core/ecdsa.mjs';
+import { sha256 } from '@core/crypto.mjs';
+import { derivePath, ckdPriv } from '@core/hd.mjs';
 import { tr, getLang } from './i18n.mjs';
 
 // recoverBtcNonces lives in the activity/recovery domain (market-view) and is injected once so

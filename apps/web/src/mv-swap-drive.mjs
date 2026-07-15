@@ -6,13 +6,13 @@ import { ctx, api, p2pKey, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND } from './m
 import { loadP2p, putP2p, dropP2p, addSwapHist, addRefundedFund } from './mv-storage.mjs';
 import { hostFeeCoin, sendFrcToSpk, lockAssetToHtlc } from './mv-swap-lib.mjs';
 import { btcFundHtlc, btcAcctPub, btcHrp, refreshBtc } from './mv-btc-account.mjs';
-import { htlcClaimAsset, htlcRefundAsset, htlcSpk, htlcCoopRefundHost, htlcCoopRefundAsset } from '../../../core/htlc.mjs';
-import { frcLeg, refundGiven, claimReceived } from '../../../core/swap.mjs';
-import { btcHtlcClaim, btcHtlcRefund, btcHtlcLeaf, btcHtlcAddress, btcHtlcSpk, btcHtlcCoopSig, btcHtlcCoopRefund, btcP2wpkhSpk } from '../../../core/btc.mjs';
+import { htlcClaimAsset, htlcRefundAsset, htlcSpk, htlcCoopRefundHost, htlcCoopRefundAsset } from '@core/htlc.mjs';
+import { frcLeg, refundGiven, claimReceived } from '@core/swap.mjs';
+import { btcHtlcClaim, btcHtlcRefund, btcHtlcLeaf, btcHtlcAddress, btcHtlcSpk, btcHtlcCoopSig, btcHtlcCoopRefund, btcP2wpkhSpk } from '@core/btc.mjs';
 import { verifyFrcOutput, verifyBtcOutput } from './mv-verify.mjs';
-import { assetPresentValue } from '../../../core/assets.mjs';
-import { pubkeyCompressed } from '../../../core/ecdsa.mjs';
-import { sha256 } from '../../../core/crypto.mjs';
+import { assetPresentValue } from '@core/assets.mjs';
+import { pubkeyCompressed } from '@core/ecdsa.mjs';
+import { sha256 } from '@core/crypto.mjs';
 import { tr } from './i18n.mjs';
 
 // BTC HTLC claim/refund fee: the tx's vsize is constant (~170 vB), so the fee tracks the LIVE
