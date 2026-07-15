@@ -2,7 +2,7 @@
 // issuance/transfer/inflation with spk-derived tags, token commitment+reveal, forgery negatives.
 import { Nv3State } from '../../core/nv3chain.mjs';
 import { bindNv3Tx, makeTokenReveal } from '../../core/nv3wire.mjs';
-import { encodeAssetSpk } from '../../core/asset-spk.mjs';
+import { encodeAssetSpk, tokenSetHash } from '../../core/asset-spk.mjs';
 import { assetIdOf, FRC } from '../../core/assets.mjs';
 
 let ok = 0, fail = 0;
@@ -85,6 +85,52 @@ const forge = { txid: 'b5'.repeat(32), lockHeight: 100, inputs: ['c2:0'],
 const bf = bindNv3Tx(forge);
 const rf = bf.ok ? st3.check(bf.tx) : { ok: false, err: 'binding failed: ' + bf.err };
 t(bf.ok && !rf.ok && /created from nothing/.test(rf.err), 'token forgery rejected by state machine: ' + (rf.err || ''));
+
+// 6) TWO-SIDED reveal: SPEND a token-bearing coin. The chainstate holds only the commitment, so
+//    the spender reveals the INPUT tokens (checked vs the coin's commitment) AND the OUTPUT tokens.
+const st4 = new Nv3State();
+st4.assets.set(tag2, { k: 64, interest: true, granularity: 1 });
+const held = ['cafe01', 'cafe02'];
+st4.seed('tk0', 0, { assetId: tag2, value: 2n, refheight: 100, scriptPubKey: alice, tokenCommit: tokenSetHash(held) });
+const xoOuts = [{ value: 2n, scriptPubKey: encodeAssetSpk(bob, tag2, held), tokens: held }];
+const xoReveal = makeTokenReveal(xoOuts, [{ tokens: held }]);   // output section + input section
+const xferTok = { txid: 'c1'.repeat(32), lockHeight: 100, inputs: ['tk0:0'],
+  wireOuts: [xoOuts[0], { value: 0n, scriptPubKey: opret(xoReveal) }] };
+const b6 = bindNv3Tx(xferTok);
+t(b6.ok && JSON.stringify(b6.tx.inputReveals) === JSON.stringify([held]), 'input reveal attached: ' + (b6.err || ''));
+const r6 = st4.apply(b6.tx);
+t(r6.ok, 'token transfer with two-sided reveal applies: ' + (r6.err || ''));
+t(st4.utxos.get('c1'.repeat(32) + ':0')?.tokenCommit === tokenSetHash(held) && !st4.utxos.get('c1'.repeat(32) + ':0')?.tokens,
+  'new coin stores commitment only (no token list)');
+
+// 7) input commitment WITHOUT reveal → rejected by the state machine
+const st5 = new Nv3State();
+st5.assets.set(tag2, { k: 64, interest: true, granularity: 1 });
+st5.seed('tk1', 0, { assetId: tag2, value: 2n, refheight: 100, scriptPubKey: alice, tokenCommit: tokenSetHash(held) });
+const noReveal = { txid: 'c2'.repeat(32), lockHeight: 100, inputs: ['tk1:0'],
+  wireOuts: [{ value: 2n, scriptPubKey: encodeAssetSpk(bob, tag2, held), tokens: held }, { value: 0n, scriptPubKey: opret(makeTokenReveal(xoOuts)) }] };
+const b7 = bindNv3Tx(noReveal); const r7 = b7.ok ? st5.check(b7.tx) : { ok: false };
+t(b7.ok && !r7.ok && /commitment without reveal/.test(r7.err || ''), 'input commitment w/o reveal rejected: ' + (r7.err || ''));
+
+// 8) input reveal that DOESN'T match the coin's commitment → rejected
+const st6 = new Nv3State();
+st6.assets.set(tag2, { k: 64, interest: true, granularity: 1 });
+st6.seed('tk2', 0, { assetId: tag2, value: 2n, refheight: 100, scriptPubKey: alice, tokenCommit: tokenSetHash(held) });
+const wrongIn = makeTokenReveal(xoOuts, [{ tokens: ['deadbeef99'] }]);
+const badIn = { txid: 'c3'.repeat(32), lockHeight: 100, inputs: ['tk2:0'],
+  wireOuts: [xoOuts[0], { value: 0n, scriptPubKey: opret(wrongIn) }] };
+const b8 = bindNv3Tx(badIn); const r8 = b8.ok ? st6.check(b8.tx) : { ok: false };
+t(b8.ok && !r8.ok && /does not match commitment/.test(r8.err || ''), 'mismatched input reveal rejected: ' + (r8.err || ''));
+
+// 9) input reveal for a coin that carries NO commitment → rejected
+const st7 = new Nv3State();
+st7.assets.set(tag2, { k: 64, interest: true, granularity: 1 });
+st7.seed('tk3', 0, { assetId: tag2, value: 2n, refheight: 100, scriptPubKey: alice });   // no tokenCommit
+const strayIn = makeTokenReveal([], [{ tokens: ['cafe01'] }]);
+const badStray = { txid: 'c4'.repeat(32), lockHeight: 100, inputs: ['tk3:0'],
+  wireOuts: [{ value: 2n, scriptPubKey: encodeAssetSpk(bob, tag2) }, { value: 0n, scriptPubKey: opret(strayIn) }] };
+const b9 = bindNv3Tx(badStray); const r9 = b9.ok ? st7.check(b9.tx) : { ok: false };
+t(b9.ok && !r9.ok && /reveal without commitment/.test(r9.err || ''), 'stray input reveal rejected: ' + (r9.err || ''));
 
 console.log(fail ? 'FAILURES: ' + fail : 'ALL ' + ok + ' PASS');
 process.exit(fail ? 1 : 0);

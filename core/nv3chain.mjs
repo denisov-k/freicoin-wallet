@@ -9,6 +9,7 @@
 //   `def` present ⇒ an asset-definition (mint) tx: it registers the asset and may create it
 //   from nothing; every other asset in the tx must still balance and FRC still pays the fee.
 import { FRC, assetIdOf, assetPresentValue } from './assets.mjs';
+import { tokenSetHash } from './asset-spk.mjs';
 import { sha256 } from './crypto.mjs';
 import { verifyEcdsaPub } from './ecdsa.mjs';
 import { checkRanged } from './dex.mjs';
@@ -88,8 +89,24 @@ export class Nv3State {
     // come from an input of the SAME asset (or be minted by a definition tx), and no token may
     // appear in two outputs. Tokens not re-output are destroyed (allowed). Keyed per asset, so
     // the same bitstring under different assets is a different token.
+    //
+    // TWO-SIDED REVEAL (input half): a spent coin stores only its 32-byte token-set COMMITMENT
+    // (tokenCommit, derived from its v2 scriptPubKey suffix) — never the token list. So the input
+    // token sets come from tx.inputReveals (the FRT1 input section), each checked here against the
+    // spent coin's commitment. Commit-without-reveal / reveal-without-commit / mismatch all reject.
     const inTok = new Map();     // assetId -> Set(token)
-    for (const c of ins) for (const t of (c.tokens || [])) (inTok.get(c.assetId) || inTok.set(c.assetId, new Set()).get(c.assetId)).add(t);
+    for (let j = 0; j < ins.length; j++) {
+      const c = ins[j];
+      const revealed = tx.inputReveals?.[j];
+      if (c.tokenCommit) {
+        if (!revealed || !revealed.length) return { ok: false, err: `input ${j}: token commitment without reveal` };
+        if (tokenSetHash(revealed) !== c.tokenCommit) return { ok: false, err: `input ${j}: token reveal does not match commitment` };
+        const set = inTok.get(c.assetId) || inTok.set(c.assetId, new Set()).get(c.assetId);
+        for (const t of revealed) set.add(t);
+      } else if (revealed && revealed.length) {
+        return { ok: false, err: `input ${j}: token reveal without commitment` };
+      }
+    }
     const seen = new Set();      // `${assetId}:${token}` guards against duplicate output tokens
     for (const o of tx.outputs) for (const t of (o.tokens || [])) {
       const key = `${o.assetId}:${t}`;
@@ -125,7 +142,8 @@ export class Nv3State {
     for (const op of tx.inputs) this.utxos.delete(op);
     tx.outputs.forEach((o, i) => this.utxos.set(opkey(tx.txid, i), {
       assetId: o.assetId, value: o.value, refheight: tx.lockHeight, scriptPubKey: o.scriptPubKey, coinbase: false,
-      ...(o.tokens && o.tokens.length ? { tokens: o.tokens } : {}),
+      // commitment-only chainstate: a coin remembers just its token-set hash, never the tokens.
+      ...(o.tokenCommit ? { tokenCommit: o.tokenCommit } : {}),
     }));
     this.fees += v.fee;
     return v;
