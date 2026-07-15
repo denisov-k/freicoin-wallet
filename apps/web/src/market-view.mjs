@@ -270,7 +270,7 @@ async function postRangedOffer() {
         throw new Error(`${tr('only')} ${(Number(maxSats > 0n ? maxSats : 0n) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC ${tr('free to lock (rest backs your open offers)')}`);
       // partial sell of BTC: buyers take pieces (min/max in BTC); remaining tracked in BTC
       let opts = null;
-      if ($('#rBtcPart')?.checked) {
+      if ($('#rPartial')?.checked) {
         const mn = $('#rMin')?.value ? BigInt(Math.round(num($('#rMin').value) * 1e8)) : 1n;
         const mx = $('#rMax')?.value ? BigInt(Math.round(num($('#rMax').value) * 1e8)) : BigInt(Math.round(btcQ * 1e8));
         if (mn <= 0n || mn > mx || mx > BigInt(Math.round(btcQ * 1e8))) throw new Error(tr('bad min/max'));
@@ -288,7 +288,7 @@ async function postRangedOffer() {
       const scale = sell === 'FRC' ? 1e8 : scaleOf(sell);
       // partial fill: buyers take pieces within [min, max]; the offer keeps selling the remainder
       let opts = null;
-      if ($('#rBtcPart')?.checked) {
+      if ($('#rPartial')?.checked) {
         const mn = $('#rMin')?.value ? BigInt(Math.round(num($('#rMin').value) * scale)) : 1n;
         const mx = $('#rMax')?.value ? BigInt(Math.round(num($('#rMax').value) * scale)) : BigInt(Math.round(qty * scale));
         if (mn <= 0n || mn > mx || mx > BigInt(Math.round(qty * scale))) throw new Error(tr('bad min/max'));
@@ -325,9 +325,15 @@ async function postRangedOffer() {
     const priceNum = BigInt(Math.round(T * scaleOf(wantTag))), priceDen = BigInt(Math.round(qtyAsked * scaleOf(giveTag)));
     if (Q > total) Q = total;                                             // cap at the whole balance
     const partial = $('#rPartial')?.checked ?? true;                      // unchecked ⇒ all-or-nothing (minFill = the whole lot)
+    // Min/Max are in GIVE-asset display units (like the swap paths). Defaults: min 0 (any), max Q.
+    const gs = scaleOf(giveTag);
+    let minFill = !partial ? Q : ($('#rMin')?.value ? BigInt(Math.round(num($('#rMin').value) * gs)) : 0n);
+    let maxFill = !partial ? Q : ($('#rMax')?.value ? BigInt(Math.round(num($('#rMax').value) * gs)) : Q);
+    if (maxFill > Q) maxFill = Q;
+    if (minFill < 0n || minFill > maxFill) throw new Error(tr('bad min/max'));
     const give = await prepareGiveCoin(giveTag, Q, L, coins);
     const expireAt = give.L + LADDER_SPAN;
-    const desc = { payoutAsset: wantTag, payoutScript: give.spk, priceNum, priceDen, changeScript: give.spk, minFill: partial ? 0n : Q, maxFill: Q, nExpireTime: expireAt };
+    const desc = { payoutAsset: wantTag, payoutScript: give.spk, priceNum, priceDen, changeScript: give.spk, minFill, maxFill, nExpireTime: expireAt };
     toast(tr('signing the offer ladder…'));
     const ladder = await signLadder(desc, give, give.outpoint, give.L, expireAt);
     await api('rangedOffer', { makerSpk: give.spk, giveOutpoint: give.outpoint, desc, nExpireTime: expireAt, lockHeight: ladder[0].lockHeight, witness: ladder[0].witness, ladder });
@@ -346,72 +352,56 @@ function openOfferModal() {
     <div class="row offer-row"><label>${tr('I sell')}<select id="rAsset"></select></label><label class="numfield">${tr('Quantity')}<input id="rQty" type="text" inputmode="decimal"></label></div>
     <div class="row offer-row"><label>${tr('I want')}<select id="rWant"></select></label><label id="rPriceLbl" class="numfield">${tr('Quantity')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
     <label class="chk" id="rPartialLbl"><input type="checkbox" id="rPartial" checked>${tr('allow partial fills')}</label>
-    <label class="chk" id="rBtcPartLbl" hidden><input type="checkbox" id="rBtcPart">${tr('allow partial fills')}</label>
-    <div class="row offer-row" id="rMinMax" hidden><label class="numfield">${tr('Min')}<input id="rMin" type="text" inputmode="decimal"></label><label class="numfield">${tr('Max')}<input id="rMax" type="text" inputmode="decimal"></label></div>
+    <div class="row offer-row" id="rMinMax"><label class="numfield">${tr('Min')}<input id="rMin" type="text" inputmode="decimal"></label><label class="numfield">${tr('Max')}<input id="rMax" type="text" inputmode="decimal"></label></div>
     <p class="sub" style="font-size:12px;margin-top:0" id="rHint">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p>
     <button id="rOfferBtn">${tr('Post offer')}</button></div>`;
   document.body.appendChild(m);
   m.onclick = e => { if (e.target === m) m.remove(); };   // tap outside the card = close
   q(m, '#offerClose').onclick = () => m.remove();
   q(m, '#rOfferBtn').onclick = postRangedOffer;
-  q(m, '#rPartial').onchange = e => { $('#rHint').textContent = e.target.checked
-    ? tr('Buyers fill any amount; the remainder keeps trading while you are online.')
-    : tr('The offer can only be taken whole — one buyer, the full quantity.'); };
-  // →BTC swap hint: show the seller's NET proceeds — the BTC claim pays a flat ~200 sat network
-  // fee (per fill on partial offers), and that must not be a surprise after the trade.
-  const swapHint = () => {
-    const btcQ = num($('#rPrice')?.value || '');
-    if ($('#rWant')?.value === 'BTC' && btcQ > 0) {
-      const part = $('#rBtcPart')?.checked;
-      const claimFee = Number(btcFeeFor(VB_HTLC_SPEND));   // live feerate × the claim's vsize
-      const net = Math.max(0, Math.round(btcQ * 1e8) - claimFee) / 1e8;
-      $('#rHint').textContent = part
-        ? `${tr('You receive')}: ${btcQ.toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC − ${claimFee} ${tr('sat network fee per fill')}`
-        : `${tr('You receive')}: ${net.toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC (${tr('after the network fee')})`;
-    } else if ($('#rWant')?.value === 'BTC' || $('#rAsset')?.value === 'BTC') $('#rHint').innerHTML = '';
+  // ONE partial-fill control for EVERY offer type (DEX FRC↔asset, forward →BTC swap, reverse
+  // BTC→ swap). Min/Max appear whenever it's on; the hint explains the state and, for cross-chain
+  // swaps, adds the per-fill BTC claim fee. No per-currency checkbox juggling ⇒ the partial state
+  // survives a currency switch, and both min/max and the hint are consistent everywhere.
+  const isSwap = () => $('#rWant')?.value === 'BTC' || $('#rAsset')?.value === 'BTC';
+  const updateHint = () => {
+    const partial = $('#rPartial')?.checked;
+    let msg = partial
+      ? tr('Buyers fill any amount; the remainder keeps trading while you are online.')
+      : tr('The offer can only be taken whole — one buyer, the full quantity.');
+    if (isSwap()) {
+      const btcQ = num(($('#rWant')?.value === 'BTC' ? $('#rPrice') : $('#rQty'))?.value || '');
+      if (btcQ > 0) msg += ` · ${Number(btcFeeFor(VB_HTLC_SPEND))} ${tr('sat network fee per fill')}`;
+    }
+    $('#rHint').textContent = msg;
   };
-  q(m, '#rPrice').addEventListener('input', swapHint);
-  // the partial-fill checkbox (+ min/max) appears only for a FORWARD →BTC swap (sell FRC/asset for
-  // BTC); it's off by default. Reverse (sell BTC) and non-swap offers hide it.
-  const syncBtcPartial = () => {
-    // any cross-chain swap can be partial: forward (want BTC) or reverse (sell BTC)
-    const swap = $('#rWant')?.value === 'BTC' || $('#rAsset')?.value === 'BTC';
-    // the two partial-fill checkboxes are MUTUALLY EXCLUSIVE — rBtcPart for cross-chain swaps,
-    // rPartial for FRC↔asset DEX offers. Toggle both here (the single source of truth) so a modal
-    // that OPENS on a swap (e.g. only BTC is sellable) doesn't show the default-visible rPartial too.
-    $('#rBtcPartLbl').hidden = !swap;
-    $('#rPartialLbl').hidden = swap;
-    if (!swap) { $('#rBtcPart').checked = false; $('#rMinMax').hidden = true; }
-  };
-  q(m, '#rBtcPart').onchange = e => { $('#rMinMax').hidden = !e.target.checked; swapHint(); };
-  // I sell = BTC ⇒ reverse swap (want FRC). I sell = FRC/asset with want=BTC ⇒ forward swap.
+  const syncPartial = () => { $('#rMinMax').hidden = !$('#rPartial')?.checked; updateHint(); };
+  q(m, '#rPartial').onchange = syncPartial;
+  q(m, '#rPrice').addEventListener('input', updateHint);
+  q(m, '#rQty').addEventListener('input', updateHint);
+  // I sell = BTC ⇒ reverse swap (want FRC or a constant asset). Otherwise the want side drives it.
   q(m, '#rAsset').onchange = e => {
-    paintOfferAvail(); syncBtcPartial();
+    paintOfferAvail();
     if (e.target.value === 'BTC') {   // sell BTC → want FRC or a CONSTANT asset (buy that asset)
       const consts = (state.info.assets || []);   // any user-issued asset (melt/grow settle via present value)
       setOptions('#rWant', '<option value="FRC">FRC</option>' + consts.map(a => `<option value="${a.tag}">${assetName(a.tag)}</option>`).join(''));
-      $('#rPartialLbl').hidden = true; $('#rPriceLbl').childNodes[0].textContent = tr('Quantity'); swapHint(); return;
+    } else if ($('#rWant').value !== 'BTC') {
+      paint();                                     // a plain DEX offer: repopulate the want options
     }
-    if ($('#rWant').value === 'BTC') { swapHint(); return; }             // still a →BTC swap, just a different sell asset
-    paint(); $('#rPartialLbl').hidden = false; $('#rHint').textContent = tr('Buyers fill any amount; the remainder keeps trading while you are online.');
+    $('#rPriceLbl').childNodes[0].textContent = tr('Quantity');
+    syncPartial();
   };
-  // want = BTC ⇒ cross-chain swap: no partial; sell side may be FRC or a held CONSTANT asset.
+  // want = BTC ⇒ forward cross-chain swap; the sell side may be FRC or a held CONSTANT asset.
   q(m, '#rWant').onchange = e => {
-    const btc = e.target.value === 'BTC';
-    $('#rPartialLbl').hidden = btc;
-    $('#rPriceLbl').childNodes[0].textContent = tr('Quantity');   // the want field IS your price
-    if (btc) {
+    if (e.target.value === 'BTC') {
       // NO balance in the option label (same rule as the main list) — the Available line shows it
       const consts = heldConstAssets();
-      setOptions('#rAsset', '<option value="FRC">FRC</option>'
-        + consts.map(([t]) => `<option value="${t}">${assetName(t)}</option>`).join(''));
-      swapHint();
-    } else {
-      $('#rHint').textContent = tr('Buyers fill any amount; the remainder keeps trading while you are online.');
+      setOptions('#rAsset', '<option value="FRC">FRC</option>' + consts.map(([t]) => `<option value="${t}">${assetName(t)}</option>`).join(''));
     }
-    syncBtcPartial();
+    $('#rPriceLbl').childNodes[0].textContent = tr('Quantity');   // the want field IS your price
+    syncPartial();
   };
-  paint(); syncBtcPartial();                // populate #rAsset / #rWant now
+  paint(); syncPartial();                // populate #rAsset / #rWant now
 }
 // human, role-aware status for a P2P swap row — the SELLER sees "waiting for the buyer" once
 // they've locked, "claiming…" while collecting; the buyer sees "waiting for the seller" / progress.
