@@ -377,6 +377,7 @@ function openOfferModal() {
     <label class="chk" id="rPartialLbl"><input type="checkbox" id="rPartial" checked>${tr('allow partial fills')}</label>
     <div class="row offer-row" id="rMinMax"><label class="numfield">${tr('Min')}<input id="rMin" type="text" inputmode="decimal"></label><label class="numfield">${tr('Max')}<input id="rMax" type="text" inputmode="decimal"></label></div>
     <p class="sub" style="font-size:12px;margin-top:0" id="rHint">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p>
+    <p class="warn" id="rWarn" hidden></p>
     <button id="rOfferBtn">${tr('Post offer')}</button></div>`;
   document.body.appendChild(m);
   m.onclick = e => { if (e.target === m) m.remove(); };   // tap outside the card = close
@@ -398,10 +399,39 @@ function openOfferModal() {
     }
     $('#rHint').textContent = msg;
   };
-  const syncPartial = () => { $('#rMinMax').hidden = !$('#rPartial')?.checked; updateHint(); };
+  // The relay's fee floor (minSwap sats) as a MINIMUM in the Min/Max field's own unit: BTC for a
+  // reverse (sell-BTC) offer, the sold asset for a forward (want-BTC) one, none for a DEX offer.
+  const floorOf = () => {
+    if (!$('#rPartial')?.checked) return 0;
+    const ms = Number(state?.p2p?.minSwap ?? 0); if (!ms) return 0;
+    const sell = $('#rAsset')?.value, want = $('#rWant')?.value;
+    if (sell === 'BTC') return ms / 1e8;                                   // reverse: Min/Max in BTC
+    if (want === 'BTC') {                                                  // forward: Min/Max in the sold unit
+      const scale = sell === 'FRC' ? 1e8 : scaleOf(sell);
+      const qtyK = Math.round(num($('#rQty')?.value || '') * scale), btcSats = Math.round(num($('#rPrice')?.value || '') * 1e8);
+      if (!(qtyK > 0) || !(btcSats > 0)) return 0;
+      return Math.ceil(ms * qtyK / btcSats) / scale;                      // floor in display units
+    }
+    return 0;                                                             // DEX FRC↔asset: no BTC fee floor
+  };
+  // Live guard: show a warning + BLOCK the button while the offer's min would be below the floor
+  // (or the whole offer is), instead of only clamping at submit. The floor rides the Min placeholder.
+  const validate = () => {
+    const btn = $('#rOfferBtn'); if (!btn) return;
+    const floor = floorOf(); const fs = floor > 0 ? floor.toLocaleString(getLang(), { maximumFractionDigits: 8 }) : '';
+    if ($('#rMin')) $('#rMin').placeholder = fs;
+    const minRaw = $('#rMin')?.value, maxRaw = $('#rMax')?.value;
+    let bad = '';
+    if (floor > 0 && maxRaw && num(maxRaw) < floor) bad = tr('the whole offer is below the network-fee floor — increase the amount or price');
+    else if (floor > 0 && minRaw && num(minRaw) < floor) bad = `${tr('minimum must be at least')} ${fs}`;
+    else if (minRaw && maxRaw && num(minRaw) > num(maxRaw)) bad = tr('bad min/max');
+    const warn = $('#rWarn'); if (warn) { warn.textContent = bad; warn.hidden = !bad; }
+    btn.disabled = !!bad;
+  };
+  const refresh = () => { updateHint(); validate(); };
+  const syncPartial = () => { $('#rMinMax').hidden = !$('#rPartial')?.checked; refresh(); };
   q(m, '#rPartial').onchange = syncPartial;
-  q(m, '#rPrice').addEventListener('input', updateHint);
-  q(m, '#rQty').addEventListener('input', updateHint);
+  for (const id of ['#rPrice', '#rQty', '#rMin', '#rMax']) q(m, id).addEventListener('input', refresh);
   // I sell = BTC ⇒ reverse swap (want FRC or a constant asset). Otherwise the want side drives it.
   q(m, '#rAsset').onchange = e => {
     paintOfferAvail();
