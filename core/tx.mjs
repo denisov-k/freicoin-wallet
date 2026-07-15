@@ -2,6 +2,12 @@
 //   (1) a trailing uint32 `lock_height` after nLockTime;
 //   (2) the segwit marker byte is 0xff (Bitcoin uses 0x00).
 // Reference format: primitives/transaction.h {Un,}SerializeTransaction.
+//
+// nVersion=3 EXTENSION-OUTPUT: an output's asset tag rides INSIDE its scriptPubKey (asset-spk.mjs),
+// not a parallel wire block. Callers still work with the convenient {value, scriptPubKey(base),
+// assetTag} shape; serialize FOLDS the tag into the spk, parse DECODES it back — so an asset
+// transfer is a plain standard tx. Only smart-property TOKENS still ride a v3 parallel block.
+import { encodeAssetSpk, decodeAssetSpk } from './asset-spk.mjs';
 
 class Reader {
   constructor(hex) { this.b = Uint8Array.from(hex.match(/../g).map(h => parseInt(h, 16))); this.p = 0; }
@@ -45,9 +51,15 @@ export function parseTx(hex) {
   const nvout = r.varint();
   const vout = [];
   for (let i = 0; i < nvout; i++) vout.push({ value: r.u64(), scriptPubKey: r.varbytes() });
-  // nVersion=3-lite: parallel tag + token blocks right after vout (see transaction.h)
+  // nVersion=3 EXTENSION-OUTPUT: decode each output's asset tag from its scriptPubKey (the tag
+  // rides an extension push there), exposing the convenient {scriptPubKey(base), assetTag} shape.
+  for (const o of vout) {
+    const dec = decodeAssetSpk(o.scriptPubKey);
+    if (dec) { o.scriptPubKey = dec.baseSpk; o.assetTag = dec.assetTag; if (dec.tokenHash) o.tokenHash = dec.tokenHash; }
+    else o.assetTag = null;
+  }
+  // Smart-property TOKENS still ride a v3 parallel block (token phase pending).
   if (version === NV3_TX_VERSION) {
-    for (const o of vout) o.assetTag = r.hex(20);
     for (const o of vout) {
       const n = r.varint(); o.tokens = [];
       for (let j = 0; j < n; j++) o.tokens.push(r.varbytes());
@@ -99,6 +111,9 @@ function pushVarint(a, n) {
 function pushVarbytes(a, hex) { const b = hex.match(/../g)?.map(h => parseInt(h, 16)) ?? []; pushVarint(a, b.length); a.push(...b); }
 
 const HOST_TAG = '00'.repeat(20);   // null tag = the host currency
+// Fold an output's asset tag into its scriptPubKey for the wire (extension push). An output that
+// already carries a full ext-push spk (no separate assetTag) passes through unchanged.
+const outSpk = o => (o.assetTag && o.assetTag !== HOST_TAG) ? encodeAssetSpk(o.scriptPubKey, o.assetTag) : o.scriptPubKey;
 
 export function serializeTx(tx) {
   const a = [];
@@ -119,10 +134,11 @@ export function serializeTx(tx) {
     pushU32(a, i.sequence);
   }
   pushVarint(a, tx.vout.length);
-  for (const o of tx.vout) { pushU64(a, o.value); pushVarbytes(a, o.scriptPubKey); }
-  // nVersion=3-lite: tag + token blocks (in the txid), then witness, then approvals (not in it)
+  // nVersion=3 EXTENSION-OUTPUT: fold each output's asset tag INTO its scriptPubKey (a standard
+  // extension push) — no parallel tag block, so the tx is a plain tx old nodes accept.
+  for (const o of tx.vout) { pushU64(a, o.value); pushVarbytes(a, outSpk(o)); }
+  // Smart-property TOKENS still ride a v3 parallel block (token phase pending).
   if (tx.version === NV3_TX_VERSION) {
-    for (const o of tx.vout) a.push(...(o.assetTag ?? HOST_TAG).match(/../g).map(h => parseInt(h, 16)));
     for (const o of tx.vout) {
       const toks = o.tokens ?? [];
       pushVarint(a, toks.length);

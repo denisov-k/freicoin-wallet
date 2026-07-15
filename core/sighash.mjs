@@ -9,6 +9,7 @@
 // Reference: test/functional/test_framework/script.py SegwitV0SignatureMsg.
 import { sha256 } from './crypto.mjs';
 import { NV3_TX_VERSION } from './tx.mjs';
+import { encodeAssetSpk } from './asset-spk.mjs';
 
 export const SIGHASH_ALL = 1;
 export const SIGHASH_NONE = 2;
@@ -35,14 +36,18 @@ function compactSize(n) {
 }
 const serString = hex => { const b = hexToBytes(hex); return [...compactSize(b.length), ...b]; };
 const serPrevout = i => [...hexToBytes(i.prevout.txid), ...u32le(i.prevout.vout)];
-// nVersion=3-lite: a v3 signature commits each output's 20-byte asset tag (zeros = the host
-// currency) and its token set right after the classic (value, spk) — mirrors the node's
-// GetOutputsSHA256, closing tag-swap malleability. Non-v3 outputs serialize as before.
-const HOST_TAG_HEX = '00'.repeat(20);
+// nVersion=3 EXTENSION-OUTPUT: the asset tag rides INSIDE scriptPubKey (asset-spk.mjs), so the
+// classic (value, spk) serialization already binds which asset an output pays — no separate tag
+// field. Only the TOKEN SET (still a parallel block on v3 txs, token phase pending) needs an
+// explicit commit against token-swap malleability. Mirrors the node's GetOutputsSHA256.
+const HOST_TAG_HEX = '00'.repeat(20);   // still used by the ranged DESCRIPTOR digest (payoutAsset is a descriptor field, not an output)
 const serTokens = toks => [...compactSize(toks.length), ...toks.flatMap(t => serString(t))];
+// fold the asset tag into the spk (extension push) so the sighash binds it via the ordinary
+// (value, scriptPubKey) serialization — exactly what the node commits. Full-spk outputs pass through.
+const outSpkS = o => (o.assetTag && o.assetTag !== HOST_TAG_HEX) ? encodeAssetSpk(o.scriptPubKey, o.assetTag) : o.scriptPubKey;
 const serOutput = (o, version) => version === NV3_TX_VERSION
-  ? [...i64le(o.value), ...serString(o.scriptPubKey), ...hexToBytes(o.assetTag ?? HOST_TAG_HEX), ...serTokens(o.tokens ?? [])]
-  : [...i64le(o.value), ...serString(o.scriptPubKey)];
+  ? [...i64le(o.value), ...serString(outSpkS(o)), ...serTokens(o.tokens ?? [])]
+  : [...i64le(o.value), ...serString(outSpkS(o))];
 
 /**
  * Build the Freicoin SegwitV0 signature-hash preimage (returns hex).
