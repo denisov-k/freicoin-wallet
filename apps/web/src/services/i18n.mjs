@@ -84,8 +84,8 @@ const RU = {
   'Issue': 'Выпуск', 'Exchange': 'Биржа', 'Log': 'Журнал',
   'Your receiving address': 'Ваш адрес для получения', 'Asset': 'Актив', 'Nominal': 'Номинал', 'Present value': 'Сейчас стоит',
   'empty — tap Faucet': 'пусто — нажмите «Кран»', 'Faucet (+1 FRC)': 'Кран (+1 FRC)', 'Refresh': 'Обновить',
-  'Issue an asset that lives on the chain: constant, melting (demurrage) or growing (interest).':
-    'Выпустите актив: он живёт в цепи — постоянный, тающий (демерредж) или растущий (процент).',
+  'Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.':
+    'Взаимозаменяемые единицы — местная валюта, баллы, часы труда. Делятся, складываются и могут быть постоянными, таять или расти по вашей ставке.',
   'Name': 'Название', 'Rate k': 'Ставка k', 'Type': 'Тип', 'melts': 'Тает', 'grows': 'Растёт', 'constant': 'Постоянный', 'Quantity': 'Количество', 'Decimals': 'Дробность', 'Rate, % per year': 'Скорость, % в год', 'per day': 'в день', 'per month': 'в месяц', 'per year': 'в год', 'whole only': 'только целые', 'Melting eats whole units on indivisible assets — decimals let it shave fractions instead.': 'У неделимого актива таяние съедает целые единицы — дробность позволяет ему съедать доли.', 'Growth rounds down — small indivisible holdings stall until a whole unit accrues; decimals make it smooth.': 'Рост округляется вниз — мелкие неделимые суммы стоят на месте, пока не набежит целая единица; дробность делает рост плавным.',
   'Post an offer': 'Добавить предложение', 'signing the offer ladder…': 'подписываем лесенку оффера…', 'I give': 'Отдаю монету', 'I want': 'Хочу', 'How much I want': 'Сколько хочу', 'Post offer': 'Добавить',
   '⚡ Match crossing offers and take the spread': '⚡ Свести встречные офферы и забрать спред',

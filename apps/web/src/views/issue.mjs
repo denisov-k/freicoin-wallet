@@ -43,7 +43,7 @@ export function openIssueModal() {
       <button data-m="a" class="on">${tr('Currency')}</button>
       <button data-m="t">${tr('Tokens')}</button>
     </div>
-    <p class="sub" id="iModeHint" style="font-size:12px">${tr('Issue an asset that lives on the chain: constant, melting (demurrage) or growing (interest).')}</p>
+    <p class="sub" id="iModeHint" style="font-size:12px">${tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.')}</p>
     <div id="iFungible" class="stack">
       <div class="row">
         <label>${tr('Type')}<select id="iKind"><option value="c">${tr('constant')}</option><option value="d">${tr('melts')}</option><option value="i">${tr('grows')}</option></select></label>
@@ -72,7 +72,7 @@ export function openIssueModal() {
     $('#iTokensBox').hidden = mode !== 't';
     $('#iModeHint').textContent = mode === 't'
       ? tr('Unique named items — tickets, memberships, keys. They do not melt, travel whole on one coin, and names must not repeat.')
-      : tr('Issue an asset that lives on the chain: constant, melting (demurrage) or growing (interest).');
+      : tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.');
   });
   const rateHint = () => {
     const kind = $('#iKind').value, el = $('#iRateHint');
