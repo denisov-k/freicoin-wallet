@@ -8,7 +8,7 @@ import { openModal } from '@/components/modal.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import QRCode from 'qrcode';
 import { deriveAddress, isValidAddress, addrToSpk, buildSignedTx } from '@/services/wallet.mjs';
-import { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvOwnedAssets, mvSendAsset } from '@/views/exchange.mjs';
+import { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvOwnedAssets, mvSendAsset, mvTokenCoins, mvSendTokenCoin, tokLabel } from '@/views/exchange.mjs';
 
 /** deps injected by the app shell (see main.mjs initSend) */
 let d;
@@ -95,9 +95,35 @@ async function doReview() {
   if ($('#sendAsset')?.value === 'BTC') return doReviewBtc();
   const to = $('#to').value.trim(), amt = parseFloat($('#amt').value);
   if (!isValidAddress(to)) return toast(tr('invalid Freicoin address'), 'err');
+  const assetTag = $('#sendAsset')?.value || null;
+  // Token asset (Freimarkets): the set travels whole — amount is not a choice, the coin is.
+  const tokenCoins = assetTag ? mvTokenCoins(assetTag) : [];
+  if (assetTag && tokenCoins.length) {
+    const name = $('#sendAsset').selectedOptions[0].textContent.replace(/ \(.*\)$/, '');
+    const coin = tokenCoins[0];
+    const names = coin.tokens.map(tokLabel).join(' · ');
+    $('#sendResult').innerHTML =
+      `<div class="review">
+         <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
+         <div class="rrow"><span>${name}</span><b>\ud83c\udf9f ${names || tr('recovering\u2026')}</b></div>
+         <div class="rrow"><span></span><span class="sub">${tr('The coin moves whole: all its tokens and units go to one recipient.')}</span></div>
+         <div class="rrow"><span>${tr('Fee')}</span><b>0.00010000 FRC</b></div>
+         <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
+       </div>`;
+    $('#cancelBtn').onclick = () => { $('#sendResult').innerHTML = ''; toast(''); };
+    $('#confirmBtn').onclick = async () => {
+      const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
+      try {
+        const txid = await mvSendTokenCoin(coin.outpoint, addrToSpk(to));
+        $('#sendResult').innerHTML = `<div class="ok">${tr('Sent ✓')}</div><div class="txid">${txid}</div>`;
+        $('#to').value = ''; $('#amt').value = ''; toast(tr('broadcast ✓'));
+        if (tokenCoins.length > 1) toast(tr('this asset has more token coins — send the next one the same way'), 'ok');
+      } catch (e) { toast(tr('broadcast failed: ') + e.message, 'err'); btn.disabled = false; btn.textContent = tr('Confirm & broadcast'); }
+    };
+    return;
+  }
   if (!(amt > 0)) return toast(tr('enter an amount'), 'err');
   // Asset branch (Freimarkets): review, then sign+broadcast through the exchange machinery.
-  const assetTag = $('#sendAsset')?.value || null;
   if (assetTag) {
     const name = $('#sendAsset').selectedOptions[0].textContent.replace(/ \(.*\)$/, '');
     $('#sendResult').innerHTML =

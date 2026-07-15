@@ -200,6 +200,12 @@ export async function mvSendAsset(tag, qty, toSpk) {
   return txid;
 }
 
+// token coins of one asset (Send view routes these through the whole-coin flow)
+export function mvTokenCoins(tag) {
+  return (state?.mine.utxos ?? []).filter(u => (u.assetTag ?? null) === tag && u.tokenHash)
+    .map(u => ({ outpoint: u.outpoint, tokens: u.tokens ?? [] }));
+}
+
 // Send a TOKEN-BEARING coin whole (its units + every token on it) to an address. A committed
 // coin only spends with a two-sided FRT1 reveal: the input section proves what the coin held
 // (vs its stored hash), the output section commits the same set to the recipient's new coin.

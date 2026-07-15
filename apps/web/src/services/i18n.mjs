@@ -15,6 +15,7 @@ const RU = {
   'Sent': 'Отправлено',
   'this coin\u2019s token list is not recovered yet \u2014 wait for a full sync': 'список токенов этой монеты ещё не восстановлен — дождитесь полной синхронизации',
   'recovering\u2026': 'восстановление…',
+  'this asset has more token coins — send the next one the same way': 'у этого актива есть ещё токен-монеты — отправьте следующую так же',
   'Balance': 'Баланс', 'Receive': 'Получить', 'Send': 'Отправить', 'Activity': 'Активность',
   'Network': 'Сеть', 'Status': 'Статус', 'Downloaded': 'Загружено',
   'synced ✓ (verified)': 'синхронизирован ✓', 'syncing…': 'синхронизация…', 'offline': 'нет связи',
