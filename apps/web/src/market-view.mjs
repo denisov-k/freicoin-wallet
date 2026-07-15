@@ -374,7 +374,7 @@ function openOfferModal() {
     <div class="sub" id="rAvail" style="font-size:13px"></div>
     <div class="row offer-row"><label>${tr('I sell')}<select id="rAsset"></select></label><label class="numfield">${tr('Quantity')}<input id="rQty" type="text" inputmode="decimal"></label></div>
     <div class="row offer-row"><label>${tr('I want')}<select id="rWant"></select></label><label id="rPriceLbl" class="numfield">${tr('Quantity')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
-    <label class="chk" id="rPartialLbl"><input type="checkbox" id="rPartial" checked>${tr('allow partial fills')}</label>
+    <label class="chk" id="rPartialLbl"><input type="checkbox" id="rPartial">${tr('allow partial fills')}</label>
     <div class="row offer-row" id="rMinMax"><label class="numfield">${tr('Min')}<input id="rMin" type="text" inputmode="decimal"></label><label class="numfield">${tr('Max')}<input id="rMax" type="text" inputmode="decimal"></label></div>
     <p class="sub" style="font-size:12px;margin-top:0" id="rHint">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p>
     <p class="warn" id="rWarn" hidden></p>
