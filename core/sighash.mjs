@@ -44,7 +44,7 @@ const HOST_TAG_HEX = '00'.repeat(20);   // still used by the ranged DESCRIPTOR d
 const serTokens = toks => [...compactSize(toks.length), ...toks.flatMap(t => serString(t))];
 // fold the asset tag into the spk (extension push) so the sighash binds it via the ordinary
 // (value, scriptPubKey) serialization — exactly what the node commits. Full-spk outputs pass through.
-const outSpkS = o => (o.assetTag && o.assetTag !== HOST_TAG_HEX) ? encodeAssetSpk(o.scriptPubKey, o.assetTag, o.tokens ?? []) : o.scriptPubKey;
+const outSpkS = o => (o.assetTag && o.assetTag !== HOST_TAG_HEX) ? encodeAssetSpk(o.scriptPubKey, o.assetTag, o.tokens ?? [], o.tokenHash ?? null) : o.scriptPubKey;
 const serOutput = (o, version) => version === NV3_TX_VERSION
   ? [...i64le(o.value), ...serString(outSpkS(o)), ...serTokens(o.tokens ?? [])]
   : [...i64le(o.value), ...serString(outSpkS(o))];

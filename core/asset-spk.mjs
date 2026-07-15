@@ -42,14 +42,20 @@ const dataPush = hex => (hex.length / 2).toString(16).padStart(2, '0') + hex;   
 
 /** Append the asset extension SUFFIX (§XI: data pushes + trailing version opcode) to a base
  *  witness program. tag null/host ⇒ returns baseSpk unchanged (host outputs carry no suffix). */
-export function encodeAssetSpk(baseSpkHex, assetTagHex, tokens = []) {
+export function encodeAssetSpk(baseSpkHex, assetTagHex, tokens = [], commitHex = null) {
   if (!assetTagHex || assetTagHex === HOST_TAG) {
-    if (tokens.length) throw new Error('tokens require a non-host asset tag');
+    if (tokens.length || commitHex) throw new Error('tokens require a non-host asset tag');
     return baseSpkHex;
   }
   if (!/^[0-9a-f]{40}$/.test(assetTagHex)) throw new Error('asset tag must be 20 bytes');
-  if (tokens.length) {
-    return baseSpkHex + dataPush(assetTagHex) + dataPush(tokenSetHash(tokens)) + opN(ASSET_V_TOKENS);
+  // A parsed coin knows its 32-byte token COMMITMENT but not the token list (that lives in the
+  // FRT1 reveal). Re-serializing such an output MUST reproduce the v2 suffix from the stored
+  // commitment — recomputing from an empty token list would emit v1 (tag only) and change the
+  // scriptPubKey, hence the txid (found: token coins landed under a ghost outpoint, unspendable).
+  const commit = commitHex || (tokens.length ? tokenSetHash(tokens) : null);
+  if (commit) {
+    if (!/^[0-9a-f]{64}$/.test(commit)) throw new Error('token commitment must be 32 bytes');
+    return baseSpkHex + dataPush(assetTagHex) + dataPush(commit) + opN(ASSET_V_TOKENS);
   }
   return baseSpkHex + dataPush(assetTagHex) + opN(ASSET_V_FUNGIBLE);
 }

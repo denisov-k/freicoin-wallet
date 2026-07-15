@@ -113,7 +113,7 @@ function pushVarbytes(a, hex) { const b = hex.match(/../g)?.map(h => parseInt(h,
 const HOST_TAG = '00'.repeat(20);   // null tag = the host currency
 // Fold an output's asset tag into its scriptPubKey for the wire (extension push). An output that
 // already carries a full ext-push spk (no separate assetTag) passes through unchanged.
-const outSpk = o => (o.assetTag && o.assetTag !== HOST_TAG) ? encodeAssetSpk(o.scriptPubKey, o.assetTag, o.tokens ?? []) : o.scriptPubKey;
+const outSpk = o => (o.assetTag && o.assetTag !== HOST_TAG) ? encodeAssetSpk(o.scriptPubKey, o.assetTag, o.tokens ?? [], o.tokenHash ?? null) : o.scriptPubKey;
 
 export function serializeTx(tx) {
   const a = [];

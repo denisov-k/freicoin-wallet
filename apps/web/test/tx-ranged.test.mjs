@@ -57,4 +57,21 @@ check('nExpireTime 4200 survives', back2.ranged[0].nExpireTime === 4200);
 const plain = parseTx(serializeTx({ ...tx, ranged: [] }));
 check('no ranged ⇒ flag bit 8 clear', (plain.flags & 8) === 0);
 
+
+// nVersion=3 token (v2) output: a coin parsed from the wire knows only its 32-byte token
+// COMMITMENT, not the token list (that lives in the FRT1 reveal). Re-serializing it — which the
+// light client does to compute the txid it keys its UTXOs by — MUST reproduce the v2 suffix from
+// that commitment. Recomputing from an empty token list emits v1 (tag only), a different
+// scriptPubKey, hence a different txid: token coins then land under a ghost outpoint and are
+// unspendable (real bug, 2026-07-16).
+import { encodeAssetSpk, decodeAssetSpk, tokenSetHash } from '../../../core/asset-spk.mjs';
+{
+  const base = spk('11');
+  const v2 = encodeAssetSpk(base, coop, ['deadbeef', 'cafe']);
+  const dec = decodeAssetSpk(v2);
+  const rebuilt = encodeAssetSpk(dec.baseSpk, dec.assetTag, [], dec.tokenHash);   // tokens dropped, as after a parse
+  check('token v2 spk round-trips from the commitment alone', rebuilt === v2, rebuilt);
+  check('commitment matches the token set hash', dec.tokenHash === tokenSetHash(['deadbeef', 'cafe']));
+}
+
 finish();
