@@ -16,6 +16,7 @@ import { toast } from '@/components/toast.mjs';
 import { openModal } from '@/components/modal.mjs';
 import { initAuth, renderWelcome, renderLock } from '@/views/auth.mjs';
 import { initSettings, renderSettings } from '@/views/settings.mjs';
+import { initSend, renderReceive, renderSend, paintSendAvail } from '@/views/send.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
@@ -165,6 +166,24 @@ const hexSeed = () => resolveSecret(unlockedSecret);
 // "get new address" works indefinitely without ever handing out an unwatched address.
 const watchGap = () => recvIndex + 20;
 const myScripts = () => walletScripts(hexSeed(), watchGap());
+// After handing out a fresh receive address: grow the watch window — copy each network's birth
+// record onto the grown fingerprint (a fresh address has no history, so the birth stays valid, no
+// rescan) and restart the light client on the wider script set. Off the click frame so a few
+// hundred HD derivations don't freeze the tap. Injected into views/send (the "New address" button).
+function growWatchAfterNewAddr() {
+  setTimeout(() => {
+    const seed = hexSeed(), cur = curNet();
+    try {
+      for (const netK of Object.keys(NETWORKS)) {
+        configureNetwork(netK);
+        const rec = store.get('fw_ab:' + walletFp(walletScripts(seed, watchGap() - 1)));
+        if (rec) store.set('fw_ab:' + walletFp(walletScripts(seed, watchGap())), rec);
+      }
+    } finally { configureNetwork(cur); }
+    if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
+    cache = null; ds();
+  }, 60);
+}
 
 // theme lives on <html>, survives #app re-renders. Mode 'system' (default) follows the
 // OS preference — the OS flips it on its own schedule (e.g. dark after sunset), and the
@@ -441,10 +460,6 @@ async function chainRecovery(e) {
 }
 
 // Send available line — ≈ marks unverified (streamed/preview) values.
-function paintSendAvail(st, approx) {
-  const el = $('#avail');
-  if (el && st) el.textContent = `${tr('available ')}${approx ? '≈ ' : ''}${fmt(st.balance)} FRC`;   // full precision — this number is meant to be spent
-}
 
 // Render generation: bumped on every tab render; async callbacks from an older render
 // (e.g. a sync rejected with 'closed' when Settings replaced the source) check it and
@@ -534,100 +549,8 @@ const render = {
     }
   },
   exchange() { renderExchange($('#exchange')); }, // Freimarkets: the ranged-offer order book
-  async receive() {
-    // Open in a loading state (shimmering QR + address placeholders), then fill in — the
-    // same skeleton the tables use, so "get new address" visibly loads the fresh one.
-    const btcOn = SWAP() && mvBtc().available;
-    openModal(tr('Receiving'),
-      (btcOn ? `<label>${tr('Currency')}<select id="rcvCur"><option value="FRC">FRC</option><option value="BTC">BTC</option></select></label>` : '')
-      + `<div id="qrBox" class="qr skel" style="margin:0 auto;height:220px"></div>
-       <div class="addr" id="addr"><div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div></div>
-       <div class="row"><button id="copyAddr" class="ghost" disabled>⧉ ${tr('Copy')}</button></div>
-       <div class="row" id="newAddrRow"><button id="newAddr" class="ghost">${tr('New address')}</button></div>`);
-    // Fill the QR + address for the chosen currency. FRC = a fresh HD address; BTC = the single
-    // (fixed) account address, so "New address" hides for BTC. derive+QR beat a frame, so the
-    // skeleton floor keeps the shimmer visible on repeated switches/clicks.
-    const fill = async isBtc => {
-      const box0 = $('#qrBox'); if (box0) { box0.className = 'qr skel'; box0.innerHTML = ''; }
-      const a0 = $('#addr'); if (a0) a0.innerHTML = `<div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div>`;
-      const cp0 = $('#copyAddr'); if (cp0) cp0.disabled = true;
-      const nr = $('#newAddrRow'); if (nr) nr.hidden = isBtc;
-      const t0 = performance.now();
-      let addr; try { addr = isBtc ? mvBtcAddress() : deriveAddress(hexSeed(), recvIndex, 0); } catch (e) { return toast(e.message, 'err'); }
-      const qr = await QRCode.toDataURL(addr.toUpperCase(), { margin: 1, width: 220 });
-      await new Promise(r => setTimeout(r, Math.max(0, 350 - (performance.now() - t0))));
-      const box = $('#qrBox'); if (!box) return;   // modal was closed mid-load
-      box.className = 'qr'; box.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`;
-      $('#addr').textContent = addr;
-      const cp = $('#copyAddr'); if (cp) { cp.disabled = false; cp.onclick = e => copy(addr, e.target); }
-    };
-    const cur = $('#rcvCur'); if (cur) cur.onchange = () => fill(cur.value === 'BTC');
-    // Unbounded fresh FRC addresses: bump the index and repaint (skeleton shows at once), THEN —
-    // off the click frame — grow the watch window: copy each network's birth record onto the
-    // grown fingerprint (a fresh address has no history — the birth stays valid, no rescan)
-    // and restart the light client on the wider script set. Doing the migration first froze
-    // the click for the length of a few hundred HD derivations.
-    $('#newAddr').onclick = () => {
-      recvIndex++; store.set('fw_recv', recvIndex);
-      fill(false);
-      setTimeout(() => {
-        const seed = hexSeed(), cur = curNet();
-        try {
-          for (const netK of Object.keys(NETWORKS)) {
-            configureNetwork(netK);
-            const rec = store.get('fw_ab:' + walletFp(walletScripts(seed, watchGap() - 1)));
-            if (rec) store.set('fw_ab:' + walletFp(walletScripts(seed, watchGap())), rec);
-          }
-        } finally { configureNetwork(cur); }
-        if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
-        cache = null; ds();
-      }, 60);
-    };
-    fill(false);
-  },
-  async send() {
-    pending = null;
-    openModal(tr('Send'),
-      `<div class="sub" id="avail">${tr('available…')}</div>
-       ${MKT() ? `<label>${tr('Asset')}<select id="sendAsset"><option value="">FRC</option></select></label>` : ''}
-       <label>${tr('To address')}<input id="to" placeholder="fc1…" autocomplete="off"></label>
-       <label id="amtLabel">${tr('Amount (FRC)')}<div class="amtrow"><input id="amt" type="number" step="0.00000001" min="0" placeholder="0.0"><button id="maxBtn" class="ghost">${tr('Max')}</button></div></label>
-       <button id="reviewBtn">${tr('Review')}</button><div id="sendResult"></div>`);
-    $('#reviewBtn').onclick = doReview;
-    // Max dispatches on the selected currency: asset → its whole quantity; FRC → balance-fee
-    let sendBal = null;
-    $('#maxBtn').onclick = () => {
-      const sel = $('#sendAsset');
-      if (sel && sel.value === 'BTC') { const b = mvBtc().balance; $('#amt').value = b ? Math.max(0, (Number(BigInt(b)) - 1000) / 1e8).toFixed(8) : '0'; }
-      else if (sel && sel.value) $('#amt').value = sel.selectedOptions[0].dataset.qty;
-      else if (sendBal != null) $('#amt').value = Math.max(0, sendBal - 0.001).toFixed(8);
-    };
-    // Freimarkets: the selector offers every owned asset (+ BTC when a BTC account is available);
-    // assets are integer tokens (scale 1), BTC uses its own (non-custodial, signet) send path.
-    if (MKT()) mvOwnedAssets().then(list => {
-      const sel = $('#sendAsset'); if (!sel) return;
-      const btc = mvBtc();
-      sel.innerHTML = `<option value="">FRC</option>` + list.map(a => `<option value="${a.tag}" data-qty="${a.qty}" data-dec="${a.decimals}">${a.name} (${a.qty.toLocaleString(getLang())})</option>`).join('')
-        + (btc.available ? `<option value="BTC">BTC</option>` : '');
-      sel.onchange = () => {
-        const v = sel.value, isBtc = v === 'BTC', isFrc = !v, dec = +(sel.selectedOptions[0]?.dataset.dec || 0);
-        $('#amtLabel').firstChild.textContent = isFrc ? tr('Amount (FRC)') : isBtc ? tr('Amount (BTC)') : tr('Quantity');
-        const amt = $('#amt'); amt.step = isBtc || isFrc ? '0.00000001' : String(1 / 10 ** dec); amt.placeholder = isBtc || isFrc ? '0.0' : '0'; amt.value = '';
-        $('#to').placeholder = isBtc ? `${btc.hrp}1…` : 'fc1…';
-        $('#avail').style.display = isFrc ? '' : 'none';   // the FRC line doesn't describe an asset/BTC
-      };
-    }).catch(() => {});
-    $('#amt').addEventListener('keydown', e => { if (e.key === 'Enter') doReview(); });
-    // Instant: approximate available (verified cache > streamed partial > preview); live
-    // partials keep it fresh; the verified value replaces it in place and binds Max.
-    const seed = cache || liveState;
-    if (seed) paintSendAvail(seed, !cache);
-    else { try { const pv = await ds().preview(); if (pv) paintSendAvail(pv, true); } catch {} }
-    const sendGen = renderGen;
-    try { const s = await getState(); if (sendGen !== renderGen) return; paintBalance(s); paintSendAvail(s, false);
-      sendBal = s.balance; }
-    catch { if (sendGen !== renderGen) return; const el = $('#avail'); if (el && el.textContent === tr('available…')) el.textContent = ''; }
-  },
+  receive: renderReceive,
+  send: renderSend,
   async activity() {
     const gen = ++renderGen;
     actLastHtml = ''; actGotFinal = false;
@@ -729,85 +652,6 @@ function applyNetSettings() {
   toast(tr('saved'));
 }
 
-async function doReview() {
-  if ($('#sendAsset')?.value === 'BTC') return doReviewBtc();
-  const to = $('#to').value.trim(), amt = parseFloat($('#amt').value);
-  if (!isValidAddress(to)) return toast(tr('invalid Freicoin address'), 'err');
-  if (!(amt > 0)) return toast(tr('enter an amount'), 'err');
-  // Asset branch (Freimarkets): review, then sign+broadcast through the exchange machinery
-  const assetTag = $('#sendAsset')?.value || null;
-  if (assetTag) {
-    const name = $('#sendAsset').selectedOptions[0].textContent.replace(/ \(.*\)$/, '');
-    $('#sendResult').innerHTML =
-      `<div class="review">
-         <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
-         <div class="rrow"><span>${tr('Amount')}</span><b>${amt.toLocaleString(getLang())} ${name}</b></div>
-         <div class="rrow"><span>${tr('Fee')}</span><b>0.00010000 FRC</b></div>
-         <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
-       </div>`;
-    $('#cancelBtn').onclick = () => { $('#sendResult').innerHTML = ''; toast(''); };
-    $('#confirmBtn').onclick = async () => {
-      const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
-      try {
-        const txid = await mvSendAsset(assetTag, amt, addrToSpk(to));
-        $('#sendResult').innerHTML = `<div class="ok">${tr('Sent ✓')}</div><div class="txid">${txid}</div>`;
-        $('#to').value = ''; $('#amt').value = ''; toast(tr('broadcast ✓'));
-      } catch (e) { toast(tr('broadcast failed: ') + e.message, 'err'); btn.disabled = false; btn.textContent = tr('Confirm & broadcast'); }
-    };
-    return;
-  }
-  toast(tr('building…')); $('#reviewBtn').disabled = true;
-  try {
-    const { utxos, tipHeight, balance } = await getState();
-    if (amt > balance) throw new Error(`${tr('amount exceeds available')} (${fmt(balance)} FRC)`);
-    const r = buildSignedTx({ seed: hexSeed(), utxos, toAddress: to, amountFrc: amt, tipHeight });
-    pending = r.rawtx;
-    $('#sendResult').innerHTML =
-      `<div class="review">
-         <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
-         <div class="rrow"><span>${tr('Amount')}</span><b>${fmt(amt)} FRC</b></div>
-         <div class="rrow"><span>${tr('Fee')}</span><b>${(Number(r.fee) / 1e8).toFixed(8)} FRC</b></div>
-         <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
-       </div>`;
-    $('#confirmBtn').onclick = doBroadcast;
-    $('#cancelBtn').onclick = () => { pending = null; $('#sendResult').innerHTML = ''; toast(''); };
-    toast(tr('review the transaction'));
-  } catch (e) { toast(e.message, 'err'); }
-  finally { $('#reviewBtn').disabled = false; }
-}
-
-// BTC send review + confirm — signs locally in market-view, broadcasts via the relay (non-custodial).
-async function doReviewBtc() {
-  const to = $('#to').value.trim(), amt = parseFloat($('#amt').value);
-  if (!mvBtcValidAddr(to)) return toast(tr('bad address'), 'err');
-  if (!(amt > 0)) return toast(tr('enter an amount'), 'err');
-  $('#sendResult').innerHTML =
-    `<div class="review">
-       <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
-       <div class="rrow"><span>${tr('Amount')}</span><b>${amt.toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC</b></div>
-       <div class="rrow"><span>${tr('Fee')}</span><b>0.00001000 BTC</b></div>
-       <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
-     </div>`;
-  $('#cancelBtn').onclick = () => { $('#sendResult').innerHTML = ''; toast(''); };
-  $('#confirmBtn').onclick = async () => {
-    const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
-    try {
-      const txid = await mvSendBtc(to, amt);
-      $('#sendResult').innerHTML = `<div class="ok">${tr('Sent ✓')}</div><div class="txid">${txid}</div>`;
-      $('#to').value = ''; $('#amt').value = ''; toast(tr('broadcast ✓'));
-    } catch (e) { toast(tr('broadcast failed: ') + e.message, 'err'); btn.disabled = false; btn.textContent = tr('Confirm & broadcast'); }
-  };
-}
-
-async function doBroadcast() {
-  if (!pending) return;
-  const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
-  try {
-    const { txid } = await ds().broadcast(pending);
-    $('#sendResult').innerHTML = `<div class="ok">${tr('Sent ✓')}</div><div class="txid">${txid}</div>`;
-    $('#to').value = ''; $('#amt').value = ''; pending = null; cache = null; toast(tr('broadcast ✓'));
-  } catch (e) { toast(tr('broadcast failed: ') + e.message, 'err'); btn.disabled = false; btn.textContent = tr('Confirm & broadcast'); }
-}
 
 // Auto-lock: with a vault present, an idle unlocked wallet locks itself after 5 minutes
 // (activity = any pointer/key/touch on the page).
@@ -821,6 +665,9 @@ setInterval(() => {
 // boot
 initAuth({ renderApp, recordNewWalletBirth, getVault, setSecret });   // wire the auth screens' deps
 initSettings({ getVault, secret, themeMode, applyTheme, curNet, curBridge, SWAP, renderApp, applyNetSettings, lock, passForm, secure, logout });
+initSend({ hexSeed, recvIndex: () => recvIndex, bumpRecv: () => { recvIndex++; store.set('fw_recv', recvIndex); }, growWatchAfterNewAddr,
+  getPending: () => pending, setPending: v => { pending = v; }, resetCache: () => { cache = null; }, cacheReady: () => !!cache,
+  seedState: () => cache || liveState, renderGen: () => renderGen, getState, ds, paintBalance, SWAP, MKT });
 configureNetwork(curNet());   // set NET/ACCOUNT before any address derivation
 if (getVault()) renderLock();
 else if (store.get('fw_seed')) { unlockedSecret = store.get('fw_seed'); renderApp(); }
