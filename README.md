@@ -12,7 +12,7 @@ This repository holds that web app, the validated **wallet core** (the parts no
 off-the-shelf Bitcoin library gets right for Freicoin) and the small services
 around them.
 
-**Live demo: <https://wallet.testtty.ru>** — mainnet by default; a new wallet
+**Live demo: <https://freicoin.ru>** — mainnet by default; a new wallet
 syncs in about a second, and everything (headers, merged-mining proofs-of-work,
 compact block filters) is verified in your browser.
 
