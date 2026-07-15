@@ -43,7 +43,7 @@ export function openIssueModal() {
       <button data-m="a" class="on">${tr('Currency')}</button>
       <button data-m="t">${tr('Tokens')}</button>
     </div>
-    <p class="sub" id="iModeHint">${tr('Issue an asset that lives on the chain: constant, melting (demurrage) or growing (interest).')}</p>
+    <p class="sub" id="iModeHint" style="font-size:12px">${tr('Issue an asset that lives on the chain: constant, melting (demurrage) or growing (interest).')}</p>
     <div id="iFungible">
       <div class="row">
         <label>${tr('Type')}<select id="iKind"><option value="c">${tr('constant')}</option><option value="d">${tr('melts')}</option><option value="i">${tr('grows')}</option></select></label>
@@ -57,8 +57,7 @@ export function openIssueModal() {
       <p class="sub" id="iMeltHint" style="font-size:12px" hidden>${tr('Melting eats whole units on indivisible assets — decimals let it shave fractions instead.')}</p>
     </div>
     <div id="iTokensBox" hidden>
-      <label>${tr('Unique items (tokens)')}<textarea id="iToks" rows="4" placeholder="${tr('one per line — tickets, memberships, keys')}"></textarea></label>
-      <p class="sub" style="font-size:12px">${tr('Tokens are minted onto one coin with the asset and travel whole; each name must be unique.')}</p>
+      <label>${tr('Unique items (tokens)')}<textarea id="iToks" class="txt-ui" rows="4" placeholder="${tr('one per line')}"></textarea></label>
     </div>
     <button id="issueBtn">${tr('Issue asset')}</button></div>`;
   document.body.appendChild(m);
@@ -72,7 +71,7 @@ export function openIssueModal() {
     $('#iFungible').hidden = mode === 't';
     $('#iTokensBox').hidden = mode !== 't';
     $('#iModeHint').textContent = mode === 't'
-      ? tr('A set of unique named items — they do not melt and are sent whole, one coin per set.')
+      ? tr('Unique named items — tickets, memberships, keys. They do not melt, travel whole on one coin, and names must not repeat.')
       : tr('Issue an asset that lives on the chain: constant, melting (demurrage) or growing (interest).');
   });
   const rateHint = () => {

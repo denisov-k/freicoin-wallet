@@ -4,11 +4,10 @@
 const RU = {
   // --- smart-property tokens ---
   'Unique items (tokens)': 'Уникальные экземпляры (токены)',
-  'one per line — tickets, memberships, keys': 'по одному на строку — билеты, членства, ключи',
+  'one per line': 'по одному на строку',
   'Tokens': 'Токены',
-  'A set of unique named items — they do not melt and are sent whole, one coin per set.': 'Набор уникальных именованных экземпляров — они не тают и передаются целиком, одной монетой.',
+  'Unique named items — tickets, memberships, keys. They do not melt, travel whole on one coin, and names must not repeat.': 'Уникальные именованные экземпляры — билеты, членства, ключи. Не тают, передаются целиком одной монетой, имена не повторяются.',
   'add at least one item': 'добавьте хотя бы один экземпляр',
-  'Tokens are minted onto one coin with the asset and travel whole; each name must be unique.': 'Токены чеканятся на одну монету вместе с активом и передаются только целиком; имена не должны повторяться.',
   'token names must be unique': 'имена токенов не должны повторяться',
   'Send tokens': 'Отправить токены',
   'The coin moves whole: all its tokens and units go to one recipient.': 'Монета передаётся целиком: все её токены и единицы уйдут одному получателю.',

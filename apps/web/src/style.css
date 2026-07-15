@@ -77,8 +77,10 @@ textarea { background:var(--card); border:1px solid var(--line); border-radius:1
 #activity { height:100%; }
 #actList { flex:1; min-height:0; overflow-y:auto; }
 #secForm { margin-top:4px; } #secForm:empty { display:none; }   /* empty placeholder must not eat a flex-gap slot */
-#modal { position:fixed; inset:0; z-index:30; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; padding:24px; }
+#modal { position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; padding:24px; }
 #modal .review { max-width:360px; width:100%; margin-top:0; box-shadow:0 12px 40px rgba(0,0,0,.4); }
+#modal .review p { margin:0; }   /* the flex gap IS the rhythm; UA margins double it unevenly */
+textarea.txt-ui { font-family:inherit; font-size:16px; line-height:1.4; }   /* mono is for seeds; lists read in the UI face */
 .act { cursor:pointer; }
 select { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; color:var(--fg); font-size:16px; width:100%; }
 
