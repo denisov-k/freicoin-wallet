@@ -376,7 +376,11 @@ function openOfferModal() {
   const syncBtcPartial = () => {
     // any cross-chain swap can be partial: forward (want BTC) or reverse (sell BTC)
     const swap = $('#rWant')?.value === 'BTC' || $('#rAsset')?.value === 'BTC';
+    // the two partial-fill checkboxes are MUTUALLY EXCLUSIVE — rBtcPart for cross-chain swaps,
+    // rPartial for FRC↔asset DEX offers. Toggle both here (the single source of truth) so a modal
+    // that OPENS on a swap (e.g. only BTC is sellable) doesn't show the default-visible rPartial too.
     $('#rBtcPartLbl').hidden = !swap;
+    $('#rPartialLbl').hidden = swap;
     if (!swap) { $('#rBtcPart').checked = false; $('#rMinMax').hidden = true; }
   };
   q(m, '#rBtcPart').onchange = e => { $('#rMinMax').hidden = !e.target.checked; swapHint(); };
