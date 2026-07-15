@@ -44,7 +44,7 @@ export function openIssueModal() {
       <button data-m="t">${tr('Tokens')}</button>
     </div>
     <p class="sub" id="iModeHint" style="font-size:12px">${tr('Issue an asset that lives on the chain: constant, melting (demurrage) or growing (interest).')}</p>
-    <div id="iFungible">
+    <div id="iFungible" class="stack">
       <div class="row">
         <label>${tr('Type')}<select id="iKind"><option value="c">${tr('constant')}</option><option value="d">${tr('melts')}</option><option value="i">${tr('grows')}</option></select></label>
         <label id="iRateLbl" hidden>${tr('Rate k')}<input id="iShift" type="number" value="16" min="1" max="63" step="1"></label>
@@ -56,7 +56,7 @@ export function openIssueModal() {
       </div>
       <p class="sub" id="iMeltHint" style="font-size:12px" hidden>${tr('Melting eats whole units on indivisible assets — decimals let it shave fractions instead.')}</p>
     </div>
-    <div id="iTokensBox" hidden>
+    <div id="iTokensBox" class="stack" hidden>
       <label>${tr('Unique items (tokens)')}<textarea id="iToks" class="txt-ui" rows="4" placeholder="${tr('one per line')}"></textarea></label>
     </div>
     <button id="issueBtn">${tr('Issue asset')}</button></div>`;

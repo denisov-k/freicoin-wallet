@@ -81,6 +81,7 @@ textarea { background:var(--card); border:1px solid var(--line); border-radius:1
 #modal .review { max-width:360px; width:100%; margin-top:0; box-shadow:0 12px 40px rgba(0,0,0,.4); }
 #modal .review p { margin:0; }   /* the flex gap IS the rhythm; UA margins double it unevenly */
 textarea.txt-ui { font-family:inherit; font-size:16px; line-height:1.4; }   /* mono is for seeds; lists read in the UI face */
+.stack { display:flex; flex-direction:column; gap:10px; }   /* mode sub-forms keep the card's own rhythm */
 .act { cursor:pointer; }
 select { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; color:var(--fg); font-size:16px; width:100%; }
 
