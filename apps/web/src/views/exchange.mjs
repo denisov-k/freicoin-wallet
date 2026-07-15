@@ -383,6 +383,25 @@ async function postRangedOffer() {
     const T = num($('#rPrice').value);   // TOTAL want for the whole quantity
     if (!(T > 0)) throw new Error(tr('enter a price'));
     const L = state.mine.height;
+    // TOKEN asset: a token coin is indivisible, so it lists WHOLE — a ranged offer with
+    // minFill=maxFill=V over the token coin itself (no consolidation; token coins are constant-
+    // rate so V is stable across the ladder). The taker adds the reveal when filling.
+    const tokenCoins = mvTokenCoins(giveTag);
+    if (tokenCoins.length) {
+      const u = state.mine.utxos.find(x => x.outpoint === tokenCoins[0].outpoint);
+      const V = BigInt(u.value);   // constant-rate ⇒ present value == nominal
+      const give = { outpoint: u.outpoint, spk: u.spk, value: V, refheight: u.refheight, L };
+      const priceNum = BigInt(Math.round(T * scaleOf(wantTag))), priceDen = V;
+      const expireAt = L + LADDER_SPAN;
+      const desc = { payoutAsset: wantTag, payoutScript: give.spk, priceNum, priceDen, changeScript: give.spk, minFill: V, maxFill: V, nExpireTime: expireAt };
+      toast(tr('signing the offer ladder…'));
+      const ladder = await signLadder(desc, give, give.outpoint, L, expireAt);
+      const makerPub = pubkeyCompressed(km[give.spk].priv.toString(16).padStart(64, '0'));
+      await api('rangedOffer', { makerSpk: give.spk, giveOutpoint: give.outpoint, desc, nExpireTime: expireAt, lockHeight: ladder[0].lockHeight, witness: ladder[0].witness, ladder, makerPub });
+      $('#modal')?.remove();
+      toast(tr('Offer signed and posted'), 'ok'); mvRefresh();
+      return;
+    }
     const coins = myCoinsOf(giveTag, L);
     const total = coins.reduce((a, c) => a + c.pv, 0n);
     if (total <= 0n) throw new Error(tr('no coins of that asset'));
@@ -477,7 +496,24 @@ function openOfferModal() {
     btn.disabled = !!bad;
   };
   const refresh = () => { updateHint(); validate(); };
-  const syncPartial = () => { $('#rMinMax').hidden = !$('#rPartial')?.checked; refresh(); };
+  // a token asset sells WHOLE: lock quantity to the coin, hide the partial control + min/max
+  const tokenSell = () => { const s = $('#rAsset')?.value; return s && s !== 'BTC' && s !== 'FRC' && mvTokenCoins(s).length > 0; };
+  const syncPartial = () => {
+    const tok = tokenSell();
+    if ($('#rPartialLbl')) $('#rPartialLbl').hidden = tok;
+    if (tok) {
+      const cs = mvTokenCoins($('#rAsset').value);
+      const u = state.mine.utxos.find(x => x.outpoint === cs[0].outpoint);
+      if (u) { $('#rQty').value = String(Number(u.value) / scaleOf($('#rAsset').value)); $('#rQty').disabled = true; }
+      if ($('#rPartial')) $('#rPartial').checked = false;
+      $('#rMinMax').hidden = true;
+      if ($('#rHint')) $('#rHint').textContent = (cs[0].tokens ?? []).map(tokLabel).join(' · ') + ' — ' + tr('sold whole, one buyer');
+    } else {
+      if ($('#rQty')) $('#rQty').disabled = false;
+      $('#rMinMax').hidden = !$('#rPartial')?.checked;
+    }
+    refresh();
+  };
   q(m, '#rPartial').onchange = syncPartial;
   for (const id of ['#rPrice', '#rQty', '#rMin', '#rMax']) q(m, id).addEventListener('input', refresh);
   // I sell = BTC ⇒ reverse swap (want FRC or a constant asset). Otherwise the want side drives it.
@@ -994,10 +1030,14 @@ async function fillRangedNow(offer, fillUnits) {
     const vin = [{ prevout: prevout(offer.giveOutpoint), scriptSig: '', sequence: 0xffffffff, witness: offer.witness }];
     const takerInputs = [];
     for (const c of payCoins) { vin.push({ prevout: prevout(c.outpoint), scriptSig: '', sequence: 0xffffffff, witness: [] }); takerInputs.push(c); }
+    // a token give coin: the whole set travels to the taker's fill output, revealed two-sided
+    const giveToks = offer.give.tokenHash ? (offer.give.tokens ?? []) : null;
+    if (giveToks && !giveToks.length) throw new Error(tr('this coin\u2019s token list is not recovered yet \u2014 wait for a full sync'));
+    /** @type {{value: bigint, scriptPubKey: string, assetTag?: string|null, tokens?: string[]}[]} */
     const vout = [
       { value: payout, scriptPubKey: d.payoutScript, assetTag: payoutTag },   // [payout] to maker
       { value: change, scriptPubKey: d.changeScript, assetTag: giveTag },     // [change] to maker
-      { value: fill, scriptPubKey: spks[0], assetTag: giveTag },              // fill to me
+      { value: fill, scriptPubKey: spks[0], assetTag: giveTag, ...(giveToks ? { tokens: giveToks } : {}) },   // fill (+tokens) to me
     ];
     const payChange = payPv - payout - (isFrcPayout ? fee : 0n);   // my want-asset change (fee taken here iff want=FRC)
     if (payChange > 0n) vout.push({ value: payChange, scriptPubKey: spks[0], assetTag: payoutTag });
@@ -1007,6 +1047,13 @@ async function fillRangedNow(offer, fillUnits) {
       if (feePv < fee) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
       for (const c of feeCoins) { vin.push({ prevout: prevout(c.outpoint), scriptSig: '', sequence: 0xffffffff, witness: [] }); takerInputs.push(c); }
       if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: spks[0], assetTag: HOST_TAG });
+    }
+    // two-sided reveal for a token buy: input section = the give coin's set (vs its commitment),
+    // output section = the fill output (index 2) that now carries the set
+    if (giveToks) {
+      const reveal = makeTokenReveal(vout, [{ tokens: giveToks }]);
+      const n = reveal.length / 2;
+      vout.push({ value: 0n, scriptPubKey: '6a' + (n <= 75 ? n.toString(16).padStart(2, '0') : '4c' + n.toString(16).padStart(2, '0')) + reveal });
     }
     const tx = {
       version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin, vout,
@@ -1038,6 +1085,7 @@ function openBuyModal(o) {
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} ${assetName(giveTag)}</b><button id="bClose" class="icon">✕</button></div>
+    ${o.give.tokenHash ? `<div class="sub" style="font-size:13px">🎟 ${(o.give.tokens ?? []).map(tokLabel).join(' · ') || tr('recovering…')}</div>` : ''}
     ${whole ? '' : `<div class="sub" style="font-size:13px">${tr('Available')}: ${maxU.toLocaleString(getLang())} ${assetName(giveTag)} · ${tr('per-buy')} ${minU.toLocaleString(getLang())}–${capU.toLocaleString(getLang())}</div>`}
     <label>${tr('Quantity')}<div class="amtrow"><input id="bQty" type="text" inputmode="decimal" ${whole ? `value="${maxU}" disabled` : `placeholder="${minU.toLocaleString(getLang())}–${capU.toLocaleString(getLang())}"`}>${whole ? '' : `<button id="bMax" class="ghost">${tr('Max')}</button>`}</div></label>
     ${whole ? `<p class="sub" style="font-size:12px">${tr('this offer sells only as a whole')}</p>` : ''}

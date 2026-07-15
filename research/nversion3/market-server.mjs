@@ -15,7 +15,8 @@ import { randomBytes } from 'node:crypto';
 import { serializeTx, parseTx, txid as computeTxid, NV3_TX_VERSION } from '../../core/tx.mjs';
 import { loadOrCreateVapid, sendPush } from './webpush.mjs';
 import { decodeAssetSpk } from '../../core/asset-spk.mjs';
-import { makeTokenReveal } from '../../core/nv3wire.mjs';
+import { makeTokenReveal, parseTokenReveal } from '../../core/nv3wire.mjs';
+import { tokenSetHash } from '../../core/asset-spk.mjs';
 import { assetPresentValue } from '../../core/assets.mjs';
 import { pubkeyCompressed, signEcdsa } from '../../core/ecdsa.mjs';
 import { frcLeg, claimReceived } from '../../core/swap.mjs';
@@ -188,6 +189,25 @@ async function indexBlock(h) {
       const a = assets.get(definedTag);
       if (dm) { a.name = dm[1]; a.decimals = +dm[2]; } else { a.name = declaredName; a.decimals = 0; }
     }
+    // nVersion=3 tokens: recover the per-output token STRINGS from this tx's FRT1 reveal, kept
+    // only where they hash to the output's own commitment (self-certifying; a taker needs the
+    // strings to build the reveal when buying a token coin on the DEX).
+    let tokMap = new Map();
+    for (const o of tx.vout) {
+      const spk = o.scriptPubKey.hex;
+      if (!spk.startsWith('6a')) continue;
+      const b = Buffer.from(spk.slice(2), 'hex');
+      const payload = b[0] >= 1 && b[0] <= 75 ? b.subarray(1, 1 + b[0]) : b[0] === 0x4c ? b.subarray(2, 2 + b[1]) : null;
+      if (!payload || payload.subarray(0, 4).toString('hex') !== '46525431') continue;
+      try {
+        const { outputs } = parseTokenReveal(payload.toString('hex'));
+        for (const [idx, ts] of outputs) {
+          const dec = decodeAssetSpk(tx.vout[idx]?.scriptPubKey?.hex ?? '');
+          if (dec?.tokenHash && tokenSetHash(ts) === dec.tokenHash) tokMap.set(idx, ts);
+        }
+      } catch { /* malformed reveal — ignore */ }
+      break;
+    }
     tx.vout.forEach((o, n) => {
       if (o.scriptPubKey.hex.startsWith('6a')) return;   // OP_RETURN: unspendable
       // nVersion=3 EXTENSION-OUTPUT: the asset tag rides in the scriptPubKey. Index by the BASE
@@ -196,7 +216,8 @@ async function indexBlock(h) {
       const dec = decodeAssetSpk(o.scriptPubKey.hex);
       const baseSpk = dec ? dec.baseSpk : o.scriptPubKey.hex;
       const tag = dec?.assetTag ?? (o.assetTag ? rev(o.assetTag) : null);
-      const u = { spk: baseSpk, assetTag: tag, value: BigInt(Math.round(o.value * 1e8)), refheight: tx.lockheight };
+      const u = { spk: baseSpk, assetTag: tag, value: BigInt(Math.round(o.value * 1e8)), refheight: tx.lockheight,
+        ...(dec?.tokenHash ? { tokenHash: dec.tokenHash, tokens: tokMap.get(n) ?? [] } : {}) };
       addU(`${tx.txid}:${n}`, u);
       if (tag && assets.has(tag) && h === (assets.get(tag).issuedAt ?? h)) assets.get(tag).supply += u.value;
     });
@@ -760,7 +781,7 @@ const api = {
       // a crossing counter-offer completes the balance.
       book: book.slice(-80).map(o => {
         const g = utxos.get(o.giveOutpoint);
-        const give = g ? { assetTag: g.assetTag, value: String(g.value), refheight: g.refheight, pv: String(pvOf(g, h)) } : null;
+        const give = g ? { assetTag: g.assetTag, value: String(g.value), refheight: g.refheight, pv: String(pvOf(g, h)), ...(g.tokenHash ? { tokenHash: g.tokenHash, tokens: g.tokens ?? [] } : {}) } : null;
         const rung = o.ranged ? rungAt(o, h) : { lockHeight: o.lockHeight, witness: o.witness };
         const base = { id: o.id, status: o.status, makerSpk: o.makerSpk, lockHeight: rung.lockHeight, giveOutpoint: o.giveOutpoint, witness: rung.witness, give };
         return o.ranged
