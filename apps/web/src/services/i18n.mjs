@@ -14,6 +14,8 @@ const RU = {
   'The coin moves whole: all its tokens and units go to one recipient.': 'Монета передаётся целиком: все её токены и единицы уйдут одному получателю.',
   'Recipient address': 'Адрес получателя',
   'Sent': 'Отправлено',
+  'Done': 'Готово',
+  'the rest come back to you on a new coin': 'остальные вернутся вам на новой монете',
   'this coin\u2019s token list is not recovered yet \u2014 wait for a full sync': 'список токенов этой монеты ещё не восстановлен — дождитесь полной синхронизации',
   'recovering\u2026': 'восстановление…',
   'this asset has more token coins — send the next one the same way': 'у этого актива есть ещё токен-монеты — отправьте следующую так же',

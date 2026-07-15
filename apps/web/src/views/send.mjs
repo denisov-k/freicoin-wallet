@@ -52,11 +52,13 @@ export function renderReceive() {
 export async function renderSend() {
   d.setPending(null);
   openModal(tr('Send'),
-    `<div class="sub" id="avail">${tr('available…')}</div>
+    `<div id="sendForm" class="stack">
+     <div class="sub" id="avail">${tr('available…')}</div>
      ${d.MKT() ? `<label>${tr('Asset')}<select id="sendAsset"><option value="">FRC</option></select></label>` : ''}
      <label>${tr('To address')}<input id="to" placeholder="fc1…" autocomplete="off"></label>
      <label id="amtLabel">${tr('Amount (FRC)')}<div class="amtrow"><input id="amt" type="number" step="0.00000001" min="0" placeholder="0.0"><button id="maxBtn" class="ghost">${tr('Max')}</button></div></label>
-     <button id="reviewBtn">${tr('Review')}</button><div id="sendResult"></div>`);
+     <div class="stack" id="sendTokPick" hidden></div>
+     <button id="reviewBtn">${tr('Review')}</button></div><div id="sendResult"></div>`);
   $('#reviewBtn').onclick = doReview;
   // Max dispatches on the selected currency: asset → its whole quantity; FRC → balance − fee.
   let sendBal = null;
@@ -78,6 +80,14 @@ export async function renderSend() {
       const amt = $('#amt'); amt.step = isBtc || isFrc ? '0.00000001' : String(1 / 10 ** dec); amt.placeholder = isBtc || isFrc ? '0.0' : '0'; amt.value = '';
       $('#to').placeholder = isBtc ? `${btc.hrp}1…` : 'fc1…';
       $('#avail').style.display = isFrc ? '' : 'none';   // the FRC line doesn't describe an asset/BTC
+      // token asset: quantity is not a choice — the items are. Swap the amount input for checkboxes.
+      const tokCoins = v && !isBtc ? mvTokenCoins(v) : [];
+      const pick = $('#sendTokPick');
+      pick.hidden = !tokCoins.length;
+      $('#amtLabel').hidden = !!tokCoins.length;
+      pick.innerHTML = tokCoins.length
+        ? tokCoins[0].tokens.map(h => `<label class="chk"><input type="checkbox" checked data-h="${h}">\ud83c\udf9f ${tokLabel(h)}</label>`).join('') || `<span class="sub">${tr('recovering\u2026')}</span>`
+        : '';
     };
   }).catch(() => {});
   $('#amt').addEventListener('keydown', e => { if (e.key === 'Enter') doReview(); });
@@ -91,6 +101,17 @@ export async function renderSend() {
   catch { if (sendGen !== d.renderGen()) return; const el = $('#avail'); if (el && el.textContent === tr('available…')) el.textContent = ''; }
 }
 
+
+// ---- two-screen flow: the form and the review replace each other inside the modal ----
+const showForm = () => { const f = $('#sendForm'); if (f) f.hidden = false; const r = $('#sendResult'); if (r) r.innerHTML = ''; toast(''); };
+const showReview = html => { const f = $('#sendForm'); if (f) f.hidden = true; $('#sendResult').innerHTML = html; };
+function successScreen(txid, extraToast) {
+  $('#to').value = ''; $('#amt').value = '';
+  $('#sendResult').innerHTML = `<div class="review"><div class="ok">${tr('Sent ✓')}</div><div class="txid">${txid}</div><button id="doneBtn">${tr('Done')}</button></div>`;
+  $('#doneBtn').onclick = showForm;
+  toast(tr('broadcast ✓'));
+  if (extraToast) toast(extraToast, 'ok');
+}
 async function doReview() {
   if ($('#sendAsset')?.value === 'BTC') return doReviewBtc();
   const to = $('#to').value.trim(), amt = parseFloat($('#amt').value);
@@ -101,23 +122,23 @@ async function doReview() {
   if (assetTag && tokenCoins.length) {
     const name = $('#sendAsset').selectedOptions[0].textContent.replace(/ \(.*\)$/, '');
     const coin = tokenCoins[0];
-    $('#sendResult').innerHTML =
+    const picked = [...document.querySelectorAll('#sendTokPick input:checked')].map(x => /** @type {HTMLElement} */(x).dataset.h);
+    if (!picked.length) return toast(tr('add at least one item'), 'err');
+    const kept = coin.tokens.length - picked.length;
+    showReview(
       `<div class="review">
          <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
-         <div class="rrow"><span>${name}</span><span class="sub">${tr('Pick the items to send — the rest come back to you on a new coin.')}</span></div>
-         <div class="stack" id="sendTokList">${coin.tokens.map(h => `<label class="chk"><input type="checkbox" checked data-h="${h}">\ud83c\udf9f ${tokLabel(h)}</label>`).join('') || `<span class="sub">${tr('recovering\u2026')}</span>`}</div>
+         <div class="rrow"><span>${name}</span><b>${picked.map(h => '\ud83c\udf9f ' + tokLabel(h)).join('<br>')}</b></div>
+         ${kept ? `<div class="rrow"><span></span><span class="sub">${tr('the rest come back to you on a new coin')} (${kept})</span></div>` : ''}
          <div class="rrow"><span>${tr('Fee')}</span><b>0.00010000 FRC</b></div>
          <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
-       </div>`;
-    $('#cancelBtn').onclick = () => { $('#sendResult').innerHTML = ''; toast(''); };
+       </div>`);
+    $('#cancelBtn').onclick = showForm;
     $('#confirmBtn').onclick = async () => {
       const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
       try {
-        const picked = [...document.querySelectorAll('#sendTokList input:checked')].map(x => /** @type {HTMLElement} */(x).dataset.h);
         const txid = await mvSendTokenCoin(coin.outpoint, addrToSpk(to), picked);
-        $('#sendResult').innerHTML = `<div class="ok">${tr('Sent ✓')}</div><div class="txid">${txid}</div>`;
-        $('#to').value = ''; $('#amt').value = ''; toast(tr('broadcast ✓'));
-        if (tokenCoins.length > 1) toast(tr('this asset has more token coins — send the next one the same way'), 'ok');
+        successScreen(txid, tokenCoins.length > 1 ? tr('this asset has more token coins — send the next one the same way') : '');
       } catch (e) { toast(tr('broadcast failed: ') + e.message, 'err'); btn.disabled = false; btn.textContent = tr('Confirm & broadcast'); }
     };
     return;
@@ -126,20 +147,19 @@ async function doReview() {
   // Asset branch (Freimarkets): review, then sign+broadcast through the exchange machinery.
   if (assetTag) {
     const name = $('#sendAsset').selectedOptions[0].textContent.replace(/ \(.*\)$/, '');
-    $('#sendResult').innerHTML =
+    showReview(
       `<div class="review">
          <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
          <div class="rrow"><span>${tr('Amount')}</span><b>${amt.toLocaleString(getLang())} ${name}</b></div>
          <div class="rrow"><span>${tr('Fee')}</span><b>0.00010000 FRC</b></div>
          <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
-       </div>`;
-    $('#cancelBtn').onclick = () => { $('#sendResult').innerHTML = ''; toast(''); };
+       </div>`);
+    $('#cancelBtn').onclick = showForm;
     $('#confirmBtn').onclick = async () => {
       const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
       try {
         const txid = await mvSendAsset(assetTag, amt, addrToSpk(to));
-        $('#sendResult').innerHTML = `<div class="ok">${tr('Sent ✓')}</div><div class="txid">${txid}</div>`;
-        $('#to').value = ''; $('#amt').value = ''; toast(tr('broadcast ✓'));
+        successScreen(txid);
       } catch (e) { toast(tr('broadcast failed: ') + e.message, 'err'); btn.disabled = false; btn.textContent = tr('Confirm & broadcast'); }
     };
     return;
@@ -150,6 +170,7 @@ async function doReview() {
     if (amt > balance) throw new Error(`${tr('amount exceeds available')} (${fmt(balance)} FRC)`);
     const r = buildSignedTx({ seed: d.hexSeed(), utxos, toAddress: to, amountFrc: amt, tipHeight });
     d.setPending(r.rawtx);
+    showReview('');
     $('#sendResult').innerHTML =
       `<div class="review">
          <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
@@ -158,7 +179,7 @@ async function doReview() {
          <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
        </div>`;
     $('#confirmBtn').onclick = doBroadcast;
-    $('#cancelBtn').onclick = () => { d.setPending(null); $('#sendResult').innerHTML = ''; toast(''); };
+    $('#cancelBtn').onclick = () => { d.setPending(null); showForm(); };
     toast(tr('review the transaction'));
   } catch (e) { toast(e.message, 'err'); }
   finally { $('#reviewBtn').disabled = false; }
@@ -169,20 +190,19 @@ async function doReviewBtc() {
   const to = $('#to').value.trim(), amt = parseFloat($('#amt').value);
   if (!mvBtcValidAddr(to)) return toast(tr('bad address'), 'err');
   if (!(amt > 0)) return toast(tr('enter an amount'), 'err');
-  $('#sendResult').innerHTML =
+  showReview(
     `<div class="review">
        <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
        <div class="rrow"><span>${tr('Amount')}</span><b>${amt.toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC</b></div>
        <div class="rrow"><span>${tr('Fee')}</span><b>0.00001000 BTC</b></div>
        <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
-     </div>`;
-  $('#cancelBtn').onclick = () => { $('#sendResult').innerHTML = ''; toast(''); };
+     </div>`);
+  $('#cancelBtn').onclick = showForm;
   $('#confirmBtn').onclick = async () => {
     const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
     try {
       const txid = await mvSendBtc(to, amt);
-      $('#sendResult').innerHTML = `<div class="ok">${tr('Sent ✓')}</div><div class="txid">${txid}</div>`;
-      $('#to').value = ''; $('#amt').value = ''; toast(tr('broadcast ✓'));
+      successScreen(txid);
     } catch (e) { toast(tr('broadcast failed: ') + e.message, 'err'); btn.disabled = false; btn.textContent = tr('Confirm & broadcast'); }
   };
 }
@@ -193,7 +213,7 @@ async function doBroadcast() {
   const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
   try {
     const { txid } = await d.ds().broadcast(pending);
-    $('#sendResult').innerHTML = `<div class="ok">${tr('Sent ✓')}</div><div class="txid">${txid}</div>`;
-    $('#to').value = ''; $('#amt').value = ''; d.setPending(null); d.resetCache(); toast(tr('broadcast ✓'));
+    d.setPending(null); d.resetCache();
+    successScreen(txid);
   } catch (e) { toast(tr('broadcast failed: ') + e.message, 'err'); btn.disabled = false; btn.textContent = tr('Confirm & broadcast'); }
 }
