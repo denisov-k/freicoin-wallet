@@ -849,8 +849,23 @@ const api = {
     const parsed = parseTx(rawtx);            // sanity: it parses
     // regtest: mine it straight in (deterministic dev loop, and the nv3 tx version is non-standard
     // for the mempool). A real chain: plain relay — broadcast and let miners confirm it.
-    if (IS_REGTEST) await rpc('generateblock', mineAddr, [rawtx]);
-    else await rpc('sendrawtransaction', rawtx);
+    try {
+      if (IS_REGTEST) await rpc('generateblock', mineAddr, [rawtx]);
+      else await rpc('sendrawtransaction', rawtx);
+    } catch (e) {
+      // pinpoint a missing/spent input: which prevout does the node's UTXO set lack?
+      if (String(e.message).includes('missingorspent')) {
+        const miss = [];
+        for (const vin of parsed.vin) {
+          const op = `${rev(vin.prevout.txid)}:${vin.prevout.vout}`;
+          try { const o = await rpc('gettxout', rev(vin.prevout.txid), vin.prevout.vout); if (!o) miss.push(op + ' (spent/unknown)'); }
+          catch { miss.push(op + ' (lookup failed)'); }
+        }
+        say(`tx отклонён: входы отсутствуют → ${miss.join(', ') || '(все входы существуют — проверьте mempool/height)'}`);
+        throw new Error(`вход не найден в цепи: ${miss.join(', ') || 'неизвестно'}`);
+      }
+      throw e;
+    }
     await catchUp();
     const txid = computeTxid(parsed);
     // a ranged partial fill: re-point the offer at its change coin (the ranged bundle's 2nd
