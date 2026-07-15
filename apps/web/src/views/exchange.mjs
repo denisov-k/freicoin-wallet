@@ -252,29 +252,6 @@ export async function mvSendTokenCoin(outpoint, toSpk, picked = null) {
   return txid;
 }
 
-// modal: pick the destination for a token coin (address -> spk via the wallet's decoder)
-function openTokenSendModal(outpoint) {
-  const u = state?.mine.utxos.find(x => x.outpoint === outpoint);
-  if (!u || $('#modal')) return;
-  const m = document.createElement('div'); m.id = 'modal';
-  m.innerHTML = `<div class="review">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>\ud83c\udf9f ${tr('Send tokens')}</b><button id="tsClose" class="icon">\u2715</button></div>
-    <p class="sub" style="font-size:12px">${tr('Pick the items to send — the rest come back to you on a new coin.')}</p>
-    <div class="stack" id="tsList">${(u.tokens ?? []).map((h, i) => `<label class="chk"><input type="checkbox" data-h="${h}">${tokLabel(h)}</label>`).join('')}</div>
-    <label>${tr('Recipient address')}<input id="tsAddr" placeholder="fcrt1\u2026"></label>
-    <button id="tsSend">${tr('Send')}</button></div>`;
-  document.body.appendChild(m);
-  armOverlay(m);
-  q(m, '#tsClose').onclick = () => closeOverlay(m);
-  q(m, '#tsSend').onclick = async () => {
-    try {
-      const picked = [...m.querySelectorAll('#tsList input:checked')].map(x => /** @type {HTMLElement} */(x).dataset.h);
-      const spk = addrToSpk(q(m, '#tsAddr').value.trim());
-      await mvSendTokenCoin(outpoint, spk, picked);
-      m.remove(); toast(tr('Sent'), 'ok');
-    } catch (e) { toast(e.message, 'err'); }
-  };
-}
 
 // display label for a token bitstring: utf8 when printable, else short hex
 export function tokLabel(hex) {
@@ -1208,18 +1185,13 @@ function paintAssetBalance() {
   const rows = [...byAsset.entries()].map(([tag, e]) => {
     const constant = tag !== 'FRC' && rateOf(tag).k >= 64;   // k=64 ≈ constant: the one-off rounding unit isn't "melting"
     const melt = !constant && e.pv < e.nominal, grow = !constant && e.pv > e.nominal;
-    // token coins of this asset get their own sub-rows: the set travels whole, so each COIN
-    // (not each token) is the unit the user can act on
-    const tokRows = state.mine.utxos
-      .filter(u => (u.assetTag ?? 'FRC') === tag && u.tokenHash)
-      .map(u => `<tr class="tokrow"><td class="sub" style="padding-left:18px">\ud83c\udf9f ${(u.tokens ?? []).map(tokLabel).join(' \u00b7 ') || tr('recovering\u2026')}</td><td class="r"><button class="ghost tokSend" data-op="${u.outpoint}" ${u.tokens?.length ? '' : 'disabled'}>\u27a4</button></td></tr>`)
-      .join('');
-    return `<tr><td${tag === 'FRC' ? '' : ` title="${tag}"`}>${assetName(tag === 'FRC' ? null : tag)}</td><td class="r ${melt ? 'melt' : grow ? 'grow' : ''}">${amt(tag, e.pv)}</td></tr>` + tokRows;
+    // token-bearing assets show only their quantity here — the items and the send action live
+    // in the Send flow, not the balance table.
+    return `<tr><td${tag === 'FRC' ? '' : ` title="${tag}"`}>${assetName(tag === 'FRC' ? null : tag)}</td><td class="r ${melt ? 'melt' : grow ? 'grow' : ''}">${amt(tag, e.pv)}</td></tr>`;
   });
   // BTC sits in the same table (held in-wallet on signet); the cell fills in when refreshBtc returns.
   if (state.swap?.available) rows.push(`<tr><td>BTC</td><td class="r" id="btcBalCell">${mvBtc().balance != null ? btcToStr(mvBtc().balance) : '…'}</td></tr>`);
   body.innerHTML = rows.join('') || `<tr><td colspan="2" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
-  body.querySelectorAll('button.tokSend').forEach(b => b.onclick = () => openTokenSendModal(b.dataset.op));
 }
 
 function paint() {
