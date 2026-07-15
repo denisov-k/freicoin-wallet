@@ -4,7 +4,7 @@
 // shell and is injected via initSend — the view never reassigns shell state directly.
 import { $, copy, short, fmt } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
-import { openModal } from '@/components/modal.mjs';
+import { openModal, closeOverlay } from '@/components/modal.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import QRCode from 'qrcode';
 import { deriveAddress, isValidAddress, addrToSpk, buildSignedTx } from '@/services/wallet.mjs';
@@ -108,7 +108,7 @@ const showReview = html => { const f = $('#sendForm'); if (f) f.hidden = true; $
 function successScreen(txid, extraToast) {
   $('#to').value = ''; $('#amt').value = '';
   showReview(`<div class="ok">${tr('Sent ✓')}</div><div class="txid">${txid}</div><button id="doneBtn">${tr('Done')}</button>`);
-  $('#doneBtn').onclick = showForm;
+  $('#doneBtn').onclick = () => { const m = document.querySelector('#modal'); if (m) closeOverlay(m); };
   toast(tr('broadcast ✓'));
   if (extraToast) toast(extraToast, 'ok');
 }
