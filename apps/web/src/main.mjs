@@ -11,6 +11,9 @@ import { initMarketView, mvSetSeed, mvRefresh, mvResetNet, openIssueModal, rende
 import { loadFeeTxids, lsKey } from '@/services/storage.mjs';
 import { enablePush, disablePush, pushSupported, pushEnabled } from '@/services/push.mjs';
 import { btcExportKeys, btcToStr } from '@/services/market/btc-account.mjs';
+import { $, store, short, fmt, fmtBal, copy, skel } from '@/components/dom.mjs';
+import { toast } from '@/components/toast.mjs';
+import { openModal } from '@/components/modal.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
@@ -148,21 +151,11 @@ function ds() {
 }
 initMarketView(ds);   // give the Freimarkets tabs the wallet's light source (ds().assets())
 
-/** @type {(s: string) => any} */
-const $ = s => document.querySelector(s);
-const store = { get: k => localStorage.getItem(k), set: (k, v) => localStorage.setItem(k, v), del: k => localStorage.removeItem(k) };
-const short = a => a && a.length > 20 ? a.slice(0, 12) + '…' + a.slice(-8) : (a || '');
-const fmt = n => (+n).toLocaleString(undefined, { maximumFractionDigits: 8 });
-// Display balance: 2 decimals, rounded DOWN (never show more than is spendable) — the
-// demurrage churns the low digits every block, so full precision is visual noise here.
-// Full 8-digit precision stays where it matters: amounts, fees, activity records.
-const fmtBal = n => (Math.floor((+n) * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const copy = (t, el) => { navigator.clipboard?.writeText(t); if (el) { const o = el.textContent; el.textContent = tr('copied ✓'); setTimeout(() => el.textContent = o, 1200); } };
-const skel = (n = 1) => Array.from({ length: n }, () => '<div class="skel"></div>').join('');
+// $/store/short/fmt/fmtBal/copy/skel → @/components/dom.mjs; toast → toast.mjs; openModal → modal.mjs
 const getVault = () => { const v = store.get('fw_vault'); return v ? JSON.parse(v) : null; };
 
 let unlockedSecret = null, unlockedPass = null;
-let recvIndex = +(store.get('fw_recv') || 0), pending = null, pollTimer = null, toastTimer = null, cache = null;
+let recvIndex = +(store.get('fw_recv') || 0), pending = null, pollTimer = null, cache = null;
 const secret = () => unlockedSecret;
 const hexSeed = () => resolveSecret(unlockedSecret);
 // Watch window: always 20 unused addresses beyond the highest handed-out receive index, so
@@ -182,24 +175,6 @@ const resolveTheme = m => m === 'system' ? (matchMedia('(prefers-color-scheme: l
 const applyTheme = m => { document.documentElement.dataset.theme = resolveTheme(m); const sel = $('#themeSel'); if (sel) sel.value = m; };
 matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { if (themeMode() === 'system') applyTheme('system'); });
 applyTheme(themeMode());
-
-const toast = (t, type = 'ok') => { const el = $('#toast'); if (!el) return; clearTimeout(toastTimer);
-  if (!t) { el.className = ''; el.textContent = ''; return; }
-  el.textContent = t; el.className = 'show ' + type; toastTimer = setTimeout(() => el.className = '', 2800); };
-// reusable modal: a .review card in the #modal overlay, tap-outside or ✕ to close. `title` gets a
-// header row with a close button; returns the overlay so callers can wire and later remove it.
-const openModal = (title, inner) => {
-  $('#modal')?.remove();
-  const m = document.createElement('div'); m.id = 'modal';
-  m.innerHTML = `<div class="review">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${title}</b><button id="mClose" class="icon">✕</button></div>
-    ${inner}</div>`;
-  document.body.appendChild(m);
-  m.onclick = e => { if (e.target === m) m.remove(); };
-  // @ts-ignore  — false positive (DOM/Promise<void> under checkJs)
-  m.querySelector('#mClose').onclick = () => m.remove();
-  return m;
-};
 
 // ---------- first-run welcome ----------
 // Onboarding passphrase step: encrypting the secret is the default path; skipping is an

@@ -22,18 +22,13 @@ import { btcHrp, btcAcctAddr, btcFundHtlc, btcToStr, refreshBtc,
   mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, initBtcAccount, btcResetAcct } from '@/services/market/btc-account.mjs';
 import { recoverBtcNonces, mvBtcHistory, initActivity, resetRecovery } from '@/services/market/activity.mjs';
 import { driveP2p, checkP2pRefunds, checkBtcRefunds, initDrive } from '@/services/market/swap-drive.mjs';
+import { $, q, rev, frc, num, setOptions, skelRows } from '@/components/dom.mjs';
+import { toast } from '@/components/toast.mjs';
 export { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc };   // BTC account lives in its own module; re-exported so the wallet imports stay stable
 export { mvBtcHistory };                                      // activity/recovery in mv-activity.mjs; re-exported for the wallet
 
 const ACCOUNT = "m/84'/1'/0'";              // nv3 = coin type 1 (Freimarkets shares the regtest branch)
-/** @type {(s: string) => any} */   // any: elements are used dynamically (.onclick/.value); checkJs would else flag Element
-const $ = s => document.querySelector(s);
-/** @type {(el: any, s: string) => any} */
-const q = (el, s) => el.querySelector(s);
-const rev = h => h.match(/../g).reverse().join('');
-const frc = v => (Number(BigInt(v)) / 1e8).toLocaleString('ru-RU', { maximumFractionDigits: 8 });
-const num = v => parseFloat(String(v ?? '').replace(',', '.'));   // locale-tolerant: accept a comma decimal separator
-const toast = (m, cls = '') => { const t = $('#toast'); if (t) { t.textContent = m; t.className = 'show ' + cls; setTimeout(() => t.className = '', 3500); } };
+// $/q/rev/frc/num/setOptions/skelRows → @/components/dom.mjs; toast → @/components/toast.mjs
 
 let seed = null, km = {}, spks = [], myAddress = '', state = null, _ds = null;
 // wired from the wallet: initMarketView(ds) injects its light source; mvSetSeed(hexSeed) on unlock.
@@ -1170,8 +1165,6 @@ export function renderExchange(el) {
   if (state) paint(); else mvRefresh();
 }
 // per-asset balance table (FRC + user assets) — the wallet's Balance tab shows this on nv3
-const skelRows = n => Array.from({ length: n }, () =>
-  '<tr><td><div class="skel-line" style="height:16px;width:70%;margin:4px 0"></div></td><td><div class="skel-line" style="height:16px;width:45%;margin:4px 0 4px auto"></div></td></tr>').join('');
 export function renderAssetBalance(el) {
   el.innerHTML = `
     <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="assetBalBody">${skelRows(3)}</tbody></table>`;
@@ -1196,12 +1189,6 @@ function paintAssetBalance() {
   body.innerHTML = rows.join('') || `<tr><td colspan="2" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
 }
 
-// fill a <select> preserving the current selection (so a refresh doesn't reset it)
-function setOptions(sel, html) {
-  const el = $(sel); if (!el) return;
-  const cur = el.value; el.innerHTML = html;
-  if ([...el.options].some(o => o.value === cur)) el.value = cur;
-}
 function paint() {
   if (!state || !$('#bookBody')) return;
   const h = state.mine.height;
