@@ -25,6 +25,7 @@ import { recoverBtcNonces, mvBtcHistory, initActivity, resetRecovery } from '@/s
 import { driveP2p, checkP2pRefunds, checkBtcRefunds, initDrive } from '@/services/market/swap-drive.mjs';
 import { $, q, rev, frc, num, setOptions, skel, skelRows } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
+import { armOverlay, closeOverlay } from '@/components/modal.mjs';
 export { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc };   // BTC account lives in its own module; re-exported so the wallet imports stay stable
 export { mvBtcHistory };                                      // activity/recovery in mv-activity.mjs; re-exported for the wallet
 
@@ -251,12 +252,12 @@ function openTokenSendModal(outpoint) {
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>\ud83c\udf9f ${tr('Send tokens')}</b><button id="tsClose" class="icon">\u2715</button></div>
     <p class="sub" style="font-size:12px">${tr('Pick the items to send — the rest come back to you on a new coin.')}</p>
-    <div class="stack" id="tsList">${(u.tokens ?? []).map((h, i) => `<label class="chk"><input type="checkbox" checked data-h="${h}">${tokLabel(h)}</label>`).join('')}</div>
+    <div class="stack" id="tsList">${(u.tokens ?? []).map((h, i) => `<label class="chk"><input type="checkbox" data-h="${h}">${tokLabel(h)}</label>`).join('')}</div>
     <label>${tr('Recipient address')}<input id="tsAddr" placeholder="fcrt1\u2026"></label>
     <button id="tsSend">${tr('Send')}</button></div>`;
   document.body.appendChild(m);
-  m.onclick = e => { if (e.target === m) m.remove(); };
-  q(m, '#tsClose').onclick = () => m.remove();
+  armOverlay(m);
+  q(m, '#tsClose').onclick = () => closeOverlay(m);
   q(m, '#tsSend').onclick = async () => {
     try {
       const picked = [...m.querySelectorAll('#tsList input:checked')].map(x => /** @type {HTMLElement} */(x).dataset.h);
@@ -442,8 +443,8 @@ function openOfferModal() {
     <p class="warn" id="rWarn" hidden></p>
     <button id="rOfferBtn">${tr('Post offer')}</button></div>`;
   document.body.appendChild(m);
-  m.onclick = e => { if (e.target === m) m.remove(); };   // tap outside the card = close
-  q(m, '#offerClose').onclick = () => m.remove();
+  armOverlay(m);   // tap outside the card = close
+  q(m, '#offerClose').onclick = () => closeOverlay(m);
   q(m, '#rOfferBtn').onclick = postRangedOffer;
   // ONE partial-fill control for EVERY offer type (DEX FRC↔asset, forward →BTC swap, reverse
   // BTC→ swap). Min/Max appear whenever it's on; the hint explains the state and, for cross-chain
@@ -608,8 +609,8 @@ function openSwapModal(prefill) {
     <div id="swLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
     <p class="warn" style="font-size:12px">${tr('Experimental, on the test chains. Your FRC is refundable if the swap stalls.')}</p></div>`;
   document.body.appendChild(m);
-  m.onclick = e => { if (e.target === m) m.remove(); };
-  q(m, '#swClose').onclick = () => m.remove();
+  armOverlay(m);
+  q(m, '#swClose').onclick = () => closeOverlay(m);
   let rate = 0.2;
   api('swapInfo').then(s => { rate = s.rate; upd(); }).catch(() => {});
   const upd = () => { const a = num($('#swAmt').value) || 0; $('#swGet').textContent = (a * rate).toLocaleString(getLang(), { maximumFractionDigits: 8 }) + ' BTC'; };
@@ -820,8 +821,8 @@ function openP2pTakeModalB(offer) {
     <button id="tkGo">${tr('Sell')}</button>
     <p class="sub" style="font-size:12px">${tr('Your FRC/asset is locked right away; the BTC arrives automatically. Refundable if it stalls.')}</p></div>`;
   document.body.appendChild(m);
-  m.onclick = e => { if (e.target === m) m.remove(); };
-  q(m, '#tkClose').onclick = () => m.remove();
+  armOverlay(m);
+  q(m, '#tkClose').onclick = () => closeOverlay(m);
   q(m, '#tkGo').onclick = () => { m.remove(); takeP2pB(offer); };
 }
 
@@ -1065,8 +1066,8 @@ function openBuyModal(o) {
     // an integer-floored melting asset eats tiny holdings whole — warn before the trap
     $('#bMelt').hidden = !(u > 0) || assetPresentValue(BigInt(Math.round(u * scaleOf(giveTag))), 10, rate) > 0n; };
   cost();
-  m.onclick = e => { if (e.target === m) m.remove(); };
-  q(m, '#bClose').onclick = () => m.remove();
+  armOverlay(m);
+  q(m, '#bClose').onclick = () => closeOverlay(m);
   q(m, '#bQty').oninput = cost;
   const bm = q(m, '#bMax'); if (bm) bm.onclick = () => { $('#bQty').value = capU; cost(); };
   q(m, '#bBuy').onclick = async () => {

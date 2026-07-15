@@ -4,6 +4,7 @@
 // one coin). Reads the live session/relay state from ctx; posts via the relay's issue endpoint.
 import { $, q } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
+import { armOverlay, closeOverlay } from '@/components/modal.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import { api, ctx } from '@/state/market-ctx.mjs';
 import { mvRefresh } from '@/views/exchange.mjs';
@@ -12,7 +13,8 @@ let mode = 'a';   // 'a' = currency (amounts), 't' = tokens (unique items)
 
 async function issue() {
   try {
-    const name = $('#iName').value.trim() || 'актив';
+    const name = $('#iName').value.trim();
+    if (!name) throw new Error(tr('enter a name'));
     if (mode === 't') {
       const tokens = ($('#iToks')?.value ?? '').split('\n').map(s => s.trim()).filter(Boolean);
       if (!tokens.length) throw new Error(tr('add at least one item'));
@@ -61,8 +63,8 @@ export function openIssueModal() {
     </div>
     <button id="issueBtn">${tr('Issue asset')}</button></div>`;
   document.body.appendChild(m);
-  m.onclick = e => { if (e.target === m) m.remove(); };
-  q(m, '#issClose').onclick = () => m.remove();
+  armOverlay(m);
+  q(m, '#issClose').onclick = () => closeOverlay(m);
   q(m, '#issueBtn').onclick = issue;
   // mode switch: one form, two faces
   m.querySelectorAll('#iMode button').forEach((/** @type {HTMLButtonElement} */ b) => b.onclick = () => {

@@ -4,7 +4,7 @@
 import { tr, getLang, setLang, LANGS } from '@/services/i18n.mjs';
 import { $, store, copy } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
-import { openModal } from '@/components/modal.mjs';
+import { openModal, armOverlay, closeOverlay } from '@/components/modal.mjs';
 import { NETWORKS, DEFAULT_BRIDGE } from '@/state/network-params.mjs';
 import { enablePush, disablePush, pushSupported, pushEnabled } from '@/services/push.mjs';
 import { btcExportKeys, btcToStr } from '@/services/market/btc-account.mjs';
@@ -84,10 +84,10 @@ export function renderSettings() {
       <p class="warn">${tr('This removes the wallet from this device. Without the recovery phrase the funds are UNRECOVERABLE.')}</p>
       <div class="row"><button id="outYes">${tr('Log out & wipe')}</button><button id="outNo" class="ghost">${tr('Cancel')}</button></div></div>`;
     document.body.appendChild(m);
-    m.onclick = e => { if (e.target === m) m.remove(); };   // tap outside the card = cancel
+    armOverlay(m);   // tap outside the card = cancel (ghost-tap shielded)
     // @ts-ignore — false positive (DOM/Promise<void> under checkJs)
-    m.querySelector('#outNo').onclick = () => m.remove();
+    m.querySelector('#outNo').onclick = () => closeOverlay(m);
     // @ts-ignore — false positive (DOM/Promise<void> under checkJs)
-    m.querySelector('#outYes').onclick = () => { m.remove(); d.logout(); };
+    m.querySelector('#outYes').onclick = () => { closeOverlay(m); d.logout(); };
   };
 }

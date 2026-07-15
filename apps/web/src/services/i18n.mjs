@@ -8,6 +8,7 @@ const RU = {
   'Tokens': 'Токены',
   'Unique named items — tickets, memberships, keys. They do not melt, travel whole on one coin, and names must not repeat.': 'Уникальные именованные экземпляры — билеты, членства, ключи. Не тают, передаются целиком одной монетой, имена не повторяются.',
   'add at least one item': 'добавьте хотя бы один экземпляр',
+  'enter a name': 'введите название',
   'token names must be unique': 'имена токенов не должны повторяться',
   'Send tokens': 'Отправить токены',
   'Pick the items to send — the rest come back to you on a new coin.': 'Выберите экземпляры для отправки — остальные вернутся вам на новой монете.',

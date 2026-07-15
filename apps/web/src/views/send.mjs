@@ -86,7 +86,7 @@ export async function renderSend() {
       pick.hidden = !tokCoins.length;
       $('#amtLabel').hidden = !!tokCoins.length;
       pick.innerHTML = tokCoins.length
-        ? tokCoins[0].tokens.map(h => `<label class="chk"><input type="checkbox" checked data-h="${h}">\ud83c\udf9f ${tokLabel(h)}</label>`).join('') || `<span class="sub">${tr('recovering\u2026')}</span>`
+        ? tokCoins[0].tokens.map(h => `<label class="chk"><input type="checkbox" data-h="${h}">\ud83c\udf9f ${tokLabel(h)}</label>`).join('') || `<span class="sub">${tr('recovering\u2026')}</span>`
         : '';
     };
   }).catch(() => {});
