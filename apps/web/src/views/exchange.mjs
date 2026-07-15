@@ -197,6 +197,10 @@ export async function mvSendAsset(tag, qty, toSpk) {
   const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(opIn), vout };   // plain asset move ⇒ standard v2 (tag rides the spk; conservation is version-independent)
   inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+  // relay-broadcast paths bypass ds().broadcast, so force a fresh scan — assets() reads a
+  // cache that FRC's utxos() (always sync) refreshes but this path otherwise wouldn't, leaving
+  // a just-spent coin selectable on a fast repeat (bad-txns-inputs-missingorspent).
+  if (_ds) { try { await _ds().refresh(); } catch {} }
   mvRefresh();
   return txid;
 }
@@ -240,6 +244,10 @@ export async function mvSendTokenCoin(outpoint, toSpk, picked = null) {
   const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(c => opIn(c.outpoint)), vout };
   inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+  // relay-broadcast paths bypass ds().broadcast, so force a fresh scan — assets() reads a
+  // cache that FRC's utxos() (always sync) refreshes but this path otherwise wouldn't, leaving
+  // a just-spent coin selectable on a fast repeat (bad-txns-inputs-missingorspent).
+  if (_ds) { try { await _ds().refresh(); } catch {} }
   mvRefresh();
   return txid;
 }
