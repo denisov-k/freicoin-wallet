@@ -38,12 +38,12 @@ export function openIssueModal() {
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Issue asset')}</b><button id="issClose" class="icon">✕</button></div>
+    <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="часы-труда"></label>
     <div class="seg" id="iMode">
-      <button data-m="a" class="on">${tr('Currency (amounts)')}</button>
-      <button data-m="t">${tr('Tokens (unique items)')}</button>
+      <button data-m="a" class="on">${tr('Currency')}</button>
+      <button data-m="t">${tr('Tokens')}</button>
     </div>
     <p class="sub" id="iModeHint">${tr('Issue an asset that lives on the chain: constant, melting (demurrage) or growing (interest).')}</p>
-    <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="часы-труда"></label>
     <div id="iFungible">
       <div class="row">
         <label>${tr('Type')}<select id="iKind"><option value="c">${tr('constant')}</option><option value="d">${tr('melts')}</option><option value="i">${tr('grows')}</option></select></label>
