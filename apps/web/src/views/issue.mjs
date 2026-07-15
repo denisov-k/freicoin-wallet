@@ -4,7 +4,7 @@ import { $, q } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import { api, ctx } from '@/state/market-ctx.mjs';
-import { mvRefresh } from '@/market-view.mjs';
+import { mvRefresh } from '@/views/exchange.mjs';
 
 async function issue() {
   try {

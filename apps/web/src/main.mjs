@@ -7,7 +7,7 @@ import { encryptSecret, decryptSecret } from '@/services/vault.mjs';
 import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS, CHECKPOINT } from '@/state/network-params.mjs';
 import { tr, getLang, setLang, LANGS } from '@/services/i18n.mjs';
 // Freimarkets (Issue + Exchange) — mounted as extra tabs only on the nv3 network.
-import { initMarketView, mvSetSeed, mvRefresh, mvResetNet, renderExchange, renderAssetBalance, mvOwnedAssets, mvSendAsset, mvRelayAssets, mvBtc, mvBtcAddress, mvSendBtc, mvBtcValidAddr, mvBtcHistory } from './market-view.mjs';
+import { initMarketView, mvSetSeed, mvRefresh, mvResetNet, renderExchange, renderAssetBalance, mvOwnedAssets, mvSendAsset, mvRelayAssets, mvBtc, mvBtcAddress, mvSendBtc, mvBtcValidAddr, mvBtcHistory } from '@/views/exchange.mjs';
 import { loadFeeTxids, lsKey } from '@/services/storage.mjs';
 import { enablePush, disablePush, pushSupported, pushEnabled } from '@/services/push.mjs';
 import { btcExportKeys, btcToStr } from '@/services/market/btc-account.mjs';

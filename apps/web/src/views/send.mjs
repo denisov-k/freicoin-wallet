@@ -8,7 +8,7 @@ import { openModal } from '@/components/modal.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import QRCode from 'qrcode';
 import { deriveAddress, isValidAddress, addrToSpk, buildSignedTx } from '@/services/wallet.mjs';
-import { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvOwnedAssets, mvSendAsset } from '@/market-view.mjs';
+import { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvOwnedAssets, mvSendAsset } from '@/views/exchange.mjs';
 
 /** deps injected by the app shell (see main.mjs initSend) */
 let d;
