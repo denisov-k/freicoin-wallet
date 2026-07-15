@@ -94,11 +94,14 @@ async function doRefresh() {
   // A wiped/replaced test chain invalidates every local swap record — detect via the genesis hash
   // and drop them, or ghosts of the old chain's swaps haunt the balance/activity forever.
   try {
-    // versioned marker: bumping the version forces ONE clear even when the genesis hash is
-    // unchanged (a wiped REGTEST chain regenerates the SAME deterministic genesis) — v3 clears
-    // the pre-wipe records of 2026-07-14, then behaves normally.
-    const mark = 'v3:' + info.chainId;
-    if (info.chainId && localStorage.getItem(lsKey('fw_mkt_chain')) !== mark) {
+    // versioned marker keyed on the chain EPOCH (block-1 hash), not the genesis hash: a wiped
+    // REGTEST chain regenerates the SAME deterministic genesis (so chainId is useless for detecting
+    // a reset) but a FRESH block 1 — so the epoch changes on every reset and stays stable across mere
+    // relay restarts. Falls back to chainId if the relay is too old to send an epoch. Bumping the
+    // version prefix also forces ONE clear on deploy, dropping any pre-fix ghost records.
+    const epoch = info.chainEpoch ?? info.chainId;
+    const mark = 'v4:' + epoch;
+    if (epoch && localStorage.getItem(lsKey('fw_mkt_chain')) !== mark) {
       // NB: fw_btc_nonces survives — it derives BTC-side addresses, and the BTC chain (signet)
       // is NOT wiped with the test chain; dropping it would orphan real proceeds.
       for (const k of ['fw_p2p', 'fw_swap_hist', 'fw_swaps', 'fw_reldefs']) localStorage.removeItem(lsKey(k));

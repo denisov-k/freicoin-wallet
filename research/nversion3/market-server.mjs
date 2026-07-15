@@ -666,7 +666,10 @@ function reconcileBook() {
 
 // ---- lifecycle ----
 let mineAddr = null;
-let chainId = null;   // genesis hash — clients detect a wiped/replaced chain and drop stale local records
+let chainId = null;      // genesis hash — clients detect a wiped/replaced chain and drop stale local records
+let chainEpoch = null;   // block-1 hash — UNLIKE the genesis hash it DIFFERS after a regtest wipe (fresh
+                         // bootstrap wallet ⇒ new coinbase ⇒ new block-1), so clients can distinguish a
+                         // reset REGTEST chain (identical deterministic genesis) from a mere relay restart.
 async function bootstrap() {
   refreshCookie();
   try { await rpc('createwallet', 'w'); } catch {}
@@ -676,6 +679,7 @@ async function bootstrap() {
   // MINING/FAUCET are a REGTEST-ONLY dev convenience: on a real chain the relay is a pure
   // indexer + message board (it must never try to produce blocks or hand out coins).
   if (IS_REGTEST && await rpc('getblockcount') < 120) await rpc('generatetoaddress', 120, mineAddr);
+  chainEpoch = await rpc('getblockhash', 1).catch(() => chainId);   // after block 1 exists
   loadBook(); loadSwaps(); loadP2p();
   for (const w of p2p) if (w.maker?.frcPub) heartbeat(w.maker.frcPub);   // restart grace for v2 offer expiry
   if (btcAvail()) { await ensureWatchWallet();
@@ -719,7 +723,7 @@ const api = {
   async info() {
     const h = await rpc('getblockcount');
     return {
-      height: h, mineEveryMs: MINE_EVERY_MS, chainId,
+      height: h, mineEveryMs: MINE_EVERY_MS, chainId, chainEpoch,
       assets: [...assets.entries()].map(([tag, a]) => ({ tag, ...a, supply: String(a.supply) })),
       // the book exposes EVERYTHING a client needs to splice a cross itself: the give
       // outpoint, the maker's partial witness, terms. The witness is a SINGLE|ACP signature —
