@@ -496,8 +496,21 @@ async function btcFeeRate() {
   if (Date.now() - feeCache.at < 60e3) return feeCache.rate;
   let rate = FEE_MIN;
   try {
-    const r = await btcRpcOn('', 'estimatesmartfee', FEE_TARGET_BLOCKS, 'CONSERVATIVE');
-    if (r?.feerate > 0) rate = (r.feerate * 1e8) / 1000;    // BTC/kvB → sat/vB
+    // The mempool floor is the honest current minimum-to-relay; on a calm/low-activity chain
+    // (signet, regtest, a quiet mainnet) it IS the realistic fee — near-empty blocks confirm it
+    // in the next block.
+    const mi = await btcRpcOn('', 'getmempoolinfo').catch(() => null);
+    const floorVb = mi?.mempoolminfee > 0 ? (mi.mempoolminfee * 1e8) / 1000 : FEE_MIN;
+    if (BTC_NET === 'main') {
+      // Real fee market: smartfee targets confirmation within FEE_TARGET_BLOCKS. Floor it at the
+      // mempool minimum so even a stale/low estimate still relays.
+      const r = await btcRpcOn('', 'estimatesmartfee', FEE_TARGET_BLOCKS, 'ECONOMICAL');
+      rate = Math.max(r?.feerate > 0 ? (r.feerate * 1e8) / 1000 : floorVb, floorVb);
+    } else {
+      // Test chains: smartfee wildly over-pads at short targets (signet returns ~250 sat/vB for the
+      // very 1 sat/vB that actually confirms), so price just above the honest mempool floor instead.
+      rate = floorVb * 1.5;
+    }
   } catch {}
   rate = Math.min(FEE_MAX, Math.max(FEE_MIN, Math.ceil(rate)));
   feeCache = { at: Date.now(), rate };
