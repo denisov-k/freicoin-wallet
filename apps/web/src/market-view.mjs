@@ -38,7 +38,14 @@ const toast = (m, cls = '') => { const t = $('#toast'); if (t) { t.textContent =
 let seed = null, km = {}, spks = [], myAddress = '', state = null, _ds = null;
 // wired from the wallet: initMarketView(ds) injects its light source; mvSetSeed(hexSeed) on unlock.
 export function initMarketView(ds) { _ds = ds; initBtcAccount(recoverBtcNonces); initActivity(doRefresh); initDrive({ toast, mvRefresh }); }
-export function mvSetSeed(hexSeed) { seed = hexSeed; ctx.seed = hexSeed; deriveKeys(); }
+export function mvSetSeed(hexSeed) {
+  // A DIFFERENT key ⇒ drop the previous seed's snapshot (asset balances + BTC account) so the
+  // balance repaints a skeleton, not the old account's numbers, until the next mvRefresh lands —
+  // same reason mvResetNet clears on a network switch. Gated on an actual change because this runs
+  // on EVERY renderApp; resetting unconditionally would flicker the balance to a skeleton each time.
+  if (hexSeed !== seed) { state = null; ctx.state = null; btcResetAcct(); }
+  seed = hexSeed; ctx.seed = hexSeed; deriveKeys();
+}
 // Network switch: drop the OLD network's snapshot so the new net paints a skeleton, not stale
 // numbers. The next mvRefresh rebuilds everything against the new net's relay/light client.
 export function mvResetNet() { state = null; ctx.state = null; btcResetAcct(); }
