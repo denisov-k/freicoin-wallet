@@ -6,7 +6,10 @@ import { Buffer } from 'buffer';
 import { sha256d } from '../../../../core/crypto.mjs';
 
 export const MAGIC = {
-  main: [0x2c, 0xfe, 0x7e, 0x6d], test: [0x5e, 0xd6, 0x7c, 0xf3],
+  main: [0x2c, 0xfe, 0x7e, 0x6d],
+  // 'test' is the REHEARSAL chain (regtest params, production-shaped relay + 10-min timer
+  // blocks). The real testnet magic (5e d6 7c f3) retired with the dead public testnet.
+  test: [0xed, 0x99, 0x9c, 0xf6],
   regtest: [0xed, 0x99, 0x9c, 0xf6], signet: [0x0a, 0x03, 0xcf, 0x40],
   nv3: [0xed, 0x99, 0x9c, 0xf6],   // the Freimarkets nV3 chain is a regtest chain (same magic)
 };

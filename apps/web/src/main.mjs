@@ -7,7 +7,10 @@ import { encryptSecret, decryptSecret } from './vault.mjs';
 import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS, CHECKPOINT } from './netparams.mjs';
 import { tr, getLang, setLang, LANGS } from './i18n.mjs';
 // Freimarkets (Issue + Exchange) — mounted as extra tabs only on the nv3 network.
-import { initMarketView, mvSetSeed, mvRefresh, openIssueModal, renderExchange, renderAssetBalance, mvOwnedAssets, mvSendAsset, mvRelayAssets, mvBtc, mvBtcAddress, mvSendBtc, mvBtcValidAddr, mvBtcHistory } from './market-view.mjs';
+import { initMarketView, mvSetSeed, mvRefresh, mvResetNet, openIssueModal, renderExchange, renderAssetBalance, mvOwnedAssets, mvSendAsset, mvRelayAssets, mvBtc, mvBtcAddress, mvSendBtc, mvBtcValidAddr, mvBtcHistory } from './market-view.mjs';
+import { loadFeeTxids, lsKey } from './mv-storage.mjs';
+import { enablePush, disablePush, pushSupported, pushEnabled } from './mv-push.mjs';
+import { btcExportKeys, btcToStr } from './mv-btc-account.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
@@ -126,7 +129,7 @@ function ds() {
       // only when the birth is at/above it — the source enforces that)
       checkpoint: (rec?.anchorH && rec?.anchorHash) ? { height: rec.anchorH, hash: rec.anchorHash } : (CHECKPOINT[net] || null),
       // untrusted relay asset defs (rates) — lets history value asset spends it can't scan defs for
-      seedDefs: (() => { try { return JSON.parse(store.get('fw_reldefs') || 'null'); } catch { return null; } })(),
+      seedDefs: (() => { try { return JSON.parse(store.get(lsKey('fw_reldefs')) || 'null'); } catch { return null; } })(),
     }).catch(() => {});
     lightSrc = {
       health: () => wcall('health'), balance: () => wcall('balance'), utxos: () => wcall('utxos'),
@@ -288,6 +291,10 @@ function renderLock() {
 // On the Freimarkets (nv3) network the wallet grows two extra tabs (Issue + Exchange); on every
 // other network it stays a plain wallet. The product is titled "Freicoin"; the ƒ is its mark.
 const MKT = () => curNet() === 'nv3';
+// Swap-enabled networks: nv3 (full assets+DEX+BTC) and testnet (the BTC↔FRC swap REHEARSAL — real
+// 10-min chains, no assets). They get the Exchange tab, the BTC account and the swap drive; only
+// nv3 (MKT) additionally gets Issue + the asset machinery.
+const SWAP = () => MKT() || curNet() === 'test';
 function renderApp() {
   $('#app').innerHTML = `
     <header><h1 style="font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:600;font-size:26px;line-height:1;margin:0" title="Freicoin">ƒ</h1>
@@ -296,16 +303,16 @@ function renderApp() {
     <nav>
       <button data-tab="balance" class="active">${tr('Balance')}</button>
       <button data-tab="activity">${tr('Activity')}</button>
-      ${MKT() ? `<button data-tab="exchange">${tr('Exchange')}</button>` : ''}
+      ${SWAP() ? `<button data-tab="exchange">${tr('Exchange')}</button>` : ''}
       <button data-tab="settings">⚙</button>
     </nav>
     <main>
       <section id="balance"></section><section id="activity" hidden></section>
-      ${MKT() ? `<section id="exchange" hidden></section>` : ''}
+      ${SWAP() ? `<section id="exchange" hidden></section>` : ''}
       <section id="settings" hidden></section>
     </main>
     <div id="toast"></div>`;
-  if (MKT() && unlockedSecret) mvSetSeed(hexSeed());   // hand the Freimarkets tabs the unlocked seed
+  if (SWAP() && unlockedSecret) mvSetSeed(hexSeed());   // hand the Freimarkets tabs the unlocked seed
   applyTheme(themeMode());
   // @ts-ignore  — false positive (DOM/Promise<void> under checkJs)
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.tab));
@@ -322,11 +329,11 @@ function renderApp() {
       const st = await getState(true);
       paintBalance(st);                                   // sets status ok; skips DOM when hidden
       if (!$('#activity').hidden) {
-        const [h, btc] = await Promise.all([ds().history(), MKT() ? mvBtcHistory() : Promise.resolve(null)]);
-        if (MKT() && btc) { btcActLegs = btc.legs; btcActHide = new Set(btc.hideFrc); btcActReady = true; }
+        const [h, btc] = await Promise.all([ds().history(), SWAP() ? mvBtcHistory() : Promise.resolve(null)]);
+        if (SWAP() && btc) { btcActLegs = btc.legs; btcActHide = new Set(btc.hideFrc); btcActReady = true; }
         paintActivity(h.txs);
       }
-      if (MKT()) mvRefresh();                             // keep the order book + asset balance fresh on nv3
+      if (SWAP()) mvRefresh();                             // keep the order book + asset balance fresh on nv3
     } catch (e) {
       // the poll must also self-heal (deep reorg / lost anchor) — otherwise a wallet that
       // hits the error HERE spins on "reconnecting" forever; and surface the REAL error
@@ -338,7 +345,7 @@ function renderApp() {
   // iOS freezes background tabs and kills the WebSocket — on wake, kick a sync immediately
   // instead of letting the user stare at "reconnecting" until the next poll tick.
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && unlockedSecret) { getState(true).then(paintBalance).catch(() => {}); if (MKT()) mvRefresh(); }
+    if (!document.hidden && unlockedSecret) { getState(true).then(paintBalance).catch(() => {}); if (SWAP()) mvRefresh(); }
   });
   const fromHash = location.hash.slice(1);
   const saved = store.get('fw_tab');
@@ -350,7 +357,7 @@ function renderApp() {
 
 const TABS = ['balance', 'activity', 'settings'];   // Receive/Send/Issue are modals now, not tabs
 // the Exchange tab exists only on nv3; membership + which sections to hide are network-aware
-const visibleTabs = () => MKT() ? ['balance', 'activity', 'exchange', 'settings'] : TABS;
+const visibleTabs = () => SWAP() ? ['balance', 'activity', 'exchange', 'settings'] : TABS;
 const show = tab => {
   // @ts-ignore  — false positive (DOM/Promise<void> under checkJs)
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -376,7 +383,7 @@ const getState = async force => {
   return cache;
 };
 const timeAgo = t => { const s = Math.max(0, Date.now() / 1000 - t); if (s < 60) return tr('just now'); if (s < 3600) return (s / 60 | 0) + tr('m ago'); if (s < 86400) return (s / 3600 | 0) + tr('h ago'); return new Date(t * 1000).toLocaleDateString(); };
-const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏', purchase: '⇄', sale: '⇄', swap: '⇄' };
+const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏', purchase: '⇄', sale: '⇄', swap: '⇄', fee: '•' };
 
 // Latest streamed (partial/provisional) state — lets every tab show live data during a
 // first sync, when there is no cache and nothing persisted to preview.
@@ -400,21 +407,21 @@ function paintActivity(txs, final = true) {
   const sec = $('#activity');
   if (!sec || sec.hidden) return false;
   const list = $('#actList') || sec;   // filters live above the list; partials may land before render.activity
-  if (MKT() && !btcActReady) { if (!list.querySelector('.skel')) list.innerHTML = skel(4); return false; }
+  if (SWAP() && !btcActReady) { if (!list.querySelector('.skel')) list.innerHTML = skel(4); return false; }
   // A PROVISIONAL paint with an empty FRC history (mid-resync, e.g. reopening the tab) must not
   // show a BTC-only list — hold the skeleton until real FRC legs arrive or the FINAL paint says
   // the history is truly empty.
   if (!final && !txs.filter(t => !t.btc).length) { if (!list.querySelector('.skel')) list.innerHTML = skel(4); return false; }
   // A cross-chain trade knows the raw FRC leg it replaces (frcTxid) — adopt that leg's real
-  // time/confirmations/amount (actual received/paid incl. fee) before the leg itself is hidden.
+  // time/confirmations before the leg itself is hidden. AMOUNTS stay the trade's NOMINAL ones:
+  // asset and BTC legs already render nominal (the network fee is absorbed silently), and adopting
+  // the fee-inclusive actual here made "+1 FRC" flicker into "+0.9999 FRC" once the claim indexed.
   for (const t of btcActLegs) {
     if (!t.trade || !t.frcTxid) continue;
     const leg = txs.find(l => !l.btc && !l.assetTag && l.txid === t.frcTxid);
     if (!leg) continue;
     if (!t.time) t.time = leg.time;
     t.confirmations = leg.confirmations;
-    const a = Math.abs(+leg.amount);
-    if (!t.recv.btc) t.recv.amount = a; else t.paid.amount = -a;
   }
   // a trade that never anchored to the chain (no real time after adopting its legs) is a phantom
   // from an incomplete/stale swap record — hide it instead of showing a 01.01.1970 ghost row
@@ -431,11 +438,17 @@ function paintActivity(txs, final = true) {
     const curs = new Set(legs.map(l => l.assetTag ?? 'FRC'));
     if (curs.size > 1 && pos.length && neg.length) {
       const recv = pos[0], paid = neg[0];
+      const tAsset = recv.assetTag || paid.assetTag;   // the non-FRC side names the trade
       items.push({ trade: true, txid: recv.txid, recv, paid, time: recv.time,
         category: (recv.assetTag && !paid.assetTag) ? 'purchase' : (!recv.assetTag && paid.assetTag) ? 'sale' : 'swap',
+        assetName: tAsset ? actAssetName(tAsset) : undefined,
         confirmations: Math.min(...legs.map(l => l.confirmations)) });
     } else items.push(...legs);
   }
+  // exchange PLUMBING self-spends (give-coin consolidation, on-chain offer cancel): the asset came
+  // back to us net-zero, only the miner fee left — label it as the NETWORK FEE it is, not a "send"
+  const feeTx = new Set(loadFeeTxids());
+  for (const i of items) if (!i.trade && feeTx.has(i.txid)) i.category = 'fee';
   items.sort((a, b) => (b.time || 0) - (a.time || 0));   // newest first — interleave BTC legs by time, not at the end
   // the currency filter offers exactly what the history contains (options refresh in place,
   // selection preserved; a selection filtered out of existence falls back to 'all')
@@ -456,6 +469,8 @@ function paintActivity(txs, final = true) {
     && (!actFilter.cur || ((i.trade ? [i.recv, i.paid] : [i]).some(l => actFilter.cur === 'FRC' ? (!l.assetTag && !l.btc) : actFilter.cur === 'BTC' ? l.btc : l.assetTag === actFilter.cur))));
   const amtStr = t => t.btc
     ? `${(+t.amount) > 0 ? '+' : ''}${(+t.amount).toLocaleString(getLang(), { maximumFractionDigits: 8 })} <small>BTC</small>`
+    : t.unit   // pre-scaled leg (cross-chain trade): show verbatim with its own unit, don't re-divide
+    ? `${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)} <small>${t.unit}</small>`
     : `${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount / (t.assetTag ? 10 ** Number(actDefs[t.assetTag]?.decimals ?? 0) : 1))} <small>${t.assetTag ? actAssetName(t.assetTag) : 'FRC'}</small>`;
   const rowHtml = i =>
     `<div class="act-i ${i.trade ? 'trade' : i.category}">${CAT[i.category] || '•'}</div>
@@ -559,7 +574,7 @@ function wireBalActions() {
 function paintBalance(s) {
   if (!s.stale) setStatus('ok', '', s.tipHeight);
   else setStatus('sync', undefined, s.tipHeight);
-  if (MKT()) return;   // Freimarkets balance is a per-asset table owned by market-view; only sync the status here
+  if (SWAP()) return;   // Freimarkets balance is a per-asset table owned by market-view; only sync the status here
   if ($('#balance').hidden) return;
   balPainted = true;
   // build the card once; update fields in place afterwards (a full innerHTML rewrite per
@@ -579,6 +594,7 @@ function paintBalance(s) {
     if (t) t.onclick = () => {
       store.set('fw_net', 'nv3'); configureNetwork('nv3'); store.del('fw_bridge');
       if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
+      mvResetNet();
       cache = null; liveState = null; actLastHtml = ''; btcActLegs = []; btcActHide = new Set(); btcActReady = false;
       status.progress = {}; status.rx = 0; status.rxAt = 0; status.mbps = 0; status.utxos = null; status.tip = null;
       renderApp(); toast(tr('welcome to Freimarkets 🧪'));
@@ -597,7 +613,7 @@ const render = {
   async balance() {
     // Freimarkets (nv3): show per-asset holdings (FRC + user assets) + receiving address, not the
     // plain FRC number. market-view owns the table; the host-currency sync still drives the status.
-    if (MKT()) {
+    if (SWAP()) {
       if (!$('#assetBalBody')) {
         $('#balance').innerHTML = `<div id="mktBal"></div>` + balActions();
         renderAssetBalance($('#mktBal'));   // per-asset table (+ dev faucet); the address lives in the Receive modal
@@ -628,7 +644,7 @@ const render = {
   async receive() {
     // Open in a loading state (shimmering QR + address placeholders), then fill in — the
     // same skeleton the tables use, so "get new address" visibly loads the fresh one.
-    const btcOn = MKT() && mvBtc().available;
+    const btcOn = SWAP() && mvBtc().available;
     openModal(tr('Receiving'),
       (btcOn ? `<label>${tr('Currency')}<select id="rcvCur"><option value="FRC">FRC</option><option value="BTC">BTC</option></select></label>` : '')
       + `<div id="qrBox" class="qr skel" style="margin:0 auto;height:220px"></div>
@@ -729,7 +745,7 @@ const render = {
           <option value="">${tr('all')}</option>
           <option value="receive">${tr('receive')}</option>
           <option value="send">${tr('send')}</option>
-          ${MKT() ? `<option value="trade">${tr('trades')}</option>` : ''}
+          ${SWAP() ? `<option value="trade">${tr('trades')}</option>` : ''}
           <option value="generate">${tr('generate')}</option>
         </select></label>
         ${MKT() ? `<label>${tr('Asset')}<select id="afCur"><option value="">${tr('all')}</option><option value="FRC">FRC</option></select></label>` : ''}
@@ -757,9 +773,9 @@ const render = {
     else { try { const pv = await ds().preview(); if (pv) painted = paintActivity([...pv.pending, ...pv.history], false) || painted; } catch {} }
     try {
       // both histories in parallel — the first real paint is the COMPLETE list (FRC + BTC)
-      const [{ txs }, btc] = await Promise.all([ds().history(), MKT() ? mvBtcHistory() : Promise.resolve(null)]);
+      const [{ txs }, btc] = await Promise.all([ds().history(), SWAP() ? mvBtcHistory() : Promise.resolve(null)]);
       if (gen !== renderGen) return;
-      if (MKT() && btc) { btcActLegs = btc.legs; btcActHide = new Set(btc.hideFrc); btcActReady = true; }
+      if (SWAP() && btc) { btcActLegs = btc.legs; btcActHide = new Set(btc.hideFrc); btcActReady = true; }
       painted = paintActivity(txs) || painted;
       setStatus('ok');
     } catch (e) {
@@ -776,8 +792,9 @@ const render = {
        <label>${tr('Theme')}<select id="themeSel">${['system', 'dark', 'light'].map(m => `<option value="${m}"${themeMode() === m ? ' selected' : ''}>${m === 'system' ? tr('System') : m === 'dark' ? tr('Dark') : tr('Light')}</option>`).join('')}</select></label>
        <label>${tr('Network')}<select id="netSel">${Object.entries(NETWORKS).filter(([k, v]) => !v.hidden || k === curNet()).map(([k, v]) => `<option value="${k}"${k === curNet() ? ' selected' : ''}>${v.label}</option>`).join('')}</select></label>
        <label>${tr('Bridge URL (neutrino P2P relay)')}<input id="br" value="${curBridge()}"></label>
+       ${SWAP() && pushSupported() ? `<label class="chk"><input type="checkbox" id="pushChk"${pushEnabled() ? ' checked' : ''}>${tr('Swap notifications (your turn)')}</label>` : ''}
        <label>${tr('Wallet secret')} (${kind})<textarea id="sd" rows="2" readonly>${'•'.repeat(24)}</textarea></label>
-       <div class="row"><button id="revealSeed" class="ghost">${tr('Show')}</button><button id="copySeed" class="ghost">⧉ ${tr('Copy')}</button></div>
+       <div class="row"><button id="revealSeed" class="ghost">${tr('Show')}</button><button id="copySeed" class="ghost">⧉ ${tr('Copy')}</button>${SWAP() ? `<button id="wifBtn" class="ghost">${tr('Export key (WIF)')}</button>` : ''}</div>
        <p class="warn">${vault ? tr('🔒 Secret is encrypted with your passphrase (AES-GCM). It is only decrypted in memory.') + ' ' + tr('Auto-locks after 5 minutes of inactivity.') : tr('⚠ Secret is stored unencrypted — set a passphrase to secure it.')}</p>
        <div class="row">${vault
           ? `<button id="lockBtn" class="ghost">${tr('🔓 Lock')}</button><button id="chgBtn" class="ghost">${tr('Change passphrase')}</button>`
@@ -785,6 +802,38 @@ const render = {
        <div id="secForm"></div>
        <div class="row"><button id="outBtn" class="ghost">${tr('Log out of wallet')}</button></div>`;
     $('#langSel').onchange = () => { setLang($('#langSel').value); renderApp(); };   // applies immediately, re-renders all
+    const wifBtn = $('#wifBtn');
+    if (wifBtn) wifBtn.onclick = () => {
+      if (!unlockedSecret) { toast(tr('unlock the wallet first'), 'err'); return; }
+      const rows = btcExportKeys();
+      // seed-section pattern: a masked read-only field + Show/Copy. The main account comes bare;
+      // extra keys (funded legacy/swap addresses) get a thin caption so they're distinguishable.
+      openModal(tr('BTC keys (WIF)'),
+        `<p class="warn">⚠ ${tr('Whoever has a WIF key owns its coins. Paste it only into a wallet you trust (Electrum, Sparrow, BlueWallet).')}</p>`
+        + rows.map((r, i) => `
+          ${i > 0 ? `<div class="sub" style="font-size:11px">${r.label} · ${r.addr.slice(0, 14)}… · ${btcToStr(r.sats)} BTC</div>` : ''}
+          <label><input class="wifVal" data-i="${i}" value="${'•'.repeat(24)}" readonly></label>
+          <div class="row"><button class="ghost wifShow" data-i="${i}">${tr('Show')}</button><button class="ghost wifCopy" data-i="${i}">${tr('Copy')}</button></div>`).join(''));
+      // @ts-ignore — false positive (DOM under checkJs)
+      document.querySelectorAll('button.wifShow').forEach((/** @type {HTMLButtonElement} */ b) => b.onclick = () => {
+        const inp = /** @type {HTMLInputElement} */ (document.querySelector(`input.wifVal[data-i="${b.dataset.i}"]`));
+        const hidden = inp.value.startsWith('•');
+        inp.value = hidden ? rows[Number(b.dataset.i)].wif : '•'.repeat(24);
+        b.textContent = hidden ? tr('Hide') : tr('Show');
+      });
+      // @ts-ignore — false positive (DOM under checkJs)
+      document.querySelectorAll('button.wifCopy').forEach((/** @type {HTMLButtonElement} */ b) => b.onclick = async () => {
+        try { await navigator.clipboard.writeText(rows[Number(b.dataset.i)].wif); toast(tr('copied ✓'), 'ok'); }
+        catch { toast(tr('copy failed'), 'err'); }
+      });
+    };
+    const pushChk = $('#pushChk');
+    if (pushChk) pushChk.onchange = async () => {
+      try {
+        if (pushChk.checked) { await enablePush(); toast(tr('notifications on — the relay pings your turns'), 'ok'); }
+        else { await disablePush(); toast(tr('notifications off'), 'ok'); }
+      } catch (e) { pushChk.checked = pushEnabled(); toast(String(e?.message || e), 'err'); }
+    };
     $('#themeSel').onchange = () => { const t = $('#themeSel').value; store.set('fw_theme_mode', t); applyTheme(t); };   // applies immediately
     // Network/bridge apply immediately too: network on select (swapping in that network's
     // default bridge), bridge on leaving the field.
@@ -857,6 +906,7 @@ function applyNetSettings() {
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
   cache = null; liveState = null; actLastHtml = ''; btcActLegs = []; btcActHide = new Set(); btcActReady = false;   // same wallet — keep the receive index
   status.progress = {}; status.rx = 0; status.rxAt = 0; status.mbps = 0; status.utxos = null; status.tip = null;
+  mvResetNet();   // the exchange/BTC snapshot too — else the OLD net's balance table paints until fresh data lands
   // Full rebuild: the old network's numbers must not linger, and the Freimarkets (Issue/Exchange)
   // tabs must appear or disappear as the network gains/loses nv3.
   renderApp();

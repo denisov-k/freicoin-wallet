@@ -28,6 +28,7 @@ echo "typecheck…"; npx tsc -p jsconfig.json
 VITE_BRIDGE=wss://f.testtty.ru/ws/regtest \
 VITE_BRIDGE_NV3=wss://f.testtty.ru/ws/nv3 \
 VITE_BRIDGE_MAIN=wss://f.testtty.ru/ws/main \
+VITE_BRIDGE_TEST=wss://f.testtty.ru/ws/test \
 VITE_SNAP_MAIN=https://f.testtty.ru/snap/main-headers.bin \
 VITE_SNAP_MAIN_FILTERS=https://f.testtty.ru/snap/main-filters.bin \
 VITE_CHECKPOINT_MAIN="$CP" \

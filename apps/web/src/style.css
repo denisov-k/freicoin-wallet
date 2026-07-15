@@ -13,6 +13,10 @@ header { flex-shrink:0; display:flex; align-items:center; justify-content:space-
 header h1 { font-size:18px; margin:0; } .hbtns { display:flex; align-items:center; gap:10px; }
 .pill { font-size:12px; color:var(--sub); border:1px solid var(--line); border-radius:99px; padding:2px 10px; }
 .icon { background:none; border:1px solid var(--line); border-radius:8px; color:var(--fg); width:32px; height:32px; cursor:pointer; font-size:15px; }
+.seg { display:flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; margin:12px 0; }
+.seg button:not(.on) { flex:1; background:none; color:var(--sub); border:0; border-radius:0; padding:9px 0; font-size:14px; font-weight:400; cursor:pointer; }
+.seg button.on { flex:1; background:var(--accent); color:var(--accent-fg); border:0; border-radius:0; padding:9px 0; font-size:14px; font-weight:600; cursor:pointer; }
+.seg button:not(.on) + button.on, .seg button.on + button:not(.on) { border-left:1px solid var(--line); }
 nav { flex-shrink:0; display:flex; gap:4px; padding:10px 16px; border-bottom:1px solid var(--line); }
 nav button { flex:1; background:none; border:0; color:var(--sub); padding:8px; border-radius:8px; cursor:pointer; font-size:14px; }
 nav button.active { background:var(--card); color:var(--fg); }
@@ -36,6 +40,7 @@ button:not(nav button):not(.icon) { background:var(--accent); color:var(--accent
 .warn { color:var(--warn); font-size:12px; }
 .review { display:flex; flex-direction:column; gap:10px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-top:6px; }
 .rrow { display:flex; justify-content:space-between; font-size:14px; } .rrow span { color:var(--sub); }
+#pyStatus:empty { display:none; }
 button:disabled { opacity:.6; cursor:default; }
 #msg { padding:0 20px 16px; font-size:13px; min-height:20px; } .ok{color:var(--ok);} .err{color:var(--err);}
 textarea { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; color:var(--fg); font:16px ui-monospace,monospace; width:100%; resize:vertical; }
