@@ -53,9 +53,12 @@ let lastSig = '', lastAt = 0;
 export async function refreshPushSubs() {
   if (!pushEnabled() || !pushSupported() || !ctx.seed) return;
   try {
-    const pubs = [...new Set(loadP2p()
-      .map(r => { try { return pubkeyCompressed(p2pKey(r.nonce, 'frc')); } catch { return null; } })
-      .filter(Boolean))];
+    const pubs = [...new Set([
+      ...loadP2p().map(r => { try { return pubkeyCompressed(p2pKey(r.nonce, 'frc')); } catch { return null; } }),
+      // DEX maker keys too — the relay pings them when a partial fill leaves a ranged
+      // offer's remainder waiting for a re-sign (see market-server notifyResign)
+      ...(ctx.spks ?? []).map(s => { try { return pubkeyCompressed(ctx.km[s].priv.toString(16).padStart(64, '0')); } catch { return null; } }),
+    ].filter(Boolean))];
     if (!pubs.length) return;
     const sig = pubs.join(',');
     if (sig === lastSig && Date.now() - lastAt < 10 * 60e3) return;

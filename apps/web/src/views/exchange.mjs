@@ -342,7 +342,9 @@ async function postRangedOffer() {
     const desc = { payoutAsset: wantTag, payoutScript: give.spk, priceNum, priceDen, changeScript: give.spk, minFill, maxFill, nExpireTime: expireAt };
     toast(tr('signing the offer ladder…'));
     const ladder = await signLadder(desc, give, give.outpoint, give.L, expireAt);
-    await api('rangedOffer', { makerSpk: give.spk, giveOutpoint: give.outpoint, desc, nExpireTime: expireAt, lockHeight: ladder[0].lockHeight, witness: ladder[0].witness, ladder });
+    // makerPub lets the relay push «переподпишите» when a partial fill orphans the remainder
+    const makerPub = pubkeyCompressed(km[give.spk].priv.toString(16).padStart(64, '0'));
+    await api('rangedOffer', { makerSpk: give.spk, giveOutpoint: give.outpoint, desc, nExpireTime: expireAt, lockHeight: ladder[0].lockHeight, witness: ladder[0].witness, ladder, makerPub });
     $('#modal')?.remove();                 // close the offer modal on success
     toast(tr('Offer signed and posted'), 'ok'); mvRefresh();
   } catch (e) { toast(e.message, 'err'); }

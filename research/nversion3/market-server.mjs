@@ -249,9 +249,15 @@ function repointAfterFill(o, changeOp, h) {
   const cpv = c ? pvOf(c, h) : 0n;
   if (c && c.spk === o.desc.changeScript && cpv > 0n && cpv >= BigInt(o.desc.minFill)) {
     o.giveOutpoint = changeOp; o.witness = null; o.ladder = []; o.needsResign = true; o.status = 'open';
+    notifyResign(o);
   } else o.status = 'filled';
   saveBook();
 }
+// A partial fill leaves the remainder UNSIGNED (no pre-signed rung can cover a fresh change
+// outpoint) — an offline maker's offer is dead until they return, so ping them.
+const notifyResign = o =>
+  notifyPub(o.makerPub, { id: o.id, status: 'needsResign', title: `Freimarkets · оффер #${o.id}`,
+    body: 'частичный выкуп — остаток снят с торгов до вашей переподписи (откройте кошелёк)' });
 async function ensureMatcherFuel() {
   for (const op of spkIndex.get(TRUE_SPK) ?? []) { const u = utxos.get(op); if (u && !u.assetTag && u.value >= FEE + 10000n) return; }
   try {
@@ -845,6 +851,7 @@ const api = {
         // a zero-value change means the offer was taken WHOLE — it is done, not resignable
         if (c && c.spk === o.desc.changeScript && cpv > 0n && cpv >= BigInt(o.desc.minFill)) {
           o.giveOutpoint = changeOp; o.witness = null; o.ladder = []; o.needsResign = true; o.status = 'open';
+          notifyResign(o);
         } else { o.status = 'filled'; }
         saveBook();
       }
@@ -869,13 +876,16 @@ const api = {
   },
   // phase-2b: a ranged (partial-fill) offer. The maker signs a descriptor (price ratio + fill
   // bounds) over ONE give coin; the server only relays it, exactly like phase-1 offers.
-  async rangedOffer({ makerSpk, giveOutpoint, desc, nExpireTime, lockHeight, witness }) {
+  async rangedOffer({ makerSpk, giveOutpoint, desc, nExpireTime, lockHeight, witness, makerPub }) {
     const g = utxos.get(giveOutpoint);
     if (!g) throw new Error('монета не найдена/уже потрачена');
     if (g.spk !== makerSpk) throw new Error('монета не принадлежит этому ключу');
     if (!desc || desc.payoutScript == null || desc.changeScript == null) throw new Error('плохой дескриптор');
     if (!Array.isArray(witness) || witness.length < 2) throw new Error('нет подписи');
-    const o = { id: offerSeq++, ranged: true, makerSpk, giveOutpoint,
+    // optional push target: the maker's compressed pubkey ⇒ we can ping «переподпишите» after
+    // a partial fill (the remainder is otherwise silently untradeable while they are offline)
+    const pub = typeof makerPub === 'string' && /^0[23][0-9a-f]{64}$/.test(makerPub) ? makerPub : undefined;
+    const o = { id: offerSeq++, ranged: true, makerSpk, ...(pub ? { makerPub: pub } : {}), giveOutpoint,
       desc: { payoutAsset: desc.payoutAsset ?? '00'.repeat(20), payoutScript: desc.payoutScript,
         priceNum: String(desc.priceNum), priceDen: String(desc.priceDen), changeScript: desc.changeScript,
         minFill: String(desc.minFill), maxFill: String(desc.maxFill),
