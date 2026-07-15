@@ -2,18 +2,18 @@
 // my turn, both directions + partial children), and auto-refund a locked leg once its timelock passes
 // (FRC/asset via checkP2pRefunds, my BTC via checkBtcRefunds). Extracted verbatim from market-view;
 // reads the live session through `ctx`, and gets toast/mvRefresh injected (UI touchpoints) to avoid a cycle.
-import { ctx, api, p2pKey, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND } from './mv-ctx.mjs';
-import { loadP2p, putP2p, dropP2p, addSwapHist, addRefundedFund } from './mv-storage.mjs';
-import { hostFeeCoin, sendFrcToSpk, lockAssetToHtlc } from './mv-swap-lib.mjs';
-import { btcFundHtlc, btcAcctPub, btcHrp, refreshBtc } from './mv-btc-account.mjs';
+import { ctx, api, p2pKey, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND } from '@/state/market-ctx.mjs';
+import { loadP2p, putP2p, dropP2p, addSwapHist, addRefundedFund } from '@/services/storage.mjs';
+import { hostFeeCoin, sendFrcToSpk, lockAssetToHtlc } from '@/services/market/swap-lib.mjs';
+import { btcFundHtlc, btcAcctPub, btcHrp, refreshBtc } from '@/services/market/btc-account.mjs';
 import { htlcClaimAsset, htlcRefundAsset, htlcSpk, htlcCoopRefundHost, htlcCoopRefundAsset } from '@core/htlc.mjs';
 import { frcLeg, refundGiven, claimReceived } from '@core/swap.mjs';
 import { btcHtlcClaim, btcHtlcRefund, btcHtlcLeaf, btcHtlcAddress, btcHtlcSpk, btcHtlcCoopSig, btcHtlcCoopRefund, btcP2wpkhSpk } from '@core/btc.mjs';
-import { verifyFrcOutput, verifyBtcOutput } from './mv-verify.mjs';
+import { verifyFrcOutput, verifyBtcOutput } from '@/services/market/verify.mjs';
 import { assetPresentValue } from '@core/assets.mjs';
 import { pubkeyCompressed } from '@core/ecdsa.mjs';
 import { sha256 } from '@core/crypto.mjs';
-import { tr } from './i18n.mjs';
+import { tr } from '@/services/i18n.mjs';
 
 // BTC HTLC claim/refund fee: the tx's vsize is constant (~170 vB), so the fee tracks the LIVE
 // feerate the relay estimates — a claim that misses its timelock because it was under-priced is

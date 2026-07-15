@@ -2,10 +2,10 @@
 // the relay, and build TRADE rows (both legs) for the wallet's one activity list. Extracted verbatim
 // from market-view.mjs; reads the live session through `ctx`. doRefresh is injected (initActivity) to
 // avoid an import cycle with market-view's refresh orchestrator.
-import { ctx, api, p2pKey, scaleOf, assetName } from './mv-ctx.mjs';
+import { ctx, api, p2pKey, scaleOf, assetName } from '@/state/market-ctx.mjs';
 import { loadBtcNonces, addBtcNonce, loadP2p, putP2p, addSwapHist, loadSwapHist, pruneSwapHist,
-  addFundTxid, loadFundTxids, loadRefundedFunds } from './mv-storage.mjs';
-import { btcAcctAddr, btcKeyring, btcHrp } from './mv-btc-account.mjs';
+  addFundTxid, loadFundTxids, loadRefundedFunds } from '@/services/storage.mjs';
+import { btcAcctAddr, btcKeyring, btcHrp } from '@/services/market/btc-account.mjs';
 import { claimReceived } from '@core/swap.mjs';
 import { btcP2wpkhAddress } from '@core/btc.mjs';
 import { pubkeyCompressed } from '@core/ecdsa.mjs';

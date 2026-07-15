@@ -3,8 +3,8 @@
 // secrets — just swap id + status; acting still requires the password-unlocked seed in the tab.
 // Notifications are a UX accelerant, not a safety mechanism: an unreachable party is protected
 // by the HTLC timeouts regardless.
-import { api, ctx, p2pKey } from './mv-ctx.mjs';
-import { loadP2p } from './mv-storage.mjs';
+import { api, ctx, p2pKey } from '@/state/market-ctx.mjs';
+import { loadP2p } from '@/services/storage.mjs';
 import { pubkeyCompressed } from '@core/ecdsa.mjs';
 
 const LS = 'fw_push_on';   // browser-global toggle; the subscription registers per-network relay

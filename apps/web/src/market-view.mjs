@@ -3,7 +3,7 @@
 // from the wallet's unlocked session via mvSetSeed), chain reads come from the wallet's own
 // light client (ds().assets()), and the relay (:5181, proxied at /api) provides only the order
 // book, issuance funding and broadcast — it can mislabel but never steal.
-import { deriveAddress, currentNet } from './wallet.mjs';
+import { deriveAddress, currentNet } from '@/services/wallet.mjs';
 import { derivePath, ckdPriv, wpkProgramHex } from '@core/hd.mjs';
 import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
 import { segwitV0Sighash, rangedSighash, SIGHASH_ALL, SIGHASH_BUNDLE } from '@core/sighash.mjs';
@@ -13,15 +13,15 @@ import { sha256, hash160 } from '@core/crypto.mjs';
 import { frcLeg, refundGiven } from '@core/swap.mjs';
 import { paymentHashOf } from '@core/htlc.mjs';
 import { btcHtlcClaim, btcAddress } from '@core/btc.mjs';
-import { tr, getLang } from './i18n.mjs';
-import { loadMySwaps, putMySwap, dropMySwap, loadP2p, putP2p, dropP2p, addBtcNonce, addFeeTxid, lsKey } from './mv-storage.mjs';
-import { refreshPushSubs } from './mv-push.mjs';
-import { api, ctx, p2pKey, HOST_TAG, decimalsOf, scaleOf, assetName, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND } from './mv-ctx.mjs';
-import { opIn, signInput, committedOutpoints, myCoinsOf, freeFrcKria, sendFrcToSpk, hostFeeCoin, lockAssetToHtlc } from './mv-swap-lib.mjs';
+import { tr, getLang } from '@/services/i18n.mjs';
+import { loadMySwaps, putMySwap, dropMySwap, loadP2p, putP2p, dropP2p, addBtcNonce, addFeeTxid, lsKey } from '@/services/storage.mjs';
+import { refreshPushSubs } from '@/services/push.mjs';
+import { api, ctx, p2pKey, HOST_TAG, decimalsOf, scaleOf, assetName, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND } from '@/state/market-ctx.mjs';
+import { opIn, signInput, committedOutpoints, myCoinsOf, freeFrcKria, sendFrcToSpk, hostFeeCoin, lockAssetToHtlc } from '@/services/market/swap-lib.mjs';
 import { btcHrp, btcAcctAddr, btcFundHtlc, btcToStr, refreshBtc,
-  mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, initBtcAccount, btcResetAcct } from './mv-btc-account.mjs';
-import { recoverBtcNonces, mvBtcHistory, initActivity, resetRecovery } from './mv-activity.mjs';
-import { driveP2p, checkP2pRefunds, checkBtcRefunds, initDrive } from './mv-swap-drive.mjs';
+  mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, initBtcAccount, btcResetAcct } from '@/services/market/btc-account.mjs';
+import { recoverBtcNonces, mvBtcHistory, initActivity, resetRecovery } from '@/services/market/activity.mjs';
+import { driveP2p, checkP2pRefunds, checkBtcRefunds, initDrive } from '@/services/market/swap-drive.mjs';
 export { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc };   // BTC account lives in its own module; re-exported so the wallet imports stay stable
 export { mvBtcHistory };                                      // activity/recovery in mv-activity.mjs; re-exported for the wallet
 

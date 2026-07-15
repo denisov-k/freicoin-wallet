@@ -3,8 +3,8 @@
 // modules (btc account, activity, swap drive) read from `ctx` instead of closing over market-view's
 // private state. Keeping this tiny and dependency-light avoids import cycles.
 import { sha256 } from '@core/crypto.mjs';
-import { NETWORKS } from './netparams.mjs';
-import { currentNet } from './wallet.mjs';
+import { NETWORKS } from '@/state/network-params.mjs';
+import { currentNet } from '@/services/wallet.mjs';
 
 // relay base: same-origin /api* under TLS, else the dev relay port. Each network gets its OWN
 // relay instance (separate chains, order book and swap state): nv3 → /api (:5181, demo),

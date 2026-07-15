@@ -2,15 +2,15 @@ import { Buffer } from 'buffer';
 globalThis.Buffer = Buffer;
 
 import QRCode from 'qrcode';
-import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress, walletScripts, configureNetwork, addrToSpk } from './wallet.mjs';
-import { encryptSecret, decryptSecret } from './vault.mjs';
-import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS, CHECKPOINT } from './netparams.mjs';
-import { tr, getLang, setLang, LANGS } from './i18n.mjs';
+import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress, walletScripts, configureNetwork, addrToSpk } from '@/services/wallet.mjs';
+import { encryptSecret, decryptSecret } from '@/services/vault.mjs';
+import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS, CHECKPOINT } from '@/state/network-params.mjs';
+import { tr, getLang, setLang, LANGS } from '@/services/i18n.mjs';
 // Freimarkets (Issue + Exchange) — mounted as extra tabs only on the nv3 network.
 import { initMarketView, mvSetSeed, mvRefresh, mvResetNet, openIssueModal, renderExchange, renderAssetBalance, mvOwnedAssets, mvSendAsset, mvRelayAssets, mvBtc, mvBtcAddress, mvSendBtc, mvBtcValidAddr, mvBtcHistory } from './market-view.mjs';
-import { loadFeeTxids, lsKey } from './mv-storage.mjs';
-import { enablePush, disablePush, pushSupported, pushEnabled } from './mv-push.mjs';
-import { btcExportKeys, btcToStr } from './mv-btc-account.mjs';
+import { loadFeeTxids, lsKey } from '@/services/storage.mjs';
+import { enablePush, disablePush, pushSupported, pushEnabled } from '@/services/push.mjs';
+import { btcExportKeys, btcToStr } from '@/services/market/btc-account.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
@@ -96,7 +96,7 @@ function ds() {
   const net = curNet();
   configureNetwork(net);
   if (!lightSrc) {
-    worker = new Worker(new URL('./worker.mjs', import.meta.url), { type: 'module' });
+    worker = new Worker(new URL('./services/light/worker.mjs', import.meta.url), { type: 'module' });
     worker.onmessage = e => {
       const m = e.data;
       if (m.type === 'progress') {

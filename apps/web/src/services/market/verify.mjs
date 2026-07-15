@@ -5,7 +5,7 @@
 // What this closes: a relay that under-reports value (we'd claim less than owed / reveal R cheaply)
 // or mislabels an asset tag. What it can't: prove the tx is buried — BTC_MINCONF / the light client
 // handle depth. A mismatch throws; the caller must NOT proceed.
-import { api } from './mv-ctx.mjs';
+import { api } from '@/state/market-ctx.mjs';
 import { parseTx, txid as frcTxid } from '@core/tx.mjs';
 import { sha256d } from '@core/crypto.mjs';
 

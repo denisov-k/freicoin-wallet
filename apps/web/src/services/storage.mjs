@@ -1,7 +1,7 @@
 // mv-storage.mjs — the wallet's local persistence layer for the exchange/swap features.
 // PURE localStorage: no seed, no live `state` — just typed JSON buckets. Extracted from
 // market-view.mjs verbatim (behaviour-preserving) so the swap/BTC/activity logic can be split next.
-import { currentNet } from './wallet.mjs';
+import { currentNet } from '@/services/wallet.mjs';
 
 // FRC-side records are PER-NETWORK: nv3 and testnet run separate chains + relays, and a record
 // from one is a ghost on the other (switching networks used to wipe/mix them). nv3 keeps the

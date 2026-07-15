@@ -7,7 +7,7 @@ import { segwitV0Sighash, SIGHASH_ALL } from '@core/sighash.mjs';
 import { selectCoins } from '@core/coinselect.mjs';
 import { serializeTx } from '@core/tx.mjs';
 import { encodeWitness, decodeWitness } from '@core/address.mjs';
-import { NETWORKS, DEFAULT_NET } from './netparams.mjs';
+import { NETWORKS, DEFAULT_NET } from '@/state/network-params.mjs';
 
 // The wallet targets one network at a time. NET / ACCOUNT (BIP84 m/84'/coinType'/0')
 // follow the selected network; configureNetwork() switches them.
