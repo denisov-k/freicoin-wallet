@@ -1,0 +1,51 @@
+diff --git a/contrib/signet/miner b/contrib/signet/miner
+index ffd9f3b150..01da9b9661 100755
+--- a/contrib/signet/miner
++++ b/contrib/signet/miner
+@@ -30,7 +30,7 @@ PATH_BASE_TEST_FUNCTIONAL = os.path.abspath(os.path.join(PATH_BASE_CONTRIB_SIGNE
+ sys.path.insert(0, PATH_BASE_TEST_FUNCTIONAL)
+ 
+ from test_framework.blocktools import get_witness_script, script_BIP34_coinbase_height # noqa: E402
+-from test_framework.messages import CBlock, CBlockHeader, COutPoint, CTransaction, CTxIn, CTxInWitness, CTxOut, from_binary, from_hex, ser_string, ser_uint256, tx_from_hex # noqa: E402
++from test_framework.messages import CBlock, CBlockHeader, COutPoint, CTransaction, CTxIn, CTxInWitness, CTxOut, MAX_SEQUENCE_NONFINAL, from_binary, from_hex, ser_string, ser_uint256, tx_from_hex # noqa: E402
+ from test_framework.pst import PST, PSTMap, PST_GLOBAL_UNSIGNED_TX, PST_IN_FINAL_SCRIPTSIG, PST_IN_FINAL_SCRIPTWITNESS, PST_IN_NON_WITNESS_UTXO, PST_IN_SIGHASH_TYPE # noqa: E402
+ from test_framework.script import CScript, CScriptOp # noqa: E402
+ 
+@@ -113,6 +113,7 @@ def generate_pst(tmpl, reward_spk, *, blocktime=None, poolid=None):
+ 
+     cbtx = CTransaction()
+     cbtx.nLockTime = tmpl["height"] - 1
++    cbtx.lock_height = tmpl["height"]   # consensus: coinbase lock_height == block height (bad-cb-lock-height)
+     cbtx.vin = [CTxIn(COutPoint(0, 0xffffffff), scriptSig, MAX_SEQUENCE_NONFINAL)]
+     cbtx.vout = [CTxOut(tmpl["coinbasevalue"], reward_spk)]
+     cbtx.vin[0].nSequence = 2**32-2
+@@ -130,12 +131,16 @@ def generate_pst(tmpl, reward_spk, *, blocktime=None, poolid=None):
+     witnonce = 0
+     witroot = block.calc_witness_merkle_root()
+     cbwit = CTxInWitness()
+-    cbwit.scriptWitness.stack = [ser_uint256(witnonce)]
++    # freicoin: the coinbase witness stack item is the fast-merkle BRANCH for the commitment
++    # (32 bytes × depth). With nonce=0 the path is 0x01 (depth 0) — the branch is EMPTY.
++    cbwit.scriptWitness.stack = [b""]
+     block.vtx[0].wit.vtxinwit = [cbwit]
+     block.vtx[0].vout.append(CTxOut(0, bytes(get_witness_script(witroot, witnonce))))
+ 
+     block.hashMerkleRoot = block.calc_merkle_root()
+ 
++    signme, spendme = signet_txs(block, signet_spk_bin)
++
+     pst = PST()
+     pst.g = PSTMap( {PST_GLOBAL_UNSIGNED_TX: signme.serialize(),
+                        PST_SIGNET_BLOCK: block.serialize()
+@@ -349,6 +354,11 @@ class Generate:
+ 
+     def mine(self, bcli, grind_cmd, tmpl, reward_spk):
+         pst = generate_pst(tmpl, reward_spk, blocktime=self.mine_time, poolid=self.poolid)
++        if trivial_challenge(tmpl["signet_challenge"]):
++            # BIP325 (and freicoin's signet.cpp) allow omitting the signet commitment entirely
++            # when the challenge needs no signature data (e.g. OP_TRUE) — skip wallet signing.
++            block, _ = decode_pst(pst)
++            return finish_block(block, None, grind_cmd)
+         input_stream = os.linesep.join([pst, "true", "ALL"]).encode('utf8')
+         pst_signed = json.loads(bcli("-stdin", "walletprocesspst", input=input_stream))
+         if not pst_signed.get("complete",False):
