@@ -11,7 +11,7 @@ const tests = readdirSync(dir).filter(f => f.endsWith('.test.mjs') || f.endsWith
 let failed = 0;
 for (const f of tests) {
   console.log(`\n=== ${f} ===`);
-  const r = spawnSync(process.execPath, ['--max-old-space-size=3200', join(dir, f)], { stdio: 'inherit', timeout: 600000 });
+  const r = spawnSync(process.execPath, ['--max-old-space-size=3200', '--import', join(dir, 'register-aliases.mjs'), join(dir, f)], { stdio: 'inherit', timeout: 600000 });
   if (r.status !== 0) { failed++; console.log(`*** ${f} FAILED (exit ${r.status})`); }
 }
 console.log(`\n${tests.length - failed}/${tests.length} test files passed`);

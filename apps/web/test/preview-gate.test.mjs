@@ -2,7 +2,7 @@
 // fresh wallet (scannedOnce gate — a headers-only checkpoint must not masquerade as 0).
 import 'fake-indexeddb/auto';
 import { ENV, SEED, check, finish, makeWorkerClient } from './helpers.mjs';
-import { walletScripts, configureNetwork } from '../src/wallet.mjs';
+import { walletScripts, configureNetwork } from '../src/services/wallet.mjs';
 configureNetwork('regtest');
 const scripts = walletScripts(SEED);
 const a = await makeWorkerClient();

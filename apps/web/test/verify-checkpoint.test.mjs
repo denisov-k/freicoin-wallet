@@ -3,8 +3,8 @@
 // Mainnet-gated (needs the aux-pow era + snapshots).
 import 'fake-indexeddb/auto';
 import { ENV, check, finish, mainnetAvailable, makeWorkerClient } from './helpers.mjs';
-import { Neutrino } from '../src/net/client.mjs';
-import { IdbStore } from '../src/store-idb.mjs';
+import { Neutrino } from '../src/services/light/net/client.mjs';
+import { IdbStore } from '../src/services/light/store-idb.mjs';
 if (!mainnetAvailable()) { console.log('SKIP: mainnet infra unreachable'); process.exit(0); }
 
 const spk = '0014' + 'ab'.repeat(20);

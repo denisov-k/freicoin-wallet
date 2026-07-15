@@ -6,9 +6,9 @@
 //        4a coherent liar (also fakes its cfheader) -> caught by cross-peer disagreement
 //        4b incoherent liar (honest cfheader, dishonest filter) -> caught by consistency check
 import { execFileSync } from 'node:child_process';
-import { Neutrino, NeutrinoPool } from '../src/net/client.mjs';
-import { walletScripts, deriveAddress } from '../src/wallet.mjs';
-import { configureNetwork } from '../src/wallet.mjs';
+import { Neutrino, NeutrinoPool } from '../src/services/light/net/client.mjs';
+import { walletScripts, deriveAddress } from '../src/services/wallet.mjs';
+import { configureNetwork } from '../src/services/wallet.mjs';
 configureNetwork('regtest');   // the app default is mainnet now
 
 const URL = 'ws://127.0.0.1:3040', NET = 'regtest';

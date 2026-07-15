@@ -3,7 +3,7 @@
 // melts (demurrage is the whole dispute-resolution mechanism — no third party exists).
 import { randomBytes } from 'node:crypto';
 import { cliR, check, finish } from './helpers.mjs';
-import { configureNetwork } from '../src/wallet.mjs';
+import { configureNetwork } from '../src/services/wallet.mjs';
 import { pubkeyCompressed } from '../../../core/ecdsa.mjs';
 import { escrowLeaf, escrowAddress, escrowSpk, escrowRelease } from '../../../core/escrow.mjs';
 import { timeAdjustValue } from '../../../core/demurrage.mjs';

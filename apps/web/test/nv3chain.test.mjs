@@ -4,6 +4,7 @@
 import { check, finish } from './helpers.mjs';
 import { FRC, assetIdOf, assetPresentValue } from '../../../core/assets.mjs';
 import { Nv3State, approvalDigest } from '../../../core/nv3chain.mjs';
+import { tokenSetHash } from '../../../core/asset-spk.mjs';
 import { pubkeyCompressed, signEcdsa } from '../../../core/ecdsa.mjs';
 
 const st = new Nv3State();
@@ -81,21 +82,33 @@ const fT = st4.seed('cbT', 0, { assetId: FRC, value: 10000000n, refheight: 1000,
 const collectible = { k: 20, interest: false, granularity: 1 };
 const idC = assetIdOf(collectible);
 // issuance mints token 'deadbeef' of the new asset (value 0 — a pure token) + FRC change
+// TWO-SIDED REVEAL shape: an output carries tokens + their commitment; the chainstate keeps
+// ONLY the commitment; a spend of a committed coin reveals its set (inputReveals), checked
+// against the stored hash. Mirrors CTxOut::tokenCommit + ParseTokenReveal in the node.
+const tk = (...ts) => ({ tokens: ts, tokenCommit: tokenSetHash(ts) });
 const issT = st4.apply({ txid: 'mintok', lockHeight: 1000, def: collectible, inputs: [fT],
-  outputs: [{ assetId: idC, value: 0n, scriptPubKey: spk('a1'), tokens: ['deadbeef'] }, { assetId: FRC, value: 9998000n, scriptPubKey: spk('11') }] });
-check('token minted at issuance', issT.ok && st4.utxos.get('mintok:0').tokens[0] === 'deadbeef');
-// transfer the token to a new output — must be conserved (present in an input)
-const xferT = st4.apply({ txid: 'movtok', lockHeight: 1001, inputs: ['mintok:0'],
-  outputs: [{ assetId: idC, value: 0n, scriptPubKey: spk('a2'), tokens: ['deadbeef'] }] });
-check('token transferred (conserved from an input)', xferT.ok && st4.utxos.get('movtok:0').tokens[0] === 'deadbeef');
+  outputs: [{ assetId: idC, value: 0n, scriptPubKey: spk('a1'), ...tk('deadbeef') }, { assetId: FRC, value: 9998000n, scriptPubKey: spk('11') }] });
+check('token minted at issuance (coin stores the commitment ONLY)',
+  issT.ok && st4.utxos.get('mintok:0').tokenCommit === tokenSetHash(['deadbeef']) && st4.utxos.get('mintok:0').tokens === undefined);
+// transfer the token — spend reveals the input set, output re-commits it
+const xferT = st4.apply({ txid: 'movtok', lockHeight: 1001, inputs: ['mintok:0'], inputReveals: [['deadbeef']],
+  outputs: [{ assetId: idC, value: 0n, scriptPubKey: spk('a2'), ...tk('deadbeef') }] });
+check('token transferred under a two-sided reveal', xferT.ok && st4.utxos.get('movtok:0').tokenCommit === tokenSetHash(['deadbeef']));
 // creating a token from nothing is rejected
-const forge = st4.check({ txid: 'forge', lockHeight: 1002, inputs: ['movtok:0'],
-  outputs: [{ assetId: idC, value: 0n, scriptPubKey: spk('a3'), tokens: ['cafe1234'] }] });
+const forge = st4.check({ txid: 'forge', lockHeight: 1002, inputs: ['movtok:0'], inputReveals: [['deadbeef']],
+  outputs: [{ assetId: idC, value: 0n, scriptPubKey: spk('a3'), ...tk('cafe1234') }] });
 check('cannot create a token from nothing', !forge.ok);
 // duplicating a token across two outputs is rejected
-const dup = st4.check({ txid: 'dup', lockHeight: 1002, inputs: ['movtok:0'],
-  outputs: [{ assetId: idC, value: 0n, scriptPubKey: spk('a4'), tokens: ['deadbeef'] }, { assetId: idC, value: 0n, scriptPubKey: spk('a5'), tokens: ['deadbeef'] }] });
+const dup = st4.check({ txid: 'dup', lockHeight: 1002, inputs: ['movtok:0'], inputReveals: [['deadbeef']],
+  outputs: [{ assetId: idC, value: 0n, scriptPubKey: spk('a4'), ...tk('deadbeef') }, { assetId: idC, value: 0n, scriptPubKey: spk('a5'), ...tk('deadbeef') }] });
 check('cannot output the same token twice (uniqueness)', !dup.ok);
+// the two-sided negatives: a committed input without a reveal, and a reveal that mismatches
+const noReveal = st4.check({ txid: 'nr', lockHeight: 1002, inputs: ['movtok:0'],
+  outputs: [{ assetId: idC, value: 0n, scriptPubKey: spk('a6'), ...tk('deadbeef') }] });
+check('committed input without a reveal rejected', !noReveal.ok);
+const badReveal = st4.check({ txid: 'br', lockHeight: 1002, inputs: ['movtok:0'], inputReveals: [['beefdead']],
+  outputs: [{ assetId: idC, value: 0n, scriptPubKey: spk('a7'), ...tk('beefdead') }] });
+check('mismatching input reveal rejected', !badReveal.ok);
 
 // 10. nExpireTime: a tx is rejected once the chain passes its expiry height
 const st5 = new Nv3State();

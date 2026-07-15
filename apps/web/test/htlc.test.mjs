@@ -4,7 +4,7 @@
 // own JS (not the python prototype).
 import { randomBytes } from 'node:crypto';
 import { cliR, check, finish } from './helpers.mjs';
-import { configureNetwork } from '../src/wallet.mjs';
+import { configureNetwork } from '../src/services/wallet.mjs';
 import { pubkeyCompressed } from '../../../core/ecdsa.mjs';
 import { htlcLeaf, htlcAddress, htlcSpk, htlcClaim, htlcRefund, paymentHashOf } from '../../../core/htlc.mjs';
 

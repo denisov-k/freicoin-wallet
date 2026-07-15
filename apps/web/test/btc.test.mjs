@@ -11,15 +11,19 @@ const claim = '02' + 'aa'.repeat(32), refund = '02' + 'bb'.repeat(32);
 const leaf = btcHtlcLeaf({ paymentHash: H, claimPub: claim, refundPub: refund, cltv: 130 });
 
 // Bitcoin dialect: CLTV keeps its arg → OP_DROP present (75); P2WSH program = single SHA256.
-check('btc HTLC leaf byte layout',
-  leaf === '63a820' + H + '88' + '21' + claim + '67' + '028200' + 'b1' + '75' + '21' + refund + '68ac');
+// 3-branch leaf (p2p v2): IF claim ELSE [IF cltv-timeout ELSE 2-of-2 cooperative-cancel ENDIF] ENDIF
+check('btc HTLC leaf byte layout (3-branch: claim / timeout / coop-cancel)',
+  leaf === '63' + 'a8' + '20' + H + '88' + '21' + claim + 'ac'
+        + '67' + '63' + '028200' + 'b1' + '75' + '21' + refund + 'ac'
+        + '67' + '21' + claim + 'ad' + '21' + refund + 'ac' + '68' + '68');
 check('btc leaf has OP_DROP after CLTV (Bitcoin, not Freicoin)', leaf.includes('b175'));
 check('btc P2WSH spk = single SHA256 of the leaf',
-  btcHtlcSpk(leaf) === '00201012c3a3cecc7ce88daef39c97a46d67d2e8ae4e8b0990e2509794cd62d1d859');
+  btcHtlcSpk(leaf) === '002029df74675114375be1aea3f6ab309ca5743754250cb9836abbd01cccbef8a908');
 
-// classic bech32 (checksum const 1), NOT bech32m — validated by bitcoin-core validateaddress
+// classic bech32 (checksum const 1), NOT bech32m — the 3-branch leaf's address is live-proven
+// by the signet swaps; this pins the encoding against regressions
 check('btc HTLC address (classic bech32, bcrt)',
-  btcHtlcAddress(leaf, 'bcrt') === 'bcrt1qzqfv8g7we37w3rdw7wwf0frdvlfw3tjw3vyepcjsj72v6ck3mpvsyqfz4z');
+  btcHtlcAddress(leaf, 'bcrt') === 'bcrt1q980hge63zsm4hcdw50m2kvyu546rw4p9pjucx64m6qwve0hc4yyqkw4lql');
 check('btc p2wpkh address (all-zero program)',
   btcAddress('00'.repeat(20), 'bcrt') === 'bcrt1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdku202');
 

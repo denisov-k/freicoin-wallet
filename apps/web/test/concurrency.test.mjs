@@ -2,7 +2,7 @@
 // interleave two syncWallet runs and deadlock both.
 import 'fake-indexeddb/auto';
 import { ENV, SEED, check, finish, makeWorkerClient } from './helpers.mjs';
-import { walletScripts, configureNetwork } from '../src/wallet.mjs';
+import { walletScripts, configureNetwork } from '../src/services/wallet.mjs';
 configureNetwork('regtest');
 const c = await makeWorkerClient();
 await c.call('init', { url: ENV.REG_BRIDGE, net: 'regtest', genesis: ENV.REG_GENESIS, scripts: walletScripts(SEED) });

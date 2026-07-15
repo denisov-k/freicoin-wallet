@@ -2,8 +2,8 @@
 // only (chain.base > 0), reaches the tip, and persists/resumes with the base intact.
 import 'fake-indexeddb/auto';
 import { ENV, check, finish, cliR } from './helpers.mjs';
-import { createLightSource } from '../src/light.mjs';
-import { configureNetwork } from '../src/wallet.mjs';
+import { createLightSource } from '../src/services/light/light.mjs';
+import { configureNetwork } from '../src/services/wallet.mjs';
 configureNetwork('regtest');
 const tip = Number(cliR('getblockcount'));
 const cpH = Math.max(1, tip - 50);

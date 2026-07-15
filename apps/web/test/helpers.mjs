@@ -33,7 +33,7 @@ export function ensureMature(foreignAddr) {
 
 /** Worker-protocol harness over the exported handle() — a fake main thread. */
 export async function makeWorkerClient() {
-  const { handle } = await import('../src/worker.mjs');
+  const { handle } = await import('../src/services/light/worker.mjs');
   const waits = new Map(); let seq = 0;
   const c = { events: [], partials: [] };
   const post = m => {

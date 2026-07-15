@@ -5,10 +5,10 @@
 //   4. reorg: persisted headers truncate; reloaded state matches a fresh full sync
 import 'fake-indexeddb/auto';
 import { execFileSync } from 'node:child_process';
-import { Neutrino } from '../src/net/client.mjs';
-import { IdbStore } from '../src/store-idb.mjs';
-import { walletScripts, deriveAddress } from '../src/wallet.mjs';
-import { configureNetwork } from '../src/wallet.mjs';
+import { Neutrino } from '../src/services/light/net/client.mjs';
+import { IdbStore } from '../src/services/light/store-idb.mjs';
+import { walletScripts, deriveAddress } from '../src/services/wallet.mjs';
+import { configureNetwork } from '../src/services/wallet.mjs';
 configureNetwork('regtest');   // the app default is mainnet now
 
 const URL = 'ws://127.0.0.1:3040', NET = 'regtest';

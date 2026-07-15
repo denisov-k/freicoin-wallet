@@ -3,7 +3,7 @@
 // funding). Proves swapKey (seed-recoverable) + role-based frcLeg + claim/refund.
 import { randomBytes } from 'node:crypto';
 import { cliR, check, finish, SEED } from './helpers.mjs';
-import { configureNetwork } from '../src/wallet.mjs';
+import { configureNetwork } from '../src/services/wallet.mjs';
 import { pubkeyCompressed } from '../../../core/ecdsa.mjs';
 import { paymentHashOf } from '../../../core/htlc.mjs';
 import { swapKey, frcLeg, claimReceived, refundGiven } from '../../../core/swap.mjs';

@@ -3,9 +3,9 @@
 import 'fake-indexeddb/auto';
 import http from 'node:http';
 import { ENV, SEED, check, finish } from './helpers.mjs';
-import { Neutrino } from '../src/net/client.mjs';
-import { encodeMessage } from '../src/net/p2p.mjs';
-import { walletScripts, configureNetwork } from '../src/wallet.mjs';
+import { Neutrino } from '../src/services/light/net/client.mjs';
+import { encodeMessage } from '../src/services/light/net/p2p.mjs';
+import { walletScripts, configureNetwork } from '../src/services/wallet.mjs';
 configureNetwork('regtest');
 const scripts = walletScripts(SEED);
 // build a regtest headers snapshot in-process

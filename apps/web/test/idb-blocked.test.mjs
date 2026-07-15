@@ -2,9 +2,9 @@
 // open() times out / handles onblocked and the sync proceeds without persistence.
 import 'fake-indexeddb/auto';
 import { ENV, SEED, check, finish } from './helpers.mjs';
-import { IdbStore } from '../src/store-idb.mjs';
-import { createLightSource } from '../src/light.mjs';
-import { walletScripts, configureNetwork } from '../src/wallet.mjs';
+import { IdbStore } from '../src/services/light/store-idb.mjs';
+import { createLightSource } from '../src/services/light/light.mjs';
+import { walletScripts, configureNetwork } from '../src/services/wallet.mjs';
 configureNetwork('regtest');
 await new Promise((res, rej) => {   // zombie at v1, never closed, no onversionchange
   const r = indexedDB.open(`fw-light-regtest-${ENV.REG_GENESIS.slice(0, 12)}`, 1);
