@@ -10,7 +10,7 @@
 // It can steal nothing: every asset movement carries a user signature the chain verifies.
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { serializeTx, parseTx, txid as computeTxid, NV3_TX_VERSION } from '../../core/tx.mjs';
 import { loadOrCreateVapid, sendPush } from './webpush.mjs';
@@ -600,7 +600,7 @@ const VAPID = loadOrCreateVapid(`${DATADIR}/vapid.json`);
 const PUSH_FILE = `${DATADIR}/push-subs.json`;
 const pushSubs = new Map();   // frcPub (hex33) → { sub, at }
 try { for (const [k, v] of Object.entries(JSON.parse(readFileSync(PUSH_FILE, 'utf8')))) pushSubs.set(k, v); } catch { /* first run */ }
-const savePush = () => { try { writeFileSync(PUSH_FILE, JSON.stringify(Object.fromEntries(pushSubs))); } catch {} };
+const savePush = () => { try { atomicWrite(PUSH_FILE, JSON.stringify(Object.fromEntries(pushSubs))); } catch {} };
 const PUSH_TTL_MS = 7 * 24 * 3600e3;   // a wallet that hasn't refreshed in a week is gone
 function notifyPub(pub, payload) {
   const rec = pub && pushSubs.get(pub);
@@ -617,12 +617,21 @@ const p2p = [];
 const p2pArchive = [];   // COMPLETED swaps, pruned off the live board but kept (cap 100) so clients
                          // can reconstruct their trade history even if their record was lost
 let p2pSeq = 1;
+// ATOMIC write: fill a temp file, then rename over the target (atomic on the same filesystem). A
+// crash / kill / full disk mid-write can no longer leave a truncated JSON that loses the WHOLE
+// catalogue on the next load — the target is always a complete previous-or-new version.
+function atomicWrite(file, data) {
+  const tmp = `${file}.tmp`;
+  writeFileSync(tmp, data);
+  renameSync(tmp, file);
+}
+
 const P2P_FILE = `${DATADIR}/market-p2p.json`;
 let p2pSaveTimer = null;
 function saveP2p() {
   if (p2pSaveTimer) return;
   p2pSaveTimer = setTimeout(() => { p2pSaveTimer = null;
-    try { writeFileSync(P2P_FILE, JSON.stringify({ p2pSeq, p2p, archive: p2pArchive.slice(-100) })); } catch {} }, 250);
+    try { atomicWrite(P2P_FILE, JSON.stringify({ p2pSeq, p2p, archive: p2pArchive.slice(-100) })); } catch {} }, 250);
 }
 function loadP2p() {
   try { const j = JSON.parse(readFileSync(P2P_FILE, 'utf8'));
@@ -635,7 +644,7 @@ let swapSaveTimer = null;
 function saveSwaps() {
   if (swapSaveTimer) return;
   swapSaveTimer = setTimeout(() => { swapSaveTimer = null;
-    try { writeFileSync(SWAP_FILE, JSON.stringify({ swapSeq, swaps })); } catch {} }, 250);
+    try { atomicWrite(SWAP_FILE, JSON.stringify({ swapSeq, swaps })); } catch {} }, 250);
 }
 function loadSwaps() {
   try { const j = JSON.parse(readFileSync(SWAP_FILE, 'utf8')); if (Array.isArray(j.swaps)) { swaps.push(...j.swaps); swapSeq = Number(j.swapSeq) || swaps.length + 1; } } catch {}
@@ -653,7 +662,7 @@ function saveBook() {                        // debounced — mutations arrive i
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
-    try { writeFileSync(BOOK_FILE, JSON.stringify({ offerSeq, book })); } catch (e) { say('книга не сохранилась: ' + String(e.message).slice(0, 60)); }
+    try { atomicWrite(BOOK_FILE, JSON.stringify({ offerSeq, book })); } catch (e) { say('книга не сохранилась: ' + String(e.message).slice(0, 60)); }
   }, 250);
 }
 function loadBook() {
@@ -1472,6 +1481,23 @@ const api = {
 // is where a spammer could flood the board or burn node RPC. Behind nginx the real IP is in XFF.
 const RL_READ = Number(process.env.RL_READ ?? 240);    // requests/min/IP
 const RL_WRITE = Number(process.env.RL_WRITE ?? 20);   // mutating calls/min/IP
+const MAX_BODY = Number(process.env.MAX_BODY ?? (4 << 20));   // 4 MiB request-body cap
+// Safety net: a stray rejection is logged and ignored (it can't corrupt in-memory state); a truly
+// uncaught exception leaves the process in an undefined state, so log it and exit cleanly — systemd
+// restarts and bootstrap() reloads the persisted book/swaps. A single bad request must never do this.
+process.on('unhandledRejection', e => console.error('[relay] unhandledRejection:', e?.message ?? e));
+process.on('uncaughtException', e => { console.error('[relay] uncaughtException:', e?.stack ?? e); process.exit(1); });
+// Clean restart (systemd sends SIGTERM): flush the debounced snapshots NOW so the last <250 ms of
+// mutations aren't lost between the timer and exit. Writes are atomic, so this is always safe.
+function flushPersist() {
+  for (const t of [saveTimer, swapSaveTimer, p2pSaveTimer]) if (t) clearTimeout(t);
+  saveTimer = swapSaveTimer = p2pSaveTimer = null;
+  try { atomicWrite(BOOK_FILE, JSON.stringify({ offerSeq, book })); } catch {}
+  try { atomicWrite(SWAP_FILE, JSON.stringify({ swapSeq, swaps })); } catch {}
+  try { atomicWrite(P2P_FILE, JSON.stringify({ p2pSeq, p2p, archive: p2pArchive.slice(-100) })); } catch {}
+  try { savePush(); } catch {}
+}
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { flushPersist(); process.exit(0); });
 const WRITE_CALLS = new Set(['p2pPost', 'p2pPostB', 'p2pTake', 'p2pTakeB', 'p2pUntake', 'p2pCancel',
   'p2pFrcFunded', 'p2pFrcFundedB', 'p2pBtcFunded', 'p2pBtcFundedB', 'p2pBtcClaim', 'p2pBtcClaimB',
   'p2pFrcClaimB', 'p2pDone', 'p2pDoneB', 'p2pCoopSign', 'tx', 'btcBroadcast', 'issue', 'faucet',
@@ -1500,7 +1526,15 @@ const server = createServer(async (req, res) => {
       res.writeHead(429, cors); return res.end('{"error":"слишком много запросов — попробуйте через минуту"}');
     }
     let body = {};
-    if (req.method === 'POST') body = await new Promise(ok => { let d = ''; req.on('data', c => d += c); req.on('end', () => ok(d ? JSON.parse(d) : {})); });
+    if (req.method === 'POST') body = await new Promise((ok, bad) => {
+      // JSON.parse used to run inside this 'end' callback UNGUARDED — a malformed body threw into the
+      // event loop (outside the handler's try), crashing the whole relay. Guard it (→ 400) and cap the
+      // body so a huge/never-ending upload can't exhaust memory.
+      let d = '', n = 0;
+      req.on('data', c => { n += c.length; if (n > MAX_BODY) { bad(new Error('body too large')); req.destroy(); } else d += c; });
+      req.on('end', () => { try { ok(d ? JSON.parse(d) : {}); } catch { bad(new Error('malformed JSON body')); } });
+      req.on('error', () => bad(new Error('request stream error')));
+    });
     const out = await api[m[1]](body);
     res.writeHead(200, cors);
     res.end(JSON.stringify(out, (k, v) => typeof v === 'bigint' ? String(v) : v));
