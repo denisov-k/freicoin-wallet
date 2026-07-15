@@ -102,6 +102,7 @@ const RU = {
   'stale lock parked for refund — re-locking': 'старый лок уйдёт в возврат по таймауту — запираем заново',
   'fee': 'Сетевая комиссия',
   'sat network fee per fill': 'сат сетевой комиссии с каждого выкупа', 'after the network fee': 'после сетевой комиссии',
+  'minimum raised to': 'минимум поднят до', '(network-fee floor)': '(пол по комиссии сети)', 'the whole offer is below the network-fee floor — increase the amount or price': 'весь оффер ниже пола по комиссии сети — увеличьте объём или цену',
   'btc_funded_rev': 'BTC заперт', 'frc_funded_rev': 'FRC заперт', 'frc_claimed_rev': 'FRC забран',
   'only constant assets can be swapped for BTC': 'на BTC можно менять только постоянные активы',
   'asset received ✅': 'актив получен ✅', 'asset locked — awaiting the secret': 'актив заперт — ждём секрет', 'Sell': 'Продать',

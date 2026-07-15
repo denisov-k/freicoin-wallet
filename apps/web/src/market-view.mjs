@@ -278,9 +278,16 @@ async function postRangedOffer() {
       // partial sell of BTC: buyers take pieces (min/max in BTC); remaining tracked in BTC
       let opts = null;
       if ($('#rPartial')?.checked) {
-        const mn = $('#rMin')?.value ? BigInt(Math.round(num($('#rMin').value) * 1e8)) : 1n;
+        // the relay bounces a fill whose BTC leg is below its fee-derived floor (minSwap sats), so
+        // enforce it HERE — else the offer advertises a min the taker can never fill (e.g. "1–99"
+        // that the counterparty sees as "37–99"). Reverse offer sells BTC ⇒ the floor is in sats.
+        const floorSats = BigInt(Math.round(Number(state?.p2p?.minSwap ?? 0)));
+        let mn = $('#rMin')?.value ? BigInt(Math.round(num($('#rMin').value) * 1e8)) : 1n;
         const mx = $('#rMax')?.value ? BigInt(Math.round(num($('#rMax').value) * 1e8)) : BigInt(Math.round(btcQ * 1e8));
-        if (mn <= 0n || mn > mx || mx > BigInt(Math.round(btcQ * 1e8))) throw new Error(tr('bad min/max'));
+        const raised = mn < floorSats; if (raised) mn = floorSats;
+        if (mn <= 0n || mn > mx || mx > BigInt(Math.round(btcQ * 1e8)))
+          throw new Error(raised ? tr('the whole offer is below the network-fee floor — increase the amount or price') : tr('bad min/max'));
+        if (raised) toast(`${tr('minimum raised to')} ${(Number(mn) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC ${tr('(network-fee floor)')}`);
         opts = { partial: true, minSats: mn, maxSats: mx };
       }
       $('#modal')?.remove();
@@ -296,9 +303,18 @@ async function postRangedOffer() {
       // partial fill: buyers take pieces within [min, max]; the offer keeps selling the remainder
       let opts = null;
       if ($('#rPartial')?.checked) {
-        const mn = $('#rMin')?.value ? BigInt(Math.round(num($('#rMin').value) * scale)) : 1n;
+        // Forward offer sells FRC/asset for BTC. The relay's fee floor (minSwap sats) maps to a
+        // minimum in the SOLD unit via the offer price — ceil(minSwap · qtyKria / btcSats), the same
+        // conversion the taker applies. Enforce it now so the advertised min matches what fills.
+        const minSwap = Math.round(Number(state?.p2p?.minSwap ?? 0));
+        const qtyK = Math.round(qty * scale), btcSats = Math.round(btcQ * 1e8);
+        const floorUnits = (minSwap > 0 && btcSats > 0) ? BigInt(Math.ceil(minSwap * qtyK / btcSats)) : 0n;
+        let mn = $('#rMin')?.value ? BigInt(Math.round(num($('#rMin').value) * scale)) : 1n;
         const mx = $('#rMax')?.value ? BigInt(Math.round(num($('#rMax').value) * scale)) : BigInt(Math.round(qty * scale));
-        if (mn <= 0n || mn > mx || mx > BigInt(Math.round(qty * scale))) throw new Error(tr('bad min/max'));
+        const raised = mn < floorUnits; if (raised) mn = floorUnits;
+        if (mn <= 0n || mn > mx || mx > BigInt(Math.round(qty * scale)))
+          throw new Error(raised ? tr('the whole offer is below the network-fee floor — increase the amount or price') : tr('bad min/max'));
+        if (raised) toast(`${tr('minimum raised to')} ${(Number(mn) / scale).toLocaleString(getLang())} ${sell === 'FRC' ? 'FRC' : assetName(sell)} ${tr('(network-fee floor)')}`);
         opts = { partial: true, minUnits: mn, maxUnits: mx };
       }
       if (sell !== 'FRC') {   // sell a user-issued asset for BTC
