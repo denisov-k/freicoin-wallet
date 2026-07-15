@@ -2,19 +2,21 @@
 
 A **trustless browser wallet** for
 [Freicoin](https://github.com/tradecraftio/tradecraft) — the demurrage
-cryptocurrency. The wallet is a neutrino (BIP157/158) light client that runs
-entirely in the browser: it downloads headers, verifies every proof-of-work
-(including Freicoin's merged-mining aux-pow), matches compact block filters and
-scans matched blocks itself. The only hosted pieces are byte relays and a static
-file — nothing the wallet has to trust.
+cryptocurrency — with a built-in **peer-to-peer exchange**. The wallet is a
+neutrino (BIP157/158) light client that runs entirely in the browser: it
+downloads headers, verifies every proof-of-work (including Freicoin's
+merged-mining aux-pow), matches compact block filters and scans matched blocks
+itself. The hosted pieces — byte relays, a static snapshot, an order-book
+relay — are all **untrusted**: nothing they say is believed without proof.
 
-This repository holds that web app, the validated **wallet core** (the parts no
-off-the-shelf Bitcoin library gets right for Freicoin) and the small services
+This repository holds the web app, the validated **wallet core** (the parts no
+off-the-shelf Bitcoin library gets right for Freicoin), the executable
+**reference model** of the nVersion=3 asset consensus, and the small services
 around them.
 
-**Live demo: <https://freicoin.ru>** — mainnet by default; a new wallet
-syncs in about a second, and everything (headers, merged-mining proofs-of-work,
-compact block filters) is verified in your browser.
+**Live: <https://freicoin.ru>** — mainnet by default; a new wallet syncs in
+about a second, and everything (headers, merged-mining proofs-of-work, compact
+block filters) is verified in your browser.
 
 ## Why a Freicoin-specific core
 
@@ -35,6 +37,30 @@ Bitcoin wallet libraries. Every one below is handled and tested here:
   and masks the Freicoin-only `SIGHASH_NO_LOCK_HEIGHT` (0x100) flag.
 - **PST** (not PSBT): magic `pst\xff` (4 bytes), embedded Freicoin transaction.
 
+## The exchange (Freimarkets)
+
+The wallet's Exchange tab implements the 2013
+[*Freimarkets*](https://freico.in/docs/freimarkets.pdf) design on an
+experimental chain — the **Freimarkets network** in the wallet's network
+selector:
+
+- **User-issued assets** with per-asset demurrage or interest, issued and
+  transferred as ordinary transactions (the asset tag rides inside the
+  scriptPubKey as a Forward-Blocks-§XI extension suffix — a soft-fork overlay).
+- **Smart-property tokens** (commitment-only chainstate, two-sided reveal).
+- **A miner-matched DEX**: ranged partial-fill offers whose signatures commit a
+  price/bounds *descriptor*, pre-signed **rung ladders** so a maker can go
+  offline, and a permissionless matcher that splices crossing offers.
+- **Cross-chain BTC ↔ FRC atomic swaps** (3-branch HTLC, taker-first
+  anti-griefing protocol) coordinated by an untrusted relay — live between the
+  rehearsal chain and Bitcoin signet, mainnet launch pending.
+
+The normative protocol description is
+[`docs/nv3-lite-spec.md`](docs/nv3-lite-spec.md); the matching C++ node lives on
+the [`nv3-lite`](https://github.com/denisov-k/tradecraft/tree/nv3-lite) branch.
+The JS reference model (`core/assets.mjs`, `core/dex.mjs`, `core/nv3chain.mjs`,
+…) is mirrored bit-for-bit against that node and mutation-fuzzed.
+
 ## Core stones (all validated)
 
 Each module in [`core/`](core/) is validated by a harness in
@@ -49,23 +75,26 @@ consensus-bit-exact python reference, or against a live `freicoind`.
 | `balance.mjs` | present-value balance over UTXOs | — |
 | `coinselect.mjs` | refheight-aware coin selection + fee math | 2014/2014 |
 | `pst.mjs` | PST parse/serialize (Freicoin's BIP174 fork) | 41/41 |
-| `sighash.mjs` | Freicoin SegwitV0 signature hash | 120/120 |
+| `sighash.mjs` | Freicoin SegwitV0 + `SIGHASH_BUNDLE` + ranged digests | 120/120 |
 | `ecdsa.mjs` | secp256k1 sign (RFC6979) / verify / pubkey | 160/160 |
 | `hd.mjs` | BIP32/44/84 HD derivation + wpk addresses | 11/11 |
+| `assets.mjs` `nv3chain.mjs` | nVersion=3 asset consensus (executable model) | model = spec |
+| `dex.mjs` `htlc.mjs` `btc.mjs` | DEX bundles/ranged offers, HTLC swaps, BTC dialect | fuzzed + e2e |
 
 **End-to-end:** [`examples/capstone.mjs`](examples/capstone.mjs) builds a fully
-signed transaction from these modules and a live regtest `freicoind` accepts it
-(`sendrawtransaction`, mined into a block) — the whole "send money" path proven
-against a real node.
+signed transaction from these modules and a live regtest `freicoind` accepts it;
+the `research/nversion3/*_demo.mjs` scripts prove issuance, token transfers,
+ranged fills, offline-maker ladders, options and auctions with real signatures
+on a live chain.
 
 ## Running the tests
 
 Pure Node (v18+), no dependencies:
 
 ```sh
-npm test                        # runs every harness in core/test/
-# or without npm:
-node core/test/run-all.mjs
+npm test                        # core harnesses (core/test/)
+node apps/web/test/run-tests.mjs  # app suite: 26 files — light client, swaps,
+                                  # DEX, mutation fuzzers (needs the regtest infra)
 ```
 
 The `gen_*.py` scripts regenerate the golden vectors from a checked-out
@@ -81,8 +110,8 @@ browser                                   host (untrusted)
 │   ↕ postMessage (scripts only)  │      ┌───────────────────┐
 │ Web Worker: neutrino client     │─WS──▶│ p2p-bridge (bytes) │──TCP──▶ freicoind
 │   headers · filters · scan ·    │─HTTP▶│ snapshot (static)  │        (-peerblockfilters)
-│   IndexedDB persistence         │      └───────────────────┘
-│   ↕ sub-worker pool             │
+│   IndexedDB persistence         │      │ order-book relay   │──RPC──▶ freicoind/bitcoind
+│   ↕ sub-worker pool             │      └───────────────────┘
 │   aux-pow verify + GCS matching │
 └─────────────────────────────────┘
 ```
@@ -94,6 +123,9 @@ browser                                   host (untrusted)
   client-side, filters are cross-checked, blocks are self-authenticating.
 - The **snapshot** is a static dump of the header chain for fast first syncs;
   it goes through the exact same verification as P2P data.
+- The **order-book relay** carries offers and coordinates swaps, but every
+  signature pins price, bounds and destinations — it can refuse service, never
+  steal. Swap-turn web-push notifications are best-effort hints.
 - Multiple bridge URLs (comma-separated in Settings) enable **multi-peer filter
   agreement**: as long as one peer is honest, a payment cannot be hidden.
 
@@ -104,11 +136,18 @@ first second; afterwards everything is incremental and resumes from IndexedDB.
 ## Layout
 
 ```
-core/               validated wallet-core modules (environment-neutral)
-core/test/          harnesses, vector generators, golden vectors
-apps/web/           the wallet (Vite, vanilla JS, Web Worker light client)
-services/p2p-bridge WebSocket↔TCP byte relay
-services/snapshot   header-snapshot generator + static server
-examples/           capstone.mjs — end-to-end signed tx against a node
-research/           related experiments (Lightning payment-channel prototypes)
+core/                 validated wallet-core + nv3 reference model (environment-neutral)
+core/test/            harnesses, vector generators, golden vectors
+docs/                 nv3-lite protocol specification
+apps/web/             the wallet (Vite, vanilla JS, Web Worker light client)
+apps/web/src/views/     screens: dashboard, send, exchange, issue, settings, auth
+apps/web/src/services/  wallet, vault, i18n, push, market/ (swaps), light/ (neutrino)
+apps/web/src/state/     shared market context + network params
+apps/web/test/        app suite: light client, swaps, DEX + mutation fuzzers
+apps/web/landing/     the /about page (deployed copy: /var/www/fw-landing)
+services/p2p-bridge   WebSocket↔TCP byte relay
+services/snapshot     header-snapshot generator + static server
+examples/             capstone.mjs — end-to-end signed tx against a node
+research/nversion3/   order-book relay (market-server.mjs), live e2e demos, web-push
+research/             earlier experiments (Lightning payment-channel prototypes)
 ```
