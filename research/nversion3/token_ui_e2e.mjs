@@ -111,5 +111,38 @@ const main = async () => {
   const rawSend = parseTx(await rpc('getrawtransaction', sendId, false));
   const bOk = rawSend.vout[0].tokenHash === tokenSetHash(expectHex) && txTokenMap(rawSend).get(0)?.length === 2;
   console.log(`4. A→B with two-sided reveal: accepted ✅ (${sendId.slice(0, 16)}…); B's coin re-commits the set: ${bOk ? '✅' : '❌'}`);
+
+  // 5. SPLIT: B sends ONE of the two items back to A, keeps the other on a change coin
+  //    (mvSendTokenCoin's picked-subset construction: pro-rata units, two committed outputs)
+  const decB = await rpc('decodescript', B.spk);
+  const ftx2 = await rpc('sendtoaddress', decB.address ?? decB.segwit?.address, '0.01');
+  await rpc('generatetoaddress', 1, mine);
+  const rawF2 = await rpc('getrawtransaction', ftx2, true);
+  const f2V = rawF2.vout.findIndex(o => o.scriptPubKey.hex === B.spk);
+  const feeB = { outpoint: `${ftx2}:${f2V}`, value: BigInt(Math.round(rawF2.vout[f2V].value * 1e8)), refheight: rawF2.lockheight };
+  const H2 = await rpc('getblockcount');
+  const bCoinRef = (await rpc('getrawtransaction', sendId, true)).lockheight;
+  const bPv = assetPresentValue(coinPv, H2 - bCoinRef, { k: 64, interest: true });
+  const feeBPv = assetPresentValue(feeB.value, H2 - feeB.refheight, { k: 20, interest: false });
+  const sendSet = [expectHex[0]], keepSet = [expectHex[1]];
+  const vShare = bPv * 1n / 2n;
+  const vout5 = [
+    { value: vShare, scriptPubKey: A.spk, assetTag: iss.tag, tokens: sendSet },
+    { value: bPv - vShare, scriptPubKey: B.spk, assetTag: iss.tag, tokens: keepSet },
+    { value: feeBPv - 10000n, scriptPubKey: B.spk, assetTag: HOST_TAG },
+  ];
+  vout5.push({ value: 0n, scriptPubKey: opret(makeTokenReveal(vout5, [{ tokens: expectHex }, {}])) });
+  const tx5 = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: H2, nExpireTime: 0,
+    vin: [{ prevout: prevout(`${sendId}:0`), scriptSig: '', sequence: 0xffffffff, witness: [] },
+          { prevout: prevout(feeB.outpoint), scriptSig: '', sequence: 0xffffffff, witness: [] }], vout: vout5 };
+  sign(tx5, 0, B, coinPv, bCoinRef); sign(tx5, 1, B, feeB.value, feeB.refheight);
+  await api('tx', { rawtx: serializeTx(tx5), kind: 'send' });
+  const splitId = computeTxid(tx5);
+  const rawSplit = parseTx(await rpc('getrawtransaction', splitId, false));
+  const splitOk = rawSplit.vout[0].tokenHash === tokenSetHash(sendSet)
+               && rawSplit.vout[1].tokenHash === tokenSetHash(keepSet)
+               && txTokenMap(rawSplit).get(0)?.[0] === sendSet[0]
+               && txTokenMap(rawSplit).get(1)?.[0] === keepSet[0];
+  console.log(`5. SPLIT 1-of-2 back to A (keep 1 on change): accepted ✅ (${splitId.slice(0, 16)}…); both outputs commit their subsets: ${splitOk ? '✅' : '❌'}`);
 };
 main().catch(e => { console.error('FAIL:', e); process.exit(1); });

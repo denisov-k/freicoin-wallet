@@ -206,25 +206,33 @@ export function mvTokenCoins(tag) {
     .map(u => ({ outpoint: u.outpoint, tokens: u.tokens ?? [] }));
 }
 
-// Send a TOKEN-BEARING coin whole (its units + every token on it) to an address. A committed
-// coin only spends with a two-sided FRT1 reveal: the input section proves what the coin held
-// (vs its stored hash), the output section commits the same set to the recipient's new coin.
-export async function mvSendTokenCoin(outpoint, toSpk) {
+// Send tokens off a committed coin. `picked` = the token hexes to send (default: all). A
+// committed coin only spends with a two-sided FRT1 reveal: the input section proves what the
+// coin held (vs its stored hash); the output section commits the sent subset to the
+// recipient's coin and — when items remain — the rest to a change coin of ours. Units split
+// pro-rata with the items (our token issues mint one flat unit per item).
+export async function mvSendTokenCoin(outpoint, toSpk, picked = null) {
   if (!state) await doRefresh();
   const u = state.mine.utxos.find(x => x.outpoint === outpoint);
   if (!u || !u.tokenHash) throw new Error(tr('offer coin is gone'));
   if (!u.tokens?.length) throw new Error(tr('this coin\u2019s token list is not recovered yet \u2014 wait for a full sync'));
+  const all = u.tokens;
+  const send = picked === null ? all : all.filter(h => picked.includes(h));
+  if (!send.length) throw new Error(tr('add at least one item'));
+  const keep = all.filter(h => !send.includes(h));
   const L = state.mine.height, fee = 10000n, changeSpk = spks[0];
   const reserved = committedOutpoints();
   const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && !x.tokenHash && x.refheight <= L && !reserved.has(x.outpoint)
     && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
   if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
   const feePv = assetPresentValue(BigInt(feeCoin.value), L - feeCoin.refheight, { k: 20, interest: false });
-  const pv = assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(u.assetTag));
+  const pv = /** @type {bigint} */ (assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(u.assetTag)));
+  const vShare = keep.length ? pv * BigInt(send.length) / BigInt(all.length) : pv;
   /** @type {{value: bigint, scriptPubKey: string, assetTag?: string|null, tokens?: string[]}[]} */
-  const vout = [{ value: pv, scriptPubKey: toSpk, assetTag: u.assetTag, tokens: u.tokens }];
+  const vout = [{ value: vShare, scriptPubKey: toSpk, assetTag: u.assetTag, tokens: send }];
+  if (keep.length) vout.push({ value: pv - vShare, scriptPubKey: changeSpk, assetTag: u.assetTag, tokens: keep });
   if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: changeSpk, assetTag: HOST_TAG });
-  const reveal = makeTokenReveal(vout, [{ tokens: u.tokens }, {}]);
+  const reveal = makeTokenReveal(vout, [{ tokens: all }, {}]);
   const n = reveal.length / 2;
   vout.push({ value: 0n, scriptPubKey: '6a' + (n <= 75 ? n.toString(16).padStart(2, '0') : '4c' + n.toString(16).padStart(2, '0')) + reveal });
   const inputs = [u, feeCoin].map(c => ({ outpoint: c.outpoint, spk: c.spk, value: BigInt(c.value), refheight: c.refheight }));
@@ -239,12 +247,11 @@ export async function mvSendTokenCoin(outpoint, toSpk) {
 function openTokenSendModal(outpoint) {
   const u = state?.mine.utxos.find(x => x.outpoint === outpoint);
   if (!u || $('#modal')) return;
-  const names = (u.tokens ?? []).map(tokLabel).join(' \u00b7 ');
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>\ud83c\udf9f ${tr('Send tokens')}</b><button id="tsClose" class="icon">\u2715</button></div>
-    <p class="sub">${names}</p>
-    <p class="sub" style="font-size:12px">${tr('The coin moves whole: all its tokens and units go to one recipient.')}</p>
+    <p class="sub" style="font-size:12px">${tr('Pick the items to send — the rest come back to you on a new coin.')}</p>
+    <div class="stack" id="tsList">${(u.tokens ?? []).map((h, i) => `<label class="chk"><input type="checkbox" checked data-h="${h}">${tokLabel(h)}</label>`).join('')}</div>
     <label>${tr('Recipient address')}<input id="tsAddr" placeholder="fcrt1\u2026"></label>
     <button id="tsSend">${tr('Send')}</button></div>`;
   document.body.appendChild(m);
@@ -252,8 +259,9 @@ function openTokenSendModal(outpoint) {
   q(m, '#tsClose').onclick = () => m.remove();
   q(m, '#tsSend').onclick = async () => {
     try {
+      const picked = [...m.querySelectorAll('#tsList input:checked')].map(x => /** @type {HTMLElement} */(x).dataset.h);
       const spk = addrToSpk(q(m, '#tsAddr').value.trim());
-      await mvSendTokenCoin(outpoint, spk);
+      await mvSendTokenCoin(outpoint, spk, picked);
       m.remove(); toast(tr('Sent'), 'ok');
     } catch (e) { toast(e.message, 'err'); }
   };

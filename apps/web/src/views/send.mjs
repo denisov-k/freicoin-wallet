@@ -101,12 +101,11 @@ async function doReview() {
   if (assetTag && tokenCoins.length) {
     const name = $('#sendAsset').selectedOptions[0].textContent.replace(/ \(.*\)$/, '');
     const coin = tokenCoins[0];
-    const names = coin.tokens.map(tokLabel).join(' · ');
     $('#sendResult').innerHTML =
       `<div class="review">
          <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
-         <div class="rrow"><span>${name}</span><b>\ud83c\udf9f ${names || tr('recovering\u2026')}</b></div>
-         <div class="rrow"><span></span><span class="sub">${tr('The coin moves whole: all its tokens and units go to one recipient.')}</span></div>
+         <div class="rrow"><span>${name}</span><span class="sub">${tr('Pick the items to send — the rest come back to you on a new coin.')}</span></div>
+         <div class="stack" id="sendTokList">${coin.tokens.map(h => `<label class="chk"><input type="checkbox" checked data-h="${h}">\ud83c\udf9f ${tokLabel(h)}</label>`).join('') || `<span class="sub">${tr('recovering\u2026')}</span>`}</div>
          <div class="rrow"><span>${tr('Fee')}</span><b>0.00010000 FRC</b></div>
          <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
        </div>`;
@@ -114,7 +113,8 @@ async function doReview() {
     $('#confirmBtn').onclick = async () => {
       const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
       try {
-        const txid = await mvSendTokenCoin(coin.outpoint, addrToSpk(to));
+        const picked = [...document.querySelectorAll('#sendTokList input:checked')].map(x => /** @type {HTMLElement} */(x).dataset.h);
+        const txid = await mvSendTokenCoin(coin.outpoint, addrToSpk(to), picked);
         $('#sendResult').innerHTML = `<div class="ok">${tr('Sent ✓')}</div><div class="txid">${txid}</div>`;
         $('#to').value = ''; $('#amt').value = ''; toast(tr('broadcast ✓'));
         if (tokenCoins.length > 1) toast(tr('this asset has more token coins — send the next one the same way'), 'ok');
