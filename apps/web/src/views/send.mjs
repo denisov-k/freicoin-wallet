@@ -107,7 +107,7 @@ const showForm = () => { const f = $('#sendForm'); if (f) f.hidden = false; cons
 const showReview = html => { const f = $('#sendForm'); if (f) f.hidden = true; $('#sendResult').innerHTML = html; };
 function successScreen(txid, extraToast) {
   $('#to').value = ''; $('#amt').value = '';
-  $('#sendResult').innerHTML = `<div class="review"><div class="ok">${tr('Sent ✓')}</div><div class="txid">${txid}</div><button id="doneBtn">${tr('Done')}</button></div>`;
+  showReview(`<div class="ok">${tr('Sent ✓')}</div><div class="txid">${txid}</div><button id="doneBtn">${tr('Done')}</button>`);
   $('#doneBtn').onclick = showForm;
   toast(tr('broadcast ✓'));
   if (extraToast) toast(extraToast, 'ok');
@@ -126,13 +126,11 @@ async function doReview() {
     if (!picked.length) return toast(tr('add at least one item'), 'err');
     const kept = coin.tokens.length - picked.length;
     showReview(
-      `<div class="review">
-         <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
-         <div class="rrow"><span>${name}</span><b>${picked.map(h => '\ud83c\udf9f ' + tokLabel(h)).join('<br>')}</b></div>
-         ${kept ? `<div class="rrow"><span></span><span class="sub">${tr('the rest come back to you on a new coin')} (${kept})</span></div>` : ''}
-         <div class="rrow"><span>${tr('Fee')}</span><b>0.00010000 FRC</b></div>
-         <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
-       </div>`);
+      `<div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
+       <div class="rrow"><span>${name}</span><b>${picked.map(h => '\ud83c\udf9f ' + tokLabel(h)).join('<br>')}</b></div>
+       ${kept ? `<div class="rrow"><span></span><span class="sub">${tr('the rest come back to you on a new coin')} (${kept})</span></div>` : ''}
+       <div class="rrow"><span>${tr('Fee')}</span><b>0.00010000 FRC</b></div>
+       <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>`);
     $('#cancelBtn').onclick = showForm;
     $('#confirmBtn').onclick = async () => {
       const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
@@ -148,12 +146,10 @@ async function doReview() {
   if (assetTag) {
     const name = $('#sendAsset').selectedOptions[0].textContent.replace(/ \(.*\)$/, '');
     showReview(
-      `<div class="review">
-         <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
-         <div class="rrow"><span>${tr('Amount')}</span><b>${amt.toLocaleString(getLang())} ${name}</b></div>
-         <div class="rrow"><span>${tr('Fee')}</span><b>0.00010000 FRC</b></div>
-         <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
-       </div>`);
+      `<div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
+       <div class="rrow"><span>${tr('Amount')}</span><b>${amt.toLocaleString(getLang())} ${name}</b></div>
+       <div class="rrow"><span>${tr('Fee')}</span><b>0.00010000 FRC</b></div>
+       <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>`);
     $('#cancelBtn').onclick = showForm;
     $('#confirmBtn').onclick = async () => {
       const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
@@ -170,14 +166,11 @@ async function doReview() {
     if (amt > balance) throw new Error(`${tr('amount exceeds available')} (${fmt(balance)} FRC)`);
     const r = buildSignedTx({ seed: d.hexSeed(), utxos, toAddress: to, amountFrc: amt, tipHeight });
     d.setPending(r.rawtx);
-    showReview('');
-    $('#sendResult').innerHTML =
-      `<div class="review">
-         <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
-         <div class="rrow"><span>${tr('Amount')}</span><b>${fmt(amt)} FRC</b></div>
-         <div class="rrow"><span>${tr('Fee')}</span><b>${(Number(r.fee) / 1e8).toFixed(8)} FRC</b></div>
-         <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
-       </div>`;
+    showReview(
+      `<div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
+       <div class="rrow"><span>${tr('Amount')}</span><b>${fmt(amt)} FRC</b></div>
+       <div class="rrow"><span>${tr('Fee')}</span><b>${(Number(r.fee) / 1e8).toFixed(8)} FRC</b></div>
+       <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>`);
     $('#confirmBtn').onclick = doBroadcast;
     $('#cancelBtn').onclick = () => { d.setPending(null); showForm(); };
     toast(tr('review the transaction'));
@@ -191,12 +184,10 @@ async function doReviewBtc() {
   if (!mvBtcValidAddr(to)) return toast(tr('bad address'), 'err');
   if (!(amt > 0)) return toast(tr('enter an amount'), 'err');
   showReview(
-    `<div class="review">
-       <div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
-       <div class="rrow"><span>${tr('Amount')}</span><b>${amt.toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC</b></div>
-       <div class="rrow"><span>${tr('Fee')}</span><b>0.00001000 BTC</b></div>
-       <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>
-     </div>`);
+    `<div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
+     <div class="rrow"><span>${tr('Amount')}</span><b>${amt.toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC</b></div>
+     <div class="rrow"><span>${tr('Fee')}</span><b>0.00001000 BTC</b></div>
+     <div class="row"><button id="confirmBtn">${tr('Confirm & broadcast')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>`);
   $('#cancelBtn').onclick = showForm;
   $('#confirmBtn').onclick = async () => {
     const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
