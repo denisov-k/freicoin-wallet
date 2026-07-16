@@ -29,8 +29,6 @@ export function renderSettings() {
         ? `<button id="lockBtn" class="ghost">${tr('🔓 Lock')}</button><button id="chgBtn" class="ghost">${tr('Change passphrase')}</button>`
         : `<button id="secBtn" class="ghost">${tr('🔒 Secure with passphrase')}</button>`}</div>
      <div id="secForm"></div>
-     <div class="row"><button id="resyncBtn" class="ghost">${tr('↻ Re-sync wallet')}</button></div>
-     <p class="sub" style="font-size:12px">${tr('Rebuilds balances from the chain — use if a coin looks stuck after a network hiccup.')}</p>
      <div class="row"><button id="outBtn" class="ghost">${tr('Log out of wallet')}</button></div>`;
   $('#langSel').onchange = () => { setLang($('#langSel').value); d.renderApp(); };   // applies immediately, re-renders all
   const wifBtn = $('#wifBtn');
@@ -80,11 +78,6 @@ export function renderSettings() {
   $('#copySeed').onclick = e => copy(s, e.target);
   if (vault) { $('#lockBtn').onclick = d.lock; $('#chgBtn').onclick = () => d.passForm(tr('Change passphrase'), pw => d.secure(d.secret(), pw, true)); }
   else $('#secBtn').onclick = () => d.passForm(tr('Set a passphrase'), pw => d.secure(s, pw, false));
-  $('#resyncBtn').onclick = async () => {
-    const b = $('#resyncBtn'); b.disabled = true; b.textContent = tr('re-syncing…');
-    try { await d.resync(); toast(tr('wallet re-synced'), 'ok'); }
-    catch (e) { toast(String(e?.message || e), 'err'); b.disabled = false; b.textContent = tr('↻ Re-sync wallet'); }
-  };
   $('#outBtn').onclick = () => {
     const m = document.createElement('div'); m.id = 'modal';
     m.innerHTML = `<div class="review">

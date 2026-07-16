@@ -96,10 +96,6 @@ const RU = {
   '← Prev': '← Предыдущий',
   'send': 'отправка', 'receive': 'получение', 'generate': 'добыча', 'immature': 'незрелые',
   'Show': 'Показать', 'Hide': 'Скрыть',
-  '↻ Re-sync wallet': '↻ Пересинхронизировать',
-  're-syncing…': 'пересинхронизация…',
-  'wallet re-synced': 'кошелёк пересинхронизирован',
-  'Rebuilds balances from the chain — use if a coin looks stuck after a network hiccup.': 'Пересобирает баланс из цепи — если монета «застряла» после сбоя сети.',
   'Log out of wallet': 'Выйти из кошелька',
   'Signed in — you can return to the market.': 'Готово — можно вернуться в маркет.',
   // ---- Freimarkets (market.mjs) ----

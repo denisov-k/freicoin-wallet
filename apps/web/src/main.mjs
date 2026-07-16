@@ -413,8 +413,7 @@ setInterval(() => {
 initAuth({ renderApp, recordNewWalletBirth, getVault, setSecret });   // wire the auth screens' deps
 initDashboard({ SWAP, MKT, curNet, getState, ds, setStatus, setStatusUtxos: n => { status.utxos = n; }, chainRecovery,
   cacheReady: () => !!cache, seedState: () => cache || liveState, bumpGen: () => ++renderGen, renderGen: () => renderGen, switchToFreimarkets });
-initSettings({ getVault, secret, themeMode, applyTheme, curNet, curBridge, SWAP, renderApp, applyNetSettings, lock, passForm, secure, logout,
-  resync: async () => { cache = null; try { await ds().reset(); } catch {} renderGen++; renderApp(); } });
+initSettings({ getVault, secret, themeMode, applyTheme, curNet, curBridge, SWAP, renderApp, applyNetSettings, lock, passForm, secure, logout });
 initSend({ hexSeed, recvIndex: () => recvIndex, bumpRecv: () => { recvIndex++; store.set('fw_recv', recvIndex); }, growWatchAfterNewAddr,
   getPending: () => pending, setPending: v => { pending = v; }, resetCache: () => { cache = null; }, cacheReady: () => !!cache,
   seedState: () => cache || liveState, renderGen: () => renderGen, getState, ds, paintBalance, SWAP, MKT });
