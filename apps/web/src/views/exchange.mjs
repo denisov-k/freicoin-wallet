@@ -205,6 +205,53 @@ export async function mvSendAsset(tag, qty, toSpk) {
   return txid;
 }
 
+// Split held token coins so each PICKED ticket is on its own 1-token coin (a self-send with a
+// two-sided reveal), and return those per-ticket coins. A coin that already holds exactly one
+// picked token is used as-is. Assumes 1 unit per token (our issuance guarantee).
+async function splitToTicketCoins(tag, picked) {
+  if (!state) await doRefresh();
+  const bySrc = new Map();   // source coin outpoint -> [picked tokens on it]
+  for (const u of state.mine.utxos) {
+    if ((u.assetTag ?? null) !== tag || !u.tokenHash) continue;
+    const here = (u.tokens ?? []).filter(h => picked.includes(h));
+    if (here.length) bySrc.set(u.outpoint, here);
+  }
+  const result = [];
+  for (const [op, hereTokens] of bySrc) {
+    const u = state.mine.utxos.find(x => x.outpoint === op);
+    if ((u.tokens ?? []).length === 1) { result.push({ outpoint: op, spk: u.spk, refheight: u.refheight }); continue; }
+    // split this coin fully into 1-token coins; keep the picked ones
+    const L = state.mine.height, fee = 10000n, spk = spks[0];
+    const reserved = committedOutpoints();
+    const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && !x.tokenHash && x.refheight <= L && !reserved.has(x.outpoint)
+      && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
+    if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
+    const feePv = assetPresentValue(BigInt(feeCoin.value), L - feeCoin.refheight, { k: 20, interest: false });
+    /** @type {{value: bigint, scriptPubKey: string, assetTag?: string|null, tokens?: string[]}[]} */
+    const vout = (u.tokens ?? []).map(h => ({ value: 1n, scriptPubKey: spk, assetTag: tag, tokens: [h] }));
+    if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: spk, assetTag: HOST_TAG });
+    const reveal = makeTokenReveal(vout, [{ tokens: u.tokens }, {}]);
+    const n = reveal.length / 2;
+    vout.push({ value: 0n, scriptPubKey: '6a' + (n <= 75 ? n.toString(16).padStart(2, '0') : '4c' + n.toString(16).padStart(2, '0')) + reveal });
+    const inputs = [u, feeCoin].map(c => ({ outpoint: c.outpoint, spk: c.spk, value: BigInt(c.value), refheight: c.refheight }));
+    const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(c => opIn(c.outpoint)), vout };
+    inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
+    const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+    // the per-token outputs are at indices 0..tokens.length-1, in u.tokens order
+    (u.tokens ?? []).forEach((h, i) => { if (hereTokens.includes(h)) result.push({ outpoint: `${txid}:${i}`, spk, refheight: L }); });
+  }
+  if (_ds) { try { await _ds().refresh(); } catch {} }
+  return result;
+}
+
+// every held ticket of an asset, flattened across coins — [{token, outpoint}] (offer form)
+export function mvTokenItems(tag) {
+  const out = [];
+  for (const u of (state?.mine.utxos ?? [])) if ((u.assetTag ?? null) === tag && u.tokenHash)
+    for (const h of (u.tokens ?? [])) out.push({ token: h, outpoint: u.outpoint });
+  return out;
+}
+
 // token coins of one asset (Send view routes these through the whole-coin flow)
 export function mvTokenCoins(tag) {
   return (state?.mine.utxos ?? []).filter(u => (u.assetTag ?? null) === tag && u.tokenHash)
@@ -383,23 +430,26 @@ async function postRangedOffer() {
     const T = num($('#rPrice').value);   // TOTAL want for the whole quantity
     if (!(T > 0)) throw new Error(tr('enter a price'));
     const L = state.mine.height;
-    // TOKEN asset: a token coin is indivisible, so it lists WHOLE — a ranged offer with
-    // minFill=maxFill=V over the token coin itself (no consolidation; token coins are constant-
-    // rate so V is stable across the ladder). The taker adds the reveal when filling.
-    const tokenCoins = mvTokenCoins(giveTag);
-    if (tokenCoins.length) {
-      const u = state.mine.utxos.find(x => x.outpoint === tokenCoins[0].outpoint);
-      const V = BigInt(u.value);   // constant-rate ⇒ present value == nominal
-      const give = { outpoint: u.outpoint, spk: u.spk, value: V, refheight: u.refheight, L };
-      const priceNum = BigInt(Math.round(T * scaleOf(wantTag))), priceDen = V;
-      const expireAt = L + LADDER_SPAN;
-      const desc = { payoutAsset: wantTag, payoutScript: give.spk, priceNum, priceDen, changeScript: give.spk, minFill: V, maxFill: V, nExpireTime: expireAt };
-      toast(tr('signing the offer ladder…'));
-      const ladder = await signLadder(desc, give, give.outpoint, L, expireAt);
-      const makerPub = pubkeyCompressed(km[give.spk].priv.toString(16).padStart(64, '0'));
-      await api('rangedOffer', { makerSpk: give.spk, giveOutpoint: give.outpoint, desc, nExpireTime: expireAt, lockHeight: ladder[0].lockHeight, witness: ladder[0].witness, ladder, makerPub });
+    // TOKEN asset: sell tickets INDIVIDUALLY. Selected items are split into one-token coins
+    // (a self-send, if they share a coin), then each coin is listed WHOLE (min=max=1) at the
+    // per-ticket price. Token coins are constant-rate so V=1 is stable across the ladder.
+    if (mvTokenCoins(giveTag).length) {
+      const picked = [...(document.querySelectorAll('#rTokPick input:checked'))].map(x => /** @type {HTMLElement} */(x).dataset.h);
+      if (!picked.length) throw new Error(tr('pick at least one ticket'));
+      toast(tr('preparing the tickets…'));
+      const coins = await splitToTicketCoins(giveTag, picked);   // [{outpoint, spk, refheight}], each 1 token
+      const priceNum = BigInt(Math.round(T * scaleOf(wantTag))), priceDen = 1n;   // T per ticket
       $('#modal')?.remove();
-      toast(tr('Offer signed and posted'), 'ok'); mvRefresh();
+      toast(tr('signing the offer ladder…'));
+      for (const c of coins) {
+        const give = { outpoint: c.outpoint, spk: c.spk, value: 1n, refheight: c.refheight, L: c.refheight };
+        const expireAt = c.refheight + LADDER_SPAN;
+        const desc = { payoutAsset: wantTag, payoutScript: c.spk, priceNum, priceDen, changeScript: c.spk, minFill: 1n, maxFill: 1n, nExpireTime: expireAt };
+        const ladder = await signLadder(desc, give, give.outpoint, c.refheight, expireAt);
+        const makerPub = pubkeyCompressed(km[c.spk].priv.toString(16).padStart(64, '0'));
+        await api('rangedOffer', { makerSpk: c.spk, giveOutpoint: give.outpoint, desc, nExpireTime: expireAt, lockHeight: ladder[0].lockHeight, witness: ladder[0].witness, ladder, makerPub });
+      }
+      toast(`${coins.length} ${tr('tickets listed')}`, 'ok'); mvRefresh();
       return;
     }
     const coins = myCoinsOf(giveTag, L);
@@ -441,6 +491,7 @@ function openOfferModal() {
     <div class="sub" id="rAvail" style="font-size:13px"></div>
     <div class="row offer-row"><label>${tr('I sell')}<select id="rAsset"></select></label><label class="numfield">${tr('Quantity')}<input id="rQty" type="text" inputmode="decimal"></label></div>
     <div class="row offer-row"><label>${tr('I want')}<select id="rWant"></select></label><label id="rPriceLbl" class="numfield">${tr('Quantity')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
+    <div class="stack" id="rTokPick" hidden></div>
     <label class="chk" id="rPartialLbl"><input type="checkbox" id="rPartial">${tr('allow partial fills')}</label>
     <div class="row offer-row" id="rMinMax"><label class="numfield">${tr('Min')}<input id="rMin" type="text" inputmode="decimal"></label><label class="numfield">${tr('Max')}<input id="rMax" type="text" inputmode="decimal"></label></div>
     <p class="sub" style="font-size:12px;margin-top:0" id="rHint">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p>
@@ -501,15 +552,21 @@ function openOfferModal() {
   const syncPartial = () => {
     const tok = tokenSell();
     if ($('#rPartialLbl')) $('#rPartialLbl').hidden = tok;
+    const pick = $('#rTokPick'), qLbl = $('#rQty')?.closest('label');
     if (tok) {
-      const cs = mvTokenCoins($('#rAsset').value);
-      const u = state.mine.utxos.find(x => x.outpoint === cs[0].outpoint);
-      if (u) { $('#rQty').value = String(Number(u.value) / scaleOf($('#rAsset').value)); $('#rQty').disabled = true; }
+      // every ticket the wallet holds of this asset (across coins) as a checkbox — each becomes
+      // its own whole-coin offer; the price field is PER TICKET
+      const items = mvTokenItems($('#rAsset').value);   // [{token, outpoint}]
+      if (pick) { pick.hidden = false; pick.innerHTML = items.map(it => `<label class="chk"><input type="checkbox" checked data-h="${it.token}">🎟 ${tokLabel(it.token)}</label>`).join('') || `<span class="sub">${tr('recovering…')}</span>`; }
+      if (qLbl) qLbl.hidden = true;
       if ($('#rPartial')) $('#rPartial').checked = false;
       $('#rMinMax').hidden = true;
-      if ($('#rHint')) $('#rHint').textContent = (cs[0].tokens ?? []).map(tokLabel).join(' · ') + ' — ' + tr('sold whole, one buyer');
+      if ($('#rPriceLbl')) $('#rPriceLbl').childNodes[0].textContent = tr('Price per ticket');
+      if ($('#rHint')) $('#rHint').textContent = tr('Each selected ticket is listed separately, sold whole.');
     } else {
-      if ($('#rQty')) $('#rQty').disabled = false;
+      if (pick) { pick.hidden = true; pick.innerHTML = ''; }
+      if (qLbl) qLbl.hidden = false;
+      if ($('#rPriceLbl')) $('#rPriceLbl').childNodes[0].textContent = tr('Quantity');
       $('#rMinMax').hidden = !$('#rPartial')?.checked;
     }
     refresh();
@@ -1111,6 +1168,44 @@ function openBuyModal(o) {
   };
 }
 
+// Buy N tickets from a collapsed group: pick a quantity (1..available), fill that many one-
+// ticket offers one at a time (each a whole fill of a 1-token coin).
+function openTicketBuyModal(offers) {
+  if ($('#modal') || !offers.length) return;
+  const o0 = offers[0];
+  const giveTag = o0.give.assetTag, wantTag = (o0.desc.payoutAsset && o0.desc.payoutAsset !== HOST_TAG) ? o0.desc.payoutAsset : null;
+  const each = (BigInt(o0.desc.priceNum) + BigInt(o0.desc.priceDen) - 1n) / BigInt(o0.desc.priceDen);
+  const N = offers.length;
+  const m = document.createElement('div'); m.id = 'modal';
+  m.innerHTML = `<div class="review">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} \ud83c\udf9f ${assetName(giveTag)}</b><button id="tbClose" class="icon">\u2715</button></div>
+    <div class="sub" style="font-size:13px">${N} ${tr('available')} \u00b7 ${fmtA(wantTag ?? 'FRC', each)} ${tr('each')}</div>
+    <label>${tr('How many')}<div class="amtrow"><input id="tbQty" type="text" inputmode="numeric" value="1"><button id="tbMax" class="ghost">${tr('Max')}</button></div></label>
+    <div class="rrow"><span>${tr('You pay')}</span><b id="tbCost"></b></div>
+    <button id="tbBuy">${tr('Buy')}</button></div>`;
+  document.body.appendChild(m);
+  const clamp = () => { let q = Math.floor(num($('#tbQty').value)); if (!(q > 0)) q = 0; if (q > N) q = N; return q; };
+  const cost = () => { const q = clamp(); $('#tbCost').textContent = q > 0 ? fmtA(wantTag ?? 'FRC', each * BigInt(q)) : '\u2014'; };
+  cost();
+  armOverlay(m);
+  q(m, '#tbClose').onclick = () => closeOverlay(m);
+  q(m, '#tbQty').oninput = cost;
+  q(m, '#tbMax').onclick = () => { $('#tbQty').value = String(N); cost(); };
+  q(m, '#tbBuy').onclick = async () => {
+    const qty = clamp();
+    if (!(qty > 0)) return toast(tr('enter a quantity'), 'err');
+    const btn = q(m, '#tbBuy'); btn.disabled = true; btn.textContent = tr('buying…');
+    let done = 0;
+    for (const off of offers.slice(0, qty)) {
+      // each is a whole one-ticket coin ⇒ buy the whole (fill = its unit value)
+      const u = Number(BigInt(off.give.value)) / scaleOf(giveTag);
+      if (await fillRangedNow(off, u)) done++; else break;
+    }
+    if (done) { closeOverlay(m); toast(`${done} ${tr('tickets bought')}`, 'ok'); }
+    else { btn.disabled = false; btn.textContent = tr('Buy'); }
+  };
+}
+
 // Cancel my ranged offer. A real cancel SPENDS the give coin back to me — the maker's descriptor
 // signature is public, so only spending the coin makes the offer truly unfillable; then delist it.
 async function cancelRanged(offer) {
@@ -1304,7 +1399,25 @@ function paint() {
       return `<tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td><td>${give}</td>
         <td>${fmtA(o.want.assetTag ?? 'FRC', BigInt(o.want.value))}</td><td class="act-cell">${o.status}</td></tr>`;
     };
-    const rows = state.info.book.filter(o => (!fg || giveOf(o) === fg) && (!fw || wantOf(o) === fw) && (!fo || o.status === 'open')).reverse();
+    const filtered = state.info.book.filter(o => (!fg || giveOf(o) === fg) && (!fw || wantOf(o) === fw) && (!fo || o.status === 'open')).reverse();
+    // tickets sold individually (1-token whole offers) COLLAPSE to one row per
+    // (asset, maker, price, want) — "N tickets · price each". Others render one-per-row.
+    const isTicket = o => o.ranged && o.status === 'open' && o.give?.tokenHash && (o.give.tokens?.length === 1);
+    const gkey = o => [o.give.assetTag, o.makerSpk, o.desc.priceNum, o.desc.priceDen, o.desc.payoutAsset ?? ''].join('|');
+    const groups = new Map(); const rows = [];
+    for (const o of filtered) { if (isTicket(o)) { const k = gkey(o); (groups.get(k) ?? groups.set(k, []).get(k)).push(o); } else rows.push(o); }
+    const groupRow = offers => {
+      const o = offers[0], mine = spks.includes(o.makerSpk);
+      const giveTag = o.give.assetTag, wantTag = (o.desc.payoutAsset && o.desc.payoutAsset !== HOST_TAG) ? o.desc.payoutAsset : null;
+      const each = (BigInt(o.desc.priceNum) + BigInt(o.desc.priceDen) - 1n) / BigInt(o.desc.priceDen);
+      const names = offers.map(x => tokLabel((x.give.tokens || [])[0] || '')).filter(Boolean).slice(0, 4).join(' · ');
+      const give = `${offers.length}\u00d7 \ud83c\udf9f ${assetName(giveTag)}${names ? ` (${names}${offers.length > 4 ? '\u2026' : ''})` : ''}`;
+      const act = mine
+        ? `<button class="rcancelgrp" data-ids="${offers.map(x => x.id).join(',')}">${tr('Cancel')}</button>`
+        : `<button class="rbtngrp" data-ids="${offers.map(x => x.id).join(',')}">${tr('Buy')}</button>`;
+      return `<tr><td>\ud83c\udf9f</td><td>${give}</td><td title="${tr('per ticket')}">${fmtA(wantTag ?? 'FRC', each)} ${tr('each')}</td><td class="act-cell">${act}</td></tr>`;
+    };
+    const groupHtml = [...groups.values()].map(groupRow).join('');
     // cross-chain BTC swaps ride the SAME table: the relay LP listing (FRC→BTC) + my in-flight
     // swaps, shown only when the filters don't exclude a BTC pair. Settlement is HTLC, not an
     // on-chain splice — marked with the ⇄ badge so it reads as cross-chain, not a ranged offer.
@@ -1353,8 +1466,17 @@ function paint() {
         swapRows += `<tr class="swap ${past ? '' : 'filled'}"><td></td><td>${Number(BigInt(w.funding.value)) / 1e8} FRC</td><td>BTC</td><td class="act-cell sub">${past ? tr('refundable') : tr('in progress')}</td></tr>`;
       }
     }
-    $('#bookBody').innerHTML = (rows.map(bookRow).join('') + swapRows)
+    $('#bookBody').innerHTML = (groupHtml + rows.map(bookRow).join('') + swapRows)
       || `<tr><td colspan="4" class="sub">${state.info.book.length ? tr('no offers match') : tr('no offers yet')}</td></tr>`;
+    $('#bookBody').querySelectorAll('.rbtngrp').forEach(b => b.onclick = () => {
+      const ids = b.dataset.ids.split(',').map(Number);
+      const offers = ids.map(id => state.info.book.find(o => o.id === id)).filter(Boolean);
+      openTicketBuyModal(offers);
+    });
+    $('#bookBody').querySelectorAll('.rcancelgrp').forEach(b => b.onclick = async () => {
+      const ids = b.dataset.ids.split(',').map(Number);
+      for (const id of ids) { const o = state.info.book.find(x => x.id === id); if (o) await cancelRanged(o); }
+    });
     // (LP swap button removed with the listing)
     $('#bookBody').querySelectorAll('.p2ptake').forEach(b => b.onclick = () => {
       const o = (state.p2p?.swaps || []).find(x => x.id === b.dataset.id); if (!o) return;

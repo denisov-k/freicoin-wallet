@@ -2,6 +2,16 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'pick at least one ticket': 'выберите хотя бы один билет',
+  'preparing the tickets…': 'готовим билеты…',
+  'tickets listed': 'билетов выставлено',
+  'Price per ticket': 'Цена за билет',
+  'Each selected ticket is listed separately, sold whole.': 'Каждый выбранный билет выставляется отдельно и продаётся целиком.',
+  'per ticket': 'за билет',
+  'each': 'за штуку',
+  'How many': 'Сколько',
+  'buying…': 'покупка…',
+  'tickets bought': 'билетов куплено',
   // --- smart-property tokens ---
   'Unique items (tokens)': 'Уникальные экземпляры (токены)',
   'one per line': 'по одному на строку',
