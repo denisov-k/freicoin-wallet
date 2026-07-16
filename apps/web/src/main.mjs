@@ -358,7 +358,7 @@ function secure(sec, pass, wasVault) {
   store.del('fw_seed'); unlockedSecret = sec; unlockedPass = pass;
   toast(wasVault ? tr('passphrase changed') : tr('wallet secured 🔒')); render.settings();
 }
-function lock() { unlockedSecret = null; unlockedPass = null; clearInterval(pollTimer); renderLock(); }
+function lock() { unlockedSecret = null; unlockedPass = null; try { mvSetSeed(null); } catch {} clearInterval(pollTimer); renderLock(); }
 
 function logout() {
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
@@ -368,7 +368,7 @@ function logout() {
   // closing connection via the store's versionchange self-close.
   try { Object.entries(NETWORKS).forEach(([k, v]) => indexedDB.deleteDatabase(`fw-light-${k}-${v.genesis.slice(0, 12)}`)); } catch {}
   ['fw_seed', 'fw_vault', 'fw_recv', 'fw_tab'].forEach(k => store.del(k));
-  unlockedSecret = null; unlockedPass = null; cache = null; liveState = null; recvIndex = 0;
+  unlockedSecret = null; unlockedPass = null; try { mvSetSeed(null); } catch {} cache = null; liveState = null; recvIndex = 0;
   clearInterval(pollTimer); pollTimer = null;
   renderWelcome();
 }

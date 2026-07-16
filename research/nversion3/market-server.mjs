@@ -15,7 +15,7 @@ import { randomBytes } from 'node:crypto';
 import { serializeTx, parseTx, txid as computeTxid, NV3_TX_VERSION } from '../../core/tx.mjs';
 import { loadOrCreateVapid, sendPush } from './webpush.mjs';
 import { decodeAssetSpk } from '../../core/asset-spk.mjs';
-import { makeTokenReveal, parseTokenReveal } from '../../core/nv3wire.mjs';
+import { makeTokenReveal, parseTokenReveal, opReturnScript } from '../../core/nv3wire.mjs';
 import { tokenSetHash } from '../../core/asset-spk.mjs';
 import { assetPresentValue } from '../../core/assets.mjs';
 import { pubkeyCompressed, signEcdsa } from '../../core/ecdsa.mjs';
@@ -853,10 +853,9 @@ const api = {
     // sha256 is committed in the def above, so a reader can verify the name against the tag.
     if (toks.length) {   // reveal the minted output's token set (mint needs no input section)
       const reveal = makeTokenReveal(tx.vout, []);
-      const n = reveal.length / 2;
       if (n > 255) throw new Error('токены не влезают в reveal (сократите количество/длину)');
       // direct push <=75 bytes, PUSHDATA1 above — the light client parses exactly these two forms
-      tx.vout.push({ value: 0n, scriptPubKey: '6a' + (n <= 75 ? n.toString(16).padStart(2, '0') : '4c' + n.toString(16).padStart(2, '0')) + reveal });
+      tx.vout.push({ value: 0n, scriptPubKey: opReturnScript(reveal) });
     }
     const nmeta = Buffer.from(nm, 'utf8');
     tx.vout.push({ value: 0n, scriptPubKey: '6a' + (4 + nmeta.length).toString(16).padStart(2, '0') + '4652414e' + nmeta.toString('hex') });

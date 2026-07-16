@@ -52,6 +52,20 @@ export function makeTokenReveal(outputs, inputs = []) {
   return bytesToHex(a);
 }
 
+
+/** Build an OP_RETURN script for a payload: direct push (≤75), PUSHDATA1 (76–255) or PUSHDATA2
+ *  (256–65535, little-endian length). The old inline builders emitted a bogus PUSHDATA1 byte for
+ *  n>255 → a malformed script → a token coin with many/long tokens was unspendable. */
+export function opReturnScript(payloadHex) {
+  const n = payloadHex.length / 2;
+  let push;
+  if (n <= 75) push = n.toString(16).padStart(2, '0');
+  else if (n <= 255) push = '4c' + n.toString(16).padStart(2, '0');
+  else if (n <= 65535) push = '4d' + (n & 0xff).toString(16).padStart(2, '0') + ((n >> 8) & 0xff).toString(16).padStart(2, '0');
+  else throw new Error('OP_RETURN payload too large');
+  return '6a' + push + payloadHex;
+}
+
 /** Parse an FRT1 payload → { outputs: Map(vout→tokens[]), inputs: Map(vin→tokens[]) }. Throws on
  *  malformation. */
 export function parseTokenReveal(payloadHex) {
@@ -85,7 +99,9 @@ function opReturnPayload(spk) {
   const b = hexToBytes(spk);
   if (b[0] !== 0x6a) return null;
   if (b[1] >= 1 && b[1] <= 75) return bytesToHex(b.slice(2, 2 + b[1]));
-  if (b[1] === 0x4c) return bytesToHex(b.slice(3, 3 + b[2]));
+  if (b[1] === 0x4c) return bytesToHex(b.slice(3, 3 + b[2]));                        // PUSHDATA1
+  if (b[1] === 0x4d) return bytesToHex(b.slice(4, 4 + (b[2] | (b[3] << 8))));         // PUSHDATA2 (LE)
+  if (b[1] === 0x4e) return bytesToHex(b.slice(6, 6 + (b[2] | (b[3] << 8) | (b[4] << 16) | (b[5] << 24)))); // PUSHDATA4
   return null;
 }
 

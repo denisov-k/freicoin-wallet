@@ -9,7 +9,7 @@ import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
 import { segwitV0Sighash, rangedSighash, SIGHASH_ALL, SIGHASH_BUNDLE } from '@core/sighash.mjs';
 import { serializeTx, NV3_TX_VERSION } from '@core/tx.mjs';
 import { assetPresentValue } from '@core/assets.mjs';
-import { makeTokenReveal } from '@core/nv3wire.mjs';
+import { makeTokenReveal, opReturnScript } from '@core/nv3wire.mjs';
 import { sha256, hash160 } from '@core/crypto.mjs';
 import { frcLeg, refundGiven } from '@core/swap.mjs';
 import { paymentHashOf } from '@core/htlc.mjs';
@@ -41,7 +41,9 @@ export function mvSetSeed(hexSeed) {
   // same reason mvResetNet clears on a network switch. Gated on an actual change because this runs
   // on EVERY renderApp; resetting unconditionally would flicker the balance to a skeleton each time.
   if (hexSeed !== seed) { state = null; ctx.state = null; btcResetAcct(); }
-  seed = hexSeed; ctx.seed = hexSeed; deriveKeys();
+  seed = hexSeed; ctx.seed = hexSeed;
+  if (!hexSeed) { km = {}; spks = []; myAddress = null; ctx.km = {}; ctx.spks = []; return; }   // lock/logout: wipe derived keys
+  deriveKeys();
 }
 // Network switch: drop the OLD network's snapshot so the new net paints a skeleton, not stale
 // numbers. The next mvRefresh rebuilds everything against the new net's relay/light client.
@@ -220,8 +222,7 @@ async function splitToTicketCoins(tag, picked, individual = true) {
   };
   const buildAndSend = (giveIns, vout, inRevealTokens) => {
     const reveal = makeTokenReveal(vout, inRevealTokens.map(ts => ({ tokens: ts })));
-    const n = reveal.length / 2;
-    vout.push({ value: 0n, scriptPubKey: '6a' + (n <= 75 ? n.toString(16).padStart(2, '0') : '4c' + n.toString(16).padStart(2, '0')) + reveal });
+    vout.push({ value: 0n, scriptPubKey: opReturnScript(reveal) });
     const inputs = giveIns.map(c => ({ outpoint: c.outpoint, spk: c.spk, value: BigInt(c.value), refheight: c.refheight }));
     const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(c => opIn(c.outpoint)), vout };
     inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
@@ -302,8 +303,7 @@ export async function mvSendTokenCoin(outpoint, toSpk, picked = null) {
   if (keep.length) vout.push({ value: pv - vShare, scriptPubKey: changeSpk, assetTag: u.assetTag, tokens: keep });
   if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: changeSpk, assetTag: HOST_TAG });
   const reveal = makeTokenReveal(vout, [{ tokens: all }, {}]);
-  const n = reveal.length / 2;
-  vout.push({ value: 0n, scriptPubKey: '6a' + (n <= 75 ? n.toString(16).padStart(2, '0') : '4c' + n.toString(16).padStart(2, '0')) + reveal });
+  vout.push({ value: 0n, scriptPubKey: opReturnScript(reveal) });
   const inputs = [u, feeCoin].map(c => ({ outpoint: c.outpoint, spk: c.spk, value: BigInt(c.value), refheight: c.refheight }));
   const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(c => opIn(c.outpoint)), vout };
   inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
@@ -699,70 +699,6 @@ async function checkMySwaps() {
 }
 // opIn / sendFrcToSpk / hostFeeCoin / lockAssetToHtlc moved to mv-swap-lib.mjs (shared with the drive)
 
-function openSwapModal(prefill) {
-  if ($('#modal')) return;
-  const m = document.createElement('div'); m.id = 'modal';
-  m.innerHTML = `<div class="review">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Swap FRC → BTC')}</b><button id="swClose" class="icon">✕</button></div>
-    <label>${tr('FRC to swap')}<input id="swAmt" type="text" inputmode="decimal" value="${(prefill > 0 ? prefill : 1)}"></label>
-    <div class="rrow"><span>${tr('You receive')}</span><b id="swGet">—</b></div>
-    <button id="swGo">${tr('Start swap')}</button>
-    <div id="swLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
-    <p class="warn" style="font-size:12px">${tr('Experimental, on the test chains. Your FRC is refundable if the swap stalls.')}</p></div>`;
-  document.body.appendChild(m);
-  armOverlay(m);
-  q(m, '#swClose').onclick = () => closeOverlay(m);
-  let rate = 0.2;
-  api('swapInfo').then(s => { rate = s.rate; upd(); }).catch(() => {});
-  const upd = () => { const a = num($('#swAmt').value) || 0; $('#swGet').textContent = (a * rate).toLocaleString(getLang(), { maximumFractionDigits: 8 }) + ' BTC'; };
-  q(m, '#swAmt').oninput = upd;
-  q(m, '#swGo').onclick = () => runSwap(num($('#swAmt').value));
-}
-
-async function runSwap(frcUnits) {
-  const log = t => { const el = $('#swLog'); if (el) el.textContent += (el.textContent ? '\n' : '') + t; };
-  const go = $('#swGo'); if (go) { go.disabled = true; go.textContent = tr('swapping…'); }
-  try {
-    if (!(frcUnits > 0)) throw new Error(tr('enter an amount'));
-    const frcAmount = BigInt(Math.round(frcUnits * 1e8));
-    // secret R + the two swap keys, all bound to a per-swap nonce (seed-derived ⇒ a refund is
-    // always reconstructable from the seed alone). H commits R.
-    const nonce = sha256(Buffer.from(seed + 'fw-swap-nonce:' + frcAmount + ':' + (state.mine.height), 'utf8')).toString('hex').slice(0, 16);
-    const R = swapPriv(nonce, 'R'), H = paymentHashOf(R);
-    const frcKey = swapPriv(nonce, 'frc'), btcKey = swapPriv(nonce, 'btc');
-    const frcPub = pubkeyCompressed(frcKey), btcPub = pubkeyCompressed(btcKey);
-    // 1. open the swap — the relay reserves ITS per-swap pubkeys and echoes ours back
-    log(tr('opening the swap…'));
-    const c = await api('swapCreate', { paymentHash: H, frcAmount: String(frcAmount), makerFrcPub: frcPub, makerBtcPub: btcPub });
-    // 2. build + fund the FRC HTLC (claim=relay, refund=us) — same key whose pub we just sent
-    const L = state.mine.height, T1 = L + (state.swap?.t1 || 40);   // FRC refund offset per the relay (scaled to the BTC net)
-    const leg = frcLeg({ role: 'give', ourKey: frcKey, theirPub: c.relayFrcPub, paymentHash: H, cltv: T1, net: swapNet() });
-    log(`${tr('locking')} ${frcUnits} FRC…`);
-    const fund = await sendFrcToSpk(leg.spk, frcAmount);
-    // persist BEFORE we hand control to the relay — if anything below fails, checkMySwaps refunds
-    putMySwap({ id: c.id, nonce, spk: leg.spk, leaf: leg.leaf, T1,
-      funding: { txid: fund.txid, vout: fund.vout, value: String(frcAmount), refheight: L } });
-    await mvRefresh();
-    const r2 = await api('swapFrcFunded', { id: c.id, txid: fund.txid, vout: fund.vout, leaf: leg.leaf, t1: T1 });
-    log(tr('relay locked the BTC — claiming it…'));
-    // 3. claim the BTC with R (reveals R); the relay broadcasts and then settles the FRC leg
-    const myBtcSpk = '0014' + hash160(Buffer.from(btcPub, 'hex')).toString('hex');
-    const cB = btcHtlcClaim({ prevTxid: r2.btcHtlc.txid, vout: r2.btcHtlc.vout, valueSats: BigInt(r2.btcHtlc.value), leafHex: r2.btcHtlc.leaf, preimage: R, claimKey: btcKey, toSpk: myBtcSpk, fee: 2000n });
-    await api('swapBtcBroadcast', { id: c.id, rawtx: cB.rawtx });
-    dropMySwap(c.id);   // settled — the relay claimed the FRC, our BTC is in hand
-    log(`✅ ${(Number(c.btcAmount) / 1e8)} BTC → ${btcAddress(hash160(Buffer.from(btcPub, 'hex')).toString('hex'), state.swap?.btcHrp || 'bcrt')}`);
-    log(tr('swap complete ✅'));
-    toast(tr('swap complete ✅'), 'ok'); mvRefresh();
-  } catch (e) { log('⚠ ' + e.message); toast(e.message, 'err'); if (go) { go.disabled = false; go.textContent = tr('Start swap'); } }
-}
-
-// ===== P2P swap board (maker-priced, user↔user). Local records track MY role in each swap so
-// the drive loop can advance it (and refund on stall). Keys/secret derive from the seed. =====
-// (P2P record persistence lives in mv-storage; p2pKey moved to mv-ctx — it needs the seed.)
-
-// MAKER: post an FRC→BTC (or ASSET→BTC) offer at my price. v2 (taker-first): the SECRET lives
-// with the taker, so the offer commits NO paymentHash — only my offer-level keys. Keys from a
-// fresh nonce; children of a partial offer reuse them (uniqueness comes from each taker's H).
 async function postP2pOffer(sellUnits, btcUnits, sellTag = null, opts = null) {
   try {
     const amount = sellTag ? BigInt(Math.round(sellUnits * scaleOf(sellTag))) : BigInt(Math.round(sellUnits * 1e8));
@@ -1132,8 +1068,7 @@ async function fillRangedNow(offer, fillUnits) {
     // output section = the fill output (index 2) that now carries the set
     if (giveToks) {
       const reveal = makeTokenReveal(vout, [{ tokens: giveToks }]);
-      const n = reveal.length / 2;
-      vout.push({ value: 0n, scriptPubKey: '6a' + (n <= 75 ? n.toString(16).padStart(2, '0') : '4c' + n.toString(16).padStart(2, '0')) + reveal });
+      vout.push({ value: 0n, scriptPubKey: opReturnScript(reveal) });
     }
     const tx = {
       version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin, vout,
