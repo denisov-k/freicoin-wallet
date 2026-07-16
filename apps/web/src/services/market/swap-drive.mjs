@@ -186,9 +186,20 @@ async function driveP2pInner() {
           // promised sats at the leaf we'd claim (their H, my claim key, their refund key). A lie
           // here only wastes our lock (refundable), but verifying keeps us from funding a phantom.
           if (rec.status !== 'frc_funded') {
-            const bl = btcHtlcLeaf({ paymentHash: w.paymentHash, claimPub: w.maker.btcPub, refundPub: w.taker.btcPub, cltv: w.btcHtlc.cltv });
+            // SECURITY: build the taker's BTC leaf with MY OWN derived claim key, never the
+            // relay-echoed w.maker.btcPub — else a malicious relay substitutes its key on both
+            // sides, the leaf still matches the funded output, I lock FRC, and it (not I) claims
+            // the BTC with the revealed R. My later claim uses p2pKey(nonce,'btc'), so the leaf
+            // MUST commit that key.
+            const myBtcPub = pubkeyCompressed(p2pKey(rec.nonce, 'btc'));
+            const bl = btcHtlcLeaf({ paymentHash: w.paymentHash, claimPub: myBtcPub, refundPub: w.taker.btcPub, cltv: w.btcHtlc.cltv });
             if (bl !== w.btcHtlc.leaf) throw new Error(tr('BTC HTLC mismatch'));
             await verifyBtcOutput({ txid: w.btcHtlc.txid, vout: w.btcHtlc.vout, spk: btcHtlcSpk(bl), minValue: w.btcAmount });
+            // far(BTC) must outlast near(FRC) by a safety margin, in wall-clock, or the taker could
+            // refund the far leg early AND claim my near leg. Check the RELAY-reported heights.
+            const frcNear = info.v2?.frcNear || 60, farRemSec = Math.max(0, (w.btcHtlc.cltv - (info.btcHeight || 0))) * 600;
+            const nearSec = frcNear * ((info.mineEveryMs || 20000) / 1000);
+            if (farRemSec < nearSec * 2) throw new Error(tr('unsafe swap timelocks — try again'));
           }
           // IDEMPOTENT: if we already funded but the report never reached the relay (restart,
           // network), RE-REPORT the existing funding — never fund the same swap twice.
@@ -275,7 +286,20 @@ const driveErr = new Map();   // last surfaced error per (id,status) — avoid t
 // claims the FRC/asset with R. Anti-griefing mirror of the forward flow above.
 async function driveP2pRev(rec, w, info) {
   if (rec.role === 'maker') {
-    if (w.status === 'frc_funded_rev' && w.frcHtlc?.txid) {       // taker locked (relay verified) → lock BTC
+    if (w.status === 'frc_funded_rev' && w.frcHtlc?.txid) {       // taker locked → lock BTC
+      // SECURITY: don't fund real BTC on the relay's word. Independently verify the taker's FRC
+      // FAR leg on-chain — rebuild its leaf with MY OWN claim key (the relay can't substitute it)
+      // and confirm the funded output holds the promised amount/asset with ≥1 conf — mirroring the
+      // forward maker. Skip once we've already funded (idempotent re-report below).
+      if (rec.status !== 'btc_funded_rev') {
+        const f = w.frcHtlc, tag = w.assetTag ?? f.assetTag ?? null;
+        const expectFrc = frcLeg({ role: 'receive', ourKey: p2pKey(rec.nonce, 'frc'), theirPub: w.taker.frcPub, paymentHash: w.paymentHash, cltv: f.cltv, net: swapNet() });
+        if (expectFrc.leaf !== f.leaf) throw new Error(tr('FRC HTLC mismatch'));
+        await verifyFrcOutput({ txid: f.txid, vout: f.vout, spk: expectFrc.spk, minValue: w.frcAmount, assetTag: tag, minConf: 1 });
+        // far(FRC) must outlast near(BTC) by a safety margin, in wall-clock.
+        const btcNear = info.v2?.btcNear || 6, farRemSec = Math.max(0, (f.cltv - (info.frcHeight || 0))) * ((info.mineEveryMs || 20000) / 1000);
+        if (farRemSec < btcNear * 600 * 2) throw new Error(tr('unsafe swap timelocks — try again'));
+      }
       // IDEMPOTENT: already funded but the report didn't land (relay restart) → re-report, never
       // fund twice (this exact race once double-funded an HTLC).
       if (rec.status === 'btc_funded_rev' && rec.btcHtlc?.txid) {
