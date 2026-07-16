@@ -1,6 +1,6 @@
 // dom.mjs — DOM lookups, localStorage, number/hex formatting and small render primitives.
 // Pure and app-state-free: safe to import from any view or component.
-import { tr } from '@/services/i18n.mjs';
+import { tr, getLang } from '@/services/i18n.mjs';
 
 /** @type {(s: string) => any} */   // any: elements are used dynamically (.onclick/.value)
 export const $ = s => document.querySelector(s);
@@ -15,7 +15,7 @@ export const fmt = n => (+n).toLocaleString(undefined, { maximumFractionDigits: 
 // churns the low digits every block, so full precision is visual noise here. Full 8-digit precision
 // stays where it matters: amounts, fees, activity records.
 export const fmtBal = n => (Math.floor((+n) * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-export const frc = v => (Number(BigInt(v)) / 1e8).toLocaleString('ru-RU', { maximumFractionDigits: 8 });
+export const frc = v => (Number(BigInt(v)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 });
 export const num = v => parseFloat(String(v ?? '').replace(',', '.'));   // locale-tolerant: accepts a comma decimal
 export const rev = h => h.match(/../g).reverse().join('');
 
