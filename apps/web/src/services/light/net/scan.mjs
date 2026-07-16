@@ -98,7 +98,10 @@ export function txTokenMap(tx) {
     if (!spk || !spk.startsWith('6a')) continue;
     const b = Buffer.from(spk.slice(2), 'hex');
     const payload = b[0] >= 1 && b[0] <= 75 ? b.subarray(1, 1 + b[0])
-                  : b[0] === 0x4c ? b.subarray(2, 2 + b[1]) : null;
+                  : b[0] === 0x4c ? b.subarray(2, 2 + b[1])
+                  : b[0] === 0x4d ? b.subarray(3, 3 + (b[1] | (b[2] << 8)))          // PUSHDATA2 (LE)
+                  : b[0] === 0x4e ? b.subarray(5, 5 + (b[1] | (b[2] << 8) | (b[3] << 16) | (b[4] << 24)))  // PUSHDATA4
+                  : null;
     if (!payload || payload.subarray(0, 4).toString('hex') !== REVEAL_MAGIC) continue;
     try {
       const { outputs } = parseTokenReveal(payload.toString('hex'));

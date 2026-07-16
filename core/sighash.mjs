@@ -83,11 +83,14 @@ export function segwitV0SighashPreimage(tx, inIdx, scriptCodeHex, amount, refhei
     ...serPrevout(tx.vin[inIdx]),
     ...serString(scriptCodeHex),
     ...i64le(amount),
-    ...i64le(refheight),                                    // Freicoin
+    // consensus (interpreter.cpp) DROPS refheight AND lock_height from the preimage under the
+    // NO_LOCK_HEIGHT flag — mirror it, or a NO_LOCK_HEIGHT signature would be 12 bytes longer
+    // than the node's and never validate. (No wallet path sets this flag today; conformance fix.)
+    ...((hashtype & SIGHASH_NO_LOCK_HEIGHT) ? [] : i64le(refheight)),   // Freicoin
     ...u32le(tx.vin[inIdx].sequence),
     ...hashOutputs,
     ...u32le(tx.nLockTime),
-    ...u32le(tx.lockHeight),                                // Freicoin
+    ...((hashtype & SIGHASH_NO_LOCK_HEIGHT) ? [] : u32le(tx.lockHeight)),   // Freicoin
     // nVersion=3-lite: commit nExpireTime (the mirror of nLockTime) — else a third party
     // could impose an expiry on a signed tx without breaking any signature.
     ...(tx.version === NV3_TX_VERSION ? u32le(tx.nExpireTime ?? 0) : []),

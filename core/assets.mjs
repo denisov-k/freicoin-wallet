@@ -36,14 +36,32 @@ function demurrageLadder(k) {                    // 26 entries, 64 fractional bi
   for (let bit = 0; bit < 26; bit++) { L.push((c >> (P - 64n)) & M64); c = (c * c) >> P; }
   return L;
 }
-function demurragePV(nominal, distance, k) {     // exact structural port of TimeAdjustValueForward
+const M32 = 0xffffffffn;
+function demurragePV(nominal, distance, k) {     // structural port of TimeAdjustValueForwardK
   if (distance === 0) return nominal;
   if (distance >= (1 << 26)) return 0n;
-  const sign = nominal > 0n ? 1n : nominal < 0n ? -1n : 0n, v = nominal < 0n ? -nominal : nominal;
-  const L = demurrageLadder(k); let w = null;
-  for (let bit = 0; bit < 26; bit++) if ((distance >> bit) & 1) { const e = L[bit]; if (w === null) { w = e; continue; } w = (w * e) >> 64n; }
-  if (w === null) return nominal;
-  return sign * ((v * w) >> 64n);
+  const sign = nominal > 0n ? 1n : nominal < 0n ? -1n : 0n, value = nominal < 0n ? -nominal : nominal;
+  const L = demurrageLadder(k);
+  // MUST mirror the node's 32-bit-split accumulation, which DROPS the low w1*k1 cross-term — an
+  // exact (w*e)>>64 over-values the input, so a demurrage asset's send fails bad-txns-asset-not-
+  // conserved (audit 2026-07-16). Identical structure to timeAdjustValue, k-parameterised ladder.
+  let w0 = null, w1 = 0n;
+  for (let bit = 0; bit < 26; bit++) {
+    if (distance & (1 << bit)) {
+      const e = L[bit], k0 = e >> 32n, k1 = e & M32;
+      if (w0 === null) { w0 = k0; w1 = k1; continue; }
+      let acc = k1 * w0 + k0 * w1;
+      acc = (acc >> 32n) + k0 * w0;
+      w1 = acc & M32;
+      w0 = (acc >> 32n) & M32;
+    }
+  }
+  if (w0 === null) return nominal;
+  const v0 = value >> 32n, v1 = value & M32;
+  let acc = (w1 * v1) >> 32n;
+  acc += w1 * v0 + w0 * v1;
+  acc = (acc >> 32n) + w0 * v0;
+  return sign * acc;
 }
 // Interest (a growing bond): factor (1 + 2^-k)^distance in 64.64 fixed point, square-and-
 // multiply with truncation after every multiply — the EXACT operation sequence the C++ port
