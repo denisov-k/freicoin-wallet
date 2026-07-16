@@ -1406,16 +1406,20 @@ function paint() {
     const gkey = o => [o.give.assetTag, o.makerSpk, o.desc.priceNum, o.desc.priceDen, o.desc.payoutAsset ?? ''].join('|');
     const groups = new Map(); const rows = [];
     for (const o of filtered) { if (isTicket(o)) { const k = gkey(o); (groups.get(k) ?? groups.set(k, []).get(k)).push(o); } else rows.push(o); }
+    // one collapsed row, in the SAME shape as every other offer: # | Give | Want (total, unit
+    // price in the tooltip) | action. Give shows the N tickets as a quantity of the asset.
     const groupRow = offers => {
-      const o = offers[0], mine = spks.includes(o.makerSpk);
+      const o = offers[0], mine = spks.includes(o.makerSpk), N = offers.length;
       const giveTag = o.give.assetTag, wantTag = (o.desc.payoutAsset && o.desc.payoutAsset !== HOST_TAG) ? o.desc.payoutAsset : null;
-      const each = (BigInt(o.desc.priceNum) + BigInt(o.desc.priceDen) - 1n) / BigInt(o.desc.priceDen);
-      const names = offers.map(x => tokLabel((x.give.tokens || [])[0] || '')).filter(Boolean).slice(0, 4).join(' · ');
-      const give = `${offers.length}\u00d7 \ud83c\udf9f ${assetName(giveTag)}${names ? ` (${names}${offers.length > 4 ? '\u2026' : ''})` : ''}`;
+      const ids = offers.map(x => x.id).join(',');
+      const price = Number(BigInt(o.desc.priceNum)) / Number(BigInt(o.desc.priceDen)) * scaleOf(giveTag) / scaleOf(wantTag);
+      const wantTotal = (BigInt(N) * BigInt(o.desc.priceNum) + BigInt(o.desc.priceDen) - 1n) / BigInt(o.desc.priceDen);
+      const give = fmtA(giveTag, BigInt(N * scaleOf(giveTag)));
       const act = mine
-        ? `<button class="rcancelgrp" data-ids="${offers.map(x => x.id).join(',')}">${tr('Cancel')}</button>`
-        : `<button class="rbtngrp" data-ids="${offers.map(x => x.id).join(',')}">${tr('Buy')}</button>`;
-      return `<tr><td>\ud83c\udf9f</td><td>${give}</td><td title="${tr('per ticket')}">${fmtA(wantTag ?? 'FRC', each)} ${tr('each')}</td><td class="act-cell">${act}</td></tr>`;
+        ? `<button class="rcancelgrp" data-ids="${ids}">${tr('Cancel')}</button>`
+        : `<button class="rbtngrp" data-ids="${ids}">${tr('Buy')}</button>`;
+      return `<tr><td>${o.id}</td><td>${give}</td>
+        <td title="@ ${price.toLocaleString(getLang(), { maximumFractionDigits: 8 })} ${assetName(wantTag)}">${fmtA(wantTag ?? 'FRC', wantTotal)}</td><td class="act-cell">${act}</td></tr>`;
     };
     const groupHtml = [...groups.values()].map(groupRow).join('');
     // cross-chain BTC swaps ride the SAME table: the relay LP listing (FRC→BTC) + my in-flight
