@@ -208,37 +208,54 @@ export async function mvSendAsset(tag, qty, toSpk) {
 // Split held token coins so each PICKED ticket is on its own 1-token coin (a self-send with a
 // two-sided reveal), and return those per-ticket coins. A coin that already holds exactly one
 // picked token is used as-is. Assumes 1 unit per token (our issuance guarantee).
-async function splitToTicketCoins(tag, picked) {
+async function splitToTicketCoins(tag, picked, individual = true) {
   if (!state) await doRefresh();
-  const bySrc = new Map();   // source coin outpoint -> [picked tokens on it]
-  for (const u of state.mine.utxos) {
-    if ((u.assetTag ?? null) !== tag || !u.tokenHash) continue;
-    const here = (u.tokens ?? []).filter(h => picked.includes(h));
-    if (here.length) bySrc.set(u.outpoint, here);
-  }
-  const result = [];
-  for (const [op, hereTokens] of bySrc) {
-    const u = state.mine.utxos.find(x => x.outpoint === op);
-    if ((u.tokens ?? []).length === 1) { result.push({ outpoint: op, spk: u.spk, refheight: u.refheight }); continue; }
-    // split this coin fully into 1-token coins; keep the picked ones
-    const L = state.mine.height, fee = 10000n, spk = spks[0];
-    const reserved = committedOutpoints();
-    const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && !x.tokenHash && x.refheight <= L && !reserved.has(x.outpoint)
+  const srcCoins = state.mine.utxos.filter(u => (u.assetTag ?? null) === tag && u.tokenHash && (u.tokens ?? []).some(h => picked.includes(h)));
+  const L = state.mine.height, fee = 10000n, spk = spks[0], reserved = committedOutpoints();
+  const hostFee = () => {
+    const c = state.mine.utxos.find(x => (x.assetTag ?? null) === null && !x.tokenHash && x.refheight <= L && !reserved.has(x.outpoint)
       && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
-    if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
-    const feePv = assetPresentValue(BigInt(feeCoin.value), L - feeCoin.refheight, { k: 20, interest: false });
-    /** @type {{value: bigint, scriptPubKey: string, assetTag?: string|null, tokens?: string[]}[]} */
-    const vout = (u.tokens ?? []).map(h => ({ value: 1n, scriptPubKey: spk, assetTag: tag, tokens: [h] }));
-    if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: spk, assetTag: HOST_TAG });
-    const reveal = makeTokenReveal(vout, [{ tokens: u.tokens }, {}]);
+    if (!c) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
+    return { c, pv: assetPresentValue(BigInt(c.value), L - c.refheight, { k: 20, interest: false }) };
+  };
+  const buildAndSend = (giveIns, vout, inRevealTokens) => {
+    const reveal = makeTokenReveal(vout, inRevealTokens.map(ts => ({ tokens: ts })));
     const n = reveal.length / 2;
     vout.push({ value: 0n, scriptPubKey: '6a' + (n <= 75 ? n.toString(16).padStart(2, '0') : '4c' + n.toString(16).padStart(2, '0')) + reveal });
-    const inputs = [u, feeCoin].map(c => ({ outpoint: c.outpoint, spk: c.spk, value: BigInt(c.value), refheight: c.refheight }));
+    const inputs = giveIns.map(c => ({ outpoint: c.outpoint, spk: c.spk, value: BigInt(c.value), refheight: c.refheight }));
     const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(c => opIn(c.outpoint)), vout };
     inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
-    const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
-    // the per-token outputs are at indices 0..tokens.length-1, in u.tokens order
-    (u.tokens ?? []).forEach((h, i) => { if (hereTokens.includes(h)) result.push({ outpoint: `${txid}:${i}`, spk, refheight: L }); });
+    return api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+  };
+  const result = [];
+  if (individual) {
+    // one coin per picked ticket: split each source coin into 1-token coins, collect picked
+    for (const u of srcCoins) {
+      const here = (u.tokens ?? []).filter(h => picked.includes(h));
+      if ((u.tokens ?? []).length === 1) { result.push({ outpoint: u.outpoint, spk: u.spk, refheight: u.refheight }); continue; }
+      const { c: feeCoin, pv: feePv } = hostFee();
+      /** @type {{value: bigint, scriptPubKey: string, assetTag?: string|null, tokens?: string[]}[]} */
+      const vout = (u.tokens ?? []).map(h => ({ value: 1n, scriptPubKey: spk, assetTag: tag, tokens: [h] }));
+      if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: spk, assetTag: HOST_TAG });
+      const { txid } = await buildAndSend([u, feeCoin], vout, [u.tokens, []]);
+      (u.tokens ?? []).forEach((h, i) => { if (here.includes(h)) result.push({ outpoint: `${txid}:${i}`, spk, refheight: L }); });
+    }
+  } else {
+    // one coin holding ALL picked tickets (sold together). If they already sit alone on one coin
+    // that exactly matches, use it; else combine the source coins into [picked, unpicked-change].
+    if (srcCoins.length === 1 && (srcCoins[0].tokens ?? []).every(h => picked.includes(h)) && (srcCoins[0].tokens ?? []).length === picked.length) {
+      const u = srcCoins[0]; result.push({ outpoint: u.outpoint, spk: u.spk, refheight: u.refheight, value: BigInt(u.value) });
+    } else {
+      const all = srcCoins.flatMap(u => u.tokens ?? []);
+      const keep = all.filter(h => !picked.includes(h));
+      const { c: feeCoin, pv: feePv } = hostFee();
+      /** @type {{value: bigint, scriptPubKey: string, assetTag?: string|null, tokens?: string[]}[]} */
+      const vout = [{ value: BigInt(picked.length), scriptPubKey: spk, assetTag: tag, tokens: picked }];
+      if (keep.length) vout.push({ value: BigInt(keep.length), scriptPubKey: spk, assetTag: tag, tokens: keep });
+      if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: spk, assetTag: HOST_TAG });
+      const { txid } = await buildAndSend([...srcCoins, feeCoin], vout, [...srcCoins.map(u => u.tokens), []]);
+      result.push({ outpoint: `${txid}:0`, spk, refheight: L, value: BigInt(picked.length) });
+    }
   }
   if (_ds) { try { await _ds().refresh(); } catch {} }
   return result;
@@ -436,20 +453,23 @@ async function postRangedOffer() {
     if (mvTokenCoins(giveTag).length) {
       const picked = [...(document.querySelectorAll('#rTokPick input:checked'))].map(x => /** @type {HTMLElement} */(x).dataset.h);
       if (!picked.length) throw new Error(tr('pick at least one ticket'));
+      const individual = $('#rPartial')?.checked ?? false;
       toast(tr('preparing the tickets…'));
-      const coins = await splitToTicketCoins(giveTag, picked);   // [{outpoint, spk, refheight}], each 1 token
-      const priceNum = BigInt(Math.round(T * scaleOf(wantTag))), priceDen = 1n;   // T per ticket
+      const coins = await splitToTicketCoins(giveTag, picked, individual);
+      // individual: price is PER ticket (each coin = 1). whole: T is the TOTAL for the one coin.
       $('#modal')?.remove();
       toast(tr('signing the offer ladder…'));
       for (const c of coins) {
-        const give = { outpoint: c.outpoint, spk: c.spk, value: 1n, refheight: c.refheight, L: c.refheight };
+        const V = c.value ?? 1n;
+        const priceNum = BigInt(Math.round(T * scaleOf(wantTag))), priceDen = individual ? 1n : V;
+        const give = { outpoint: c.outpoint, spk: c.spk, value: V, refheight: c.refheight, L: c.refheight };
         const expireAt = c.refheight + LADDER_SPAN;
-        const desc = { payoutAsset: wantTag, payoutScript: c.spk, priceNum, priceDen, changeScript: c.spk, minFill: 1n, maxFill: 1n, nExpireTime: expireAt };
+        const desc = { payoutAsset: wantTag, payoutScript: c.spk, priceNum, priceDen, changeScript: c.spk, minFill: V, maxFill: V, nExpireTime: expireAt };
         const ladder = await signLadder(desc, give, give.outpoint, c.refheight, expireAt);
         const makerPub = pubkeyCompressed(km[c.spk].priv.toString(16).padStart(64, '0'));
         await api('rangedOffer', { makerSpk: c.spk, giveOutpoint: give.outpoint, desc, nExpireTime: expireAt, lockHeight: ladder[0].lockHeight, witness: ladder[0].witness, ladder, makerPub });
       }
-      toast(`${coins.length} ${tr('tickets listed')}`, 'ok'); mvRefresh();
+      toast(individual ? `${coins.length} ${tr('tickets listed')}` : tr('Offer signed and posted'), 'ok'); mvRefresh();
       return;
     }
     const coins = myCoinsOf(giveTag, L);
@@ -551,23 +571,23 @@ function openOfferModal() {
   const tokenSell = () => { const s = $('#rAsset')?.value; return s && s !== 'BTC' && s !== 'FRC' && mvTokenCoins(s).length > 0; };
   const syncPartial = () => {
     const tok = tokenSell();
-    if ($('#rPartialLbl')) $('#rPartialLbl').hidden = tok;
-    const pick = $('#rTokPick'), qLbl = $('#rQty')?.closest('label');
+    const pick = $('#rTokPick'), qLbl = $('#rQty')?.closest('label'), part = $('#rPartial')?.checked;
     if (tok) {
-      // every ticket the wallet holds of this asset (across coins) as a checkbox — each becomes
-      // its own whole-coin offer; the price field is PER TICKET
-      const items = mvTokenItems($('#rAsset').value);   // [{token, outpoint}]
-      if (pick) { pick.hidden = false; pick.innerHTML = items.map(it => `<label class="chk"><input type="checkbox" checked data-h="${it.token}">🎟 ${tokLabel(it.token)}</label>`).join('') || `<span class="sub">${tr('recovering…')}</span>`; }
+      // pick WHICH tickets to sell; the 'allow partial fills' box decides HOW: on ⇒ each ticket
+      // is listed separately (buy 1..N), off ⇒ the selected tickets sell together as one coin.
+      const items = mvTokenItems($('#rAsset').value);
+      if (pick) { pick.hidden = false; pick.innerHTML = items.map(it => `<label class="chk"><input type="checkbox" checked data-h="${it.token}">\ud83c\udf9f ${tokLabel(it.token)}</label>`).join('') || `<span class="sub">${tr('recovering\u2026')}</span>`; }
       if (qLbl) qLbl.hidden = true;
-      if ($('#rPartial')) $('#rPartial').checked = false;
+      if ($('#rPartialLbl')) $('#rPartialLbl').hidden = false;
       $('#rMinMax').hidden = true;
-      if ($('#rPriceLbl')) $('#rPriceLbl').childNodes[0].textContent = tr('Price per ticket');
-      if ($('#rHint')) $('#rHint').textContent = tr('Each selected ticket is listed separately, sold whole.');
+      if ($('#rPriceLbl')) $('#rPriceLbl').childNodes[0].textContent = part ? tr('Price per ticket') : tr('Total price');
+      if ($('#rHint')) $('#rHint').textContent = part ? tr('Each selected ticket is listed separately (buyers take any number).') : tr('The selected tickets sell together, to one buyer.');
     } else {
       if (pick) { pick.hidden = true; pick.innerHTML = ''; }
       if (qLbl) qLbl.hidden = false;
+      if ($('#rPartialLbl')) $('#rPartialLbl').hidden = false;
       if ($('#rPriceLbl')) $('#rPriceLbl').childNodes[0].textContent = tr('Quantity');
-      $('#rMinMax').hidden = !$('#rPartial')?.checked;
+      $('#rMinMax').hidden = !part;
     }
     refresh();
   };
@@ -639,6 +659,9 @@ function paintOfferAvail() {
     return;
   }
   const tag = sell === 'FRC' ? HOST_TAG : sell;
+  // a token asset: count the TICKETS held (token coins are excluded from myCoinsOf)
+  const items = sell !== 'FRC' ? mvTokenItems(sell) : [];
+  if (items.length) { el.textContent = `${tr('Available')}: ${items.length} ${assetName(sell)}`; return; }
   const pv = myCoinsOf(tag, state.mine.height).reduce((s, c) => s + c.pv, 0n);
   el.textContent = `${tr('Available')}: ${(Number(pv) / scaleOf(tag)).toLocaleString(getLang(), { maximumFractionDigits: sell === 'FRC' ? 8 : decimalsOf(tag) })} ${assetName(sell === 'FRC' ? null : sell)}`;
 }

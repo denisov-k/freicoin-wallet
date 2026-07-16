@@ -2,6 +2,8 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'Each selected ticket is listed separately (buyers take any number).': 'Каждый выбранный билет выставляется отдельно (покупатель берёт любое количество).',
+  'The selected tickets sell together, to one buyer.': 'Выбранные билеты продаются вместе, одному покупателю.',
   'pick at least one ticket': 'выберите хотя бы один билет',
   'preparing the tickets…': 'готовим билеты…',
   'tickets listed': 'билетов выставлено',
