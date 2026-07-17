@@ -268,7 +268,9 @@ const rungAt = (o, h) => {
 // (any client could do this); the relay just runs the default bot. It cannot steal: both
 // signatures pin destinations and price floors — the matcher only takes the spread, funding
 // the fee from the OP_TRUE pool. Requires a COMMON rung height (grid-aligned ladders).
-const FEE = 10000n;
+// 0-fee: matcher crosses carry asset legs that can be dust, and Freicoin policy admits dust
+// outputs only in fee-less txs (our node relays and mines 0-fee).
+const FEE = 0n;
 const opPrev = op => ({ txid: rev(op.split(':')[0]), vout: +op.split(':')[1] });
 function repointAfterFill(o, changeOp, h) {
   const c = utxos.get(changeOp);

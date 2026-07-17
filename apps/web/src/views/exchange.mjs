@@ -178,7 +178,10 @@ export async function mvOwnedAssets() {
 // vout[0] pointed at the recipient instead of self. Fee rides a separate FRC coin.
 export async function mvSendAsset(tag, qty, toSpk) {
   if (!state) await doRefresh();
-  const L = state.mine.height, fee = 10000n, changeSpk = spks[0];
+  // Asset moves are 0-FEE: small asset amounts are "dust", and Freicoin policy admits dust
+  // outputs only in fee-less transactions. Our signet relays and mines 0-fee txs, so every
+  // asset/token builder in this file rides free (host-FRC flows keep paying fees).
+  const L = state.mine.height, changeSpk = spks[0];
   const Q = BigInt(Math.round(qty * scaleOf(tag)));
   if (Q <= 0n) throw new Error(tr('enter an amount'));
   const coins = myCoinsOf(tag, L);
@@ -189,13 +192,6 @@ export async function mvSendAsset(tag, qty, toSpk) {
   const inputs = [...picked];
   const vout = [{ value: Q, scriptPubKey: toSpk, assetTag: tag }];
   if (S - Q > 0n) vout.push({ value: S - Q, scriptPubKey: changeSpk, assetTag: tag });   // asset conserves exactly
-  const reserved = committedOutpoints();
-  const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && !x.tokenHash && x.refheight <= L && !reserved.has(x.outpoint)
-    && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
-  if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
-  const feePv = assetPresentValue(BigInt(feeCoin.value), L - feeCoin.refheight, { k: 20, interest: false });
-  inputs.push({ outpoint: feeCoin.outpoint, spk: feeCoin.spk, value: BigInt(feeCoin.value), refheight: feeCoin.refheight });
-  if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: changeSpk, assetTag: HOST_TAG });
   const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(opIn), vout };   // plain asset move ⇒ standard v2 (tag rides the spk; conservation is version-independent)
   inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
@@ -213,13 +209,7 @@ export async function mvSendAsset(tag, qty, toSpk) {
 async function splitToTicketCoins(tag, picked, individual = true) {
   if (!state) await doRefresh();
   const srcCoins = state.mine.utxos.filter(u => (u.assetTag ?? null) === tag && u.tokenHash && (u.tokens ?? []).some(h => picked.includes(h)));
-  const L = state.mine.height, fee = 10000n, spk = spks[0], reserved = committedOutpoints();
-  const hostFee = () => {
-    const c = state.mine.utxos.find(x => (x.assetTag ?? null) === null && !x.tokenHash && x.refheight <= L && !reserved.has(x.outpoint)
-      && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
-    if (!c) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
-    return { c, pv: assetPresentValue(BigInt(c.value), L - c.refheight, { k: 20, interest: false }) };
-  };
+  const L = state.mine.height, spk = spks[0];   // 0-fee (see mvSendAsset — dust admits no fee)
   const buildAndSend = (giveIns, vout, inRevealTokens) => {
     const reveal = makeTokenReveal(vout, inRevealTokens.map(ts => ({ tokens: ts })));
     vout.push({ value: 0n, scriptPubKey: opReturnScript(reveal) });
@@ -234,11 +224,9 @@ async function splitToTicketCoins(tag, picked, individual = true) {
     for (const u of srcCoins) {
       const here = (u.tokens ?? []).filter(h => picked.includes(h));
       if ((u.tokens ?? []).length === 1) { result.push({ outpoint: u.outpoint, spk: u.spk, refheight: u.refheight }); continue; }
-      const { c: feeCoin, pv: feePv } = hostFee();
       /** @type {{value: bigint, scriptPubKey: string, assetTag?: string|null, tokens?: string[]}[]} */
       const vout = (u.tokens ?? []).map(h => ({ value: 1n, scriptPubKey: spk, assetTag: tag, tokens: [h] }));
-      if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: spk, assetTag: HOST_TAG });
-      const { txid } = await buildAndSend([u, feeCoin], vout, [u.tokens, []]);
+      const { txid } = await buildAndSend([u], vout, [u.tokens]);
       (u.tokens ?? []).forEach((h, i) => { if (here.includes(h)) result.push({ outpoint: `${txid}:${i}`, spk, refheight: L }); });
     }
   } else {
@@ -249,12 +237,10 @@ async function splitToTicketCoins(tag, picked, individual = true) {
     } else {
       const all = srcCoins.flatMap(u => u.tokens ?? []);
       const keep = all.filter(h => !picked.includes(h));
-      const { c: feeCoin, pv: feePv } = hostFee();
       /** @type {{value: bigint, scriptPubKey: string, assetTag?: string|null, tokens?: string[]}[]} */
       const vout = [{ value: BigInt(picked.length), scriptPubKey: spk, assetTag: tag, tokens: picked }];
       if (keep.length) vout.push({ value: BigInt(keep.length), scriptPubKey: spk, assetTag: tag, tokens: keep });
-      if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: spk, assetTag: HOST_TAG });
-      const { txid } = await buildAndSend([...srcCoins, feeCoin], vout, [...srcCoins.map(u => u.tokens), []]);
+      const { txid } = await buildAndSend([...srcCoins], vout, [...srcCoins.map(u => u.tokens)]);
       result.push({ outpoint: `${txid}:0`, spk, refheight: L, value: BigInt(picked.length) });
     }
   }
@@ -290,21 +276,15 @@ export async function mvSendTokenCoin(outpoint, toSpk, picked = null) {
   const send = picked === null ? all : all.filter(h => picked.includes(h));
   if (!send.length) throw new Error(tr('add at least one item'));
   const keep = all.filter(h => !send.includes(h));
-  const L = state.mine.height, fee = 10000n, changeSpk = spks[0];
-  const reserved = committedOutpoints();
-  const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && !x.tokenHash && x.refheight <= L && !reserved.has(x.outpoint)
-    && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
-  if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
-  const feePv = assetPresentValue(BigInt(feeCoin.value), L - feeCoin.refheight, { k: 20, interest: false });
+  const L = state.mine.height, changeSpk = spks[0];   // 0-fee (see mvSendAsset — dust admits no fee)
   const pv = /** @type {bigint} */ (assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(u.assetTag)));
   const vShare = keep.length ? pv * BigInt(send.length) / BigInt(all.length) : pv;
   /** @type {{value: bigint, scriptPubKey: string, assetTag?: string|null, tokens?: string[]}[]} */
   const vout = [{ value: vShare, scriptPubKey: toSpk, assetTag: u.assetTag, tokens: send }];
   if (keep.length) vout.push({ value: pv - vShare, scriptPubKey: changeSpk, assetTag: u.assetTag, tokens: keep });
-  if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: changeSpk, assetTag: HOST_TAG });
-  const reveal = makeTokenReveal(vout, [{ tokens: all }, {}]);
+  const reveal = makeTokenReveal(vout, [{ tokens: all }]);
   vout.push({ value: 0n, scriptPubKey: opReturnScript(reveal) });
-  const inputs = [u, feeCoin].map(c => ({ outpoint: c.outpoint, spk: c.spk, value: BigInt(c.value), refheight: c.refheight }));
+  const inputs = [u].map(c => ({ outpoint: c.outpoint, spk: c.spk, value: BigInt(c.value), refheight: c.refheight }));
   const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(c => opIn(c.outpoint)), vout };
   inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
@@ -339,13 +319,8 @@ async function prepareGiveCoin(giveTag, Q, L, coins) {
     if (rest < 0n) throw new Error(tr('need a little more FRC to cover the fee'));
     if (rest > 0n) vout.push({ value: rest, scriptPubKey: changeSpk, assetTag: HOST_TAG });
   } else {
-    if (S - Q > 0n) vout.push({ value: S - Q, scriptPubKey: changeSpk, assetTag: giveTag });   // asset conserves exactly
-    const reserved = committedOutpoints();
-    const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && x.refheight <= L && !reserved.has(x.outpoint) && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
-    if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
-    const feePv = assetPresentValue(BigInt(feeCoin.value), L - feeCoin.refheight, { k: 20, interest: false });
-    inputs.push({ outpoint: feeCoin.outpoint, spk: feeCoin.spk, value: BigInt(feeCoin.value), refheight: feeCoin.refheight });
-    if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: changeSpk, assetTag: HOST_TAG });
+    // asset branch is 0-fee (see mvSendAsset — dust admits no fee); asset conserves exactly
+    if (S - Q > 0n) vout.push({ value: S - Q, scriptPubKey: changeSpk, assetTag: giveTag });
   }
   const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(opIn), vout };   // plain asset move ⇒ standard v2 (tag rides the spk; conservation is version-independent)
   inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
@@ -1048,7 +1023,9 @@ async function fillRangedNow(offer, fillUnits) {
   try {
     const d = offer.desc;
     if (!offer.give) throw new Error(tr('offer coin is gone'));
-    const L = offer.lockHeight, fee = 10000n, prevout = op => ({ txid: rev(op.split(':')[0]), vout: +op.split(':')[1] });
+    // 0-fee: either leg of a fill (the taker's asset/token output, the maker's asset payout)
+    // can be dust, and Freicoin admits dust only in fee-less txs (see mvSendAsset)
+    const L = offer.lockHeight, fee = 0n, prevout = op => ({ txid: rev(op.split(':')[0]), vout: +op.split(':')[1] });
     const giveTag = offer.give.assetTag ?? HOST_TAG;
     const payoutTag = d.payoutAsset ?? HOST_TAG;
     const isFrcPayout = payoutTag === HOST_TAG;
@@ -1095,15 +1072,8 @@ async function fillRangedNow(offer, fillUnits) {
       { value: change, scriptPubKey: d.changeScript, assetTag: giveTag },     // [change] to maker
       { value: fill, scriptPubKey: spks[0], assetTag: giveTag, ...(giveToks ? { tokens: giveToks } : {}) },   // fill (+tokens) to me
     ];
-    const payChange = payPv - payout - (isFrcPayout ? fee : 0n);   // my want-asset change (fee taken here iff want=FRC)
+    const payChange = payPv - payout - (isFrcPayout ? fee : 0n);   // my want-asset change
     if (payChange > 0n) vout.push({ value: payChange, scriptPubKey: spks[0], assetTag: payoutTag });
-    // when the want asset isn't FRC, add FRC coin(s) for the network fee
-    if (!isFrcPayout) {
-      const { got: feeCoins, sum: feePv } = gather(null, { k: 20, interest: false }, fee, new Set([...reserved, ...payCoins.map(c => c.outpoint)]));
-      if (feePv < fee) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
-      for (const c of feeCoins) { vin.push({ prevout: prevout(c.outpoint), scriptSig: '', sequence: 0xffffffff, witness: [] }); takerInputs.push(c); }
-      if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: spks[0], assetTag: HOST_TAG });
-    }
     // two-sided reveal for a token buy: input section = the give coin's set (vs its commitment),
     // output section = the fill output (index 2) that now carries the set
     if (giveToks) {
@@ -1220,14 +1190,8 @@ async function cancelRanged(offer) {
         if (givePv <= fee) throw new Error(tr('coin too small to cancel on-chain'));
         vout.push({ value: givePv - fee, scriptPubKey: spks[0], assetTag: HOST_TAG });
       } else {
+        // asset cancel is 0-fee (see mvSendAsset — dust admits no fee)
         vout.push({ value: givePv, scriptPubKey: spks[0], assetTag: giveTag });
-        const reserved = committedOutpoints();   // don't grab a coin backing another open offer
-        const feeCoin = state.mine.utxos.find(x => (x.assetTag ?? null) === null && x.refheight <= L && !reserved.has(x.outpoint) && assetPresentValue(BigInt(x.value), L - x.refheight, { k: 20, interest: false }) >= fee + 1000n);
-        if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) to cancel'));
-        const feePv = assetPresentValue(BigInt(feeCoin.value), L - feeCoin.refheight, { k: 20, interest: false });
-        vin.push({ prevout: prevout(feeCoin.outpoint), scriptSig: '', sequence: 0xffffffff, witness: [] });
-        inputs.push({ spk: feeCoin.spk, value: BigInt(feeCoin.value), refheight: feeCoin.refheight });
-        if (feePv - fee > 0n) vout.push({ value: feePv - fee, scriptPubKey: spks[0], assetTag: HOST_TAG });
       }
       const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin, vout };   // offer cancel = plain asset move ⇒ standard v2
       inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));

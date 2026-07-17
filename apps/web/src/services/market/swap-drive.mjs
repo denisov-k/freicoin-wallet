@@ -64,7 +64,7 @@ export async function checkP2pRefunds() {
           if (tag) {
             const feeCoin = hostFeeCoin(refh, 11000n);   // must be OLDER than the HTLC (valued at refh)
             if (!feeCoin) throw new Error(tr('you need an older FRC coin (tap Faucet) for the network fee'));
-            cr = htlcCoopRefundAsset({ funding: { txid: funding.txid, vout: funding.vout, value: BigInt(live.value), refheight: refh }, leafHex: leaf, refundKey: ourKey, otherSig: w.coopSig, toSpk: ctx.spks[0], assetTag: tag, feeCoin, fee: 10000n });
+            cr = htlcCoopRefundAsset({ funding: { txid: funding.txid, vout: funding.vout, value: BigInt(live.value), refheight: refh }, leafHex: leaf, refundKey: ourKey, otherSig: w.coopSig, toSpk: ctx.spks[0], assetTag: tag, feeCoin, fee: 0n });
           } else {
             cr = htlcCoopRefundHost({ funding: { txid: funding.txid, vout: funding.vout, value: BigInt(live.value), refheight: refh }, leafHex: leaf, refundKey: ourKey, otherSig: w.coopSig, toSpk: ctx.spks[0], fee: 10000n });
           }
@@ -80,7 +80,7 @@ export async function checkP2pRefunds() {
         const feeCoin = hostFeeCoin(h, 11000n);
         if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
         const payout = assetPresentValue(BigInt(live.value), h - Number(funding.refheight), rateOf(tag));
-        rf = htlcRefundAsset({ funding: { txid: funding.txid, vout: funding.vout, value: BigInt(live.value), refheight: Number(funding.refheight) }, leafHex: leaf, cltv, refundKey: ourKey, toSpk: ctx.spks[0], assetTag: tag, payout, feeCoin, fee: 10000n, lockHeight: h });
+        rf = htlcRefundAsset({ funding: { txid: funding.txid, vout: funding.vout, value: BigInt(live.value), refheight: Number(funding.refheight) }, leafHex: leaf, cltv, refundKey: ourKey, toSpk: ctx.spks[0], assetTag: tag, payout, feeCoin, fee: 0n, lockHeight: h });
       } else {
         rf = refundGiven({ funding: { txid: funding.txid, vout: funding.vout, value: BigInt(live.value), refheight: Number(funding.refheight) }, leaf, cltv, ourKey, toSpk: ctx.spks[0], fee: 10000n });
       }
@@ -259,7 +259,7 @@ async function driveP2pInner() {
             const feeCoin = hostFeeCoin(ctx.state.mine.height, 11000n);
             if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
             const payout = assetPresentValue(BigInt(f.value), ctx.state.mine.height - f.refheight, rateOf(tag));
-            cF = htlcClaimAsset({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leafHex: f.leaf, preimage: R, claimKey: p2pKey(rec.nonce, 'frc'), toSpk: ctx.spks[0], assetTag: tag, payout, feeCoin, fee: 10000n, lockHeight: ctx.state.mine.height });
+            cF = htlcClaimAsset({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leafHex: f.leaf, preimage: R, claimKey: p2pKey(rec.nonce, 'frc'), toSpk: ctx.spks[0], assetTag: tag, payout, feeCoin, fee: 0n, lockHeight: ctx.state.mine.height });
           } else {
             cF = claimReceived({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leaf: f.leaf, preimage: R, ourKey: p2pKey(rec.nonce, 'frc'), toSpk: ctx.spks[0], fee: 10000n });
           }
@@ -321,7 +321,7 @@ async function driveP2pRev(rec, w, info) {
         const feeCoin = hostFeeCoin(ctx.state.mine.height, 11000n);
         if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
         const payout = assetPresentValue(BigInt(f.value), ctx.state.mine.height - f.refheight, rateOf(tag));
-        cF = htlcClaimAsset({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leafHex: f.leaf, preimage: R, claimKey: p2pKey(rec.nonce, 'frc'), toSpk: ctx.spks[0], assetTag: tag, payout, feeCoin, fee: 10000n, lockHeight: ctx.state.mine.height });
+        cF = htlcClaimAsset({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leafHex: f.leaf, preimage: R, claimKey: p2pKey(rec.nonce, 'frc'), toSpk: ctx.spks[0], assetTag: tag, payout, feeCoin, fee: 0n, lockHeight: ctx.state.mine.height });
       } else {
         cF = claimReceived({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leaf: f.leaf, preimage: R, ourKey: p2pKey(rec.nonce, 'frc'), toSpk: ctx.spks[0], fee: 10000n });
       }

@@ -87,18 +87,16 @@ export function hostFeeCoin(L, need, reserved = committedOutpoints()) {
 // lock exactly `amount` base units of `tag` into the HTLC spk. Like mvSendAsset but paying an HTLC
 // (asset conserves; the fee is a separate host coin). Returns the funding outpoint for the swap.
 export async function lockAssetToHtlc(spk, tag, amount) {
-  const L = ctx.state.mine.height, fee = 10000n, reserved = committedOutpoints();
+  // 0-fee: a small asset lock is "dust" and Freicoin admits dust outputs only in fee-less
+  // txs; our signet relays and mines 0-fee (asset flows ride free, host flows keep paying)
+  const L = ctx.state.mine.height, reserved = committedOutpoints();
   const coins = myCoinsOf(tag, L, reserved);
   if (coins.reduce((s, c) => s + c.pv, 0n) < amount) throw new Error(tr('not enough of that asset'));
   const picked = []; let S = 0n;
   for (const c of [...coins].sort((a, b) => (b.pv > a.pv ? 1 : b.pv < a.pv ? -1 : 0))) { picked.push(c); S += c.pv; if (S >= amount) break; }
-  const feeCoin = hostFeeCoin(L, fee + 1000n, new Set([...reserved, ...picked.map(c => c.outpoint)]));
-  if (!feeCoin) throw new Error(tr('you need an FRC coin (tap Faucet) for the network fee'));
   const vout = [{ value: amount, scriptPubKey: spk, assetTag: tag }];
   if (S - amount > 0n) vout.push({ value: S - amount, scriptPubKey: ctx.spks[0], assetTag: tag });   // asset change
-  if (feeCoin.pv - fee > 0n) vout.push({ value: feeCoin.pv - fee, scriptPubKey: ctx.spks[0], assetTag: HOST_TAG });   // host change
-  const inputs = [...picked.map(c => ({ outpoint: c.outpoint, spk: c.spk, value: c.value, refheight: c.refheight })),
-    { outpoint: `${feeCoin.txid}:${feeCoin.vout}`, spk: feeCoin.spk, value: feeCoin.value, refheight: feeCoin.refheight }];
+  const inputs = picked.map(c => ({ outpoint: c.outpoint, spk: c.spk, value: c.value, refheight: c.refheight }));
   const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin: inputs.map(c => opIn(c.outpoint)), vout };   // plain asset move ⇒ standard v2
   inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
