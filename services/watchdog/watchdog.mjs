@@ -2,11 +2,11 @@
 // Сегодняшний урок (2026-07-17): цепь дважды вставала МОЛЧА — майнер собирал блоки, которые
 // узел отвергал, и никто не знал, пока пользователь не прислал скриншот. Этот скрипт ловит
 // весь тот класс: узел жив, мемпул не застрял, блоки идут, дрейф времени в норме, relay и
-// фронт отвечают. Алерты уходят Web-Push'ем на ВСЕ подписки кошелька (та же инфраструктура,
-// что пингует «ваш ход» в свопах) и дублируются в watchdog.log.
+// фронт отвечают. Результат пишется в watchdog-state.json + watchdog.log — их разбирает
+// ДЕЖУРНЫЙ (Claude-сессия на этом же сервере читает state по крону, чинит и эскалирует
+// пользователю только когда нужно). Никаких уведомлений на клиентов отсюда не уходит.
 import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { loadOrCreateVapid, sendPush } from '../../research/nversion3/webpush.mjs';
 
 const DATADIR = process.env.NV3_DATADIR ?? '/root/nv3-public';
 const RPCPORT = Number(process.env.NV3_RPCPORT ?? 19660);
@@ -87,15 +87,9 @@ const checks = {
   },
 };
 
-// ---- алерты: web-push на все подписки кошелька + лог; антиспам через state ----
+// ---- алерты: только state-файл + лог (их разбирает дежурная Claude-сессия) ----
 async function notify(title, body) {
   log(`ALERT ${title}: ${body}`);
-  let subs = {};
-  try { subs = JSON.parse(readFileSync(`${DATADIR}/push-subs.json`, 'utf8')); } catch {}
-  const vapid = loadOrCreateVapid(`${DATADIR}/vapid.json`);
-  for (const rec of Object.values(subs)) {
-    try { await sendPush(vapid, rec.sub, { title, body, id: 'fw-watchdog' }); } catch (e) { log(`push failed: ${e.message}`); }
-  }
 }
 
 let state = {};
