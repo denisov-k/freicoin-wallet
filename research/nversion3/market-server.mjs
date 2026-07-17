@@ -60,7 +60,11 @@ const BTC_MINCONF = Number(process.env.BTC_MINCONF ?? (BTC_NET === 'main' ? 2 : 
 // on mainnet — a constant "60 blocks" silently becomes 10 hours there. So the windows below are
 // stated in HOURS and divided by each chain's block time.
 const FRC_NET = process.env.FRC_NET ?? 'regtest';           // regtest | test | main
-const IS_REGTEST = FRC_NET === 'regtest';                   // gates the miner tick + faucet
+const IS_REGTEST = FRC_NET === 'regtest';                   // gates the miner tick + on-demand mining
+// The faucet also runs on our public signet (the relay wallet is fed by the signet miner);
+// there it is rate-limited per address. Mainnet/testnet stay pure indexers.
+const HAS_FAUCET = IS_REGTEST || FRC_NET === 'signet';
+const faucetLog = new Map();                                // address → last-payout ms (public faucet)
 const FRC_BLOCK_SEC = Number(process.env.FRC_BLOCK_SEC ?? (IS_REGTEST ? MINE_EVERY_MS / 1000 : 600));
 const BTC_BLOCK_SEC = Number(process.env.BTC_BLOCK_SEC ?? (BTC_ONDEMAND ? 30 : 600));
 // FUNDER-first (the secret holder) gets the FAR window; the RESPONDER gets the NEAR one. The gap
@@ -280,12 +284,19 @@ function repointAfterFill(o, changeOp, h) {
 const notifyResign = o =>
   notifyPub(o.makerPub, { id: o.id, status: 'needsResign', title: `Freimarkets · оффер #${o.id}`,
     body: 'частичный выкуп — остаток снят с торгов до вашей переподписи (откройте кошелёк)' });
+// Put a relay-built tx on the chain: regtest mines it straight in (deterministic dev loop);
+// a real chain broadcasts to the mempool and lets the (signet) miner confirm it.
+async function submitTx(raw) {
+  if (IS_REGTEST) await rpc('generateblock', mineAddr, [raw]);
+  else await rpc('sendrawtransaction', raw);
+}
 async function ensureMatcherFuel() {
   for (const op of spkIndex.get(TRUE_SPK) ?? []) { const u = utxos.get(op); if (u && !u.assetTag && u.value >= FEE + 10000n) return; }
   try {
     const dec = await rpc('decodescript', TRUE_SPK);
     await rpc('sendtoaddress', dec.address, '0.01');
-    await rpc('generatetoaddress', 1, mineAddr); await catchUp();
+    if (IS_REGTEST) await rpc('generatetoaddress', 1, mineAddr);
+    await catchUp();
   } catch (e) { say('матчер: нет топлива: ' + String(e.message).slice(0, 60)); }
 }
 async function matchCrosses() {
@@ -356,7 +367,7 @@ async function matchCrosses() {
     };
     try {
       const raw = serializeTx(tx);
-      await rpc('generateblock', mineAddr, [raw]);
+      await submitTx(raw);
       await catchUp();
       const txid = computeTxid(parseTx(raw));
       repointAfterFill(A, `${txid}:1`, indexedHeight);
@@ -455,7 +466,7 @@ async function watchSwaps() {
         const bobSpk = '0014' + hash160(Buffer.from(pubkeyCompressed(relayKey(w.id, 'frc')), 'hex')).toString('hex');
         const c = claimReceived({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight },
           leaf: f.leaf, preimage: R, ourKey: relayKey(w.id, 'frc'), toSpk: bobSpk, fee: 2000n });
-        await rpc('generateblock', mineAddr, [c.rawtx]); await catchUp();
+        await submitTx(c.rawtx); await catchUp();
         w.status = 'done'; saveSwaps();
         say(`своп ${w.id}: завершён — FRC получены релеем, BTC у пользователя ✅`);
       } else if ((w.status === 'created' || w.status === 'btc_funded') && w.t1 && h > w.t1 + 2) {
@@ -801,9 +812,16 @@ const api = {
     return { height: h, utxos: out };
   },
   async faucet({ address }) {
-    if (!IS_REGTEST) throw new Error('кран доступен только на тестовой цепи');
+    if (!HAS_FAUCET) throw new Error('кран доступен только на тестовой цепи');
+    if (!IS_REGTEST) {
+      // public chain: rate-limit per address (regtest is private, no need)
+      const now = Date.now(), last = faucetLog.get(address) ?? 0;
+      if (now - last < 6 * 3600e3) throw new Error('кран: этот адрес уже получал монеты, попробуйте позже');
+      if (faucetLog.size > 5000) faucetLog.clear();
+      faucetLog.set(address, now);
+    }
     const txid = await rpc('sendtoaddress', address, '1.0');
-    await rpc('generatetoaddress', 1, mineAddr);
+    if (IS_REGTEST) await rpc('generatetoaddress', 1, mineAddr);
     await catchUp();
     say(`кран: 1 FRC → ${address.slice(0, 16)}…`);
     return { txid };
@@ -836,7 +854,7 @@ const api = {
     const ftx = await rpc('sendtoaddress', dec.address, '0.01');
     const raw = await rpc('getrawtransaction', ftx, true);
     const v = raw.vout.findIndex(o => o.scriptPubKey.hex === TRUE_SPK);
-    await rpc('generatetoaddress', 1, mineAddr);
+    if (IS_REGTEST) await rpc('generatetoaddress', 1, mineAddr);
     const fval = BigInt(Math.round(raw.vout[v].value * 1e8));
     const tx = {
       // issuance = OP_RETURN def + mint (tag rides the spk); no v3 witness-side data ⇒ standard v2.
@@ -859,8 +877,11 @@ const api = {
     }
     const nmeta = Buffer.from(nm, 'utf8');
     tx.vout.push({ value: 0n, scriptPubKey: '6a' + (4 + nmeta.length).toString(16).padStart(2, '0') + '4652414e' + nmeta.toString('hex') });
-    await rpc('generateblock', mineAddr, [serializeTx(tx)]);
+    await submitTx(serializeTx(tx));
     await catchUp();
+    // On regtest the issuance is already mined+indexed here; on a real chain it is still in the
+    // mempool, so pre-create the registry entry (the indexer keeps existing entries on catch-up).
+    if (!assets.has(tag)) assets.set(tag, { shift, interest, granularity: 1, name: null, supply: 0n, issuedAt: tx.lockHeight });
     Object.assign(assets.get(tag), { name: nm0, decimals: d });
     say(`выпуск: «${nm0}» ×${amount}${d ? ` (.${d})` : ''} (shift ${shift}${interest ? ', растёт' : ''})`);
     return { tag, txid: computeTxid(tx) };
@@ -1518,7 +1539,7 @@ const api = {
     const w = p2p.find(x => x.id === id); if (!w || w.dir !== 'sellBtc') throw new Error('нет такого оффера');
     if (w.v === 2) throw new Error('v2: мейкер забирает FRC обычной транзакцией после раскрытия секрета');
     if (w.status !== 'frc_funded_rev') throw new Error('оффер не на этой стадии');
-    await rpc('generateblock', mineAddr, [rawtx]); await catchUp();
+    await submitTx(rawtx); await catchUp();
     w.frcClaimTxid = computeTxid(parseTx(rawtx));
     const R = frcPreimageFromRaw(rawtx, w.paymentHash);
     if (R) { w.preimage = R; w.status = 'frc_claimed_rev'; saveP2p(); }

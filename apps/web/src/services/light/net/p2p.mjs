@@ -11,7 +11,9 @@ export const MAGIC = {
   // blocks). The real testnet magic (5e d6 7c f3) retired with the dead public testnet.
   test: [0xed, 0x99, 0x9c, 0xf6],
   regtest: [0xed, 0x99, 0x9c, 0xf6], signet: [0x0a, 0x03, 0xcf, 0x40],
-  nv3: [0xed, 0x99, 0x9c, 0xf6],   // the Freimarkets nV3 chain is a regtest chain (same magic)
+  // Freimarkets is a custom signet since 2026-07-17: magic = sha256d(compactsize ++ challenge)[0..3]
+  // for challenge 001430688e98e57a68c551b7711ec2086325be33b8d7.
+  nv3: [0xd2, 0xcb, 0x28, 0xb0],
 };
 
 /** Frame a message: magic(4) ++ command(12) ++ len(4 LE) ++ checksum(4) ++ payload. */

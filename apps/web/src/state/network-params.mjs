@@ -17,10 +17,10 @@ export const NETWORKS = {
   // hidden: superseded by Freimarkets (same regtest genesis + fcrt addresses, plus assets/DEX);
   // the node and /ws/regtest bridge stay up for development.
   regtest: { label: 'Regtest', hrp: 'fcrt', coinType: 1, genesis: '67756db06265141574ff8e7c3f97ebd57c443791e0ca27ee8b03758d6056edb8', hidden: true },
-  // Freimarkets: the experimental nVersion=3 chain that backs market.testtty.ru. Regtest
-  // genesis + fcrt addresses, so the same key resolves to the same coins the market shows;
-  // a distinct net key keeps its light-client state separate from the plain regtest demo.
-  nv3:     { label: 'Freimarkets', hrp: 'fcrt', coinType: 1, genesis: '67756db06265141574ff8e7c3f97ebd57c443791e0ca27ee8b03758d6056edb8', nv3: true },
+  // Freimarkets: the nVersion=3 chain (assets + DEX). Since 2026-07-17 a PUBLIC SIGNET —
+  // freicoind -signet with our block-signing challenge; outside nodes can join P2P
+  // (freicoin.ru:38639) while blocks stay reorg-proof. Signet bech32 hrp is 'tf'.
+  nv3:     { label: 'Freimarkets', hrp: 'tf', coinType: 1, genesis: '000000500fc45aa5ed5763371527daca0ddc04212352e4759b8c9b563cc53934', nv3: true },
 };
 
 export const DEFAULT_NET = 'main';

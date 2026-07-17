@@ -1,0 +1,51 @@
+<div style="font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; line-height: 1.45; color: #1a1a1a; max-width: 46em;">
+
+<p>Dear Mark,</p>
+
+<p>I've spent the past few weeks building intensively on Tradecraft/Freicoin and opened issue <a href="https://github.com/tradecraftio/tradecraft/issues/108">#108</a> at the start of it; I realize a GitHub issue is easy to miss, so I hope a direct note is a better way to reach you. I want to (1)&nbsp;show you what has been built and (2)&nbsp;ask a small number of design questions where your intent matters more than my guesswork; I'll keep this concise.</p>
+
+<p style="font-weight: bold; font-size: 15px; margin-top: 1.4em;">Context</p>
+
+<p>I've rebased Freicoin onto modern Bitcoin Core (a rebase-29&nbsp;→&nbsp;30&nbsp;→&nbsp;31 series, currently on the Core 31.1 base) and, on top of it, implemented an experimental "nVersion=3-lite" asset layer with a matching light wallet, an order-book relay, and cross-chain BTC↔FRC atomic swaps. It runs today on a private chain and a public demo, and it now has a formal BIP-style specification — every consensus rule with its reject code, the sighash digests byte-for-byte, the deliberate exclusions with rationale.</p>
+
+<p>Spec: <a href="https://github.com/denisov-k/freicoin-wallet/blob/master/docs/nv3-lite-spec.md">docs/nv3-lite-spec.md</a><br>
+Code: <a href="https://github.com/denisov-k/tradecraft/tree/nv3-lite">denisov-k/tradecraft, branch nv3-lite</a> (the rebase series is there too)</p>
+
+<p>The asset layer implements, as executable consensus (with a JS reference model mirroring it 1:1 for cross-checking):</p>
+<ul style="margin-top: 0;">
+<li>Per-asset issuance with self-certified monetary policy (demurrage OR interest, i.e. the host demurrage kernel generalized per asset; melting, constant, and growing assets all settle in present value at the tx's <code style="font-family: Menlo, Consolas, monospace; font-size: 13px;">lock_height</code>).</li>
+<li>Per-asset conservation in present value; granularity; unique indivisible tokens (smart property); optional per-asset authorizer signatures (KYC/restricted-stock style), carried witness-side so they stay outside the txid.</li>
+<li>A DEX: composite (multi-maker bundle) transactions and ranged partial-fill offers, with <code style="font-family: Menlo, Consolas, monospace; font-size: 13px;">SIGHASH_BUNDLE</code>-style digests that let a matcher splice offers without invalidating maker signatures.</li>
+<li>Cross-chain BTC↔FRC HTLC swaps (a taker-first anti-griefing protocol; 3-branch HTLC with a cooperative-cancel leaf), coordinated by an untrusted relay.</li>
+</ul>
+
+<p>The methodology is model-first: every rule exists as an executable, mutation-fuzzed JS model cross-vectored bit-for-bit against the C++ port.</p>
+
+<p style="font-weight: bold; font-size: 15px; margin-top: 1.4em;">The part I think you'll care about most</p>
+
+<p>What I built is, in essence, an implementation of your and Jorge's 2013 <i>Freimarkets</i> spec — asset tags as Hash160 of the definition (host = genesis hash, 0-hash within a definition tx), tokens as per-asset bitstring sets, per-asset demurrage/interest, authorizer signatories, sub-transactions with granularity for partial fills, and miner-matched crossover offers. Where the 2013 spec carried the asset tag as an nVersion=3 output prefix (a hard fork), I moved it <b>into the output's scriptPubKey</b> — the extension-output push your v13.2 release notes describe as "an unconstrained field ... for things like confidential transactions or issued assets, or commitments to these values." Concretely:</p>
+
+<pre style="font-family: Menlo, Consolas, monospace; font-size: 12.5px; background: #f5f5f5; padding: 10px 14px; border-radius: 4px; overflow-x: auto;">host  output:  0014{hash20}                             (unchanged)
+asset output:  0014{hash20} &lt;push tag20&gt; OP_1           (fungible asset, ext version 1)
+asset+tokens:  0014{hash20} &lt;push tag20&gt; &lt;push H(set)&gt; OP_2</pre>
+
+<p>With this, an asset issuance or transfer is a <b>plain version-2 transaction</b> that un-upgraded nodes parse, relay, and mine unchanged — asset rules sit as a soft-fork overlay, and the chainstate serialization is untouched (tag and token commitment are re-derived from the scriptPubKey on coin load). Smart-property tokens live behind the OP_2 form: the chain keeps only the 32-byte commitment to an output's token set, and a spend reveals both sides — the spent coins' sets and the new outputs' sets — in one OP_RETURN payload checked against the commitments (conservation is undecidable from hashes alone, hence two-sided). On the wire an issuance or transfer is byte-indistinguishable from an ordinary transaction (verified live). The DEX, which carries witness-side descriptor data, uses the extended tx version.</p>
+
+<p style="font-weight: bold; font-size: 15px; margin-top: 1.4em;">Two encoding decisions I made (grounded in your docs), for your sanity-check</p>
+
+<p>Since your v13.2 notes already name "issued assets ... or commitments to these values" as the field's purpose, I didn't want to burden you with permission questions — but two form choices are worth flagging in case you'd steer them differently:</p>
+
+<p>1. <b>Suffix form.</b> I adopted the multi-push, versioned-suffix shape from the Forward Blocks paper (§XI): after the base program (and optional shard prefix) come one or more data pushes, then a mandatory trailing "extended output version" as a small-int opcode (OP_0..OP_16). The version-being-last makes the field self-describing, so a later confidential-output or commitment type can share the same suffix without colliding. I widened Freicoin's <code style="font-family: Menlo, Consolas, monospace; font-size: 13px;">IsWitnessProgram</code> walk to accept this (it previously took a single optional extension push).</p>
+
+<p>2. <b>Version numbering.</b> I took OP_1 (fungible tag) and OP_2 (tag + token commitment) provisionally, and the node currently keys its decoding on the extension-data length (20 vs 52 bytes) — honest about what the code does, but it effectively reserves those payload lengths against future extension types.</p>
+
+<p style="font-weight: bold; font-size: 15px; margin-top: 1.4em;">The one question that's really yours</p>
+
+<p><b>Path to mainnet.</b> Assuming the encoding is acceptable, what would you want to see before an asset soft-fork could be considered for a Freicoin deployment — and is this something you'd be open to collaborating on or reviewing? I'm not asking you to adopt anything; I'd value your direction on whether this is a road worth continuing down inside Tradecraft or as a separate effort.</p>
+
+<p>Thank you for the years of work this all builds on — the demurrage kernel, the witness grammar, and the Forward Blocks framing in particular made this possible. The full source, the reference model and the test vectors are already public (the spec above links to all of it); I'm glad to walk you through any part of it, in whatever order suits you.</p>
+
+<p>Best regards,<br>
+Kirill</p>
+
+</div>
