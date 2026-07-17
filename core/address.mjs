@@ -10,7 +10,7 @@ export const NETWORKS = {
   // The dead public testnet's 'tf' hrp retired with it (see apps/web/src/netparams.mjs).
   test:    { hrp: "fcrt", p2pkh: 0x6f, p2sh: 0xc4, wif: 0xef },
   regtest: { hrp: "fcrt", p2pkh: 0x6f, p2sh: 0xc4, wif: 0xef },
-  nv3:     { hrp: "fcrt", p2pkh: 0x6f, p2sh: 0xc4, wif: 0xef },   // Freimarkets nV3 chain = regtest addresses
+  nv3:     { hrp: "tf",   p2pkh: 0x6f, p2sh: 0xc4, wif: 0xef },   // Freimarkets = public signet since 2026-07-17 (tf addresses)
 };
 
 // ---- bech32 (BIP173) ----
