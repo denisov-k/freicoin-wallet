@@ -1190,8 +1190,16 @@ async function cancelRanged(offer) {
         if (givePv <= fee) throw new Error(tr('coin too small to cancel on-chain'));
         vout.push({ value: givePv - fee, scriptPubKey: spks[0], assetTag: HOST_TAG });
       } else {
-        // asset cancel is 0-fee (see mvSendAsset — dust admits no fee)
-        vout.push({ value: givePv, scriptPubKey: spks[0], assetTag: giveTag });
+        // asset cancel is 0-fee (see mvSendAsset — dust admits no fee). A TOKEN give coin only
+        // spends with a two-sided FRT1 reveal: input section proves the committed set, and the
+        // returned coin carries it onward (bad-txns-token-input-unrevealed otherwise).
+        const giveToks = offer.give.tokenHash ? (offer.give.tokens ?? []) : null;
+        if (giveToks && !giveToks.length) throw new Error(tr('this coin’s token list is not recovered yet — wait for a full sync'));
+        vout.push({ value: givePv, scriptPubKey: spks[0], assetTag: giveTag, ...(giveToks ? { tokens: giveToks } : {}) });
+        if (giveToks) {
+          const reveal = makeTokenReveal(vout, [{ tokens: giveToks }]);
+          vout.push({ value: 0n, scriptPubKey: opReturnScript(reveal) });
+        }
       }
       const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0, vin, vout };   // offer cancel = plain asset move ⇒ standard v2
       inputs.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
