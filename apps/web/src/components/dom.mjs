@@ -10,11 +10,11 @@ export const q = (el, s) => el.querySelector(s);
 export const store = { get: k => localStorage.getItem(k), set: (k, v) => localStorage.setItem(k, v), del: k => localStorage.removeItem(k) };
 
 export const short = a => a && a.length > 20 ? a.slice(0, 12) + '…' + a.slice(-8) : (a || '');
-export const fmt = n => (+n).toLocaleString(undefined, { maximumFractionDigits: 8 });
+export const fmt = n => (+n).toLocaleString(getLang(), { maximumFractionDigits: 8 });
 // Display balance: 2 decimals, rounded DOWN (never show more than is spendable) — the demurrage
 // churns the low digits every block, so full precision is visual noise here. Full 8-digit precision
 // stays where it matters: amounts, fees, activity records.
-export const fmtBal = n => (Math.floor((+n) * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+export const fmtBal = n => (Math.floor((+n) * 100) / 100).toLocaleString(getLang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const frc = v => (Number(BigInt(v)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 });
 export const num = v => parseFloat(String(v ?? '').replace(',', '.'));   // locale-tolerant: accepts a comma decimal
 export const rev = h => h.match(/../g).reverse().join('');

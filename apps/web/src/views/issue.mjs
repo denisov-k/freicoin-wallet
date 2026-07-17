@@ -40,7 +40,7 @@ export function openIssueModal() {
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Issue asset')}</b><button id="issClose" class="icon">✕</button></div>
-    <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="часы-труда"></label>
+    <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="${tr('e.g. labor-hours')}"></label>
     <div class="seg" id="iMode">
       <button data-m="a" class="on">${tr('Currency')}</button>
       <button data-m="t">${tr('Tokens')}</button>

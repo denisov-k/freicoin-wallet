@@ -106,6 +106,7 @@ table.mkt td { padding:5px 8px; border-bottom:1px solid var(--line); font-family
 table.mkt .r { text-align:right; }
 table.mkt .act-cell { text-align:right; white-space:nowrap; }   /* Buy/Cancel hug the right edge */
 .offer-row > label { flex:1; } .offer-row .numfield { flex:0 0 90px; }   /* number fields narrow + equal, selects fill */
+#rMinMax .numfield { flex:1; }   /* Min/Max are the only two fields on their row — each takes half the width */
 .melt { color:var(--warn); } .grow { color:var(--ok); } .filled { opacity:.45; }
 .chk { display:inline-flex; flex-direction:row; align-items:center; gap:8px; font-size:14px; color:var(--sub); cursor:pointer; margin:2px 0 4px; width:auto; }
 .chk input { width:18px; height:18px; accent-color:var(--accent); margin:0; flex:none; cursor:pointer; }

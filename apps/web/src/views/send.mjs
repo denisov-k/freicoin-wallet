@@ -2,7 +2,7 @@
 // review/broadcast flow (FRC, user assets, and non-custodial BTC). The data-plane it reads and
 // mutates (pending tx, verified cache, receive index, light-source lifecycle) lives in the app
 // shell and is injected via initSend — the view never reassigns shell state directly.
-import { $, copy, short, fmt } from '@/components/dom.mjs';
+import { $, copy, short, fmt, frc } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
 import { openModal, closeOverlay } from '@/components/modal.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
@@ -167,7 +167,7 @@ async function doReview() {
     showReview(
       `<div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
        <div class="rrow"><span>${tr('Amount')}</span><b>${fmt(amt)} FRC</b></div>
-       <div class="rrow"><span>${tr('Fee')}</span><b>${(Number(r.fee) / 1e8).toFixed(8)} FRC</b></div>
+       <div class="rrow"><span>${tr('Fee')}</span><b>${frc(r.fee)} FRC</b></div>
        <div class="row"><button id="confirmBtn">${tr('Send')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>`);
     $('#confirmBtn').onclick = doBroadcast;
     $('#cancelBtn').onclick = () => { d.setPending(null); showForm(); };

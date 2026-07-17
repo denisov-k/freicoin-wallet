@@ -512,6 +512,8 @@ function openOfferModal() {
     <div class="row offer-row"><label>${tr('I sell')}<select id="rAsset"></select></label><label class="numfield">${tr('Quantity')}<input id="rQty" type="text" inputmode="decimal"></label></div>
     <div class="row offer-row"><label>${tr('I want')}<select id="rWant"></select></label><label id="rPriceLbl" class="numfield">${tr('Quantity')}<input id="rPrice" type="text" inputmode="decimal"></label></div>
     <div class="stack" id="rTokPick" hidden></div>
+    <div class="sub" id="rRate" style="font-size:12px;margin:2px 0" hidden></div>
+    <div class="sub" id="rFee" style="font-size:12px;margin:2px 0" hidden></div>
     <label class="chk" id="rPartialLbl"><input type="checkbox" id="rPartial">${tr('allow partial fills')}</label>
     <div class="row offer-row" id="rMinMax"><label class="numfield">${tr('Min')}<input id="rMin" type="text" inputmode="decimal"></label><label class="numfield">${tr('Max')}<input id="rMax" type="text" inputmode="decimal"></label></div>
     <p class="sub" style="font-size:12px;margin-top:0" id="rHint">${tr('Buyers fill any amount; the remainder keeps trading while you are online.')}</p>
@@ -527,15 +529,28 @@ function openOfferModal() {
   // survives a currency switch, and both min/max and the hint are consistent everywhere.
   const isSwap = () => $('#rWant')?.value === 'BTC' || $('#rAsset')?.value === 'BTC';
   const updateHint = () => {
+    if (tokenSell()) return;   // the token path sets its own hint in syncPartial — don't clobber it
     const partial = $('#rPartial')?.checked;
-    let msg = partial
+    $('#rHint').textContent = partial
       ? tr('Buyers fill any amount; the remainder keeps trading while you are online.')
       : tr('The offer can only be taken whole — one buyer, the full quantity.');
-    if (isSwap()) {
-      const btcQ = num(($('#rWant')?.value === 'BTC' ? $('#rPrice') : $('#rQty'))?.value || '');
-      if (btcQ > 0) msg += ` · ${Number(btcFeeFor(VB_HTLC_SPEND))} ${tr('sat network fee per fill')}`;
+  };
+  // Two info lines above the partial-fills toggle: the price coefficient (want per one unit sold),
+  // and — for cross-chain swaps — the per-fill BTC claim fee. Each on its own line.
+  const updateInfo = () => {
+    const nm = v => v === 'FRC' || v === 'BTC' ? v : assetName(v);
+    const rEl = $('#rRate'), fEl = $('#rFee');
+    if (rEl) {
+      const sellQ = num($('#rQty')?.value || ''), wantQ = num($('#rPrice')?.value || '');
+      const show = !tokenSell() && sellQ > 0 && wantQ > 0;
+      rEl.hidden = !show;
+      if (show) rEl.textContent = `1 ${nm($('#rAsset').value)} = ${(wantQ / sellQ).toLocaleString(getLang(), { maximumFractionDigits: 8 })} ${nm($('#rWant').value)}`;
     }
-    $('#rHint').textContent = msg;
+    if (fEl) {
+      const btcQ = isSwap() ? num(($('#rWant')?.value === 'BTC' ? $('#rPrice') : $('#rQty'))?.value || '') : 0;
+      fEl.hidden = !(btcQ > 0);
+      if (btcQ > 0) fEl.textContent = `${Number(btcFeeFor(VB_HTLC_SPEND))} ${tr('sat network fee per fill')}`;
+    }
   };
   // The relay's fee floor (minSwap sats) as a MINIMUM in the Min/Max field's own unit: BTC for a
   // reverse (sell-BTC) offer, the sold asset for a forward (want-BTC) one, none for a DEX offer.
@@ -552,21 +567,46 @@ function openOfferModal() {
     }
     return 0;                                                             // DEX FRC↔asset: no BTC fee floor
   };
-  // Live guard: show a warning + BLOCK the button while the offer's min would be below the floor
-  // (or the whole offer is), instead of only clamping at submit. The floor rides the Min placeholder.
+  const MIN_WANT = 1e-7;   // smallest sensible want-quantity (guards against a dust/zero price)
+  const g = n => n.toLocaleString(getLang(), { maximumFractionDigits: 8 });
+  const sellName = () => { const s = $('#rAsset')?.value; return s === 'FRC' || s === 'BTC' ? s : assetName(s); };
+  // available balance of the selected sell asset in its DISPLAY units (null = token/unknown, no cap)
+  const availUnits = () => {
+    const s = $('#rAsset')?.value; if (!s) return null;
+    if (s === 'BTC') { const b = mvBtc().balance; return b != null ? Number(BigInt(b)) / 1e8 : null; }
+    if (tokenSell()) return null;   // sold by ticket count — Min/Max are hidden
+    const tag = s === 'FRC' ? HOST_TAG : s;
+    return Number(myCoinsOf(tag, state.mine.height).reduce((a, c) => a + c.pv, 0n)) / scaleOf(tag);
+  };
+  // Live guard: show a warning + BLOCK the button on any out-of-range field, instead of only
+  // clamping/throwing at submit. Symmetric across both quantities and both Min/Max bounds.
   const validate = () => {
     const btn = $('#rOfferBtn'); if (!btn) return;
-    const floor = floorOf(); const fs = floor > 0 ? floor.toLocaleString(getLang(), { maximumFractionDigits: 8 }) : '';
-    if ($('#rMin')) $('#rMin').placeholder = fs;
-    const minRaw = $('#rMin')?.value, maxRaw = $('#rMax')?.value;
+    if (tokenSell()) { const w = $('#rWarn'); if (w) w.hidden = true; btn.disabled = false; return; }   // token path: Min/Max hidden, own rules
+    const floor = floorOf(); const fs = floor > 0 ? g(floor) : '';
+    // Min placeholder: the relay fee floor when there is one (swaps), else the smallest fillable
+    // unit of the sold asset — a fill of 0 is impossible, so 0 would be misleading.
+    const sel = $('#rAsset')?.value;
+    const unit = sel === 'BTC' ? 1e-8 : sel ? 1 / scaleOf(sel === 'FRC' ? HOST_TAG : sel) : 0;
+    if ($('#rMin')) $('#rMin').placeholder = floor > 0 ? fs : (unit > 0 ? g(unit) : '');
+    const minRaw = $('#rMin')?.value, maxRaw = $('#rMax')?.value, partial = $('#rPartial')?.checked;
+    const sellQ = num($('#rQty')?.value || ''), wantQ = num($('#rPrice')?.value || ''), avail = availUnits();
+    // Max placeholder hints the upper bound: the quantity being sold (or the free balance)
+    const cap = sellQ > 0 ? sellQ : (avail != null ? avail : 0);
+    if ($('#rMax')) $('#rMax').placeholder = cap > 0 ? g(cap) : '';
     let bad = '';
-    if (floor > 0 && maxRaw && num(maxRaw) < floor) bad = tr('the whole offer is below the network-fee floor — increase the amount or price');
+    if ($('#rQty')?.value && sellQ > 0 && avail != null && sellQ > avail)
+      bad = `${tr('you only have')} ${g(avail)} ${sellName()}`;                              // sell qty > balance
+    else if ($('#rPrice')?.value && wantQ > 0 && wantQ < MIN_WANT)
+      bad = `${tr('minimum must be at least')} ${g(MIN_WANT)}`;                              // want qty below the dust floor
+    else if (floor > 0 && maxRaw && num(maxRaw) < floor) bad = tr('the whole offer is below the network-fee floor — increase the amount or price');
     else if (floor > 0 && minRaw && num(minRaw) < floor) bad = `${tr('minimum must be at least')} ${fs}`;
+    else if (partial && maxRaw && sellQ > 0 && num(maxRaw) > sellQ) bad = tr('maximum can’t exceed the quantity');   // symmetric upper bound
     else if (minRaw && maxRaw && num(minRaw) > num(maxRaw)) bad = tr('bad min/max');
     const warn = $('#rWarn'); if (warn) { warn.textContent = bad; warn.hidden = !bad; }
     btn.disabled = !!bad;
   };
-  const refresh = () => { updateHint(); validate(); };
+  const refresh = () => { updateHint(); updateInfo(); validate(); };
   // a token asset sells WHOLE: lock quantity to the coin, hide the partial control + min/max
   const tokenSell = () => { const s = $('#rAsset')?.value; return s && s !== 'BTC' && s !== 'FRC' && mvTokenCoins(s).length > 0; };
   const syncPartial = () => {
@@ -692,7 +732,7 @@ async function checkMySwaps() {
         leaf: w.leaf, cltv: w.T1, ourKey: key, toSpk: spks[0], fee: 10000n });
       await api('tx', { rawtx: rf.rawtx, kind: 'send' });
       dropMySwap(w.id);
-      toast(`${tr('swap refunded')}: ${Number(BigInt(w.funding.value)) / 1e8} FRC`, 'ok');
+      toast(`${tr('swap refunded')}: ${frc(w.funding.value)} FRC`, 'ok');
       mvRefresh();
     } catch { /* coin gone or too early — retry next cycle */ }
   }
@@ -770,13 +810,13 @@ function openP2pTakePartial(offer) {
   const mn = Math.max(mnOffer, Math.ceil(aFloor * asc) / asc);
   // cost unit price: forward pays BTC per sold-unit; reverse pays FRC/asset per sold-BTC
   const costOf = a => isRev
-    ? Math.ceil(a * 1e8 * Number(BigInt(offer.frcAmount)) / Number(BigInt(offer.btcAmount))) / wsc + ' ' + wname
-    : Math.ceil(a * wsc * Number(BigInt(offer.btcAmount)) / Number(BigInt(offer.frcAmount))) / 1e8 + ' BTC';
+    ? (Math.ceil(a * 1e8 * Number(BigInt(offer.frcAmount)) / Number(BigInt(offer.btcAmount))) / wsc).toLocaleString(getLang(), { maximumFractionDigits: 8 }) + ' ' + wname
+    : (Math.ceil(a * wsc * Number(BigInt(offer.btcAmount)) / Number(BigInt(offer.frcAmount))) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 }) + ' BTC';
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} ${aname}</b><button id="tkClose" class="icon">✕</button></div>
     <div class="sub" style="font-size:13px">${tr('Available')}: ${rem.toLocaleString(getLang())} ${aname} · ${tr('per-buy')} ${mn.toLocaleString(getLang())}–${mx.toLocaleString(getLang())}</div>
-    <label class="numfield">${tr('Amount')}<input id="tpAmt" type="text" inputmode="decimal" placeholder="${mn}–${mx}"></label>
+    <label class="numfield">${tr('Amount')}<input id="tpAmt" type="text" inputmode="decimal" placeholder="${mn.toLocaleString(getLang())}–${mx.toLocaleString(getLang())}"></label>
     <div class="rrow"><span>${tr('You pay')}</span><b id="tpCost">—</b></div>
     <button id="tkGo">${tr('Buy')}</button>
     <div id="tkLog" class="sub" style="font-size:12px;white-space:pre-line"></div></div>`;
@@ -824,11 +864,11 @@ function openP2pTakeModal(offer) {
   if ($('#modal')) return;
   const btcHrp = state.swap?.btcHrp || 'tb';
   const m = document.createElement('div'); m.id = 'modal';
-  const getStr = offer.assetTag ? `${(Number(BigInt(offer.frcAmount)) / scaleOf(offer.assetTag)).toLocaleString(getLang())} ${assetName(offer.assetTag)}` : `${Number(BigInt(offer.frcAmount)) / 1e8} FRC`;
+  const getStr = offer.assetTag ? `${(Number(BigInt(offer.frcAmount)) / scaleOf(offer.assetTag)).toLocaleString(getLang())} ${assetName(offer.assetTag)}` : `${frc(offer.frcAmount)} FRC`;
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} ${offer.assetTag ? assetName(offer.assetTag) : 'FRC'}</b><button id="tkClose" class="icon">✕</button></div>
     <div class="rrow"><span>${tr('You receive')}</span><b>${getStr}</b></div>
-    <div class="rrow"><span>${tr('You pay')}</span><b>${Number(BigInt(offer.btcAmount)) / 1e8} BTC</b></div>
+    <div class="rrow"><span>${tr('You pay')}</span><b>${btcToStr(offer.btcAmount)} BTC</b></div>
     <button id="tkGo">${tr('Buy')}</button>
     <div id="tkLog" class="sub" style="font-size:12px;white-space:pre-line"></div></div>`;
   document.body.appendChild(m);
@@ -853,7 +893,7 @@ function openP2pTakeModalB(offer) {
   const payStr = offer.assetTag ? `${(Number(BigInt(offer.frcAmount)) / scaleOf(offer.assetTag)).toLocaleString(getLang())} ${assetName(offer.assetTag)}` : `${frc(offer.frcAmount)} FRC`;
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Sell')} ${offer.assetTag ? assetName(offer.assetTag) : 'FRC'} → BTC</b><button id="tkClose" class="icon">✕</button></div>
-    <div class="rrow"><span>${tr('You receive')}</span><b>${Number(BigInt(offer.btcAmount)) / 1e8} BTC</b></div>
+    <div class="rrow"><span>${tr('You receive')}</span><b>${btcToStr(offer.btcAmount)} BTC</b></div>
     <div class="rrow"><span>${tr('You pay')}</span><b>${payStr}</b></div>
     <button id="tkGo">${tr('Sell')}</button>
     <p class="sub" style="font-size:12px">${tr('Your FRC/asset is locked right away; the BTC arrives automatically. Refundable if it stalls.')}</p></div>`;
@@ -900,7 +940,7 @@ function renderP2pPay(m, rec) {
     <div class="sub" style="margin:-4px 0 8px;font-size:13px">${tr('Order')} ${rec.id}</div>
     ${hasWallet ? `<div class="seg" id="paySeg"><button data-pay="wallet" class="on">${tr('From wallet')}</button><button data-pay="ext">${tr('External payment')}</button></div>` : ''}
     <div class="rrow" id="pyBalRow"${hasWallet ? '' : ' style="display:none"'}><span>${tr('Available')}</span><b id="pyBal" class="sub">${tr('checking balance…')}</b></div>
-    <div class="rrow"><span>${tr('Amount')}</span><b>${Number(amt) / 1e8} BTC</b></div>
+    <div class="rrow"><span>${tr('Amount')}</span><b>${btcToStr(amt)} BTC</b></div>
     ${rcv ? `<div class="rrow"><span>${tr('You receive')}</span><b>${rcv}</b></div>` : ''}
     <div id="pyWalletPane"${hasWallet ? '' : ' style="display:none"'}>
       <button id="pyWallet" style="width:100%" disabled>${tr('Pay')}</button>
@@ -1425,7 +1465,7 @@ function paint() {
       }
       for (const w of (btcMatch ? loadMySwaps() : [])) {
         const past = state.mine.height > w.T1;
-        swapRows += `<tr class="swap ${past ? '' : 'filled'}"><td></td><td>${Number(BigInt(w.funding.value)) / 1e8} FRC</td><td>BTC</td><td class="act-cell sub">${past ? tr('refundable') : tr('in progress')}</td></tr>`;
+        swapRows += `<tr class="swap ${past ? '' : 'filled'}"><td></td><td>${frc(w.funding.value)} FRC</td><td>BTC</td><td class="act-cell sub">${past ? tr('refundable') : tr('in progress')}</td></tr>`;
       }
     }
     $('#bookBody').innerHTML = (groupHtml + rows.map(bookRow).join('') + swapRows)

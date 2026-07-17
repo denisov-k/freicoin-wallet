@@ -28,7 +28,6 @@ export function renderSettings() {
      <div class="row">${vault
         ? `<button id="lockBtn" class="ghost">${tr('🔓 Lock')}</button><button id="chgBtn" class="ghost">${tr('Change passphrase')}</button>`
         : `<button id="secBtn" class="ghost">${tr('🔒 Secure with passphrase')}</button>`}</div>
-     <div id="secForm"></div>
      <div class="row"><button id="outBtn" class="ghost">${tr('Log out of wallet')}</button></div>`;
   $('#langSel').onchange = () => { setLang($('#langSel').value); d.renderApp(); };   // applies immediately, re-renders all
   const wifBtn = $('#wifBtn');

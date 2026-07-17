@@ -13,7 +13,7 @@ import { enablePush, disablePush, pushSupported, pushEnabled } from '@/services/
 import { btcExportKeys, btcToStr } from '@/services/market/btc-account.mjs';
 import { $, store, short, fmt, fmtBal, copy, skel } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
-import { openModal } from '@/components/modal.mjs';
+import { openModal, closeOverlay } from '@/components/modal.mjs';
 import { initAuth, renderWelcome, renderLock } from '@/views/auth.mjs';
 import { initSettings, renderSettings } from '@/views/settings.mjs';
 import { initSend, renderReceive, renderSend, paintSendAvail } from '@/views/send.mjs';
@@ -340,16 +340,16 @@ const render = {
 };
 
 function passForm(title, done) {
-  $('#secForm').innerHTML =
-    `<div class="review"><div class="label">${title}</div>
-       <input id="p1" type="password" placeholder="${tr('passphrase')}">
-       <input id="p2" type="password" placeholder="${tr('repeat passphrase')}">
-       <div class="row"><button id="pOk">${tr('Encrypt')}</button><button id="pCancel" class="ghost">${tr('Cancel')}</button></div></div>`;
-  $('#pOk').onclick = () => { const a = $('#p1').value, b = $('#p2').value;
+  const m = openModal(title,
+    `<input id="p1" type="password" placeholder="${tr('passphrase')}">
+     <input id="p2" type="password" placeholder="${tr('repeat passphrase')}">
+     <div class="row"><button id="pOk">${tr('Encrypt')}</button><button id="pCancel" class="ghost">${tr('Cancel')}</button></div>`);
+  const q = s => m.querySelector(s);
+  q('#pOk').onclick = () => { const a = q('#p1').value, b = q('#p2').value;
     if (a.length < 4) return toast(tr('passphrase too short'), 'err');
     if (a !== b) return toast(tr('passphrases do not match'), 'err');
-    done(a); };
-  $('#pCancel').onclick = () => $('#secForm').innerHTML = '';
+    closeOverlay(m); done(a); };
+  q('#pCancel').onclick = () => closeOverlay(m);
 }
 
 function secure(sec, pass, wasVault) {
