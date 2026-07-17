@@ -864,15 +864,19 @@ const api = {
       vout: [
         { value: amt, scriptPubKey: spk, assetTag: tag, ...(toks.length ? { tokens: toks } : {}) },
         { value: 0n, scriptPubKey: '6a' + (4 + def.length).toString(16).padStart(2, '0') + '46524131' + def.toString('hex') },
-        { value: fval - 100000n, scriptPubKey: TRUE_SPK },
+        // 0-fee on purpose: a token mint's asset output (a few base units) is "dust", and
+        // Freicoin policy admits dust outputs only in 0-fee txs. Our node relays 0-fee
+        // (minrelaytxfee=0) and our miner includes it (blockmintxfee=0).
+        { value: fval, scriptPubKey: TRUE_SPK },
       ],
     };
     // companion 'FRAN' name OP_RETURN (consensus ignores it; indexers read it from-chain). Its
     // sha256 is committed in the def above, so a reader can verify the name against the tag.
     if (toks.length) {   // reveal the minted output's token set (mint needs no input section)
       const reveal = makeTokenReveal(tx.vout, []);
-      if (n > 255) throw new Error('токены не влезают в reveal (сократите количество/длину)');
-      // direct push <=75 bytes, PUSHDATA1 above — the light client parses exactly these two forms
+      // opReturnScript emits direct/PUSHDATA1/2 and the light client parses through PUSHDATA4;
+      // 65535 is the real ceiling (was a broken `n > 255` guard — ReferenceError on every token issue)
+      if (reveal.length / 2 > 65535) throw new Error('токены не влезают в reveal (сократите количество/длину)');
       tx.vout.push({ value: 0n, scriptPubKey: opReturnScript(reveal) });
     }
     const nmeta = Buffer.from(nm, 'utf8');
