@@ -49,12 +49,16 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   results.push(norm(await inc.syncWallet(scripts)));
   console.log(`round 0: tip=${results[0].tipHeight} bal=${results[0].balance} utxos=${results[0].utxos.length}`);
 
-  // Rounds 1..3: mine to our address, then incrementally sync.
+  // Rounds 1..3: mine to our address, then incrementally sync. Record which filterRange
+  // entries belong to each round (the initial sync may produce SEVERAL chunked entries on a
+  // long chain, so "last entry" ≠ "this round" — group by the counter instead).
+  const roundEntries = [];
   for (let round = 1; round <= 3; round++) {
     cli('generatetoaddress', String(round), addr);   // 1, 2, 3 new blocks
     const before = { fr: log.filterRanges.length, bf: log.blocksFetched.length };
     const r = norm(await inc.syncWallet(scripts));
     results.push(r);
+    roundEntries.push(log.filterRanges.slice(before.fr));
     const fr = log.filterRanges[log.filterRanges.length - 1];
     console.log(`round ${round}: tip=${r.tipHeight} bal=${r.balance} utxos=${r.utxos.length}  filterRange=[${fr[0]}..${fr[1]}] matched=${fr[2]} blocksFetched=${log.blocksFetched[log.blocksFetched.length-1]}`);
   }
@@ -76,18 +80,26 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   // Assertions.
   const finalInc = results[results.length - 1];
   const ok1 = eq(finalInc, fullR);
-  const ok2 = !idleDidWork;
-  // Each mining round's filter range must start exactly at prev tip + 1 (only new blocks).
-  let ok3 = true;
-  for (let i = 0; i < log.filterRanges.length; i++) {
-    if (i > 0 && log.filterRanges[i][0] <= log.filterRanges[i - 1][1]) { /* overlap allowed only via reorg */ }
+  if (!ok1) {   // show WHICH field disagrees, not just "FAIL"
+    for (const k of Object.keys(fullR)) {
+      if (JSON.stringify(finalInc[k]) !== JSON.stringify(fullR[k]))
+        console.log(`  ! mismatch in ${k}:\n    inc:  ${JSON.stringify(finalInc[k]).slice(0, 300)}\n    full: ${JSON.stringify(fullR[k]).slice(0, 300)}`);
+    }
   }
-  // Verify round r's filter range covered exactly `r` new blocks.
-  const roundRanges = log.filterRanges;  // round0 = [1..130], round1..3 incremental
+  const ok2 = !idleDidWork;
+  // Each mining round's filter fetches must cover EXACTLY the new blocks — from the previous
+  // round's tip + 1 through the new tip (heights, not hardcoded counts: a background miner tick
+  // could legitimately add blocks on the shared dev chain).
+  let ok3 = true;
   for (let r = 1; r <= 3; r++) {
-    const range = roundRanges[r];
-    const span = range[1] - range[0] + 1;
-    if (span !== r) { ok3 = false; console.log(`  ! round ${r} span=${span}, expected ${r}`); }
+    const entries = roundEntries[r - 1];
+    const prevTip = results[r - 1].tipHeight, newTip = results[r].tipHeight;
+    if (!entries.length) { ok3 = false; console.log(`  ! round ${r}: no filter work recorded`); continue; }
+    const from = entries[0][0], to = entries[entries.length - 1][1];
+    if (from !== prevTip + 1 || to !== newTip) {
+      ok3 = false;
+      console.log(`  ! round ${r}: covered [${from}..${to}], expected [${prevTip + 1}..${newTip}]`);
+    }
   }
 
   console.log('\n=== RESULTS ===');

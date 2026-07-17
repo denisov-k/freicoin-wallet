@@ -460,9 +460,15 @@ async function postRangedOffer() {
     const partial = $('#rPartial')?.checked ?? true;                      // unchecked ⇒ all-or-nothing (minFill = the whole lot)
     // Min/Max are in GIVE-asset display units (like the swap paths). Defaults: min 0 (any), max Q.
     const gs = scaleOf(giveTag);
-    let minFill = !partial ? Q : ($('#rMin')?.value ? BigInt(Math.round(num($('#rMin').value) * gs)) : 0n);
+    // GRIEFING FLOOR (audit 2026-07-16): minFill=0 lets a taker fill 1 base unit — every such
+    // fill strands an offline maker's remainder (the pre-signed ladder covers the first fill
+    // only) and forces an online maker to re-sign. Empty Min defaults to 5% of the lot
+    // (≥1 base unit); an explicit Min still wins, but never below 1 unit.
+    const griefFloor = Q / 20n > 0n ? Q / 20n : 1n;
+    let minFill = !partial ? Q : ($('#rMin')?.value ? BigInt(Math.round(num($('#rMin').value) * gs)) : griefFloor);
     let maxFill = !partial ? Q : ($('#rMax')?.value ? BigInt(Math.round(num($('#rMax').value) * gs)) : Q);
     if (maxFill > Q) maxFill = Q;
+    if (partial && minFill < 1n) minFill = 1n;
     if (minFill < 0n || minFill > maxFill) throw new Error(tr('bad min/max'));
     const give = await prepareGiveCoin(giveTag, Q, L, coins);
     const expireAt = give.L + LADDER_SPAN;
@@ -559,13 +565,15 @@ function openOfferModal() {
     const btn = $('#rOfferBtn'); if (!btn) return;
     if (tokenSell()) { const w = $('#rWarn'); if (w) w.hidden = true; btn.disabled = false; return; }   // token path: Min/Max hidden, own rules
     const floor = floorOf(); const fs = floor > 0 ? g(floor) : '';
-    // Min placeholder: the relay fee floor when there is one (swaps), else the smallest fillable
-    // unit of the sold asset — a fill of 0 is impossible, so 0 would be misleading.
+    // Min placeholder: the relay fee floor when there is one (swaps), else the anti-griefing
+    // default that an empty field gets — 5% of the lot, at least the smallest fillable unit
+    // (a fill of 0 is impossible, and a 0 floor lets dust fills strand the remainder).
     const sel = $('#rAsset')?.value;
     const unit = sel === 'BTC' ? 1e-8 : sel ? 1 / scaleOf(sel === 'FRC' ? HOST_TAG : sel) : 0;
-    if ($('#rMin')) $('#rMin').placeholder = floor > 0 ? fs : (unit > 0 ? g(unit) : '');
     const minRaw = $('#rMin')?.value, maxRaw = $('#rMax')?.value, partial = $('#rPartial')?.checked;
     const sellQ = num($('#rQty')?.value || ''), wantQ = num($('#rPrice')?.value || ''), avail = availUnits();
+    const griefDflt = sellQ > 0 && unit > 0 ? Math.max(unit, sellQ / 20) : unit;
+    if ($('#rMin')) $('#rMin').placeholder = floor > 0 ? fs : (griefDflt > 0 ? g(griefDflt) : '');
     // Max placeholder hints the upper bound: the quantity being sold (or the free balance)
     const cap = sellQ > 0 ? sellQ : (avail != null ? avail : 0);
     if ($('#rMax')) $('#rMax').placeholder = cap > 0 ? g(cap) : '';

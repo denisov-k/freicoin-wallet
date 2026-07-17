@@ -76,10 +76,13 @@ export function decodeAssetSpk(spkHex) {
   if (pos > b.length) return null;
   const base = bytesToHex(b.slice(0, pos));
   if (pos === b.length) return { baseSpk: base, assetTag: null, tokenHash: null };   // host
-  // optional shard prefix — skip (unused today); 0x01<byte> or OP_1NEGATE/OP_1..OP_16
-  const sp = b[pos];
-  if (sp === 0x01) pos += 2; else if (sp === 0x4f || (sp >= 0x51 && sp <= 0x60)) pos += 1;
-  if (pos >= b.length) return { baseSpk: base, assetTag: null, tokenHash: null };
+  // A valid asset suffix starts with a data push (the 20-byte tag). Anything else in this
+  // position — a shard prefix (0x01<byte>, OP_1NEGATE, OP_1..OP_16) or garbage — is REJECTED,
+  // not skipped: skipping would decompose the script into parts that omit the prefix, and a
+  // re-serialization then emits a DIFFERENT script — wrong txid, ghost outpoints (audit
+  // 2026-07-16, same class as the tokenHash ghost bug). No shard outputs exist; returning null
+  // keeps such a script as opaque raw bytes end to end.
+  if (!(b[pos] >= 0x02 && b[pos] <= 0x4b)) return null;
   // suffix: data pushes (2..75) then a trailing version opcode (OP_0..OP_16)
   const data = [];
   let version = null;

@@ -32,6 +32,7 @@ export class Neutrino {
     this.utxos = new Map();              // "txid:vout" -> {txid,vout,value,refheight,script,coinbase,assetTag}
     this.assetDefs = new Map();          // nV3: assetTag -> {shift,interest,granularity}, self-certified (tag = Hash160(def))
     this.history = [];                   // {txid,category,amount,height,time}
+    this._histKeys = new Set();          // (txid:assetTag) already in history — idempotent append
     this.scannedHeight = 0;              // highest block scanned for wallet activity
     this.scannedOnce = false;            // true once a full filter scan has completed (preview gate)
     this.reorgFloor = null;              // lowest fork height rolled back since last persist (signal for the store)
@@ -64,7 +65,7 @@ export class Neutrino {
   /** Wipe all wallet/chain state (after a failed PoW verification — nothing is trustable). */
   _resetState() {
     this.chain = new HeaderChain(this.genesis);
-    this.utxos = new Map(); this.history = []; this.mempool = new Map();
+    this.utxos = new Map(); this.history = []; this._histKeys = new Set(); this.mempool = new Map();
     this.scannedHeight = 0; this.scannedOnce = false; this.reorgFloor = null;
     this.verifiedHeight = 0; this._pendingVerify = []; this._verifying = null;
     this._auxDone = 0; this._auxTotal = 0;
@@ -129,6 +130,7 @@ export class Neutrino {
     this.chain.truncate(forkH + 1);
     for (const [k, u] of this.utxos) if (u.refheight > forkH) this.utxos.delete(k);
     this.history = this.history.filter(e => e.height <= forkH);
+    this._histKeys = new Set(this.history.map(e => e.txid + ':' + e.assetTag));   // keep the dedup index in step
     this.scannedHeight = Math.min(this.scannedHeight, forkH);
     this.verifiedHeight = Math.min(this.verifiedHeight, forkH);
     this.reorgFloor = Math.min(this.reorgFloor ?? Infinity, forkH);
@@ -446,8 +448,15 @@ export class Neutrino {
         tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) { add(recvBy, isHostCoin(o) ? null : o.assetTag, o.value); utxos.set(id + ':' + i, { txid: id, vout: i, value: o.value, refheight: tx.lockHeight, script: o.scriptPubKey, coinbase: txIndex === 0, assetTag: o.assetTag ?? null, tokens: tokMap.get(i) ?? [], tokenHash: o.tokenHash ?? null }); } });
         for (const tag of new Set([...recvBy.keys(), ...sentBy.keys()])) {
           const recv = recvBy.get(tag) ?? 0n, sent = sentBy.get(tag) ?? 0n;
-          if (recv > sent) history.push({ txid: id, assetTag: tag, category: txIndex === 0 ? 'generate' : 'receive', amount: recv - sent, height, time });
-          else if (sent > recv) history.push({ txid: id, assetTag: tag, category: 'send', amount: recv - sent, height, time });
+          if (recv === sent) continue;
+          // History is idempotent per (txid, asset): a tx nets exactly one movement per asset,
+          // so re-scanning a block (overlapping strides, a snapshot→P2P handoff, an idle
+          // re-sync) must not append a second row. utxos dedup via their Map key; history is
+          // an append array, so it needs this guard. Reorg truncation clears the keys below.
+          const hk = id + ':' + tag;
+          if (this._histKeys.has(hk)) continue;
+          this._histKeys.add(hk);
+          history.push({ txid: id, assetTag: tag, category: recv > sent ? (txIndex === 0 ? 'generate' : 'receive') : 'send', amount: recv - sent, height, time });
         }
       });
     }
@@ -613,6 +622,7 @@ export class Neutrino {
     for (let i = 1; i < s.chain.length; i++) this.chain.push(s.chain[i].hash, s.chain[i].time || 0);
     this.utxos = new Map(s.utxos.map(u => [u.txid + ':' + u.vout, { ...u, value: BigInt(u.value) }]));
     this.history = s.history.map(e => ({ ...e, amount: BigInt(e.amount) }));
+    this._histKeys = new Set(this.history.map(e => e.txid + ':' + e.assetTag));   // rebuild the dedup index
     this.scannedHeight = s.scannedHeight | 0;
     this.scannedOnce = !!s.scannedOnce;
     this.verifiedHeight = this.chain.length - 1;   // persisted headers were verified before saving

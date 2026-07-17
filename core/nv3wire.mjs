@@ -71,7 +71,16 @@ export function opReturnScript(payloadHex) {
 export function parseTokenReveal(payloadHex) {
   const b = hexToBytes(payloadHex);
   let p = 0;
-  const varint = () => { const v = b[p++]; if (v < 0xfd) return v; if (v === 0xfd) { const r = b[p] | (b[p + 1] << 8); p += 2; return r; } const r = b[p] | (b[p + 1] << 8) | (b[p + 2] << 16) | (b[p + 3] << 24); p += 4; return r >>> 0; };
+  // canonical compactSize only — the C++ side (ReadCompactSize) rejects a value that fits a
+  // shorter form, so a parser that accepts it would disagree with consensus about the payload
+  const varint = () => {
+    const v = b[p++]; if (v < 0xfd) return v;
+    if (v === 0xfd) { const r = b[p] | (b[p + 1] << 8); p += 2; if (r < 0xfd) throw new Error('non-canonical compactSize'); return r; }
+    const r = (b[p] | (b[p + 1] << 8) | (b[p + 2] << 16) | (b[p + 3] << 24)) >>> 0; p += 4;
+    if (v !== 0xfe) throw new Error('unsupported compactSize');   // 8-byte sizes can't occur in a reveal
+    if (r < 0x10000) throw new Error('non-canonical compactSize');
+    return r;
+  };
   if (bytesToHex(b.slice(0, 4)) !== TOKEN_REVEAL_MAGIC) throw new Error('not a token reveal');
   p = 4;
   const section = label => {
