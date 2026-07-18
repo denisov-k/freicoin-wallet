@@ -204,10 +204,11 @@ applyTheme(themeMode());
 // On the Freimarkets (nv3) network the wallet grows two extra tabs (Issue + Exchange); on every
 // other network it stays a plain wallet. The product is titled "Freicoin"; the ƒ is its mark.
 const MKT = () => curNet() === 'nv3';
-// Swap-enabled networks: nv3 (full assets+DEX+BTC) and testnet (the BTC↔FRC swap REHEARSAL — real
-// 10-min chains, no assets). They get the Exchange tab, the BTC account and the swap drive; only
-// nv3 (MKT) additionally gets Issue + the asset machinery.
-const SWAP = () => MKT() || curNet() === 'test';
+// Swap-enabled networks: nv3 (full assets+DEX+BTC), testnet (the BTC↔FRC swap REHEARSAL — real
+// 10-min chains, no assets) and — since 2026-07-18, with the pruned BTC mainnet node synced —
+// MAINNET (real BTC↔FRC swaps via /api-main). They get the Exchange tab, the BTC account and the
+// swap drive; only nv3 (MKT) additionally gets Issue + the asset machinery.
+const SWAP = () => MKT() || curNet() === 'test' || curNet() === 'main';
 function renderApp() {
   $('#app').innerHTML = `
     <header><h1 style="font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:600;font-size:26px;line-height:1;margin:0" title="Freicoin">ƒ</h1>
