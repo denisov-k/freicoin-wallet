@@ -51,10 +51,15 @@ export function renderReceive() {
 
 export async function renderSend() {
   d.setPending(null);
+  // Currency picker shows whenever there's more than FRC to send: assets (nv3 only) and/or BTC
+  // (any swap-enabled net, incl. mainnet). Without this, a BTC-holding mainnet wallet could
+  // receive BTC but had no way to send it.
+  const btcOn = d.SWAP() && mvBtc().available;
+  const showCur = d.MKT() || btcOn;
   openModal(tr('Send'),
     `<div id="sendForm" class="stack">
      <div class="sub" id="avail">${tr('available…')}</div>
-     ${d.MKT() ? `<label>${tr('Asset')}<select id="sendAsset"><option value="">FRC</option></select></label>` : ''}
+     ${showCur ? `<label>${d.MKT() ? tr('Asset') : tr('Currency')}<select id="sendAsset"><option value="">FRC</option></select></label>` : ''}
      <label>${tr('To address')}<input id="to" placeholder="fc1…" autocomplete="off"></label>
      <label id="amtLabel">${tr('Amount (FRC)')}<div class="amtrow"><input id="amt" type="number" step="0.00000001" min="0" placeholder="0.0"><button id="maxBtn" class="ghost">${tr('Max')}</button></div></label>
      <div class="stack" id="sendTokPick" hidden></div>
@@ -68,8 +73,9 @@ export async function renderSend() {
     else if (sel && sel.value) $('#amt').value = sel.selectedOptions[0].dataset.qty;
     else if (sendBal != null) $('#amt').value = Math.max(0, sendBal - 0.001).toFixed(8);
   };
-  // Freimarkets: the selector offers every owned asset (+ BTC when a BTC account is available).
-  if (d.MKT()) mvOwnedAssets().then(list => {
+  // The selector offers every owned asset (nv3 only) plus BTC when a BTC account is available.
+  // On mainnet/testnet there are no user assets, so it's just FRC + BTC.
+  if (showCur) (d.MKT() ? mvOwnedAssets() : Promise.resolve([])).then(list => {
     const sel = $('#sendAsset'); if (!sel) return;
     const btc = mvBtc();
     sel.innerHTML = `<option value="">FRC</option>` + list.map(a => `<option value="${a.tag}" data-qty="${a.qty}" data-dec="${a.decimals}">${a.name} (${a.qty.toLocaleString(getLang())})</option>`).join('')
