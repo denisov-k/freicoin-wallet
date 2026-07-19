@@ -136,12 +136,23 @@ async function selectBtcCoins(amount, fast) {
   const ring = btcKeyring();
   const acct = await api('btcAccount', { addresses: Object.keys(ring) });
   const coins = [...acct.utxos].filter(c => ring[c.address]).sort((a, b) => Number(BigInt(b.value) - BigInt(a.value)));
-  const picked = []; let S = 0n, fee = 0n;
-  for (const c of coins) { picked.push(c); S += BigInt(c.value); fee = btcSendFee(picked.length, 2, fast); if (S >= amount + fee) break; }
-  if (S < amount + fee) return null;
-  let change = S - amount - fee;
-  if (change <= 546n) { fee = S - amount; change = 0n; }   // sub-dust change folds into the fee
-  return { ring, picked, fee, change };
+  const picked = []; let S = 0n;
+  for (const c of coins) {
+    picked.push(c); S += BigInt(c.value);
+    // No-change (sweep) path FIRST: if the leftover after a 1-output fee is dust, there is no change
+    // output — the leftover folds into the fee. This is the Max case; checking it first keeps the
+    // estimate consistent with mvBtcMax (which sizes for 1 output), so Max never trips "not enough"
+    // on its own amount.
+    const feeNoChange = btcSendFee(picked.length, 1, fast);
+    if (S >= amount + feeNoChange && S - amount - feeNoChange <= 546n) return { ring, picked, fee: S - amount, change: 0n };
+    // Change path: a real (non-dust) change output goes back to us.
+    const feeWithChange = btcSendFee(picked.length, 2, fast);
+    if (S >= amount + feeWithChange) {
+      const change = S - amount - feeWithChange;
+      return change > 546n ? { ring, picked, fee: feeWithChange, change } : { ring, picked, fee: S - amount, change: 0n };
+    }
+  }
+  return null;
 }
 
 // fee (sats) the actual send will pay at the chosen speed — for the send form / review. 0n on shortfall.
