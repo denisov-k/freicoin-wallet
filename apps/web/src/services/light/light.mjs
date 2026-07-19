@@ -168,16 +168,16 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     try {
       onProgress?.({ phase: 'preview', msg: 'start @' + anchor.height });
       p = new Neutrino({ url: urls[0], net, genesis });
-      // SHARE the main client's worker pool: a second makePool() hangs on iOS (Worker cap), and
-      // inline verification of the deep window starves behind the main sweep on the one thread.
-      // The pool queues jobs from both clients fairly. If the main pool never materializes
-      // (inline fallback), stay inline too (null).
-      for (let i = 0; i < 100 && (n?._pool === undefined); i++) await new Promise(r => setTimeout(r, 100));
-      p._pool = n?._pool ?? null;
       p.stateClient.initCheckpoint(anchor);
       p.stateClient.scannedHeight = anchor.height;   // scan only the window above the anchor
       await p.connect();
-      const r = await p.syncWallet(scripts, {});
+      // The preview runs FIRST (doSync holds the main sweep until it lands or 25s pass), so its
+      // makePool() is the only one — and the main client INHERITS it below: exactly one pool per
+      // worker ever exists (a second one hangs on iOS's Worker cap).
+      const sp = p.syncWallet(scripts, {});
+      for (let i = 0; i < 50 && p._pool === undefined; i++) await new Promise(r => setTimeout(r, 100));
+      if (n && n._pool === undefined && p._pool) n._pool = p._pool;
+      const r = await sp;
       setTail({ ...r, tailFrom: anchor.height + 1 });
       onProgress?.({ phase: 'preview', msg: 'ok ' + (Number(r.balance) / 1e8).toFixed(2) + ' FRC' });
     } catch (e) { onProgress?.({ phase: 'preview', msg: 'err: ' + String(e && e.message).slice(0, 60) }); }
@@ -200,7 +200,8 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     // Full-history import (restore): nothing scanned, nothing cached — float the checkpoint
     // preview alongside the genesis sync. (A resumed or anchored client has scannedHeight>0
     // and skips this naturally.)
-    if (n.stateClient.scannedHeight === 0 && !cache) checkpointPreview();
+    if (n.stateClient.scannedHeight === 0 && !cache)
+      await Promise.race([checkpointPreview(), new Promise(r => setTimeout(r, 25000))]);   // preview gets the CPU first
     const r = await n.syncWallet(scripts, {
       // Scan done but PoW proofs still verifying: surface the balance immediately, clearly
       // marked provisional. cache is NOT set — Send must never build on unverified data.
