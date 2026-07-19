@@ -183,10 +183,6 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       await new Promise(res => setTimeout(res, 1200));
       p.stateClient.reconsiderMempool();   // invs landed mid-scan — reclassify against the scanned coins
       const snap = p.stateClient.snapshot();
-      // SEED the main client with the preview's (tail-window) coins: its buffered mempool txs then
-      // classify against real inputs — a spend paints as «send −X» in the FIRST list, not as its
-      // change-receive. The sweep re-adds the same coins idempotently when it reaches the window.
-      try { for (const u of snap.utxos) n?.stateClient.utxos.set(u.txid + ':' + u.vout, u); n?.stateClient.reconsiderMempool?.(); } catch {}
       setTail({ ...snap, tailFrom: anchor.height + 1 });
       onProgress?.({ phase: 'preview', msg: 'ok ' + (Number(snap.balance) / 1e8).toFixed(2) + ' FRC' });
     } catch (e) { onProgress?.({ phase: 'preview', msg: 'err: ' + String(e && e.message).slice(0, 60) }); }
