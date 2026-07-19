@@ -534,7 +534,36 @@ export class Neutrino {
     } catch { this._fsnapBroken = true; }   // any failure: the P2P follower continues from scannedHeight
   }
 
-  async syncWallet(scripts, { onProvisional = null, onPartial = null } = {}) {
+  /** TAIL PREVIEW (restore UX): on a full-history import every coin of a typical wallet sits
+   *  hundreds of thousands of blocks ahead of the forward sweep, so the balance reads 0 for
+   *  minutes. Once headers are in, scan just the last `from..to` blocks into a TEMPORARY view
+   *  (nothing persisted, scannedHeight untouched). Blocks apply in height order, so a coin
+   *  funded AND spent inside the window cancels out — the preview only ever UNDERSTATES: it
+   *  misses older coins, never invents unspent ones. The authoritative sweep supersedes it. */
+  async _tailPreview(scripts, from, to, via) {
+    const matched = await via.matchFilters(scripts, from, to);
+    if (!matched.length) return null;
+    const blocks = await via.fetchBlocks(matched);
+    const hOf = new Map(blocks.map(b => [b.hash, this.chain.heightOf(b.hash)]));
+    blocks.sort((a, b) => hOf.get(a.hash) - hOf.get(b.hash));
+    const mine = new Set(scripts), utxos = new Map(), history = [];
+    const rev = h => Buffer.from(h, 'hex').reverse().toString('hex');
+    for (const { hash, bytes } of blocks) {
+      const height = hOf.get(hash), time = this.chain.timeAt(height);
+      parseBlock(bytes).forEach((tx, txIndex) => {
+        const id = txidOf(tx);
+        let recv = 0n, sent = 0n;
+        for (const vin of tx.vin) { const k = rev(vin.prevout.txid) + ':' + vin.prevout.vout; const u = utxos.get(k); if (u) { if (isHostCoin(u)) sent += this._pvIn(u, null, tx.lockHeight); utxos.delete(k); } }
+        const tokMap = txTokenMap(tx);
+        tx.vout.forEach((o, i) => { if (mine.has(o.scriptPubKey)) { if (isHostCoin(o)) recv += o.value; utxos.set(id + ':' + i, { txid: id, vout: i, value: o.value, refheight: tx.lockHeight, script: o.scriptPubKey, coinbase: txIndex === 0, assetTag: o.assetTag ?? null, tokens: tokMap.get(i) ?? [], tokenHash: o.tokenHash ?? null }); } });
+        if (recv !== sent) history.push({ txid: id, assetTag: null, category: recv > sent ? (txIndex === 0 ? 'generate' : 'receive') : 'send', amount: recv - sent, height, time });
+      });
+    }
+    let balance = 0n; for (const u of utxos.values()) if (isHostCoin(u)) balance += timeAdjustValue(u.value, to + 1 - u.refheight);
+    return { tipHeight: to, tailFrom: from, balance, utxos: [...utxos.values()], history: history.reverse(), pending: [], assetDefs: Object.fromEntries(this.assetDefs) };   // newest-first, like _result()
+  }
+
+  async syncWallet(scripts, { onProvisional = null, onPartial = null, onTail = null } = {}) {
     await this.ensureConnected();
     if (this._pool === undefined) this._pool = await makePool();   // null ⇒ inline fallback
     this._watch = new Set(scripts);        // watch the mempool for these scripts from now on
@@ -558,6 +587,19 @@ export class Neutrino {
     // The scan starts IMMEDIATELY and trails the header front (the filter-snapshot
     // consumer politely waits per-filter when it outpaces the headers) — so scan
     // progress and streamed balances run alongside the header download.
+    // Tail preview: only on a full-history import (nothing scanned yet), and only when the
+    // follower has its OWN download socket — sharing one connection would interleave the
+    // preview's cfilter/block replies with the sweep's and corrupt both.
+    const fullImport = this.scannedHeight === 0;
+    const TAIL_PREVIEW = 5000;
+    const previewP = (async () => {
+      if (!fullImport || !onTail || fetcher === this) return;
+      while (!headersDone) await new Promise(r => setTimeout(r, 100));
+      if (headersErr) return;
+      const tip = this.chain.length - 1, from = Math.max(1, tip - TAIL_PREVIEW + 1);
+      if (this.scannedHeight >= from) return;   // the sweep is already inside the window
+      try { const p = await this._tailPreview(scripts, from, tip, this); if (p && this.scannedHeight < from) onTail(p); } catch {}
+    })();
     const follower = (async () => {
       await this._bootstrapFilters(scripts, onPartial, () => headersDone, fetcher);
       for (;;) {
@@ -578,7 +620,7 @@ export class Neutrino {
         else await new Promise(r => setTimeout(r, 50));   // wait for the header front to advance
       }
     })();
-    await headersP; await follower;
+    await headersP; await follower; await previewP;
     if (headersErr) throw headersErr;
     for (const id of this.mempool.keys())  // confirmed now? drop from pending
       if (this.history.some(e => e.txid === id)) this.mempool.delete(id);

@@ -141,6 +141,23 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     if (!inflight) inflight = doSync().finally(() => { inflight = null; });
     return inflight;
   }
+  // Tail preview (full import only): the last ~5000 blocks scanned into a temporary view the
+  // moment headers land, so a restored wallet's RECENT coins paint in seconds while the
+  // authoritative from-genesis sweep still crawls. Sweep partials MERGE with it (dedup by
+  // outpoint; heights are mostly disjoint — the sweep is below the window, the tail above), and
+  // the final verified result replaces everything.
+  let tailPrev = null;
+  const isHostU = u => !u.assetTag || u.assetTag === '0'.repeat(40);
+  const mergeTail = part => {
+    if (!tailPrev) return part;
+    const tip = Math.max(part.tipHeight, tailPrev.tipHeight);
+    const seen = new Set(part.utxos.map(u => u.txid + ':' + u.vout));
+    const utxos = [...part.utxos, ...tailPrev.utxos.filter(u => !seen.has(u.txid + ':' + u.vout))];
+    const hseen = new Set(part.history.map(h => h.txid + ':' + (h.assetTag ?? '')));
+    const history = [...part.history, ...tailPrev.history.filter(h => !hseen.has(h.txid + ':' + (h.assetTag ?? '')))];
+    let balance = 0n; for (const u of utxos) if (isHostU(u)) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
+    return { ...part, tipHeight: tip, balance, utxos, history };
+  };
   async function doSync() {
     await initClient();
     if (!connected) { await n.connect(); n.stateClient.onProgress = progress; connected = true; }
@@ -149,8 +166,11 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       // marked provisional. cache is NOT set — Send must never build on unverified data.
       onProvisional: prov => { try { onProvisional?.(toCache(prov, 'provisional')); } catch {} },
       // Progressive balance during the sweep: what the scan has found so far, marked partial.
-      onPartial: part => { try { onProvisional?.(toCache(part, 'partial')); } catch {} },
+      onPartial: part => { try { onProvisional?.(toCache(mergeTail(part), 'partial')); } catch {} },
+      // Tail preview landed: paint it right away (merged over whatever the sweep has so far).
+      onTail: p => { try { tailPrev = p; onProvisional?.(toCache(mergeTail({ ...p, utxos: [], history: [], balance: 0n }), 'partial')); } catch {} },
     });
+    tailPrev = null;   // the verified full result supersedes the preview
     try { await store.save(n, skey); } catch {}
     cache = toCache(r);
     // Learned birth height: after a completed (verified) scan the wallet's first activity
