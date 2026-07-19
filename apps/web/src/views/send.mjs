@@ -68,13 +68,17 @@ export async function renderSend() {
      </div>
      <div class="stack" id="sendTokPick" hidden></div>
      <button id="reviewBtn">${tr('Review')}</button></div><div id="sendResult" class="stack"></div>`);
+  // the Review button doubles as the insufficient-funds indicator: on a BTC shortfall it disables
+  // and shows "not enough BTC"; anything else restores it to the normal "Review" label.
+  const setReview = (enabled, label) => { const b = $('#reviewBtn'); if (!b) return; b.disabled = !enabled; b.textContent = label || tr('Review'); };
   // live BTC fee for the form (recomputed on amount/speed change) — see btcFast()/updBtcFee below
   const btcFast = () => $('#btcSpeed')?.value === 'fast';
   const updBtcFee = async () => {
     const el = $('#btcFee'); if (!el) return;
-    const a = parseFloat($('#amt')?.value); if (!(a > 0)) { el.textContent = '—'; return; }
+    const a = parseFloat($('#amt')?.value); if (!(a > 0)) { el.textContent = '—'; setReview(true); return; }
     el.textContent = '…'; const sats = await mvBtcSendFee(a, btcFast()); if (!$('#btcFee')) return;
-    el.textContent = sats > 0n ? `${(Number(sats) / 1e8).toFixed(8)} BTC` : tr('not enough BTC');
+    if (sats > 0n) { el.textContent = `${(Number(sats) / 1e8).toFixed(8)} BTC`; setReview(true); }
+    else { el.textContent = '—'; setReview(false, tr('not enough BTC')); }   // shortfall → on the button
   };
   $('#reviewBtn').onclick = doReview;
   // Max dispatches on the selected currency: asset → its whole quantity; FRC → balance − fee.
@@ -103,7 +107,7 @@ export async function renderSend() {
       else if (isFrc && sendBal != null) av.textContent = `${tr('available ')}${fmt(sendBal)} FRC`;
       // BTC-only speed + live fee block
       $('#btcSpeedRow').hidden = !isBtc;
-      if (isBtc) updBtcFee();
+      if (isBtc) updBtcFee(); else setReview(true);   // clear any stale BTC shortfall state
       // token asset: quantity is not a choice — the items are. Swap the amount input for checkboxes.
       const tokCoins = v && !isBtc ? mvTokenCoins(v) : [];
       const pick = $('#sendTokPick');
