@@ -213,8 +213,8 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       onProvisional: prov => { try { onProvisional?.(toCache(prov, 'provisional')); } catch {} },
       // Progressive balance during the sweep: what the scan has found so far, marked partial.
       onPartial: part => { try { onProvisional?.(toCache(mergeTail(part), 'partial')); } catch {} },
-      // P2P tail preview landed (deeper window than the checkpoint one — adopt if better).
-      onTail: setTail,
+      // (the in-sync P2P tail preview is superseded by the checkpoint preview above — not passing
+      // onTail disables it; it had no timeout and could hang the sync tail on a lost block reply)
     });
     tailPrev = null;   // the verified full result supersedes the preview
     try { await store.save(n, skey); } catch {}
