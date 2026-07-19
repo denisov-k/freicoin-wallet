@@ -577,8 +577,15 @@ function openOfferModal() {
     // Max placeholder hints the upper bound: the quantity being sold (or the free balance)
     const cap = sellQ > 0 ? sellQ : (avail != null ? avail : 0);
     if ($('#rMax')) $('#rMax').placeholder = cap > 0 ? g(cap) : '';
+    // The whole BTC side of the offer must clear the relay's floor (round-trip network fee + one
+    // deliverable satoshi) — below it the swap can never net anything, so no fill would ever land.
+    // The BTC total is the sell quantity on a reverse (sell-BTC) offer, the want price on a forward one.
+    const minBtc = Number(state?.p2p?.minSwap ?? 0) / 1e8;
+    const totalBtc = sel === 'BTC' ? sellQ : ($('#rWant')?.value === 'BTC' ? wantQ : 0);
     let bad = '';
-    if ($('#rQty')?.value && sellQ > 0 && avail != null && sellQ > avail)
+    if (minBtc > 0 && totalBtc > 0 && totalBtc < minBtc)
+      bad = `${tr('minimum offer is')} ${g(minBtc)} BTC`;                                     // whole offer below the fee floor
+    else if ($('#rQty')?.value && sellQ > 0 && avail != null && sellQ > avail)
       bad = `${tr('you only have')} ${g(avail)} ${sellName()}`;                              // sell qty > balance
     else if ($('#rPrice')?.value && wantQ > 0 && wantQ < MIN_WANT)
       bad = `${tr('minimum must be at least')} ${g(MIN_WANT)}`;                              // want qty below the dust floor
