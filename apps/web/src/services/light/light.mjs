@@ -168,10 +168,12 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     try {
       onProgress?.({ phase: 'preview', msg: 'start @' + anchor.height });
       p = new Neutrino({ url: urls[0], net, genesis });
-      // No worker pool for the preview: iOS Safari caps live Workers, and the main sync's pool
-      // already claims them — a second makePool() hangs forever there ("start" with no "ok").
-      // Inline matching/verification is fine for a ~100-header window.
-      p._pool = null;
+      // SHARE the main client's worker pool: a second makePool() hangs on iOS (Worker cap), and
+      // inline verification of the deep window starves behind the main sweep on the one thread.
+      // The pool queues jobs from both clients fairly. If the main pool never materializes
+      // (inline fallback), stay inline too (null).
+      for (let i = 0; i < 100 && (n?._pool === undefined); i++) await new Promise(r => setTimeout(r, 100));
+      p._pool = n?._pool ?? null;
       p.stateClient.initCheckpoint(anchor);
       p.stateClient.scannedHeight = anchor.height;   // scan only the window above the anchor
       await p.connect();
