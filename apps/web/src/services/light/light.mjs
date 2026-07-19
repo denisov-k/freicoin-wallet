@@ -212,7 +212,11 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     // Full-history import (restore): nothing scanned, nothing cached — float the checkpoint
     // preview alongside the genesis sync. (A resumed or anchored client has scannedHeight>0
     // and skips this naturally.)
-    if (n.stateClient.scannedHeight === 0 && !cache)
+    // preview whenever the scan sits BELOW the deep anchor (fresh import OR a resumed session
+    // that was interrupted mid-history) — a reload at scan 368k otherwise shows only the mempool
+    // rows until the sweep reaches the recent blocks
+    const anchorH = (checkpointDeep || checkpoint)?.height ?? 0;
+    if (!cache && anchorH && n.stateClient.scannedHeight < anchorH)
       await Promise.race([checkpointPreview(), new Promise(r => setTimeout(r, 25000))]);   // preview gets the CPU first
     const r = await n.syncWallet(scripts, {
       // Scan done but PoW proofs still verifying: surface the balance immediately, clearly
