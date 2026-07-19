@@ -499,8 +499,8 @@ export class Neutrino {
   _result(at = this.chain.length - 1) {
     this.reconsiderMempool();   // classify pending txs against the utxos known RIGHT NOW — an inv
                                 // handled mid-scan otherwise shows a spend as its tiny change-receive
-    let balance = 0n; for (const u of this.utxos.values()) if (isHostCoin(u)) balance += timeAdjustValue(u.value, at + 1 - u.refheight);
-    return { tipHeight: at, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()].flat(), assetDefs: Object.fromEntries(this.assetDefs) };
+    let balance = 0n; for (const u of this.utxos.values()) if (isHostCoin(u) && u.refheight <= at) balance += timeAdjustValue(u.value, at + 1 - u.refheight);
+    return { tipHeight: at, balance, utxos: [...this.utxos.values()].filter(u => u.refheight <= at), history: [...this.history].reverse(), pending: [...this.mempool.values()].flat(), assetDefs: Object.fromEntries(this.assetDefs) };
   }
 
   /** Consume a static cfilter snapshot for a from-genesis scan: filters stream over HTTP
@@ -657,8 +657,8 @@ export class Neutrino {
    *  IndexedDB) while the real sync catches up. */
   snapshot() {
     const tip = this.chain.length - 1;
-    let balance = 0n; for (const u of this.utxos.values()) if (isHostCoin(u)) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
-    return { tipHeight: tip, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()].flat(), assetDefs: Object.fromEntries(this.assetDefs) };
+    let balance = 0n; for (const u of this.utxos.values()) if (isHostCoin(u) && u.refheight <= tip) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
+    return { tipHeight: tip, balance, utxos: [...this.utxos.values()].filter(u => u.refheight <= tip), history: [...this.history].reverse(), pending: [...this.mempool.values()].flat(), assetDefs: Object.fromEntries(this.assetDefs) };
   }
 
   /** Serialize the incremental state (JSON-safe) for persistence across page reloads.

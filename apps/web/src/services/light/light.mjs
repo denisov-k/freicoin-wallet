@@ -183,6 +183,10 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       await new Promise(res => setTimeout(res, 1200));
       p.stateClient.reconsiderMempool();   // invs landed mid-scan — reclassify against the scanned coins
       const snap = p.stateClient.snapshot();
+      // SEED the main client with the preview's coins (guarded: _result/snapshot ignore coins
+      // above their own height) — its buffered mempool txs then classify against real inputs and
+      // a spend paints as «send −X» from the very first list.
+      try { for (const u of snap.utxos) n?.stateClient.utxos.set(u.txid + ':' + u.vout, u); n?.stateClient.reconsiderMempool?.(); } catch {}
       setTail({ ...snap, tailFrom: anchor.height + 1 });
       onProgress?.({ phase: 'preview', msg: 'ok ' + (Number(snap.balance) / 1e8).toFixed(2) + ' FRC' });
     } catch (e) { onProgress?.({ phase: 'preview', msg: 'err: ' + String(e && e.message).slice(0, 60) }); }
