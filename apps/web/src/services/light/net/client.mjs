@@ -37,6 +37,7 @@ export class Neutrino {
     this.scannedOnce = false;            // true once a full filter scan has completed (preview gate)
     this.reorgFloor = null;              // lowest fork height rolled back since last persist (signal for the store)
     this.mempool = new Map();            // txid -> {txid,category,amount,time} — unconfirmed wallet txs
+    this._mempoolRaw = new Map();        // txid -> parsed tx, kept for reconsiderMempool()
     this.peerHeight = 0;                 // peer's chain height from the version handshake (progress target)
     this.onProgress = null;              // optional ({phase, ...}) callback for sync progress
     this._watch = null;                  // scripts watched for mempool activity
@@ -214,7 +215,7 @@ export class Neutrino {
   /** If `tx` touches the wallet (pays a watched script / spends our UTXO), record it as pending. */
   _considerTx(tx) {
     const id = txidOf(tx);
-    this._mempoolRaw ??= new Map(); this._mempoolRaw.set(id, tx);   // keep raw for reconsiderMempool()
+    this._mempoolRaw.set(id, tx);   // keep raw for reconsiderMempool()
     if (this.mempool.has(id)) return;
     const rev = h => Buffer.from(h, 'hex').reverse().toString('hex');
     // per-asset legs, mirroring _applyBlocks (mempool value = ARRAY of entries per tx)
