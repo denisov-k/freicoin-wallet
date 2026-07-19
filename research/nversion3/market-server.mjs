@@ -435,6 +435,18 @@ async function watchP2p() {
       // v2 (taker-first): the funding arrives at status 'taken'; legacy in-flight swaps funded at
       // 'frc_funded'. Same detection, different starting state.
       if (((w.v === 2 && w.status === 'taken' && w.dir !== 'sellBtc') || (w.v !== 2 && w.status === 'frc_funded')) && w.btcHtlc && !w.btcHtlc.txid) {
+        // Self-heal detection. The take-time watchAddress import can silently fail (RPC hiccup,
+        // wallet not yet loaded) OR import with timestamp:'now' only AFTER the taker's funding
+        // already confirmed — either way listunspent stays permanently blind and the swap hangs
+        // at 'taken' with the UI (wrongly) asking to pay again, even though the BTC is on-chain.
+        // Re-import if the address isn't watched, and kick a bounded, debounced rescan so an
+        // already-confirmed funding surfaces on a later poll. btcDeep dedups so this costs a
+        // single import+rescan per address across the swap's life.
+        if (!btcDeep.has(w.btcHtlc.addr)) {
+          const known = await btcWatch('getaddressinfo', w.btcHtlc.addr).then(i => i && (i.ismine || i.iswatchonly)).catch(() => false);
+          if (!known) await watchAddress(w.btcHtlc.addr).catch(() => {});
+          btcDeepScan([w.btcHtlc.addr]);   // debounced; retries next tick if a rescan is already in flight
+        }
         // BTC_MINCONF gates the transition: the maker responds only to a funding that can no
         // longer be RBF'd out from under them
         const utxo = await btcWatch('listunspent', BTC_MINCONF, 9999999, [w.btcHtlc.addr]).catch(() => []);

@@ -106,7 +106,7 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       // nV3 asset-aware view (all coins incl. user assets, + self-certified defs) — kept for the
       // merged wallet's Issue/Exchange tabs, which the plain host-only `utxos` above hides.
       assetDefs: r.assetDefs || {},
-      assetUtxos: r.utxos.map(u => ({ outpoint: `${u.txid}:${u.vout}`, spk: u.script, assetTag: (!u.assetTag || u.assetTag === '0'.repeat(40)) ? null : u.assetTag, value: String(u.value), refheight: u.refheight, ...(u.tokenHash ? { tokens: u.tokens ?? [], tokenHash: u.tokenHash } : {}) })),
+      assetUtxos: r.utxos.map(u => ({ outpoint: `${u.txid}:${u.vout}`, spk: u.script, assetTag: (!u.assetTag || u.assetTag === '0'.repeat(40)) ? null : u.assetTag, value: String(u.value), refheight: u.refheight, coinbase: !!u.coinbase, ...(u.tokenHash ? { tokens: u.tokens ?? [], tokenHash: u.tokenHash } : {}) })),
       // history entries are per-currency legs; user assets are integer tokens (scale 1).
       // Normalize the all-zero host tag AND merge legs of the same (txid, currency) — entries
       // persisted before normalization split one tx into a spend leg and a change leg.

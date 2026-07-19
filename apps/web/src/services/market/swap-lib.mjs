@@ -9,6 +9,15 @@ import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
 import { tr } from '@/services/i18n.mjs';
 
 const rev = h => h.match(/../g).reverse().join('');
+
+// Freicoin coinbase maturity: a freshly-mined coin (block reward) can't be spent until 100 blocks
+// are built on top of it. `mine.utxos` carry a `coinbase` flag; a coin is selectable for a swap
+// (offer sizing, HTLC funding, fee) only if it isn't an immature coinbase. Without this, a maker
+// could post a P2P offer backed by immature reward coins, get taken, and then be unable to lock the
+// FRC — stranding the taker's BTC until the HTLC refund (exactly what happened on the first live
+// mainnet swap). L is the chain tip height; refheight is the coin's own (lock/mined) height.
+export const COINBASE_MATURITY = 100;
+export const spendableAt = (u, L) => u.refheight <= L && !(u.coinbase && (L - u.refheight) < COINBASE_MATURITY);
 // a vin entry from an "txid:vout" outpoint string
 export const opIn = op => ({ prevout: { txid: rev(op.split(':')[0]), vout: +op.split(':')[1] }, scriptSig: '', sequence: 0xffffffff, witness: [] });
 
@@ -34,7 +43,7 @@ export const freeFrcKria = () => {
   if (!ctx.state) return 0n;
   const L = ctx.state.mine.height, reserved = committedOutpoints();
   return ctx.state.mine.utxos
-    .filter(u => (u.assetTag ?? null) === null && u.refheight <= L && !reserved.has(u.outpoint))
+    .filter(u => (u.assetTag ?? null) === null && spendableAt(u, L) && !reserved.has(u.outpoint))
     .reduce((a, u) => a + assetPresentValue(BigInt(u.value), L - u.refheight, { k: 20, interest: false }), 0n);
 };
 
@@ -43,7 +52,7 @@ export function myCoinsOf(tag, L, reserved = committedOutpoints()) {
   const norm = tag === HOST_TAG ? null : tag;
   // token-bearing coins are excluded: spending one without revealing its set is consensus-invalid,
   // so fungible flows must never sweep them — they move only through the token-send flow
-  return ctx.state.mine.utxos.filter(u => (u.assetTag ?? null) === norm && !u.tokenHash && u.refheight <= L && !reserved.has(u.outpoint))
+  return ctx.state.mine.utxos.filter(u => (u.assetTag ?? null) === norm && !u.tokenHash && spendableAt(u, L) && !reserved.has(u.outpoint))
     .map(u => ({ outpoint: u.outpoint, spk: u.spk, value: BigInt(u.value), refheight: u.refheight,
                  pv: assetPresentValue(BigInt(u.value), L - u.refheight, rateOf(norm)) }));
 }
@@ -54,7 +63,7 @@ export function myCoinsOf(tag, L, reserved = committedOutpoints()) {
 // the nv3 node also accepts) — this is what lets the BTC↔FRC swap run outside the asset chain.
 export async function sendFrcToSpk(spk, amount) {
   const L = ctx.state.mine.height, fee = 10000n, reserved = committedOutpoints();
-  const coins = ctx.state.mine.utxos.filter(u => (u.assetTag ?? null) === null && u.refheight <= L && !reserved.has(u.outpoint))
+  const coins = ctx.state.mine.utxos.filter(u => (u.assetTag ?? null) === null && spendableAt(u, L) && !reserved.has(u.outpoint))
     .map(u => ({ outpoint: u.outpoint, spk: u.spk, value: BigInt(u.value), refheight: u.refheight,
                  pv: assetPresentValue(BigInt(u.value), L - u.refheight, { k: 20, interest: false }) }))
     .sort((a, b) => (b.pv > a.pv ? 1 : b.pv < a.pv ? -1 : 0));
@@ -74,7 +83,7 @@ export async function sendFrcToSpk(spk, amount) {
 // pick an unreserved host coin worth ≥ `need` (present value) for a network fee, with the material
 // the asset-HTLC spend builder needs (its private key + witness scriptCode).
 export function hostFeeCoin(L, need, reserved = committedOutpoints()) {
-  const c = ctx.state.mine.utxos.find(u => (u.assetTag ?? null) === null && u.refheight <= L && !reserved.has(u.outpoint)
+  const c = ctx.state.mine.utxos.find(u => (u.assetTag ?? null) === null && spendableAt(u, L) && !reserved.has(u.outpoint)
     && assetPresentValue(BigInt(u.value), L - u.refheight, { k: 20, interest: false }) >= need);
   if (!c) return null;
   const sec = ctx.km[c.spk].priv.toString(16).padStart(64, '0');
