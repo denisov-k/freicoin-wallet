@@ -2,6 +2,7 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  "chain still syncing \u2014 sending unlocks once it is verified": "цепь ещё синхронизируется — отправка откроется после её проверки",
   "Market relay URL (order book & swaps)": "Адрес маркет-relay (биржа и обмены)",
   "relay set": "relay сохранён",
   "relay unreachable — not saved": "relay недоступен — не сохранено",
@@ -206,6 +207,7 @@ const RU = {
 };
 
 const ES = {
+  "chain still syncing \u2014 sending unlocks once it is verified": "la cadena aún se sincroniza: el envío se desbloqueará tras verificarla",
   "Market relay URL (order book & swaps)": "URL del relé de mercado (ofertas e intercambios)",
   "relay set": "relé guardado",
   "relay unreachable — not saved": "relé inaccesible — no guardado",
@@ -590,6 +592,7 @@ const ES = {
 };
 
 const DE = {
+  "chain still syncing \u2014 sending unlocks once it is verified": "Kette synchronisiert noch — Senden wird nach der Verifizierung freigeschaltet",
   "Market relay URL (order book & swaps)": "Markt-Relay-URL (Orderbuch & Swaps)",
   "relay set": "Relay gespeichert",
   "relay unreachable — not saved": "Relay nicht erreichbar — nicht gespeichert",
@@ -974,6 +977,7 @@ const DE = {
 };
 
 const FR = {
+  "chain still syncing \u2014 sending unlocks once it is verified": "la chaîne se synchronise encore — l’envoi sera débloqué après vérification",
   "Market relay URL (order book & swaps)": "URL du relais de marché (offres et échanges)",
   "relay set": "relais enregistré",
   "relay unreachable — not saved": "relais injoignable — non enregistré",
@@ -1358,6 +1362,7 @@ const FR = {
 };
 
 const PT = {
+  "chain still syncing \u2014 sending unlocks once it is verified": "a cadeia ainda sincroniza — o envio desbloqueia após a verificação",
   "Market relay URL (order book & swaps)": "URL do relay de mercado (ofertas e trocas)",
   "relay set": "relay salvo",
   "relay unreachable — not saved": "relay inacessível — não salvo",
@@ -1742,6 +1747,7 @@ const PT = {
 };
 
 const ZH = {
+  "chain still syncing \u2014 sending unlocks once it is verified": "链仍在同步——验证完成后即可发送",
   "Market relay URL (order book & swaps)": "市场中继地址（订单簿与交换）",
   "relay set": "中继已保存",
   "relay unreachable — not saved": "中继不可达 — 未保存",

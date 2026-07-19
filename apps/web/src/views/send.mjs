@@ -155,6 +155,9 @@ function successScreen(txid, extraToast) {
 }
 async function doReview() {
   if ($('#sendAsset')?.value === 'BTC') return doReviewBtc();
+  // A spend must build on VERIFIED chain state; during a first sync/restore that state is still
+  // minutes away — say so instead of silently awaiting (the button looked frozen).
+  if (!d.cacheReady()) { toast(tr('chain still syncing — sending unlocks once it is verified'), 'warn'); return; }
   const to = $('#to').value.trim(), amt = parseFloat($('#amt').value);
   if (!isValidAddress(to)) return toast(tr('invalid Freicoin address'), 'err');
   const assetTag = $('#sendAsset')?.value || null;
