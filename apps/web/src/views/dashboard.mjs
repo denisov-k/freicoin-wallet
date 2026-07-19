@@ -18,6 +18,11 @@ export const initDashboard = deps => { d = deps; };
 // ---- display cache (owned here) ----
 const timeAgo = t => { const s = Math.max(0, Date.now() / 1000 - t); if (s < 60) return tr('just now'); if (s < 3600) return (s / 60 | 0) + tr('m ago'); if (s < 86400) return (s / 3600 | 0) + tr('h ago'); return new Date(t * 1000).toLocaleDateString(); };
 const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏', purchase: '⇄', sale: '⇄', swap: '⇄', fee: '•' };
+// Freicoin coinbase maturity: a mined reward is unspendable until 100 blocks sit on top of it.
+// Activity flags a 'generate' row as immature (with its N/100 progress) until then, so a user can
+// see WHY a freshly-mined balance can't yet be sent or swapped.
+const COINBASE_MATURITY = 100;
+const isImmatureGen = i => i.category === 'generate' && i.confirmations > 0 && i.confirmations < COINBASE_MATURITY;
 let balPainted = false;
 let actLastHtml = '', actLastTxs = [], actDefs = {}, actGotFinal = false;
 // BTC legs (from the relay's watch-only index) live on a SEPARATE chain than the FRC light client,
@@ -167,12 +172,12 @@ export function paintActivity(txs, final = true) {
     ? `${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)} <small>${t.unit}</small>`
     : `${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount / (t.assetTag ? 10 ** Number(actDefs[t.assetTag]?.decimals ?? 0) : 1))} <small>${t.assetTag ? actAssetName(t.assetTag) : 'FRC'}</small>`;
   const rowHtml = i =>
-    `<div class="act-i ${i.trade ? 'trade' : i.category}">${CAT[i.category] || '•'}</div>
-     <div class="act-m"><b>${tr(i.category)}</b><span class="sub">${i.confirmations > 0 ? '' : tr('pending') + ' · '}${timeAgo(i.time)}</span></div>
+    `<div class="act-i ${i.trade ? 'trade' : i.category}${isImmatureGen(i) ? ' immature' : ''}">${isImmatureGen(i) ? '🔒' : (CAT[i.category] || '•')}</div>
+     <div class="act-m"><b>${tr(i.category)}</b><span class="sub">${i.confirmations > 0 ? (isImmatureGen(i) ? tr('immature') + ' ' + i.confirmations + '/' + COINBASE_MATURITY + ' · ' : '') : tr('pending') + ' · '}${timeAgo(i.time)}</span></div>
      ${i.trade
     ? `<div class="act-a"><span class="pos">${amtStr(i.recv)}</span><span class="neg">${amtStr(i.paid)}</span></div>`
     : `<div class="act-a ${(+i.amount) < 0 ? 'neg' : 'pos'}"><span>${amtStr(i)}</span></div>`}`;
-  const detailHtml = i => `<div class="detail"><span class="sub">${i.confirmations > 0 ? i.confirmations + ' ' + tr('conf') : tr('pending')} · ${new Date(i.time * 1000).toLocaleString(getLang())}</span><span class="sub">txid</span><div class="txid">${i.txid}</div><button id="copyTxid" class="ghost">${tr('Copy txid')}</button></div>`;
+  const detailHtml = i => `<div class="detail"><span class="sub">${i.confirmations > 0 ? i.confirmations + ' ' + tr('conf') : tr('pending')} · ${new Date(i.time * 1000).toLocaleString(getLang())}</span>${isImmatureGen(i) ? `<span class="sub immature">🔒 ${tr('immature')} · ${tr('spendable in')} ${COINBASE_MATURITY - i.confirmations} ${tr('blocks')}</span>` : ''}<span class="sub">txid</span><div class="txid">${i.txid}</div><button id="copyTxid" class="ghost">${tr('Copy txid')}</button></div>`;
   const keyOf = i => i.txid + '|' + (i.trade ? '#trade' : (i.assetTag ?? 'FRC') + '|' + i.category);
 
   // KEYED RECONCILE — update rows in place instead of rewriting the container, so a refresh never
