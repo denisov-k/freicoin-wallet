@@ -2,7 +2,7 @@
 // index. The relay never holds keys or funds: it imports our addresses watch-only, reports their UTXOs
 // and rebroadcasts what we sign locally. Trust note: it can hide/mislabel a balance, but never spend it.
 // Extracted verbatim from market-view.mjs; reads the live session through `ctx`.
-import { ctx, api, p2pKey, btcFeeFor, VB_HTLC_FUND } from '@/state/market-ctx.mjs';
+import { ctx, api, p2pKey, btcFeeFor, btcSendFee, VB_HTLC_FUND } from '@/state/market-ctx.mjs';
 import { loadP2p, loadBtcNonces, addFundTxid } from '@/services/storage.mjs';
 import { btcP2wpkhAddress, btcP2wpkhSpk, btcP2wpkhSend, btcDecodeAddress, btcWif } from '@core/btc.mjs';
 import { pubkeyCompressed } from '@core/ecdsa.mjs';
@@ -62,7 +62,7 @@ async function sweepLegacy(utxos) {
     if (ptxid && Date.now() - Number(pat || 0) < 30 * 60e3) return;      // one already in flight
   } catch {}
   let S = 0n; for (const c of coins) S += BigInt(c.value);
-  const fee = btcFeeFor(11 + coins.length * 68 + 31);
+  const fee = btcSendFee(coins.length, 1);   // plain move, no deadline — economy tariff
   if (S <= fee + 546n) return;   // dust remainder — not worth a move; stays spendable via the keyring
   const inputs = coins.map(c => ({ prevTxid: c.txid, vout: c.vout, valueSats: BigInt(c.value), key: btcLegacyPriv() }));
   const { rawtx, txid } = btcP2wpkhSend({ inputs, outputs: [{ spk: btcP2wpkhSpk(btcAcctPub()), value: S - fee }] });
@@ -131,12 +131,14 @@ export function mvBtcValidAddr(a) { try { btcDecodeAddress(a, btcHrp()); return 
 export async function mvSendBtc(dest, amountBtc) {
   if (!(amountBtc > 0)) throw new Error(tr('enter a quantity'));
   let toSpk; try { toSpk = btcDecodeAddress(dest, btcHrp()); } catch (e) { throw new Error(tr('bad address')); }
-  const amount = BigInt(Math.round(amountBtc * 1e8)), fee = btcFeeFor(VB_HTLC_FUND);   // live feerate
+  const amount = BigInt(Math.round(amountBtc * 1e8));
   const ring = btcKeyring();
   const acct = await api('btcAccount', { addresses: Object.keys(ring) });
   const coins = [...acct.utxos].filter(c => ring[c.address]).sort((a, b) => Number(BigInt(b.value) - BigInt(a.value)));
-  const picked = []; let S = 0n;
-  for (const c of coins) { picked.push(c); S += BigInt(c.value); if (S >= amount + fee) break; }
+  // economy tariff: a plain send has no timelock deadline, so it pays the mempool floor for its
+  // ACTUAL vsize (recomputed as inputs are added) instead of the padded HTLC constant
+  const picked = []; let S = 0n, fee = 0n;
+  for (const c of coins) { picked.push(c); S += BigInt(c.value); fee = btcSendFee(picked.length, 2); if (S >= amount + fee) break; }
   if (S < amount + fee) throw new Error(tr('not enough BTC'));
   const outputs = [{ spk: toSpk, value: amount }], change = S - amount - fee;
   if (change > 546n) outputs.push({ spk: btcP2wpkhSpk(btcAcctPub()), value: change });   // change back to the account

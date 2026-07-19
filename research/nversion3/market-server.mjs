@@ -547,13 +547,13 @@ const FEE_MAX = Number(process.env.BTC_FEE_MAX ?? 100);     // sanity cap: never
 let feeCache = { at: 0, rate: FEE_MIN };
 async function btcFeeRate() {
   if (Date.now() - feeCache.at < 60e3) return feeCache.rate;
-  let rate = FEE_MIN;
+  let rate = FEE_MIN, floorVb = FEE_MIN;
   try {
     // The mempool floor is the honest current minimum-to-relay; on a calm/low-activity chain
     // (signet, regtest, a quiet mainnet) it IS the realistic fee — near-empty blocks confirm it
     // in the next block.
     const mi = await btcRpcOn('', 'getmempoolinfo').catch(() => null);
-    const floorVb = mi?.mempoolminfee > 0 ? (mi.mempoolminfee * 1e8) / 1000 : FEE_MIN;
+    floorVb = mi?.mempoolminfee > 0 ? (mi.mempoolminfee * 1e8) / 1000 : FEE_MIN;
     if (BTC_NET === 'main') {
       // Real fee market: smartfee targets confirmation within FEE_TARGET_BLOCKS. Floor it at the
       // mempool minimum so even a stale/low estimate still relays.
@@ -566,7 +566,7 @@ async function btcFeeRate() {
     }
   } catch {}
   rate = Math.min(FEE_MAX, Math.max(FEE_MIN, Math.ceil(rate)));
-  feeCache = { at: Date.now(), rate };
+  feeCache = { at: Date.now(), rate, floor: Math.max(1, Math.ceil(typeof floorVb === 'number' ? floorVb : FEE_MIN)) };
   return rate;
 }
 
@@ -1250,6 +1250,7 @@ const api = {
     const feeRate = btcAvail() ? await btcFeeRate().catch(() => FEE_MIN) : FEE_MIN;
     return { available: btcAvail(), t1: SWAP_T1, t2: SWAP_T2, revTf: REV_TF, revTb: REV_TB, btcNet: BTC_NET, btcHrp: BTC_HRP, frcHeight: fh, btcHeight: bh,
       feeRate,   // sat/vB the client should price its BTC HTLC funding/claim at
+      feeMin: feeCache.floor ?? FEE_MIN,   // honest mempool floor (sat/vB) — plain sends (no deadline) may ride it
       minSwap: String(await minSwapSats().catch(() => 546n)),   // smallest sane BTC side (sats) — fills below this are refused
       v2: { btcFar: V2_BTC_FAR, frcNear: V2_FRC_NEAR, frcFar: V2_FRC_FAR, btcNear: V2_BTC_NEAR },
       assetDefs: Object.fromEntries([...assets.entries()].map(([tag, a]) => [tag, { name: a.name, decimals: a.decimals, shift: a.shift }])),

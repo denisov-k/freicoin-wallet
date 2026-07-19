@@ -47,6 +47,13 @@ export const btcFeeRate = () => Number(ctx.state?.p2p?.feeRate ?? 2);
 export const VB_HTLC_FUND = 200;    // P2WPKH in → P2WSH out + change
 export const VB_HTLC_SPEND = 170;   // P2WSH HTLC claim/refund (preimage/sig witness) → P2WPKH out
 export const btcFeeFor = vbytes => { const f = BigInt(Math.ceil(btcFeeRate() * vbytes)); return f > 200n ? f : 200n; };
+// ECONOMY tariff for plain BTC sends. Swap HTLC txs must confirm before their timelocks, so they
+// price at the estimator rate with a safety floor (btcFeeFor above). A plain transfer has no
+// deadline: it can ride the honest mempool floor (feeMin from the relay, 1 sat/vB on a quiet
+// mempool) at the tx's ACTUAL vsize — never below 1 sat/vB of that vsize (the relay minimum).
+export const btcFeeMinRate = () => Number(ctx.state?.p2p?.feeMin ?? btcFeeRate());
+export const btcSendVb = (nIn, nOut) => 11 + nIn * 68 + nOut * 31;   // P2WPKH in/out vsize
+export const btcSendFee = (nIn, nOut) => { const vb = btcSendVb(nIn, nOut); const f = BigInt(Math.ceil(btcFeeMinRate() * vb)); const m = BigInt(vb); return f > m ? f : m; };
 
 // ---- shared asset display helpers (read the live defs from ctx.state) ----
 export const HOST_TAG = '00'.repeat(20);
