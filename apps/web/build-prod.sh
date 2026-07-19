@@ -17,9 +17,12 @@ if H=$(curl -fs --user "$(cat $MD/.cookie)" -d '{"method":"getblockcount"}' "htt
   CPH=$((H-100))
   HASH=$(curl -fs --user "$(cat $MD/.cookie)" -d "{\"method\":\"getblockhash\",\"params\":[$CPH]}" "http://127.0.0.1:$RPC/" | python3 -c 'import json,sys;print(json.load(sys.stdin)["result"])')
   CP="$CPH:$HASH"
-  echo "checkpoint $CP"
+  CPDH=$((H-5000))
+  DHASH=$(curl -fs --user "$(cat $MD/.cookie)" -d "{\"method\":\"getblockhash\",\"params\":[$CPDH]}" "http://127.0.0.1:$RPC/" | python3 -c 'import json,sys;print(json.load(sys.stdin)["result"])')
+  CPD="$CPDH:$DHASH"
+  echo "checkpoint $CP deep $CPD"
 else
-  CP=""; echo "WARNING: mainnet node unreachable — building WITHOUT a fresh checkpoint (slower first sync, still correct)"
+  CP=""; CPD=""; echo "WARNING: mainnet node unreachable — building WITHOUT a fresh checkpoint (slower first sync, still correct)"
 fi
 
 # type-check (checkJs) before building — catches shadowing, missing imports, wrong shapes
@@ -32,6 +35,7 @@ VITE_BRIDGE_TEST=wss://freicoin.ru/ws/test \
 VITE_SNAP_MAIN=https://freicoin.ru/snap/main-headers.bin \
 VITE_SNAP_MAIN_FILTERS=https://freicoin.ru/snap/main-filters.bin \
 VITE_CHECKPOINT_MAIN="$CP" \
+VITE_CHECKPOINT_MAIN_DEEP="$CPD" \
 npx vite build
 
 echo "built dist/ — bridge=wss://freicoin.ru/ws/*  checkpoint=${CP:-none}"

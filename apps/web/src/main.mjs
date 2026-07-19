@@ -4,7 +4,7 @@ globalThis.Buffer = Buffer;
 import QRCode from 'qrcode';
 import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress, walletScripts, configureNetwork, addrToSpk } from '@/services/wallet.mjs';
 import { encryptSecret, decryptSecret } from '@/services/vault.mjs';
-import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS, CHECKPOINT } from '@/state/network-params.mjs';
+import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS, CHECKPOINT, CHECKPOINT_DEEP } from '@/state/network-params.mjs';
 import { tr, getLang, setLang, LANGS } from '@/services/i18n.mjs';
 // Freimarkets (Issue + Exchange) — mounted as extra tabs only on the nv3 network.
 import { initMarketView, mvSetSeed, mvRefresh, mvResetNet, renderExchange, renderAssetBalance, mvOwnedAssets, mvSendAsset, mvRelayAssets, mvBtc, mvBtcAddress, mvSendBtc, mvBtcValidAddr, mvBtcHistory } from '@/views/exchange.mjs';
@@ -137,6 +137,7 @@ function ds() {
       // anchor: the wallet's own recorded birth anchor, else the build-time one (valid
       // only when the birth is at/above it — the source enforces that)
       checkpoint: (rec?.anchorH && rec?.anchorHash) ? { height: rec.anchorH, hash: rec.anchorHash } : (CHECKPOINT[net] || null),
+      checkpointDeep: CHECKPOINT_DEEP[net] || null,   // deep anchor (~35 days): the restore preview's scan window
       // untrusted relay asset defs (rates) — lets history value asset spends it can't scan defs for
       seedDefs: (() => { try { return JSON.parse(store.get(lsKey('fw_reldefs')) || 'null'); } catch { return null; } })(),
     }).catch(() => {});
