@@ -76,9 +76,9 @@ export async function renderSend() {
   const updBtcFee = async () => {
     const el = $('#btcFee'); if (!el) return;
     const a = parseFloat($('#amt')?.value); if (!(a > 0)) { el.textContent = '—'; setReview(true); return; }
-    el.textContent = '…'; const sats = await mvBtcSendFee(a, btcFast()); if (!$('#btcFee')) return;
-    if (sats > 0n) { el.textContent = `${(Number(sats) / 1e8).toFixed(8)} BTC`; setReview(true); }
-    else { el.textContent = '—'; setReview(false, tr('not enough BTC')); }   // shortfall → on the button
+    el.textContent = '…'; const { fee, enough } = await mvBtcSendFee(a, btcFast()); if (!$('#btcFee')) return;
+    el.textContent = fee > 0n ? `${(Number(fee) / 1e8).toFixed(8)} BTC` : '—';   // show the fee even on shortfall
+    setReview(enough, enough ? undefined : tr('not enough BTC'));                // shortfall → disabled button
   };
   $('#reviewBtn').onclick = doReview;
   // Max dispatches on the selected currency: asset → its whole quantity; FRC → balance − fee.
@@ -213,12 +213,13 @@ async function doReviewBtc() {
   if (!(amt > 0)) return toast(tr('enter an amount'), 'err');
   // Speed was chosen on the form; carry it into the confirm screen and the send.
   const fast = $('#btcSpeed')?.value === 'fast';
-  const feeSats = await mvBtcSendFee(amt, fast);
+  const { fee, enough } = await mvBtcSendFee(amt, fast);
+  if (!enough) return toast(tr('not enough BTC'), 'err');
   showReview(
     `<div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
      <div class="rrow"><span>${tr('Amount')}</span><b>${amt.toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC</b></div>
      <div class="rrow"><span>${tr('Speed')}</span><b>${fast ? tr('Fast (next block)') : tr('Economy (cheaper)')}</b></div>
-     <div class="rrow"><span>${tr('Fee')}</span><b>${feeSats > 0n ? `${(Number(feeSats) / 1e8).toFixed(8)} BTC` : tr('not enough BTC')}</b></div>
+     <div class="rrow"><span>${tr('Fee')}</span><b>${(Number(fee) / 1e8).toFixed(8)} BTC</b></div>
      <div class="row"><button id="confirmBtn">${tr('Send')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>`);
   $('#cancelBtn').onclick = showForm;
   $('#confirmBtn').onclick = async () => {

@@ -144,22 +144,25 @@ async function selectBtcCoins(amount, fast) {
     // estimate consistent with mvBtcMax (which sizes for 1 output), so Max never trips "not enough"
     // on its own amount.
     const feeNoChange = btcSendFee(picked.length, 1, fast);
-    if (S >= amount + feeNoChange && S - amount - feeNoChange <= 546n) return { ring, picked, fee: S - amount, change: 0n };
+    if (S >= amount + feeNoChange && S - amount - feeNoChange <= 546n) return { ring, picked, fee: S - amount, change: 0n, enough: true };
     // Change path: a real (non-dust) change output goes back to us.
     const feeWithChange = btcSendFee(picked.length, 2, fast);
     if (S >= amount + feeWithChange) {
       const change = S - amount - feeWithChange;
-      return change > 546n ? { ring, picked, fee: feeWithChange, change } : { ring, picked, fee: S - amount, change: 0n };
+      return change > 546n ? { ring, picked, fee: feeWithChange, change, enough: true } : { ring, picked, fee: S - amount, change: 0n, enough: true };
     }
   }
-  return null;
+  // Shortfall: not enough to cover amount + fee. Still return a best-effort fee estimate (so the
+  // form can SHOW the fee and explain the shortfall) with enough:false — mvSendBtc refuses to build.
+  return { ring, picked, fee: btcSendFee(picked.length || 1, 2, fast), change: 0n, enough: false };
 }
 
-// fee (sats) the actual send will pay at the chosen speed — for the send form / review. 0n on shortfall.
+// { fee (sats), enough } for the chosen speed — the form shows the fee always and disables the
+// action when !enough. { fee: 0n, enough: false } if no amount / lookup failed.
 export async function mvBtcSendFee(amountBtc, fast = false) {
-  if (!(amountBtc > 0)) return 0n;
-  try { const sel = await selectBtcCoins(BigInt(Math.round(amountBtc * 1e8)), fast); return sel ? sel.fee : 0n; }
-  catch { return 0n; }
+  if (!(amountBtc > 0)) return { fee: 0n, enough: false };
+  try { const sel = await selectBtcCoins(BigInt(Math.round(amountBtc * 1e8)), fast); return { fee: sel.fee, enough: sel.enough }; }
+  catch { return { fee: 0n, enough: false }; }
 }
 
 // the largest amount sendable at `fast`: sweep every coin to a single output, minus that fee.
@@ -179,7 +182,7 @@ export async function mvSendBtc(dest, amountBtc, fast = false) {
   let toSpk; try { toSpk = btcDecodeAddress(dest, btcHrp()); } catch (e) { throw new Error(tr('bad address')); }
   const amount = BigInt(Math.round(amountBtc * 1e8));
   const sel = await selectBtcCoins(amount, fast);
-  if (!sel) throw new Error(tr('not enough BTC'));
+  if (!sel.enough) throw new Error(tr('not enough BTC'));
   const outputs = [{ spk: toSpk, value: amount }];
   if (sel.change > 0n) outputs.push({ spk: btcP2wpkhSpk(btcAcctPub()), value: sel.change });   // change back
   const inputs = sel.picked.map(c => ({ prevTxid: c.txid, vout: c.vout, valueSats: BigInt(c.value), key: sel.ring[c.address] }));
