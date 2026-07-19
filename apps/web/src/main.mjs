@@ -54,12 +54,11 @@ function renderStatusPop() {
   // arrival order made the lines shuffle depending on which stream reported first)
   let phases = PHASE_ORDER.filter(k => status.progress[k]).map(k => { const p = status.progress[k];
     return `<div class="rrow"><span>${tr(PHASE_LABEL[k])}</span><b>${(p.done ?? p.height).toLocaleString()} / ${(p.want ?? p.target).toLocaleString()}</b></div>`; }).join('');
-  // checkpoint-preview diagnostics: shows whether the instant-balance path ran (or why not)
-  if (status.progress.preview) phases += `<div class="rrow"><span>preview</span><b>${status.progress.preview.msg}</b></div>`;
+
   pop.innerHTML =
     `<div class="rrow"><span>${tr('Network')}</span><b>${NETWORKS[curNet()].label}</b></div>
      <div class="rrow"><span>${tr('Status')}</span><b>${label}</b></div>
-     ${status.state !== 'ok' && status.rx ? `<div class="rrow"><span>${tr('Downloaded')}</span><b>${(status.rx / 1e6).toFixed(1)} MB${status.mbps ? ' · ' + status.mbps.toFixed(1) + ' MB/s' : ''}</b></div>` : ''}
+
      ${status.state !== 'ok' ? phases || (status.detail ? `<div class="sub">${tr(status.detail)}</div>` : '') : ''}`;
 }
 
