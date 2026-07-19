@@ -6,6 +6,7 @@ import { Neutrino, NeutrinoPool } from './net/client.mjs';
 import { IdbStore } from './store-idb.mjs';
 import { timeAdjustValue } from '@core/demurrage.mjs';
 import { parseTx, txid as txidOf } from '@core/tx.mjs';
+import { Buffer } from 'buffer';
 
 const kriaToFrc = k => Number(k) / 1e8;
 
@@ -182,6 +183,10 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       await new Promise(res => setTimeout(res, 1200));
       p.stateClient.reconsiderMempool();   // invs landed mid-scan — reclassify against the scanned coins
       const snap = p.stateClient.snapshot();
+      // SEED the main client with the preview's (tail-window) coins: its buffered mempool txs then
+      // classify against real inputs — a spend paints as «send −X» in the FIRST list, not as its
+      // change-receive. The sweep re-adds the same coins idempotently when it reaches the window.
+      try { for (const u of snap.utxos) n?.stateClient.utxos.set(u.txid + ':' + u.vout, u); n?.stateClient.reconsiderMempool?.(); } catch {}
       setTail({ ...snap, tailFrom: anchor.height + 1 });
       onProgress?.({ phase: 'preview', msg: 'ok ' + (Number(snap.balance) / 1e8).toFixed(2) + ' FRC' });
     } catch (e) { onProgress?.({ phase: 'preview', msg: 'err: ' + String(e && e.message).slice(0, 60) }); }
@@ -201,6 +206,9 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
   async function doSync() {
     await initClient();
     if (!connected) { await n.connect(); n.stateClient.onProgress = progress; connected = true; }
+    // subscribe the MAIN client to the mempool IMMEDIATELY (watch + BIP35) — its raw txs buffer
+    // during the preview; the seeding below then classifies them correctly for the FIRST paint
+    try { if (!n.stateClient._watch) { n.stateClient._watch = new Set(scripts); n.stateClient._send('mempool', Buffer.alloc(0)); } } catch {}
     // Full-history import (restore): nothing scanned, nothing cached — float the checkpoint
     // preview alongside the genesis sync. (A resumed or anchored client has scannedHeight>0
     // and skips this naturally.)
