@@ -136,7 +136,11 @@ export function paintActivity(txs, final = true) {
   const sec = $('#activity');
   if (!sec || sec.hidden) return false;
   const list = $('#actList') || sec;   // filters live above the list; partials may land before renderActivity
-  if (d.SWAP() && !btcActReady) { if (!list.querySelector('.skel')) list.innerHTML = skel(3); return false; }
+  if (d.SWAP() && !btcActReady) {
+    // FINAL paints wait for the relay's BTC trade legs (else trades double-render as raw legs) —
+    // but a PROVISIONAL paint (restore preview) shows the FRC rows NOW; legs fold in on arrival.
+    if (final) { if (!list.querySelector('.skel')) list.innerHTML = skel(3); return false; }
+  }
   // A PROVISIONAL paint with an empty FRC history (mid-resync) must not show a BTC-only list — hold
   // the skeleton until real FRC legs arrive or the FINAL paint says the history is truly empty.
   if (!final && !txs.filter(t => !t.btc).length) { if (!list.querySelector('.skel')) list.innerHTML = skel(3); return false; }
