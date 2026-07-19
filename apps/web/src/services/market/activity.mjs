@@ -152,7 +152,7 @@ export async function recoverBtcNonces() {
  *  txids the trade rows replace (the raw HTLC legs must not show twice). */
 export async function mvBtcHistory() {
   if (!ctx.state && refresh) { try { await refresh(); } catch {} }   // first load: the market state isn't in yet — wait for it, don't return an empty list
-  if (!ctx.state?.swap?.available) return { legs: [], hideFrc: [] };
+  if (!ctx.seed) return { legs: [], hideFrc: [] };   // relay-backed — needs keys, not the full scan
   try {
     await recoverBtcNonces();
     const r = await api('btcHistory', { addresses: Object.keys(btcKeyring()) });

@@ -138,11 +138,10 @@ export function paintActivity(txs, final = true) {
   const sec = $('#activity');
   if (!sec || sec.hidden) return false;
   const list = $('#actList') || sec;   // filters live above the list; partials may land before renderActivity
-  if (d.SWAP() && !btcActReady) {
-    // FINAL paints wait for the relay's BTC trade legs (else trades double-render as raw legs) —
-    // but a PROVISIONAL paint (restore preview) shows the FRC rows NOW; legs fold in on arrival.
-    if (final) { if (!list.querySelector('.skel')) list.innerHTML = skel(3); return false; }
-  }
+  // ONE synchronous first paint: hold EVERY activity render (provisional included) until the
+  // relay's BTC trade legs are in — they are fetched EARLY now (seed-gated), so this costs ~1-2s
+  // and the list appears complete at once instead of rows trickling in source by source.
+  if (d.SWAP() && !btcActReady) { if (!list.querySelector('.skel')) list.innerHTML = skel(3); return false; }
   // A PROVISIONAL paint with an empty FRC history (mid-resync) must not show a BTC-only list — hold
   // the skeleton until real FRC legs arrive or the FINAL paint says the history is truly empty.
   if (!final && !txs.filter(t => !t.btc).length) { if (!list.querySelector('.skel')) list.innerHTML = skel(3); return false; }
@@ -295,6 +294,8 @@ export async function renderActivity() {
   // Instant: verified cache > streamed partial > persisted preview; live partials keep updating the
   // list via the worker's provisional events while the sync runs.
   const seed = d.seedState();
+  // kick the BTC legs fetch NOW (parallel with the preview) — paintActivity holds until they land
+  if (d.SWAP() && !btcActReady) mvBtcHistory().then(b => { if (gen === d.renderGen()) { setBtcLegs(b); paintActivity(actLastTxs, actGotFinal); } }).catch(() => {});
   if (seed) painted = paintActivity([...(seed.pending || []), ...(seed.history || [])], d.cacheReady() && !!seed.history) || painted;
   else { try { const pv = await d.ds().preview(); if (pv) painted = paintActivity([...pv.pending, ...pv.history], false) || painted; } catch {} }
   try {
