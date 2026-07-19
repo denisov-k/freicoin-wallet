@@ -186,7 +186,12 @@ async function strategy() {
   const drift = Math.abs(offerRate - ask) / ask;
   const remaining = BigInt(s.remaining ?? s.frcAmount);
   const grown = target > (remaining * 3n) / 2n && target - remaining >= floorK;   // mined coins matured — restock
-  if (drift > REPRICE || remaining < (minPieceK(s) * 2n) || grown) {
+  // "almost sold out" ONLY applies to an offer that was actually PARTIALLY filled and now has a
+  // remainder too small to fill one more min-piece. On a FRESH offer remaining == frcAmount and can
+  // always fill (minFill ≤ frcAmount by construction) — comparing to minPieceK*2 there misfired and
+  // reposted every tick whenever minFill was a large fraction of the lot (infinite loop).
+  const dustRemainder = remaining < BigInt(s.frcAmount) && remaining < minPieceK(s);
+  if (drift > REPRICE || dustRemainder || grown) {
     log(`repost ${rec.id}: drift ${(drift * 100).toFixed(1)}%, remaining ${Number(remaining) / 1e8} FRC, target ${Number(target) / 1e8}`);
     if (DRY) return;
     await cancelOffer(rec);
