@@ -74,7 +74,7 @@ export async function renderSend() {
     const el = $('#btcFee'); if (!el) return;
     const a = parseFloat($('#amt')?.value); if (!(a > 0)) { el.textContent = '—'; return; }
     el.textContent = '…'; const sats = await mvBtcSendFee(a, btcFast()); if (!$('#btcFee')) return;
-    el.textContent = sats > 0n ? `${(Number(sats) / 1e8).toFixed(8)} BTC (${sats} sat)` : tr('not enough BTC');
+    el.textContent = sats > 0n ? `${(Number(sats) / 1e8).toFixed(8)} BTC` : tr('not enough BTC');
   };
   $('#reviewBtn').onclick = doReview;
   // Max dispatches on the selected currency: asset → its whole quantity; FRC → balance − fee.
