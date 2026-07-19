@@ -180,8 +180,9 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       // the BIP35 mempool reply races the sync tail — give invs a beat to land, then snapshot,
       // so the FIRST painted list already carries pending rows instead of adding them a tick later
       await new Promise(res => setTimeout(res, 1200));
-      setTail({ ...p.stateClient.snapshot(), tailFrom: anchor.height + 1 });
-      onProgress?.({ phase: 'preview', msg: 'ok ' + (Number(r.balance) / 1e8).toFixed(2) + ' FRC' });
+      const snap = p.stateClient.snapshot();
+      setTail({ ...snap, tailFrom: anchor.height + 1 });
+      onProgress?.({ phase: 'preview', msg: 'ok ' + (Number(snap.balance) / 1e8).toFixed(2) + ' FRC' });
     } catch (e) { onProgress?.({ phase: 'preview', msg: 'err: ' + String(e && e.message).slice(0, 60) }); }
     finally { try { p?.close?.(); } catch {} }
   }
