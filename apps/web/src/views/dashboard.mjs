@@ -146,6 +146,14 @@ export function paintActivity(txs, final = true) {
   // A PROVISIONAL paint with an empty FRC history (mid-resync) must not show a BTC-only list — hold
   // the skeleton until real FRC legs arrive or the FINAL paint says the history is truly empty.
   if (!final && !txs.filter(t => !t.btc).length) { if (!list.querySelector('.skel')) list.innerHTML = skel(3); return false; }
+  // ANTI-FLICKER: a paint sourced from a cache snapshotted BEFORE a just-broadcast tx would drop
+  // its pending row (keyed reconcile removes absent keys) until the next sync tick re-adds it.
+  // Carry recent 0-conf rows the incoming set doesn't know about; a confirmed/known txid wins.
+  {
+    const have = new Set(txs.map(t => t.txid));
+    const now = Date.now() / 1000;
+    for (const p of actLastTxs) if (!have.has(p.txid) && p.confirmations === 0 && now - (p.time || now) < 3600) txs = [...txs, p];
+  }
   // A cross-chain trade knows the raw FRC leg it replaces (frcTxid) — adopt that leg's real
   // time/confirmations before the leg itself is hidden. AMOUNTS stay the trade's NOMINAL ones.
   for (const t of btcActLegs) {
