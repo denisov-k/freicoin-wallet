@@ -14,9 +14,12 @@ import { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvBtcMax,
 let d;
 export const initSend = deps => { d = deps; };
 
+// The FRC "available" is the SPENDABLE balance (matured coins), not the raw balance — freshly-mined
+// coinbase shows in the balance but can't be sent for 100 blocks, so offering it here would mislead.
+export const availFrc = st => st ? (st.spendable ?? st.balance) : 0;
 export function paintSendAvail(st, approx) {
   const el = $('#avail');
-  if (el && st) el.textContent = `${tr('available ')}${approx ? '≈ ' : ''}${fmt(st.balance)} FRC`;   // full precision — meant to be spent
+  if (el && st) el.textContent = `${tr('available ')}${approx ? '≈ ' : ''}${fmt(availFrc(st))} FRC`;   // full precision — meant to be spent
 }
 
 export function renderReceive() {
@@ -80,6 +83,14 @@ export async function renderSend() {
     el.textContent = fee > 0n ? `${(Number(fee) / 1e8).toFixed(8)} BTC` : '—';   // show the fee even on shortfall
     setReview(enough, enough ? undefined : tr('not enough BTC'));                // shortfall → disabled button
   };
+  // FRC: disable the button (with a reason) when the amount exceeds the SPENDABLE balance — the
+  // node would reject it anyway (e.g. all coins are immature mined coinbase → spendable 0).
+  const updFrcCheck = () => {
+    if ($('#sendAsset')?.value) return;   // only the plain-FRC path; BTC/asset have their own checks
+    const a = parseFloat($('#amt')?.value);
+    if (a > 0 && sendBal != null && a > sendBal) setReview(false, tr('not enough FRC'));
+    else setReview(true);
+  };
   $('#reviewBtn').onclick = doReview;
   // Max dispatches on the selected currency: asset → its whole quantity; FRC → balance − fee.
   let sendBal = null;
@@ -107,7 +118,7 @@ export async function renderSend() {
       else if (isFrc && sendBal != null) av.textContent = `${tr('available ')}${fmt(sendBal)} FRC`;
       // BTC-only speed + live fee block
       $('#btcSpeedRow').hidden = !isBtc;
-      if (isBtc) updBtcFee(); else setReview(true);   // clear any stale BTC shortfall state
+      if (isBtc) updBtcFee(); else if (isFrc) updFrcCheck(); else setReview(true);
       // token asset: quantity is not a choice — the items are. Swap the amount input for checkboxes.
       const tokCoins = v && !isBtc ? mvTokenCoins(v) : [];
       const pick = $('#sendTokPick');
@@ -118,16 +129,16 @@ export async function renderSend() {
         : '';
     };
   }).catch(() => {});
-  $('#amt').addEventListener('keydown', e => { if (e.key === 'Enter') doReview(); });
-  $('#amt').addEventListener('input', () => { if ($('#sendAsset')?.value === 'BTC') updBtcFee(); });
+  $('#amt').addEventListener('keydown', e => { if (e.key === 'Enter' && !$('#reviewBtn')?.disabled) doReview(); });
+  $('#amt').addEventListener('input', () => { const v = $('#sendAsset')?.value; if (v === 'BTC') updBtcFee(); else if (!v) updFrcCheck(); });
   $('#btcSpeed').onchange = updBtcFee;
   // Instant: approximate available (verified cache > streamed partial > preview); the verified
   // value replaces it in place and binds Max.
   const seed = d.seedState();
-  if (seed) paintSendAvail(seed, !d.cacheReady());
-  else { try { const pv = await d.ds().preview(); if (pv) paintSendAvail(pv, true); } catch {} }
+  if (seed) { paintSendAvail(seed, !d.cacheReady()); sendBal = availFrc(seed); }
+  else { try { const pv = await d.ds().preview(); if (pv) { paintSendAvail(pv, true); sendBal = availFrc(pv); } } catch {} }
   const sendGen = d.renderGen();
-  try { const s = await d.getState(); if (sendGen !== d.renderGen()) return; d.paintBalance(s); paintSendAvail(s, false); sendBal = s.balance; }
+  try { const s = await d.getState(); if (sendGen !== d.renderGen()) return; d.paintBalance(s); paintSendAvail(s, false); sendBal = availFrc(s); updFrcCheck(); }
   catch { if (sendGen !== d.renderGen()) return; const el = $('#avail'); if (el && el.textContent === tr('available…')) el.textContent = ''; }
 }
 
