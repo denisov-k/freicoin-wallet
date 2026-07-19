@@ -762,8 +762,19 @@ async function postP2pOfferB(btcUnits, wantUnits, wantTag = null, opts = null) {
 }
 // TAKER (reverse): accept a sell-BTC offer — I pay FRC/asset, receive BTC into my account.
 // v2: I hold R and fund my FRC/asset HTLC RIGHT NOW (far timeout); the maker responds with BTC.
+// what the reverse taker can actually lock, in the pay asset's base units (FRC keeps a fee reserve)
+export const takerPayCapacity = tag => tag
+  ? myCoinsOf(tag, state.mine.height).reduce((s, c) => s + c.pv, 0n)
+  : freeFrcKria() - 10000n;
 async function takeP2pB(offer, fillSats = null) {
   try {
+    const tag = offer.assetTag ?? null;
+    // PRE-FLIGHT: the reverse taker funds FRC/asset immediately after the take registers — check
+    // the coins BEFORE reserving the offer, or a broke taker leaves it hostage in 'taken'
+    const need = fillSats != null
+      ? (BigInt(offer.frcAmount) * BigInt(fillSats) + BigInt(offer.btcAmount) - 1n) / BigInt(offer.btcAmount)
+      : BigInt(offer.frcAmount);
+    if (takerPayCapacity(tag) < need) throw new Error(tag ? tr('not enough of that asset') : tr('not enough FRC'));
     const nonce = fillSats != null
       ? sha256(Buffer.from(seed + 'fw-p2p-take:' + offer.id + ':' + fillSats + ':' + state.mine.height, 'utf8')).toString('hex').slice(0, 16)
       : sha256(Buffer.from(seed + 'fw-p2p-take:' + offer.id, 'utf8')).toString('hex').slice(0, 16);
@@ -771,9 +782,15 @@ async function takeP2pB(offer, fillSats = null) {
     const H = paymentHashOf(p2pKey(nonce, 'R'));
     const r = await api('p2pTakeB', { id: offer.id, ...(fillSats != null ? { fill: String(fillSats) } : {}), takerFrcPub: frcPub, takerBtcPub: btcPub, takerBtcAddr: btcAcctAddr(), paymentHash: H });
     addBtcNonce(nonce);
-    const tag = offer.assetTag ?? null;
-    // fund my give-side HTLC immediately — this IS the commitment that makes the take real
-    const fund = tag ? await lockAssetToHtlc(r.frcHtlc.spk, tag, BigInt(r.frcAmount)) : await sendFrcToSpk(r.frcHtlc.spk, BigInt(r.frcAmount));
+    // fund my give-side HTLC immediately — this IS the commitment that makes the take real.
+    // If the funding still fails (coins raced away), UNDO the take so the offer frees instantly.
+    let fund;
+    try {
+      fund = tag ? await lockAssetToHtlc(r.frcHtlc.spk, tag, BigInt(r.frcAmount)) : await sendFrcToSpk(r.frcHtlc.spk, BigInt(r.frcAmount));
+    } catch (e) {
+      await api('p2pUntake', { id: r.id, takerFrcPub: frcPub }).catch(() => {});
+      throw e;
+    }
     putP2p({ id: r.id, role: 'taker', dir: 'sellBtc', ...(fillSats != null ? { parent: offer.id } : {}), nonce, status: 'frc_funded_rev',
       assetTag: tag, frcAmount: r.frcAmount, btcAmount: r.btcAmount, paymentHash: H, leaf: r.frcHtlc.leaf, T1: r.frcHtlc.cltv,
       funding: { txid: fund.txid, vout: fund.vout, value: r.frcAmount, refheight: fund.refheight ?? state.mine.height } });
@@ -818,7 +835,16 @@ function openP2pTakePartial(offer) {
     q(m, '#tkGo').disabled = true; q(m, '#tpAmt').disabled = true;
     q(m, '#tkLog').textContent = tr('pieces are below the network fee floor — this offer cannot be bought right now');
   }
-  const cost = () => { const a = num($('#tpAmt').value) || 0; $('#tpCost').textContent = a > 0 ? costOf(a) : '—'; };
+  const cost = () => {
+    const a = num($('#tpAmt').value) || 0; $('#tpCost').textContent = a > 0 ? costOf(a) : '—';
+    // reverse: the pay side comes from the wallet only — block the button on a shortfall
+    if (isRev && mn <= mx) {
+      const needBase = a > 0 ? BigInt(Math.ceil(a * 1e8 * Number(BigInt(offer.frcAmount)) / Number(BigInt(offer.btcAmount)))) : 0n;
+      const shortP = needBase > takerPayCapacity(offer.assetTag ?? null);
+      const go = q(m, '#tkGo'); go.disabled = shortP;
+      go.textContent = shortP ? tr(offer.assetTag ? 'not enough of that asset' : 'not enough FRC') : tr('Buy');
+    }
+  };
   q(m, '#tpAmt').oninput = cost; cost();
   q(m, '#tkGo').onclick = async () => {
     const a = num($('#tpAmt').value);
@@ -881,11 +907,14 @@ function openP2pTakeModalB(offer) {
   if ($('#modal')) return;
   const m = document.createElement('div'); m.id = 'modal';
   const payStr = offer.assetTag ? `${(Number(BigInt(offer.frcAmount)) / scaleOf(offer.assetTag)).toLocaleString(getLang())} ${assetName(offer.assetTag)}` : `${frc(offer.frcAmount)} FRC`;
+  // the reverse taker pays from the wallet ONLY (no external-payment path) — a short balance
+  // means the take can't complete, so block the button instead of letting it strand the offer
+  const short = takerPayCapacity(offer.assetTag ?? null) < BigInt(offer.frcAmount);
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} BTC</b><button id="tkClose" class="icon">✕</button></div>
     <div class="rrow"><span>${tr('You receive')}</span><b>${btcToStr(offer.btcAmount)} BTC</b></div>
     <div class="rrow"><span>${tr('You pay')}</span><b>${payStr}</b></div>
-    <button id="tkGo">${tr('Buy')}</button>
+    <button id="tkGo"${short ? ' disabled' : ''}>${short ? tr(offer.assetTag ? 'not enough of that asset' : 'not enough FRC') : tr('Buy')}</button>
     <p class="sub" style="font-size:12px">${tr('Your FRC/asset is locked right away; the BTC arrives automatically. Refundable if it stalls.')}</p></div>`;
   document.body.appendChild(m);
   armOverlay(m);
@@ -1443,6 +1472,9 @@ function paint() {
           : `<button class="p2ptakepart rbtn" data-id="${o.id}">${tr('Buy')}</button>`;   // pick an amount
         else if (mineRec) act = (!isRev && mineRec.status === 'need_btc') ? `<button class="p2ppay rbtn" data-id="${o.id}">${tr('Pay')}</button>`
           : (o.status === 'open' && !o.frcHtlc && !o.btcHtlc) ? `<button class="p2pcancel" data-id="${o.id}">${tr('Cancel')}</button>`
+          // MY dangling take with NOTHING funded (e.g. the funding step failed for lack of coins):
+          // let the taker release the reservation instead of leaving the offer hostage to the grace timer
+          : (mineRec.role === 'taker' && o.status === 'taken' && !o.frcHtlc?.txid && !o.btcHtlc?.txid) ? `<button class="p2puntake" data-id="${o.id}">${tr('Cancel')}</button>`
           : `<span class="sub">${p2pStatusLabel(o, mineRec)}</span>`;
         else act = o.status === 'open' ? `<button class="p2ptake rbtn" data-id="${o.id}">${tr('Buy')}</button>` : `<span class="sub">${p2pStatusLabel(o, mineRec)}</span>`;
         // MY in-progress swaps carry a live action (Pay / a status) — never dim them; .filled is for
@@ -1476,6 +1508,16 @@ function paint() {
     });
     $('#bookBody').querySelectorAll('.p2ppay').forEach(b => b.onclick = () => {
       const rec = loadP2p().find(x => x.id === b.dataset.id); if (rec) openP2pPayModal(rec);
+    });
+    $('#bookBody').querySelectorAll('.p2puntake').forEach(b => b.onclick = async () => {
+      const rec = loadP2p().find(x => x.id === b.dataset.id); if (!rec) return;
+      try {
+        await api('p2pUntake', { id: rec.id, takerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')) });
+        dropP2p(rec.id);
+        b.closest('tr')?.remove();
+        toast(tr('purchase cancelled'), 'ok');
+        Promise.resolve(inflight).then(() => mvRefresh());
+      } catch (e) { toast(e.message, 'err'); }
     });
     $('#bookBody').querySelectorAll('.p2pcancel').forEach(b => b.onclick = async () => {
       const rec = loadP2p().find(x => x.id === b.dataset.id); if (!rec) return;
