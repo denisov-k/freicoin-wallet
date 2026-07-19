@@ -147,6 +147,33 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
   // outpoint; heights are mostly disjoint — the sweep is below the window, the tail above), and
   // the final verified result replaces everything.
   let tailPrev = null;
+  // Adopt a tail view unless we already hold a better one (deeper window / newer tip); never
+  // after the verified full result landed (a late preview must not overwrite the truth).
+  const setTail = p => {
+    if (cache || !p) return;
+    if (tailPrev && tailPrev.tailFrom <= p.tailFrom && tailPrev.tipHeight >= p.tipHeight) return;
+    tailPrev = p;
+    try { onProvisional?.(toCache(mergeTail({ ...p, utxos: [], history: [], balance: 0n }), 'partial')); } catch {}
+  };
+  // CHECKPOINT PREVIEW: a restore ("12 words only") must scan from genesis for the FULL truth —
+  // but the first screen doesn't have to wait for it. A tiny parallel client anchors at the
+  // build-time checkpoint (trusted exactly as much as this code itself — reproducible builds),
+  // syncs checkpoint→tip in ~a second (a few hundred headers, PoW-verified) and scans just that
+  // window: the wallet behaves like a NEW wallet instantly, while the from-genesis sync earns
+  // the history in the background and supersedes this view.
+  async function checkpointPreview() {
+    if (!checkpoint || !onProvisional || urls.length > 1) return;
+    let p = null;
+    try {
+      p = new Neutrino({ url: urls[0], net, genesis });
+      p.stateClient.initCheckpoint(checkpoint);
+      p.stateClient.scannedHeight = checkpoint.height;   // scan only the window above the anchor
+      await p.connect();
+      const r = await p.syncWallet(scripts, {});
+      setTail({ ...r, tailFrom: checkpoint.height + 1 });
+    } catch { /* preview is best-effort — the authoritative sync carries on regardless */ }
+    finally { try { p?.close?.(); } catch {} }
+  }
   const isHostU = u => !u.assetTag || u.assetTag === '0'.repeat(40);
   const mergeTail = part => {
     if (!tailPrev) return part;
@@ -161,14 +188,18 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
   async function doSync() {
     await initClient();
     if (!connected) { await n.connect(); n.stateClient.onProgress = progress; connected = true; }
+    // Full-history import (restore): nothing scanned, nothing cached — float the checkpoint
+    // preview alongside the genesis sync. (A resumed or anchored client has scannedHeight>0
+    // and skips this naturally.)
+    if (n.stateClient.scannedHeight === 0 && !cache) checkpointPreview();
     const r = await n.syncWallet(scripts, {
       // Scan done but PoW proofs still verifying: surface the balance immediately, clearly
       // marked provisional. cache is NOT set — Send must never build on unverified data.
       onProvisional: prov => { try { onProvisional?.(toCache(prov, 'provisional')); } catch {} },
       // Progressive balance during the sweep: what the scan has found so far, marked partial.
       onPartial: part => { try { onProvisional?.(toCache(mergeTail(part), 'partial')); } catch {} },
-      // Tail preview landed: paint it right away (merged over whatever the sweep has so far).
-      onTail: p => { try { tailPrev = p; onProvisional?.(toCache(mergeTail({ ...p, utxos: [], history: [], balance: 0n }), 'partial')); } catch {} },
+      // P2P tail preview landed (deeper window than the checkpoint one — adopt if better).
+      onTail: setTail,
     });
     tailPrev = null;   // the verified full result supersedes the preview
     try { await store.save(n, skey); } catch {}
