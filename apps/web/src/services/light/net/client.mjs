@@ -106,6 +106,15 @@ export class Neutrino {
     } catch (e) { this._resetState(); throw e; }
   }
 
+  /** Re-classify buffered mempool txs against the CURRENT utxo set. Invs often arrive before
+   *  the scan has populated utxos — a spend of our coins then misreads (inputs unknown ⇒ looks
+   *  like a tiny change-receive). Called at sync end / after the restore preview's scan. */
+  reconsiderMempool() {
+    if (!this._mempoolRaw?.size) return;
+    this.mempool.clear();
+    for (const tx of this._mempoolRaw.values()) { try { this._considerTx(tx); } catch {} }
+  }
+
   /** Block locator with exponential back-off, so the node can find the fork point after a reorg. */
   _locator() {
     const c = this.chain, loc = []; let step = 1;
@@ -205,6 +214,7 @@ export class Neutrino {
   /** If `tx` touches the wallet (pays a watched script / spends our UTXO), record it as pending. */
   _considerTx(tx) {
     const id = txidOf(tx);
+    this._mempoolRaw ??= new Map(); this._mempoolRaw.set(id, tx);   // keep raw for reconsiderMempool()
     if (this.mempool.has(id)) return;
     const rev = h => Buffer.from(h, 'hex').reverse().toString('hex');
     // per-asset legs, mirroring _applyBlocks (mempool value = ARRAY of entries per tx)
@@ -635,6 +645,7 @@ export class Neutrino {
     try { await this.drainVerify(); }      // throws + resets state if any proof is bad
     catch (e) { this._snapshotBroken = true; throw e; }
     this.scannedOnce = true;
+    this.reconsiderMempool();   // classify pending txs against the now-complete utxo set
     return this._result();
   }
 

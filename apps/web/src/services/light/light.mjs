@@ -180,6 +180,7 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       // the BIP35 mempool reply races the sync tail — give invs a beat to land, then snapshot,
       // so the FIRST painted list already carries pending rows instead of adding them a tick later
       await new Promise(res => setTimeout(res, 1200));
+      p.stateClient.reconsiderMempool();   // invs landed mid-scan — reclassify against the scanned coins
       const snap = p.stateClient.snapshot();
       setTail({ ...snap, tailFrom: anchor.height + 1 });
       onProgress?.({ phase: 'preview', msg: 'ok ' + (Number(snap.balance) / 1e8).toFixed(2) + ' FRC' });
