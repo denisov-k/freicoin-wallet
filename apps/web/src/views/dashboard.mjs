@@ -6,6 +6,7 @@
 import { $, store, fmt, fmtBal, skel, copy } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
+import { mvBtc, refreshBtc, btcToStr } from '@/services/market/btc-account.mjs';
 import { loadFeeTxids } from '@/services/storage.mjs';
 import { renderAssetBalance, mvRefresh, mvRelayAssets, mvBtcHistory } from '@/views/exchange.mjs';
 import { openIssueModal } from '@/views/issue.mjs';
@@ -63,9 +64,13 @@ export function paintBalance(s) {
     // by an older-height 0, so take the max the provisional stream has shown.
     // paint only once there is a NONZERO figure — an early sweep partial legitimately reports 0
     // long before the preview lands, and flashing "0" reads as "no money" (keep the skeleton).
-    if (body && (body.querySelector('.skel-line') || $('#provRow')) && +s.balance > 0) {
-      provBest = Math.max(provBest, +s.balance);
-      body.innerHTML = `<tr id="provRow"><td>FRC</td><td class="r">${provBest.toLocaleString(getLang(), { maximumFractionDigits: 8 })}</td></tr>`;
+    if (body && (body.querySelector('.skel-line') || $('#provRow'))) {
+      if (+s.balance > 0) provBest = Math.max(provBest, +s.balance);
+      const b = mvBtc();
+      const rows = [];
+      if (provBest > 0) rows.push(`<tr><td>FRC</td><td class="r">${provBest.toLocaleString(getLang(), { maximumFractionDigits: 8 })}</td></tr>`);
+      if (b.balance != null && +b.balance > 0) rows.push(`<tr><td>BTC</td><td class="r">${btcToStr(b.balance)}</td></tr>`);   // relay-backed, needs no chain sync
+      if (rows.length) body.innerHTML = `<tbody id="provRow" hidden></tbody>`.slice(0,0) + rows.join('') + `<tr id="provRow" hidden></tr>`;
     }
     return;
   }
@@ -104,6 +109,7 @@ export async function renderBalance() {
       wireBalActions();
     }
     mvRefresh();
+    try { refreshBtc(); } catch {}   // BTC account is relay-backed — paint it without waiting for the chain
     try { paintBalance(await d.getState(true)); } catch { d.setStatus('retry', 'bridge unreachable — retrying'); }
     return;
   }
