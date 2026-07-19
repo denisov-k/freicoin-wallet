@@ -497,6 +497,8 @@ export class Neutrino {
    */
   /** Result shape at height `at` (present values evaluated at at+1). */
   _result(at = this.chain.length - 1) {
+    this.reconsiderMempool();   // classify pending txs against the utxos known RIGHT NOW — an inv
+                                // handled mid-scan otherwise shows a spend as its tiny change-receive
     let balance = 0n; for (const u of this.utxos.values()) if (isHostCoin(u)) balance += timeAdjustValue(u.value, at + 1 - u.refheight);
     return { tipHeight: at, balance, utxos: [...this.utxos.values()], history: [...this.history].reverse(), pending: [...this.mempool.values()].flat(), assetDefs: Object.fromEntries(this.assetDefs) };
   }
