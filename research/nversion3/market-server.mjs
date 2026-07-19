@@ -566,7 +566,9 @@ async function btcFeeRate() {
     }
   } catch {}
   rate = Math.min(FEE_MAX, Math.max(FEE_MIN, Math.ceil(rate)));
-  feeCache = { at: Date.now(), rate, floor: Math.max(1, Math.ceil(typeof floorVb === 'number' ? floorVb : FEE_MIN)) };
+  // round off FP noise before ceiling: 0.00001*1e8/1000 === 1.0000000000000002, and a naive
+  // ceil would report a 2 sat/vB "floor" on a 1 sat/vB mempool
+  feeCache = { at: Date.now(), rate, floor: Math.max(1, Math.ceil(Math.round(floorVb * 1e6) / 1e6)) };
   return rate;
 }
 
