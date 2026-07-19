@@ -95,7 +95,7 @@ const RU = {
   'Auto-locks after 5 minutes of inactivity.': 'Автоблокировка через 5 минут бездействия.',
   'verifying…': 'проверка…',
   '← Prev': '← Предыдущий',
-  'send': 'отправка', 'receive': 'получение', 'generate': 'добыча', 'immature': 'незрелые',
+  'send': 'отправка', 'receive': 'получение', 'generate': 'добыча', 'immature': 'незрелые', 'Speed': 'Скорость', 'Economy (cheaper)': 'Эконом (дешевле)', 'Fast (next block)': 'Быстро (следующий блок)',
   'Show': 'Показать', 'Hide': 'Скрыть',
   'Log out of wallet': 'Выйти из кошелька',
   'Signed in — you can return to the market.': 'Готово — можно вернуться в маркет.',

@@ -53,7 +53,11 @@ export const btcFeeFor = vbytes => { const f = BigInt(Math.ceil(btcFeeRate() * v
 // mempool) at the tx's ACTUAL vsize — never below 1 sat/vB of that vsize (the relay minimum).
 export const btcFeeMinRate = () => Number(ctx.state?.p2p?.feeMin ?? btcFeeRate());
 export const btcSendVb = (nIn, nOut) => 11 + nIn * 68 + nOut * 31;   // P2WPKH in/out vsize
-export const btcSendFee = (nIn, nOut) => { const vb = btcSendVb(nIn, nOut); const f = BigInt(Math.ceil(btcFeeMinRate() * vb)); const m = BigInt(vb); return f > m ? f : m; };
+// two plain-send tariffs, selectable per send: 'eco' rides the mempool floor (no deadline), 'fast'
+// pays the estimator rate for next-block-ish confirmation. Both bill the tx's ACTUAL vsize and never
+// go below 1 sat/vB of it (the relay minimum).
+export const btcSendRate = fast => Math.max(1, fast ? btcFeeRate() : btcFeeMinRate());
+export const btcSendFee = (nIn, nOut, fast = false) => { const vb = btcSendVb(nIn, nOut); const f = BigInt(Math.ceil(btcSendRate(fast) * vb)); const m = BigInt(vb); return f > m ? f : m; };
 
 // ---- shared asset display helpers (read the live defs from ctx.state) ----
 export const HOST_TAG = '00'.repeat(20);

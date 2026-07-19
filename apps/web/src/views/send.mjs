@@ -8,7 +8,7 @@ import { openModal, closeOverlay } from '@/components/modal.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import QRCode from 'qrcode';
 import { deriveAddress, isValidAddress, addrToSpk, buildSignedTx } from '@/services/wallet.mjs';
-import { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvOwnedAssets, mvSendAsset, mvTokenCoins, mvSendTokenCoin, tokLabel } from '@/views/exchange.mjs';
+import { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvOwnedAssets, mvSendAsset, mvTokenCoins, mvSendTokenCoin, tokLabel } from '@/views/exchange.mjs';
 
 /** deps injected by the app shell (see main.mjs initSend) */
 let d;
@@ -187,16 +187,28 @@ async function doReviewBtc() {
   const to = $('#to').value.trim(), amt = parseFloat($('#amt').value);
   if (!mvBtcValidAddr(to)) return toast(tr('bad address'), 'err');
   if (!(amt > 0)) return toast(tr('enter an amount'), 'err');
+  // Speed choice: a plain transfer has no deadline, so default to the economy tariff (mempool floor).
+  // "Fast" pays the estimator rate for next-block-ish confirmation. The shown fee is the REAL fee
+  // the tx will pay at the chosen speed (same coin selection), refreshed when the toggle changes.
+  let fast = false;
   showReview(
     `<div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
      <div class="rrow"><span>${tr('Amount')}</span><b>${amt.toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC</b></div>
-     <div class="rrow"><span>${tr('Fee')}</span><b>0.00001000 BTC</b></div>
+     <label>${tr('Speed')}<select id="btcSpeed"><option value="eco">${tr('Economy (cheaper)')}</option><option value="fast">${tr('Fast (next block)')}</option></select></label>
+     <div class="rrow"><span>${tr('Fee')}</span><b id="btcFee">…</b></div>
      <div class="row"><button id="confirmBtn">${tr('Send')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>`);
+  const showFee = async () => {
+    const el = $('#btcFee'); if (!el) return; el.textContent = '…';
+    const sats = await mvBtcSendFee(to, amt, fast); if (!$('#btcFee')) return;
+    el.textContent = sats > 0n ? `${(Number(sats) / 1e8).toFixed(8)} BTC (${sats} sat)` : tr('not enough BTC');
+  };
+  const sp = $('#btcSpeed'); if (sp) sp.onchange = () => { fast = sp.value === 'fast'; showFee(); };
+  showFee();
   $('#cancelBtn').onclick = showForm;
   $('#confirmBtn').onclick = async () => {
     const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
     try {
-      const txid = await mvSendBtc(to, amt);
+      const txid = await mvSendBtc(to, amt, fast);
       successScreen(txid);
     } catch (e) { toast(tr('broadcast failed: ') + e.message, 'err'); btn.disabled = false; btn.textContent = tr('Send'); }
   };
