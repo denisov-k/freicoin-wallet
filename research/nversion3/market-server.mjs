@@ -429,8 +429,21 @@ function reconcileP2p() {
 async function watchP2p() {
   reconcileP2p();
   if (!btcAvail()) return;
+  const bh = await btcRpc('getblockcount').catch(() => 0);
   for (const w of p2p) {
     try {
+      // DEAD-SWAP BURIAL: once the BTC height passes the funded leg's refund height (t2) with no
+      // preimage revealed, the taker's wallet auto-refunds their BTC and the swap can never finish.
+      // Without this the board row lingers in btc_funded forever: the maker's client keeps trying
+      // to lock FRC and (rightly) refuses on unsafe timelocks, the taker sees a refund they can't
+      // explain, and the offer never frees. Expire it; reconcileP2p prunes it on the next pass.
+      if (w.v === 2 && ['taken', 'btc_funded'].includes(w.status) && w.t2 && bh > w.t2 && !w.preimage) {
+        w.status = 'expired'; saveP2p();
+        say(`P2P ${w.id}: истёк — BTC-таймлок (${w.t2}) прошёл, секрет не раскрыт; BTC вернутся покупателю по таймауту`);
+        pushSwap(w, 'maker', 'своп истёк — покупатель вернул свой BTC по таймауту; оффер можно выставить заново');
+        pushSwap(w, 'taker', 'своп истёк — продавец не успел; ваши BTC вернулись по таймауту');
+        continue;
+      }
       // auto-detect the taker's BTC funding to the HTLC address (mempool + confirmed) — no txid.
       // v2 (taker-first): the funding arrives at status 'taken'; legacy in-flight swaps funded at
       // 'frc_funded'. Same detection, different starting state.
@@ -572,9 +585,10 @@ async function btcFeeRate() {
   return rate;
 }
 
-// Smallest sane BTC side of a swap: its two on-chain legs (funding ~200 vB + claim ~170 vB) must
-// stay a small fraction of the trade, or the fee eats the deal. 20× the round-trip fee ⇒ friction
-// stays under ~5%. Dust (546) is a hard floor regardless.
+// Smallest possible BTC side of a swap: enough to cover its two on-chain legs (funding ~200 vB +
+// claim ~170 vB) PLUS one deliverable satoshi. Below this the fee consumes the whole amount and the
+// taker nets nothing. Dust (546) is a hard floor regardless. (SWAP_FEE_RATIO is retained only for
+// back-compat env parsing; the floor is now the bare round-trip fee + 1 sat, not a multiple of it.)
 const SWAP_FEE_RATIO = Number(process.env.SWAP_FEE_RATIO ?? 20);
 // Launch training wheels: an optional HARD CAP on a swap's BTC side (sats). Set on the mainnet
 // relay while the exchange is young — a bug should cost someone lunch, not a fortune. 0 = no cap.
@@ -582,8 +596,8 @@ const MAX_SWAP = BigInt(process.env.BTC_MAX_SWAP ?? 0);
 const checkMaxSwap = btc => { if (MAX_SWAP > 0n && btc > MAX_SWAP) throw new Error(`слишком крупная сделка: BTC-сторона > ${MAX_SWAP} сат (стартовый лимит биржи)`); };
 async function minSwapSats() {
   const rate = await btcFeeRate().catch(() => FEE_MIN);
-  const roundTrip = BigInt(Math.ceil(rate * (200 + 170)));
-  const min = roundTrip * BigInt(SWAP_FEE_RATIO);
+  const roundTrip = BigInt(Math.ceil(rate * (200 + 170)));   // funding + claim network fee
+  const min = roundTrip + 1n;                                 // + one deliverable satoshi (min transfer unit)
   return min > 546n ? min : 546n;
 }
 // a watch-only wallet the relay uses to auto-detect HTLC funding (no keys, no rescan)
@@ -1070,7 +1084,9 @@ const api = {
       }
       const net = +(recv - spent).toFixed(8);
       if (!net) continue;
-      txs.push({ txid, category: net > 0 ? 'receive' : 'send', amount: net, confirmations: tx.confirmations ?? 0, time: tx.blocktime ?? tx.time ?? 0, addresses: recvAddrs });
+      // ins: the spent txids — lets the client recognize an HTLC-refund receive (it spends a
+      // funding txid the client remembers) and label the round-trip instead of a bare "receive"
+      txs.push({ txid, category: net > 0 ? 'receive' : 'send', amount: net, confirmations: tx.confirmations ?? 0, time: tx.blocktime ?? tx.time ?? 0, addresses: recvAddrs, ins: (raw.vin || []).map(v => v.txid).filter(Boolean) });
     }
     return { txs };
   },

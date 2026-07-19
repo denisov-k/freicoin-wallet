@@ -156,7 +156,7 @@ export async function mvBtcHistory() {
   try {
     await recoverBtcNonces();
     const r = await api('btcHistory', { addresses: Object.keys(btcKeyring()) });
-    const all = (r.txs || []).map(t => ({ txid: t.txid, category: t.category, amount: t.amount, confirmations: t.confirmations, time: t.time, addresses: t.addresses || [], assetTag: null, btc: true }));
+    const all = (r.txs || []).map(t => ({ txid: t.txid, category: t.category, amount: t.amount, confirmations: t.confirmations, time: t.time, addresses: t.addresses || [], ins: t.ins || [], assetTag: null, btc: true }));
     // Harvest every HTLC-funding txid the relay knows (live swaps, which it resolves via listunspent,
     // plus the completed-swap archive) into the permanent hide-set. A funding txid only shows up among
     // MY sends if I broadcast it, so this retroactively folds orphaned funding sends (paid before the
@@ -172,6 +172,14 @@ export async function mvBtcHistory() {
     // paid funding tx never shows as a standalone "−0.00011 send" while the swap is still running.
     const fundTxids = new Set([...hist.map(h => h.btcFundTxid), ...loadP2p().map(r => r.btcHtlc?.txid), ...loadFundTxids()].filter(Boolean));
     for (const t of loadRefundedFunds()) fundTxids.delete(t);   // refunded swaps: show the funding send again (ledger honesty)
+    // A failed swap's round-trip must EXPLAIN itself: the un-hidden funding send gets a "swap
+    // payment (refunded)" note, and the refund receive (it spends a remembered funding txid —
+    // relay's `ins`) gets "swap refund". Without these the user sees an inexplicable receive.
+    const refunded = new Set(loadRefundedFunds());
+    for (const t of all) {
+      if (t.category === 'send' && refunded.has(t.txid)) t.note = 'swap payment (refunded)';
+      else if (t.category === 'receive' && t.ins.some(i => refunded.has(i))) t.note = 'swap refund';
+    }
     const sends = all.filter(t => t.category === 'send' && !fundTxids.has(t.txid));
     for (const h of hist) {
       // DIRECTION is asset-centric (the holder's view), not BTC-centric: a swap that CLAIMS BTC (it has
