@@ -176,8 +176,11 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       // creates the one and only pool of the session (a second pool hangs on iOS's Worker cap;
       // sharing/inheriting one across clients deadlocked the verify tail — keep it simple).
       p._pool = null;
-      const r = await p.syncWallet(scripts, {});
-      setTail({ ...r, tailFrom: anchor.height + 1 });
+      await p.syncWallet(scripts, {});
+      // the BIP35 mempool reply races the sync tail — give invs a beat to land, then snapshot,
+      // so the FIRST painted list already carries pending rows instead of adding them a tick later
+      await new Promise(res => setTimeout(res, 1200));
+      setTail({ ...p.stateClient.snapshot(), tailFrom: anchor.height + 1 });
       onProgress?.({ phase: 'preview', msg: 'ok ' + (Number(r.balance) / 1e8).toFixed(2) + ' FRC' });
     } catch (e) { onProgress?.({ phase: 'preview', msg: 'err: ' + String(e && e.message).slice(0, 60) }); }
     finally { try { p?.close?.(); } catch {} }
