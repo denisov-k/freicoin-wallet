@@ -72,7 +72,10 @@ async function sweepLegacy(utxos) {
 }
 
 export async function refreshBtc() {
-  if (!ctx.state?.swap?.available) return;
+  // Gate on the SEED, not on market state: the relay-backed BTC balance needs no chain sync,
+  // and waiting for ctx.state (which lands only after the FULL light sync) kept the BTC row
+  // invisible for minutes on a restore. If the relay has no BTC node the call just fails silently.
+  if (!ctx.seed) return;
   if (recoverNonces) await recoverNonces();   // one-time: rebuild the address book for swaps whose record was dropped
   try { btcAcct = await api('btcAccount', { addresses: Object.keys(btcKeyring()) }); } catch { return; }
   sweepLegacy(btcAcct.utxos).catch(() => {});   // migrate legacy-address coins to the BIP84 account
