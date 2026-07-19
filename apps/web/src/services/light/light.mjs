@@ -171,22 +171,16 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       p.stateClient.initCheckpoint(anchor);
       p.stateClient.scannedHeight = anchor.height;   // scan only the window above the anchor
       await p.connect();
-      // The preview runs FIRST (doSync holds the main sweep until it lands or 25s pass), so its
-      // makePool() is the only one — and the main client INHERITS it below: exactly one pool per
-      // worker ever exists (a second one hangs on iOS's Worker cap).
-      const sp = p.syncWallet(scripts, {});
-      for (let i = 0; i < 50 && p._pool === undefined; i++) await new Promise(r => setTimeout(r, 100));
-      if (n && n._pool === undefined && p._pool) n._pool = p._pool;
-      const r = await sp;
+      // The preview runs FIRST (doSync holds the main sweep until it lands or 25s pass), with the
+      // CPU to itself — INLINE matching/verification, no worker pool at all. The main client later
+      // creates the one and only pool of the session (a second pool hangs on iOS's Worker cap;
+      // sharing/inheriting one across clients deadlocked the verify tail — keep it simple).
+      p._pool = null;
+      const r = await p.syncWallet(scripts, {});
       setTail({ ...r, tailFrom: anchor.height + 1 });
       onProgress?.({ phase: 'preview', msg: 'ok ' + (Number(r.balance) / 1e8).toFixed(2) + ' FRC' });
     } catch (e) { onProgress?.({ phase: 'preview', msg: 'err: ' + String(e && e.message).slice(0, 60) }); }
-    finally {
-      // the MAIN client inherited this pool — detach it before closing the preview client, or
-      // its teardown kills the shared workers and the main verify phase hangs at 100%/100%
-      try { if (p && n && n._pool === p._pool) p._pool = null; } catch {}
-      try { p?.close?.(); } catch {}
-    }
+    finally { try { p?.close?.(); } catch {} }
   }
   const isHostU = u => !u.assetTag || u.assetTag === '0'.repeat(40);
   const mergeTail = part => {
