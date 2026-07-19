@@ -567,6 +567,11 @@ export class Neutrino {
     await this.ensureConnected();
     if (this._pool === undefined) this._pool = await makePool();   // null ⇒ inline fallback
     this._watch = new Set(scripts);        // watch the mempool for these scripts from now on
+    // BIP35: ask the node for its EXISTING mempool once — live invs only cover txs broadcast
+    // while we're connected, so without this a fresh session (restore) is blind to a pending
+    // tx sent seconds earlier from another device. Invs flow into the same _onInv handler.
+    // (Needs peerbloomfilters=1 on the bridge's node; ours have it.)
+    try { this._send('mempool', Buffer.alloc(0)); } catch {}
     // Second download connection: the follower fetches filters+blocks over its OWN socket,
     // so they don't compete with the header stream on one TCP connection (whose congestion
     // window caps throughput on high-RTT links). Shares the chain by reference; falls back
