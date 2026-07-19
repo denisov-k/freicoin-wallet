@@ -51,13 +51,18 @@ const { loadP2p, putP2p, dropP2p, addBtcNonce } = await import('@/services/stora
 const { driveP2p, checkP2pRefunds, checkBtcRefunds, initDrive } = await import('@/services/market/swap-drive.mjs');
 const { refreshBtc, btcAcctAddr, mvBtc, initBtcAccount } = await import('@/services/market/btc-account.mjs');
 
-// ---- bot wallet: own seed, the wallet's exact derivation (m/84'/1'/0', 2×12 keys) ----
+// ---- bot wallet: own seed, the wallet's EXACT derivation. The coin type follows the network
+// (mainnet = m/84'/0'/0'); hardcoding coin 1 (nv3) here made the bot ADVERTISE the coin-0 address
+// (deriveAddress) but SCAN coin-1 scripts — so it never saw its own mining or received coins. ----
+const { currentNet } = await import('@/services/wallet.mjs');
+const { NETWORKS } = await import('@/state/network-params.mjs');
+const ACCOUNT = `m/84'/${NETWORKS[currentNet()].coinType}'/0'`;
 const SEEDF = DIR + '/seed.txt';
 if (!existsSync(SEEDF)) { writeFileSync(SEEDF, randomBytes(32).toString('hex') + '\n'); chmodSync(SEEDF, 0o600); log('generated a NEW bot seed at', SEEDF); }
 const seed = readFileSync(SEEDF, 'utf8').trim();
 ctx.seed = seed;
 {
-  const acct = derivePath(seed, "m/84'/1'/0'");
+  const acct = derivePath(seed, ACCOUNT);
   const km = {}, spks = [];
   for (const chain of [0, 1]) {
     const c = ckdPriv(acct, chain);
@@ -119,8 +124,8 @@ async function fetchPrice() {
   return ref;   // sat per FRC
 }
 
-// my open offer records (partial maker offers this bot posted)
-const myOffers = () => loadP2p().filter(r => r.role === 'maker' && r.partial && !r.parent);
+// my open offer records (both partial and whole-only maker offers this bot posted)
+const myOffers = () => loadP2p().filter(r => r.role === 'maker' && !r.parent && r.status === 'open');
 
 // Min-fill policy: the maker pays a FIXED ~170 vB BTC claim fee on EVERY fill, so a fill at the
 // bare network floor nets the bot ~half the offer price — value burned to miners, not traded.
@@ -138,12 +143,17 @@ async function postOffer(frcK, satPerFrc) {
   const claimFee = BigInt(Math.ceil(Math.max(1, Number(ctx.state.p2p?.feeRate ?? 2)) * 170));   // my per-fill BTC claim cost
   const overheadFloor = BigInt(Math.ceil(Number(claimFee) / FILL_OVERHEAD));             // keep claim fee ≤ 15% of a fill
   const minBtc = [minSwap, overheadFloor, btcSats / 20n].reduce((a, b) => a > b ? a : b); // + 5% of the lot
-  const minFill = (minBtc * frcK + btcSats - 1n) / btcSats;
+  let minFill = (minBtc * frcK + btcSats - 1n) / btcSats;
+  // WHOLE-ONLY when the min piece is the entire offer: a small lot whose min fill (fee-overhead
+  // floor) meets or exceeds the whole amount can only sell as one piece. Clamp minFill to the lot
+  // and post non-partial — else the relay rejects mn > mx ("неверные мин/макс выкупа").
+  const partial = minFill < frcK;
+  if (!partial) minFill = frcK;
   const r = await api('p2pPost', { frcAmount: String(frcK), btcAmount: String(btcSats), makerFrcPub: frcPub, makerBtcPub: btcPub,
-    makerBtcAddr: myBtcAddr, partial: true, minFill: String(minFill), maxFill: String(frcK) });
+    makerBtcAddr: myBtcAddr, ...(partial ? { partial: true, minFill: String(minFill), maxFill: String(frcK) } : {}) });
   addBtcNonce(nonce);
-  putP2p({ id: r.id, role: 'maker', nonce, status: 'open', partial: true, assetTag: null, frcAmount: String(frcK), btcAmount: String(btcSats) });
-  log(`posted ${r.id}: sell ${Number(frcK) / 1e8} FRC @ ${satPerFrc.toFixed(2)} sat/FRC (total ${btcSats} sat, minFill ${Number(minFill) / 1e8} FRC)`);
+  putP2p({ id: r.id, role: 'maker', nonce, status: 'open', partial, assetTag: null, frcAmount: String(frcK), btcAmount: String(btcSats) });
+  log(`posted ${r.id}: sell ${Number(frcK) / 1e8} FRC @ ${satPerFrc.toFixed(2)} sat/FRC (total ${btcSats} sat, ${partial ? 'minFill ' + Number(minFill) / 1e8 + ' FRC' : 'whole-only'})`);
 }
 async function cancelOffer(rec) {
   try { await api('p2pCancel', { id: rec.id, makerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')) }); } catch (e) { log('cancel', rec.id, e.message); }
