@@ -58,7 +58,7 @@ textarea { background:var(--card); border:1px solid var(--line); border-radius:1
 .act { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--line); }
 .act-i { width:34px; height:34px; border-radius:50%; display:grid; place-items:center; background:var(--card); border:1px solid var(--line); font-size:15px; }
 .act-i.receive,.act-i.generate,.act-i.immature { color:var(--ok); } .act-i.send { color:var(--err); }
-.act-i.generate.immature { color:var(--warn); border-color:var(--warn); } .sub.immature { color:var(--warn); }
+.sub.immature { color:var(--warn); }
 .act-m { flex:1; display:flex; flex-direction:column; } .act-m b { text-transform:capitalize; font-weight:500; font-size:14px; }
 .act-a { font-family:ui-monospace,monospace; font-size:14px; display:flex; flex-direction:column; align-items:flex-end; } .act-a.pos { color:var(--ok); } .act-a.neg { color:var(--err); }
 .act-a .pos { color:var(--ok); } .act-a .neg { color:var(--err); }   /* per-leg coloring on trade rows */

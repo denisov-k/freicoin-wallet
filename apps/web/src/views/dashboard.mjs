@@ -172,11 +172,11 @@ export function paintActivity(txs, final = true) {
     ? `${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount)} <small>${t.unit}</small>`
     : `${(+t.amount) > 0 ? '+' : ''}${fmt(t.amount / (t.assetTag ? 10 ** Number(actDefs[t.assetTag]?.decimals ?? 0) : 1))} <small>${t.assetTag ? actAssetName(t.assetTag) : 'FRC'}</small>`;
   const rowHtml = i =>
-    `<div class="act-i ${i.trade ? 'trade' : i.category}${isImmatureGen(i) ? ' immature' : ''}">${isImmatureGen(i) ? '🔒' : (CAT[i.category] || '•')}</div>
+    `<div class="act-i ${i.trade ? 'trade' : i.category}${isImmatureGen(i) ? ' immature' : ''}">${CAT[i.category] || '•'}</div>
      <div class="act-m"><b>${tr(i.category)}</b><span class="sub">${i.confirmations > 0 ? '' : tr('pending') + ' · '}${timeAgo(i.time)}</span></div>
      ${i.trade
     ? `<div class="act-a"><span class="pos">${amtStr(i.recv)}</span><span class="neg">${amtStr(i.paid)}</span></div>`
-    : `<div class="act-a ${(+i.amount) < 0 ? 'neg' : 'pos'}"><span>${amtStr(i)}</span>${isImmatureGen(i) ? `<span class="sub immature">${tr('immature')} ${i.confirmations}/${COINBASE_MATURITY}</span>` : ''}</div>`}`;
+    : `<div class="act-a ${(+i.amount) < 0 ? 'neg' : 'pos'}"><span>${amtStr(i)}</span>${isImmatureGen(i) ? `<span class="sub immature">${tr('immature')} ${i.confirmations}/${COINBASE_MATURITY}</span>` : i.note ? `<span class="sub">${tr(i.note)}</span>` : ''}</div>`}`;
   const detailHtml = i => `<div class="detail"><span class="sub">${i.confirmations > 0 ? i.confirmations + ' ' + tr('conf') : tr('pending')} · ${new Date(i.time * 1000).toLocaleString(getLang())}</span>${isImmatureGen(i) ? `<span class="sub immature">🔒 ${tr('immature')} · ${tr('spendable in')} ${COINBASE_MATURITY - i.confirmations} ${tr('blocks')}</span>` : ''}<span class="sub">txid</span><div class="txid">${i.txid}</div><button id="copyTxid" class="ghost">${tr('Copy txid')}</button></div>`;
   const keyOf = i => i.txid + '|' + (i.trade ? '#trade' : (i.assetTag ?? 'FRC') + '|' + i.category);
 
