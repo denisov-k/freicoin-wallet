@@ -15,7 +15,10 @@ import { tr, getLang } from '@/services/i18n.mjs';
 let recoverNonces = null;
 export function initBtcAccount(fn) { recoverNonces = fn; }
 
-export const btcHrp = () => ctx.state?.swap?.btcHrp || 'tb';
+import { currentNet } from '@/services/wallet.mjs';
+// before the market state lands (restore in progress) fall back by NETWORK, not blindly to
+// testnet — a 'tb' default derived wrong mainnet addresses and the relay reported 0 BTC.
+export const btcHrp = () => ctx.state?.swap?.btcHrp || (currentNet() === 'main' ? 'bc' : 'tb');
 // The ACCOUNT key is STANDARD BIP84 (m/84'/coin'/0'/0/0, coin 0 = bitcoin mainnet, 1 = test nets)
 // from the SAME mnemonic — so the seed phrase alone restores this balance in ANY bitcoin wallet
 // (Electrum, Sparrow…), with or without us. Per-swap keys stay hash-derived: they're short-lived
