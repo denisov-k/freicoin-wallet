@@ -882,10 +882,10 @@ function openP2pTakeModalB(offer) {
   const m = document.createElement('div'); m.id = 'modal';
   const payStr = offer.assetTag ? `${(Number(BigInt(offer.frcAmount)) / scaleOf(offer.assetTag)).toLocaleString(getLang())} ${assetName(offer.assetTag)}` : `${frc(offer.frcAmount)} FRC`;
   m.innerHTML = `<div class="review">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Sell')} ${offer.assetTag ? assetName(offer.assetTag) : 'FRC'} → BTC</b><button id="tkClose" class="icon">✕</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} BTC</b><button id="tkClose" class="icon">✕</button></div>
     <div class="rrow"><span>${tr('You receive')}</span><b>${btcToStr(offer.btcAmount)} BTC</b></div>
     <div class="rrow"><span>${tr('You pay')}</span><b>${payStr}</b></div>
-    <button id="tkGo">${tr('Sell')}</button>
+    <button id="tkGo">${tr('Buy')}</button>
     <p class="sub" style="font-size:12px">${tr('Your FRC/asset is locked right away; the BTC arrives automatically. Refundable if it stalls.')}</p></div>`;
   document.body.appendChild(m);
   armOverlay(m);
