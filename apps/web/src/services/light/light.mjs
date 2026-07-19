@@ -167,6 +167,10 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     try {
       onProgress?.({ phase: 'preview', msg: 'start @' + checkpoint.height });
       p = new Neutrino({ url: urls[0], net, genesis });
+      // No worker pool for the preview: iOS Safari caps live Workers, and the main sync's pool
+      // already claims them — a second makePool() hangs forever there ("start" with no "ok").
+      // Inline matching/verification is fine for a ~100-header window.
+      p._pool = null;
       p.stateClient.initCheckpoint(checkpoint);
       p.stateClient.scannedHeight = checkpoint.height;   // scan only the window above the anchor
       await p.connect();

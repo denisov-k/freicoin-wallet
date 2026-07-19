@@ -24,6 +24,7 @@ const CAT = { send: '↑', receive: '↓', generate: '⛏', immature: '⛏', pur
 const COINBASE_MATURITY = 100;
 const isImmatureGen = i => i.category === 'generate' && i.confirmations > 0 && i.confirmations < COINBASE_MATURITY;
 let balPainted = false;
+let provBest = 0;   // best provisional FRC total shown so far (partials at low heights carry 0)
 let actLastHtml = '', actLastTxs = [], actDefs = {}, actGotFinal = false;
 // BTC legs (from the relay's watch-only index) live on a SEPARATE chain than the FRC light client,
 // so they aren't in ds().history(). Cache them here and always merge.
@@ -56,8 +57,14 @@ export function paintBalance(s) {
     // invisible (status said "ok 2097 FRC", the table stayed a skeleton). Until market-view
     // has real rows, paint the provisional FRC total straight into the table.
     const body = $('#assetBalBody');
-    if (body && body.querySelector('.skel-line') && s.balance != null)
-      body.innerHTML = `<tr><td>FRC</td><td class="r">${(+s.balance).toLocaleString(getLang(), { maximumFractionDigits: 8 })}</td></tr>`;
+    // keep repainting while the table holds only skeletons or OUR provisional row (#provRow) —
+    // never once market-view has painted real rows (its rewrite drops the marker). The sweep's
+    // early partials (balance 0) and the preview race; the larger figure must not be clobbered
+    // by an older-height 0, so take the max the provisional stream has shown.
+    if (body && (body.querySelector('.skel-line') || $('#provRow')) && s.balance != null) {
+      provBest = Math.max(provBest, +s.balance);
+      body.innerHTML = `<tr id="provRow"><td>FRC</td><td class="r">${provBest.toLocaleString(getLang(), { maximumFractionDigits: 8 })}</td></tr>`;
+    }
     return;
   }
   if ($('#balance').hidden) return;
