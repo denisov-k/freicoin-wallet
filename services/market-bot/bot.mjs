@@ -168,7 +168,9 @@ async function strategy() {
   const free = freeFrcKria() - FEE_RESERVE;
   const capK = BigInt(Math.round(MAX_FRC * 1e8));
   const live = ctx.state.p2p?.swaps || [];
-  const mine = myOffers().filter(r => live.some(s => s.id === r.id && s.kind === 'offer' && s.status === 'open'));
+  // recognize BOTH kinds still on the board: a partial offer is kind:'offer'; a whole-only offer is
+  // a plain sellFrc swap at status 'open'. Missing the whole-only case made the bot repost every tick.
+  const mine = myOffers().filter(r => live.some(s => s.id === r.id && s.status === 'open' && (s.kind === 'offer' || s.dir === 'sellFrc')));
   for (const r of myOffers()) if (!mine.includes(r) && !live.some(s => s.id === r.id)) dropP2p(r.id);   // gone from the relay ⇒ settled/expired
   // one live offer at a time: size = all free mature FRC (capped)
   const target = free > capK ? capK : free;
