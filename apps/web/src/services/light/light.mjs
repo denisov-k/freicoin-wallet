@@ -162,16 +162,18 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
   // window: the wallet behaves like a NEW wallet instantly, while the from-genesis sync earns
   // the history in the background and supersedes this view.
   async function checkpointPreview() {
-    if (!checkpoint || !onProvisional || urls.length > 1) return;
+    if (!checkpoint || !onProvisional || urls.length > 1) { onProgress?.({ phase: 'preview', msg: 'skip:' + (!checkpoint ? 'no-cp' : 'pool') }); return; }
     let p = null;
     try {
+      onProgress?.({ phase: 'preview', msg: 'start @' + checkpoint.height });
       p = new Neutrino({ url: urls[0], net, genesis });
       p.stateClient.initCheckpoint(checkpoint);
       p.stateClient.scannedHeight = checkpoint.height;   // scan only the window above the anchor
       await p.connect();
       const r = await p.syncWallet(scripts, {});
       setTail({ ...r, tailFrom: checkpoint.height + 1 });
-    } catch { /* preview is best-effort — the authoritative sync carries on regardless */ }
+      onProgress?.({ phase: 'preview', msg: 'ok ' + (Number(r.balance) / 1e8).toFixed(2) + ' FRC' });
+    } catch (e) { onProgress?.({ phase: 'preview', msg: 'err: ' + String(e && e.message).slice(0, 60) }); }
     finally { try { p?.close?.(); } catch {} }
   }
   const isHostU = u => !u.assetTag || u.assetTag === '0'.repeat(40);

@@ -52,8 +52,10 @@ function renderStatusPop() {
   })();
   // one stable line per concurrently-running phase, in fixed pipeline order (rendering by
   // arrival order made the lines shuffle depending on which stream reported first)
-  const phases = PHASE_ORDER.filter(k => status.progress[k]).map(k => { const p = status.progress[k];
+  let phases = PHASE_ORDER.filter(k => status.progress[k]).map(k => { const p = status.progress[k];
     return `<div class="rrow"><span>${tr(PHASE_LABEL[k])}</span><b>${(p.done ?? p.height).toLocaleString()} / ${(p.want ?? p.target).toLocaleString()}</b></div>`; }).join('');
+  // checkpoint-preview diagnostics: shows whether the instant-balance path ran (or why not)
+  if (status.progress.preview) phases += `<div class="rrow"><span>preview</span><b>${status.progress.preview.msg}</b></div>`;
   pop.innerHTML =
     `<div class="rrow"><span>${tr('Network')}</span><b>${NETWORKS[curNet()].label}</b></div>
      <div class="rrow"><span>${tr('Status')}</span><b>${label}</b></div>
