@@ -94,8 +94,17 @@ async function doRefresh() {
   // truth for coins, the relay only adds the order book / swap surfaces. A dark relay (crashed,
   // deploying, blocked) therefore degrades the EXCHANGE, not the wallet — info falls back to an
   // empty board and everything below keeps painting from `r` (the trustless scan).
-  const [infoRaw, r, swap, p2p] = await Promise.all([api('info').catch(() => null), _ds().assets(), api('swapInfo').catch(() => null), api('p2pList').catch(() => null)]);
+  // The exchange BOARD is relay-data and must not wait for the (minutes-long, on a restore) full
+  // scan behind assets(): race it with a short timeout — on timeout paint the board with an EMPTY
+  // own-coin set (post/take buttons naturally read "not enough" until coins land) and upgrade in
+  // place when the real scan resolves.
+  const assetsP = _ds().assets();
+  const [infoRaw, r0, swap, p2p] = await Promise.all([api('info').catch(() => null),
+    Promise.race([assetsP, new Promise(res => setTimeout(() => res(null), 6000))]),
+    api('swapInfo').catch(() => null), api('p2pList').catch(() => null)]);
   if (currentNet() !== net0) return;   // network switched mid-flight — discard the stale snapshot
+  const r = r0 ?? { tipHeight: infoRaw?.height || Number(p2p?.frcHeight || 0), assetUtxos: [], assetDefs: {} };
+  if (!r0) assetsP.then(() => { if (currentNet() === net0) mvRefresh(); }).catch(() => {});   // upgrade once coins are in
   const info = infoRaw ?? { assets: [], book: [], events: [], height: 0, chainId: null };
   // A wiped/replaced test chain invalidates every local swap record — detect via the genesis hash
   // and drop them, or ghosts of the old chain's swaps haunt the balance/activity forever.
