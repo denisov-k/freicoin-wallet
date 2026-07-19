@@ -87,6 +87,19 @@ the `research/nversion3/*_demo.mjs` scripts prove issuance, token transfers,
 ranged fills, offline-maker ladders, options and auctions with real signatures
 on a live chain.
 
+## Reproducible builds — verify what the site serves
+
+The production bundle is deterministic. Anyone can prove that
+<https://freicoin.ru> serves exactly the code in this repository:
+
+```sh
+bash scripts/verify-build.sh
+```
+
+It rebuilds the app from source (lockfile-pinned) and byte-compares every
+asset against the deployed copy. Details and the trust model:
+[docs/REPRODUCIBLE.md](docs/REPRODUCIBLE.md).
+
 ## Running the tests
 
 Pure Node (v18+), no dependencies:

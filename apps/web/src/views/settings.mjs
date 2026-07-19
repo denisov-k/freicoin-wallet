@@ -28,7 +28,8 @@ export function renderSettings() {
      <div class="row">${vault
         ? `<button id="lockBtn" class="ghost">${tr('🔓 Lock')}</button><button id="chgBtn" class="ghost">${tr('Change passphrase')}</button>`
         : `<button id="secBtn" class="ghost">${tr('🔒 Secure with passphrase')}</button>`}</div>
-     <div class="row"><button id="outBtn" class="ghost">${tr('Log out of wallet')}</button></div>`;
+     <div class="row"><button id="outBtn" class="ghost">${tr('Log out of wallet')}</button></div>
+     <p class="sub" style="font-size:12px">${tr('Open source')} — <a href="https://github.com/denisov-k/freicoin-wallet" target="_blank" rel="noopener">github.com/denisov-k/freicoin-wallet</a> · <a href="https://github.com/denisov-k/freicoin-wallet/blob/master/docs/REPRODUCIBLE.md" target="_blank" rel="noopener">${tr('verify this build')}</a></p>`;
   $('#langSel').onchange = () => { setLang($('#langSel').value); d.renderApp(); };   // applies immediately, re-renders all
   const wifBtn = $('#wifBtn');
   if (wifBtn) wifBtn.onclick = () => {
