@@ -185,8 +185,8 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
 
   return {
     async health() { return { ok: true, network: net + ' (light)' }; },
-    async balance() { const c = await ensure(); return { balance: c.balance, tipHeight: c.tipHeight, unit: 'present-value', pending: c.pending, agreement: c.agreement, birthAuto: c.birthAuto }; },
-    async utxos() { const c = await sync(); return { balance: c.balance, tipHeight: c.tipHeight, utxos: c.utxos, pending: c.pending, agreement: c.agreement, birthAuto: c.birthAuto, birthAnchor: c.birthAnchor }; },
+    async balance() { const c = await ensure(); return { balance: c.balance, spendable: c.spendable, tipHeight: c.tipHeight, unit: 'present-value', pending: c.pending, agreement: c.agreement, birthAuto: c.birthAuto }; },
+    async utxos() { const c = await sync(); return { balance: c.balance, spendable: c.spendable, tipHeight: c.tipHeight, utxos: c.utxos, pending: c.pending, agreement: c.agreement, birthAuto: c.birthAuto, birthAnchor: c.birthAnchor }; },
     async history() { const c = await ensure(); return { txs: [...c.pending, ...c.history] }; },
     // nV3 asset-aware snapshot for the Issue/Exchange tabs (per-asset utxos + self-certified defs)
     async assets() { const c = await sync(); return { tipHeight: c.tipHeight, assetUtxos: c.assetUtxos || [], assetDefs: c.assetDefs || {} }; },   // sync() not ensure(): the asset/token coins that back sends must be as fresh as FRC's utxos(), never a stale cache (a reorg/reindex silently invalidates cached outpoints)
