@@ -496,11 +496,23 @@ export class Neutrino {
    * Returns { tipHeight, balance (kria), utxos, history } computed entirely client-side.
    */
   /** Result shape at height `at` (present values evaluated at at+1). */
+  /** Outpoints consumed by buffered mempool txs — a pending SEND's inputs must leave the
+   *  displayed balance/utxos at once (showing them until the block lands reads as "my transfer
+   *  didn't happen"), and Send must not build a conflicting spend on them. */
+  _mempoolSpent() {
+    const spent = new Set();
+    for (const tx of this._mempoolRaw.values())
+      for (const vin of tx.vin) spent.add(Buffer.from(vin.prevout.txid, 'hex').reverse().toString('hex') + ':' + vin.prevout.vout);
+    return spent;
+  }
+
   _result(at = this.chain.length - 1) {
     this.reconsiderMempool();   // classify pending txs against the utxos known RIGHT NOW — an inv
                                 // handled mid-scan otherwise shows a spend as its tiny change-receive
-    let balance = 0n; for (const u of this.utxos.values()) if (isHostCoin(u) && u.refheight <= at) balance += timeAdjustValue(u.value, at + 1 - u.refheight);
-    return { tipHeight: at, balance, utxos: [...this.utxos.values()].filter(u => u.refheight <= at), history: [...this.history].reverse(), pending: [...this.mempool.values()].flat(), assetDefs: Object.fromEntries(this.assetDefs) };
+    const sp = this._mempoolSpent();
+    const live = [...this.utxos.values()].filter(u => u.refheight <= at && !sp.has(u.txid + ':' + u.vout));
+    let balance = 0n; for (const u of live) if (isHostCoin(u)) balance += timeAdjustValue(u.value, at + 1 - u.refheight);
+    return { tipHeight: at, balance, utxos: live, history: [...this.history].reverse(), pending: [...this.mempool.values()].flat(), assetDefs: Object.fromEntries(this.assetDefs) };
   }
 
   /** Consume a static cfilter snapshot for a from-genesis scan: filters stream over HTTP
@@ -641,7 +653,7 @@ export class Neutrino {
     await headersP; await follower; await previewP;
     if (headersErr) throw headersErr;
     for (const id of this.mempool.keys())  // confirmed now? drop from pending
-      if (this.history.some(e => e.txid === id)) this.mempool.delete(id);
+      if (this.history.some(e => e.txid === id)) { this.mempool.delete(id); this._mempoolRaw.delete(id); }
     // Provisional: the scan is done but some PoW proofs are still verifying — surface the
     // balance now, clearly marked; the final (verified) result follows when the queue drains.
     if (onProvisional && (this._verifying || this._pendingVerify.length)) onProvisional(this._result());
@@ -657,8 +669,10 @@ export class Neutrino {
    *  IndexedDB) while the real sync catches up. */
   snapshot() {
     const tip = this.chain.length - 1;
-    let balance = 0n; for (const u of this.utxos.values()) if (isHostCoin(u) && u.refheight <= tip) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
-    return { tipHeight: tip, balance, utxos: [...this.utxos.values()].filter(u => u.refheight <= tip), history: [...this.history].reverse(), pending: [...this.mempool.values()].flat(), assetDefs: Object.fromEntries(this.assetDefs) };
+    const sp = this._mempoolSpent();
+    const live = [...this.utxos.values()].filter(u => u.refheight <= tip && !sp.has(u.txid + ':' + u.vout));
+    let balance = 0n; for (const u of live) if (isHostCoin(u)) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
+    return { tipHeight: tip, balance, utxos: live, history: [...this.history].reverse(), pending: [...this.mempool.values()].flat(), assetDefs: Object.fromEntries(this.assetDefs) };
   }
 
   /** Serialize the incremental state (JSON-safe) for persistence across page reloads.
