@@ -507,8 +507,6 @@ export class Neutrino {
   }
 
   _result(at = this.chain.length - 1) {
-    this.reconsiderMempool();   // classify pending txs against the utxos known RIGHT NOW — an inv
-                                // handled mid-scan otherwise shows a spend as its tiny change-receive
     const sp = this._mempoolSpent();
     const live = [...this.utxos.values()].filter(u => u.refheight <= at && !sp.has(u.txid + ':' + u.vout));
     let balance = 0n; for (const u of live) if (isHostCoin(u)) balance += timeAdjustValue(u.value, at + 1 - u.refheight);
