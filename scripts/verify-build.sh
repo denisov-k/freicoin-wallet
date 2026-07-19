@@ -36,6 +36,7 @@ CP=$(grep -oE '[0-9]{6,9}:[0-9a-f]{64}' "$WORK/deployed.js" | head -1 || true)
 echo "baked checkpoint: ${CP:-none}"
 
 echo "== building from source (npm ci, lockfile-pinned) =="
+( cd core && npm ci --no-audit --no-fund >/dev/null )       # @core/* deps (noble crypto)
 ( cd apps/web && npm ci --no-audit --no-fund >/dev/null )
 ( cd apps/web && \
   VITE_BRIDGE=wss://freicoin.ru/ws/regtest \
