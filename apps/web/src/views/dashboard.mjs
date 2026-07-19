@@ -50,7 +50,16 @@ function wireBalActions() {
 export function paintBalance(s) {
   if (!s.stale) d.setStatus('ok', '', s.tipHeight);
   else d.setStatus('sync', undefined, s.tipHeight);
-  if (d.SWAP()) return;   // Freimarkets balance is a per-asset table owned by market-view; only sync the status here
+  if (d.SWAP()) {
+    // The per-asset table is owned by market-view, whose data source resolves only when the
+    // FULL sync lands — on a restore that left the checkpoint preview's instant balance
+    // invisible (status said "ok 2097 FRC", the table stayed a skeleton). Until market-view
+    // has real rows, paint the provisional FRC total straight into the table.
+    const body = $('#assetBalBody');
+    if (body && body.querySelector('.skel-line') && s.balance != null)
+      body.innerHTML = `<tr><td>FRC</td><td class="r">${(+s.balance).toLocaleString(getLang(), { maximumFractionDigits: 8 })}</td></tr>`;
+    return;
+  }
   if ($('#balance').hidden) return;
   balPainted = true;
   // build the card once; update fields in place afterwards (a full innerHTML rewrite per streamed
