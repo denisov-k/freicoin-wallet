@@ -122,14 +122,23 @@ async function fetchPrice() {
 // my open offer records (partial maker offers this bot posted)
 const myOffers = () => loadP2p().filter(r => r.role === 'maker' && r.partial && !r.parent);
 
+// Min-fill policy: the maker pays a FIXED ~170 vB BTC claim fee on EVERY fill, so a fill at the
+// bare network floor nets the bot ~half the offer price — value burned to miners, not traded.
+// Keep the per-fill overhead ≤ BOT_FILL_OVERHEAD (15%): minFill_btc = claimFee / overhead. The 5%-
+// of-lot component (the DEX anti-griefing default) stops big lots from being shaved into hundreds
+// of micro-fills; the relay's own floor stays as the absolute lower bound. All three float with
+// live BTC fees / lot size, so the policy self-adjusts when conditions change.
+const FILL_OVERHEAD = Number(process.env.BOT_FILL_OVERHEAD ?? 0.15);
 async function postOffer(frcK, satPerFrc) {
   const btcSats = BigInt(Math.ceil(Number(frcK) / 1e8 * satPerFrc));
   const nonce = sha256(Buffer.from(seed + 'fw-p2p-nonce:' + frcK + ':' + btcSats + ':' + ctx.state.mine.height, 'utf8')).toString('hex').slice(0, 16);
   const frcPub = pubkeyCompressed(p2pKey(nonce, 'frc')), btcPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
   const myBtcAddr = btcAddress(hash160(Buffer.from(btcPub, 'hex')).toString('hex'), ctx.state.swap?.btcHrp || 'bc');
-  // every piece must clear the relay's fee floor: min fill (in FRC kria) maps from minSwap sats
-  const minSwap = BigInt(Math.round(Number(ctx.state.p2p?.minSwap ?? 741)));
-  const minFill = (minSwap * frcK + btcSats - 1n) / btcSats;
+  const minSwap = BigInt(Math.round(Number(ctx.state.p2p?.minSwap ?? 741)));            // relay network floor (sats)
+  const claimFee = BigInt(Math.ceil(Math.max(1, Number(ctx.state.p2p?.feeRate ?? 2)) * 170));   // my per-fill BTC claim cost
+  const overheadFloor = BigInt(Math.ceil(Number(claimFee) / FILL_OVERHEAD));             // keep claim fee ≤ 15% of a fill
+  const minBtc = [minSwap, overheadFloor, btcSats / 20n].reduce((a, b) => a > b ? a : b); // + 5% of the lot
+  const minFill = (minBtc * frcK + btcSats - 1n) / btcSats;
   const r = await api('p2pPost', { frcAmount: String(frcK), btcAmount: String(btcSats), makerFrcPub: frcPub, makerBtcPub: btcPub,
     makerBtcAddr: myBtcAddr, partial: true, minFill: String(minFill), maxFill: String(frcK) });
   addBtcNonce(nonce);
@@ -172,7 +181,9 @@ async function strategy() {
     if (target >= floorK) await postOffer(target, ask);
   }
 }
-const minPieceK = s => { const ms = BigInt(Math.round(Number(ctx.state.p2p?.minSwap ?? 741))); return (ms * BigInt(s.frcAmount) + BigInt(s.btcAmount) - 1n) / BigInt(s.btcAmount); };
+// the offer's own advertised min piece (kria) — falls back to mapping the relay floor through the price
+const minPieceK = s => s.minFill ? BigInt(s.minFill)
+  : (BigInt(Math.round(Number(ctx.state.p2p?.minSwap ?? 741))) * BigInt(s.frcAmount) + BigInt(s.btcAmount) - 1n) / BigInt(s.btcAmount);
 
 // ---- main loop ----
 let wantRefresh = false, tick = 0;
