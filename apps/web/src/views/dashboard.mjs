@@ -68,8 +68,10 @@ export function paintBalance(s) {
       if (+s.balance > 0) provBest = Math.max(provBest, +s.balance);
       const b = mvBtc();
       const rows = [];
-      if (provBest > 0) rows.push(`<tr><td>FRC</td><td class="r">${provBest.toLocaleString(getLang(), { maximumFractionDigits: 8 })}</td></tr>`);
-      if (b.balance != null && +b.balance > 0) rows.push(`<tr><td>BTC</td><td class="r">${btcToStr(b.balance)}</td></tr>`);   // relay-backed, needs no chain sync
+      // consistency rule (user call): a row shows as soon as its SOURCE has answered — even with 0
+      // (the final table shows zeros too); it is hidden only while the answer is pending.
+      rows.push(`<tr><td>FRC</td><td class="r">${provBest.toLocaleString(getLang(), { maximumFractionDigits: 8 })}</td></tr>`);
+      if (b.balance != null) rows.push(`<tr><td>BTC</td><td class="r">${btcToStr(b.balance)}</td></tr>`);   // relay-backed, needs no chain sync
       if (rows.length) body.innerHTML = `<tbody id="provRow" hidden></tbody>`.slice(0,0) + rows.join('') + `<tr id="provRow" hidden></tr>`;
     }
     return;
