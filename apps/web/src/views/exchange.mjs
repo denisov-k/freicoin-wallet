@@ -103,7 +103,7 @@ async function doRefresh() {
     Promise.race([assetsP, new Promise(res => setTimeout(() => res(null), 6000))]),
     api('swapInfo').catch(() => null), api('p2pList').catch(() => null)]);
   if (currentNet() !== net0) return;   // network switched mid-flight — discard the stale snapshot
-  const r = r0 ?? { tipHeight: infoRaw?.height || Number(p2p?.frcHeight || 0), assetUtxos: [], assetDefs: {} };
+  const r = r0 ?? { tipHeight: infoRaw?.height || Number(p2p?.frcHeight || 0), assetUtxos: [], assetDefs: {}, provisional: true };
   if (!r0) assetsP.then(() => { if (currentNet() === net0) mvRefresh(); }).catch(() => {});   // upgrade once coins are in
   const info = infoRaw ?? { assets: [], book: [], events: [], height: 0, chainId: null };
   // A wiped/replaced test chain invalidates every local swap record — detect via the genesis hash
@@ -124,7 +124,7 @@ async function doRefresh() {
       resetRecovery();   // let recovery re-run against the new chain
     }
   } catch {}
-  state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos: r.assetUtxos }, swap, p2p };
+  state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos: r.assetUtxos, ...(r.provisional ? { provisional: true } : {}) }, swap, p2p };
   ctx.state = state;                          // mirror for the extracted modules (read via ctx)
   // cache relay defs for the light client's next boot (seedDefs) — rates for history valuation only.
   // Deliberately WITHOUT decimals: display decimals are self-certified on-chain, so they must come from
@@ -1342,6 +1342,9 @@ export function renderAssetBalance(el) {
 }
 function paintAssetBalance() {
   const body = $('#assetBalBody'); if (!body || !state) return;
+  // a provisional mine (assets() still syncing) has NO coins — painting it would stamp 'FRC 0'
+  // over the restore preview's real figure; keep the provisional/skeleton rows until real data
+  if (state.mine?.provisional) return;
   const h = state.mine.height;
   const pvU = u => assetPresentValue(BigInt(u.value), h - u.refheight, rateOf(u.assetTag));
   const byAsset = new Map();
