@@ -178,10 +178,10 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       // sharing/inheriting one across clients deadlocked the verify tail — keep it simple).
       p._pool = null;
       await p.syncWallet(scripts, {});
-      // the BIP35 mempool reply races the sync tail — give invs a beat to land, then snapshot,
-      // so the FIRST painted list already carries pending rows instead of adding them a tick later
-      await new Promise(res => setTimeout(res, 1200));
-      p.stateClient.reconsiderMempool();   // invs landed mid-scan — reclassify against the scanned coins
+      // syncWallet sent the BIP35 mempool request at its tail; the inv→getdata→tx round-trip lands
+      // async — wait for it, then reclassify + snapshot so the FIRST painted list carries pending.
+      await new Promise(res => setTimeout(res, 1800));
+      p.stateClient.reconsiderMempool();
       const snap = p.stateClient.snapshot();
       // SEED the main client with the preview's coins (guarded: _result/snapshot ignore coins
       // above their own height) — its buffered mempool txs then classify against real inputs and
