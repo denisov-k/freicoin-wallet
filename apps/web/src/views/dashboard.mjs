@@ -61,7 +61,9 @@ export function paintBalance(s) {
     // never once market-view has painted real rows (its rewrite drops the marker). The sweep's
     // early partials (balance 0) and the preview race; the larger figure must not be clobbered
     // by an older-height 0, so take the max the provisional stream has shown.
-    if (body && (body.querySelector('.skel-line') || $('#provRow')) && s.balance != null) {
+    // paint only once there is a NONZERO figure — an early sweep partial legitimately reports 0
+    // long before the preview lands, and flashing "0" reads as "no money" (keep the skeleton).
+    if (body && (body.querySelector('.skel-line') || $('#provRow')) && +s.balance > 0) {
       provBest = Math.max(provBest, +s.balance);
       body.innerHTML = `<tr id="provRow"><td>FRC</td><td class="r">${provBest.toLocaleString(getLang(), { maximumFractionDigits: 8 })}</td></tr>`;
     }
@@ -96,6 +98,7 @@ export async function renderBalance() {
   // table; the host-currency sync still drives the status.
   if (d.SWAP()) {
     if (!$('#assetBalBody')) {
+      provBest = 0;   // fresh table (new session/network) — forget the previous wallet's figure
       $('#balance').innerHTML = `<div id="mktBal"></div>` + balActions();
       renderAssetBalance($('#mktBal'));   // per-asset table (+ dev faucet); the address lives in Receive
       wireBalActions();
