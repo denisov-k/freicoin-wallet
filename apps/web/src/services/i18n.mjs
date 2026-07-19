@@ -2,6 +2,9 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  "Market relay URL (order book & swaps)": "Адрес маркет-relay (биржа и обмены)",
+  "relay set": "relay сохранён",
+  "relay unreachable — not saved": "relay недоступен — не сохранено",
   "Open source": "Открытый код",
   "verify this build": "проверить эту сборку",
   'unsafe swap timelocks — try again': 'небезопасные таймлоки сделки — попробуйте снова',
@@ -203,6 +206,9 @@ const RU = {
 };
 
 const ES = {
+  "Market relay URL (order book & swaps)": "URL del relé de mercado (ofertas e intercambios)",
+  "relay set": "relé guardado",
+  "relay unreachable — not saved": "relé inaccesible — no guardado",
   "Open source": "Código abierto",
   "verify this build": "verificar esta compilación",
   "swap payment (refunded)": "pago del intercambio",
@@ -584,6 +590,9 @@ const ES = {
 };
 
 const DE = {
+  "Market relay URL (order book & swaps)": "Markt-Relay-URL (Orderbuch & Swaps)",
+  "relay set": "Relay gespeichert",
+  "relay unreachable — not saved": "Relay nicht erreichbar — nicht gespeichert",
   "Open source": "Open Source",
   "verify this build": "diesen Build verifizieren",
   "swap payment (refunded)": "Swap-Zahlung",
@@ -965,6 +974,9 @@ const DE = {
 };
 
 const FR = {
+  "Market relay URL (order book & swaps)": "URL du relais de marché (offres et échanges)",
+  "relay set": "relais enregistré",
+  "relay unreachable — not saved": "relais injoignable — non enregistré",
   "Open source": "Code ouvert",
   "verify this build": "vérifier cette version",
   "swap payment (refunded)": "paiement de l’échange",
@@ -1346,6 +1358,9 @@ const FR = {
 };
 
 const PT = {
+  "Market relay URL (order book & swaps)": "URL do relay de mercado (ofertas e trocas)",
+  "relay set": "relay salvo",
+  "relay unreachable — not saved": "relay inacessível — não salvo",
   "Open source": "Código aberto",
   "verify this build": "verificar esta compilação",
   "swap payment (refunded)": "pagamento da troca",
@@ -1727,6 +1742,9 @@ const PT = {
 };
 
 const ZH = {
+  "Market relay URL (order book & swaps)": "市场中继地址（订单簿与交换）",
+  "relay set": "中继已保存",
+  "relay unreachable — not saved": "中继不可达 — 未保存",
   "Open source": "开源",
   "verify this build": "验证此构建",
   "swap payment (refunded)": "交换付款",

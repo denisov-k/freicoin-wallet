@@ -8,6 +8,7 @@ import { openModal, armOverlay, closeOverlay } from '@/components/modal.mjs';
 import { NETWORKS, DEFAULT_BRIDGE } from '@/state/network-params.mjs';
 import { enablePush, disablePush, pushSupported, pushEnabled } from '@/services/push.mjs';
 import { btcExportKeys, btcToStr } from '@/services/market/btc-account.mjs';
+import { relayOverride, setRelayOverride, defaultApiBase } from '@/state/market-ctx.mjs';
 
 /** deps injected by the app shell */
 let d;
@@ -21,6 +22,7 @@ export function renderSettings() {
      <label>${tr('Theme')}<select id="themeSel">${['system', 'dark', 'light'].map(m => `<option value="${m}"${d.themeMode() === m ? ' selected' : ''}>${m === 'system' ? tr('System') : m === 'dark' ? tr('Dark') : tr('Light')}</option>`).join('')}</select></label>
      <label>${tr('Network')}<select id="netSel">${Object.entries(NETWORKS).filter(([k, v]) => !v.hidden || k === d.curNet()).map(([k, v]) => `<option value="${k}"${k === d.curNet() ? ' selected' : ''}>${v.label}</option>`).join('')}</select></label>
      <label>${tr('Bridge URL (neutrino P2P relay)')}<input id="br" value="${d.curBridge()}"></label>
+     <label>${tr('Market relay URL (order book & swaps)')}<input id="rl" value="${relayOverride(d.curNet())}" placeholder="${defaultApiBase(d.curNet())}"></label>
      ${d.SWAP() && pushSupported() ? `<label class="chk"><input type="checkbox" id="pushChk"${pushEnabled() ? ' checked' : ''}>${tr('Swap notifications (your turn)')}</label>` : ''}
      <label>${tr('Wallet secret')} (${kind})<textarea id="sd" rows="2" readonly>${'•'.repeat(24)}</textarea></label>
      <div class="row"><button id="revealSeed" class="ghost">${tr('Show')}</button><button id="copySeed" class="ghost">⧉ ${tr('Copy')}</button>${d.SWAP() ? `<button id="wifBtn" class="ghost">${tr('Export key (WIF)')}</button>` : ''}</div>
@@ -66,8 +68,19 @@ export function renderSettings() {
   $('#themeSel').onchange = () => { const t = $('#themeSel').value; store.set('fw_theme_mode', t); d.applyTheme(t); };   // applies immediately
   // Network/bridge apply immediately too: network on select (swapping in that network's default
   // bridge), bridge on leaving the field.
-  $('#netSel').onchange = () => { $('#br').value = DEFAULT_BRIDGE[$('#netSel').value] || ''; d.applyNetSettings(); };
+  $('#netSel').onchange = () => { $('#br').value = DEFAULT_BRIDGE[$('#netSel').value] || ''; const rl = $('#rl'); if (rl) { rl.value = relayOverride($('#netSel').value); rl.placeholder = defaultApiBase($('#netSel').value); } d.applyNetSettings(); };
   $('#br').onchange = d.applyNetSettings;
+  // Market-relay override: health-check the URL (its /p2pList must answer) BEFORE saving, so a
+  // typo can't silently kill the exchange; empty = back to this site's default relay.
+  $('#rl').onchange = async () => {
+    const raw = $('#rl').value.trim().replace(/\/+$/, ''), net = d.curNet();
+    if (!raw) { setRelayOverride(net, ''); toast(tr('saved'), 'ok'); return; }
+    try {
+      const j = await fetch(raw + '/p2pList', { signal: AbortSignal.timeout(7000) }).then(r => r.json());
+      if (typeof j?.available !== 'boolean') throw new Error();
+      setRelayOverride(net, raw); toast(tr('relay set'), 'ok');
+    } catch { $('#rl').value = relayOverride(net); toast(tr('relay unreachable — not saved'), 'err'); }
+  };
   // The secret never sits in the DOM while masked — Show swaps the real value in.
   let revealed = false;
   $('#revealSeed').onclick = () => {

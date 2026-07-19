@@ -9,11 +9,16 @@ import { currentNet } from '@/services/wallet.mjs';
 // relay base: same-origin /api* under TLS, else the dev relay port. Each network gets its OWN
 // relay instance (separate chains, order book and swap state): nv3 → /api (:5181, demo),
 // test → /api-test (:5182, rehearsal), main → /api-main (:5183, production).
-const apiBase = () => {
-  const { seg, port } = { test: { seg: 'api-test', port: 5182 }, main: { seg: 'api-main', port: 5183 } }[currentNet()]
+// A per-network OVERRIDE (fw_relay_<net>) points the wallet at any self-hosted relay
+// (docs/RELAY.md) — the market is a swappable provider, not part of this site.
+export const relayOverride = net => { try { return localStorage.getItem('fw_relay_' + net) || ''; } catch { return ''; } };
+export const setRelayOverride = (net, url) => { try { url ? localStorage.setItem('fw_relay_' + net, url) : localStorage.removeItem('fw_relay_' + net); } catch {} };
+export const defaultApiBase = (net = currentNet()) => {
+  const { seg, port } = { test: { seg: 'api-test', port: 5182 }, main: { seg: 'api-main', port: 5183 } }[net]
     ?? { seg: 'api', port: 5181 };
   return location.protocol === 'https:' ? `${location.origin}/${seg}` : `http://${location.hostname}:${port}/api`;
 };
+const apiBase = () => relayOverride(currentNet()).replace(/\/+$/, '') || defaultApiBase();
 export const API = apiBase; // legacy alias (call it)
 export async function api(path, body) {
   const r = await fetch(`${apiBase()}/${path}`, body ? { method: 'POST', body: JSON.stringify(body, (k, v) => typeof v === 'bigint' ? String(v) : v) } : undefined);

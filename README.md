@@ -100,6 +100,12 @@ It rebuilds the app from source (lockfile-pinned) and byte-compares every
 asset against the deployed copy. Details and the trust model:
 [docs/REPRODUCIBLE.md](docs/REPRODUCIBLE.md).
 
+## Running your own market relay
+
+The exchange relay is a swappable, untrusted provider — anyone can run one
+(pruned Bitcoin node is enough) and point the wallet at it in Settings:
+[docs/RELAY.md](docs/RELAY.md).
+
 ## Running the tests
 
 Pure Node (v18+), no dependencies:
