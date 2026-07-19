@@ -200,8 +200,14 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     const utxos = [...part.utxos, ...tailPrev.utxos.filter(u => !seen.has(u.txid + ':' + u.vout))];
     const hseen = new Set(part.history.map(h => h.txid + ':' + (h.assetTag ?? '')));
     const history = [...part.history, ...tailPrev.history.filter(h => !hseen.has(h.txid + ':' + (h.assetTag ?? '')))];
+    // PENDING: the preview's classification WINS. Its tail-window coin set is complete, so it reads
+    // a spend as «send −X»; the main sweep, still crawling from the anchor, sees only the change
+    // output and would mislabel the same txid as a tiny «receive» (the row that flashed then moved).
+    const key = p => p.txid + ':' + (p.assetTag ?? '');
+    const pseen = new Set((tailPrev.pending || []).map(key));
+    const pending = [...(tailPrev.pending || []), ...(part.pending || []).filter(p => !pseen.has(key(p)))];
     let balance = 0n; for (const u of utxos) if (isHostU(u)) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
-    return { ...part, tipHeight: tip, balance, utxos, history };
+    return { ...part, tipHeight: tip, balance, utxos, history, pending };
   };
   async function doSync() {
     await initClient();
