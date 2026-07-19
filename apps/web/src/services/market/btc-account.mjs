@@ -128,35 +128,51 @@ export function mvBtcAddress() { const a = btcAcctAddr(); api('btcAccount', { ad
 /** True if `a` is a valid address on the BTC network we're on. */
 export function mvBtcValidAddr(a) { try { btcDecodeAddress(a, btcHrp()); return true; } catch { return false; } }
 /** Build + sign a P2WPKH send LOCALLY (key never leaves the device) and broadcast via the relay. */
-// coin selection shared by the send and its fee preview. `fast` picks the tariff (see btcSendFee):
-// eco = mempool floor (no deadline), fast = estimator rate. Fee bills the ACTUAL vsize, recomputed
-// as inputs are added. Returns null (not throws) on insufficient funds so the preview can show it.
-async function planBtcSend(toSpk, amount, fast) {
+// coin selection shared by the send, its fee preview and Max. `fast` picks the tariff (see
+// btcSendFee): eco = mempool floor (no deadline), fast = estimator rate. Fee bills the ACTUAL vsize,
+// recomputed as inputs are added. Selection/fee are independent of the destination, so the form can
+// preview the fee before an address is typed. Returns null on insufficient funds.
+async function selectBtcCoins(amount, fast) {
   const ring = btcKeyring();
   const acct = await api('btcAccount', { addresses: Object.keys(ring) });
   const coins = [...acct.utxos].filter(c => ring[c.address]).sort((a, b) => Number(BigInt(b.value) - BigInt(a.value)));
   const picked = []; let S = 0n, fee = 0n;
   for (const c of coins) { picked.push(c); S += BigInt(c.value); fee = btcSendFee(picked.length, 2, fast); if (S >= amount + fee) break; }
   if (S < amount + fee) return null;
-  const change = S - amount - fee;
-  const outputs = [{ spk: toSpk, value: amount }];
-  if (change > 546n) outputs.push({ spk: btcP2wpkhSpk(btcAcctPub()), value: change });   // change back
-  else fee = S - amount;   // sub-dust change is dropped INTO the fee — reflect that in the shown number
-  return { fee, outputs, inputs: picked.map(c => ({ prevTxid: c.txid, vout: c.vout, valueSats: BigInt(c.value), key: ring[c.address] })) };
+  let change = S - amount - fee;
+  if (change <= 546n) { fee = S - amount; change = 0n; }   // sub-dust change folds into the fee
+  return { ring, picked, fee, change };
 }
 
-// fee (sats) the actual send will pay at the chosen speed — for the review screen. 0n on shortfall.
-export async function mvBtcSendFee(dest, amountBtc, fast = false) {
-  try { const toSpk = btcDecodeAddress(dest, btcHrp()); const plan = await planBtcSend(toSpk, BigInt(Math.round(amountBtc * 1e8)), fast); return plan ? plan.fee : 0n; }
+// fee (sats) the actual send will pay at the chosen speed — for the send form / review. 0n on shortfall.
+export async function mvBtcSendFee(amountBtc, fast = false) {
+  if (!(amountBtc > 0)) return 0n;
+  try { const sel = await selectBtcCoins(BigInt(Math.round(amountBtc * 1e8)), fast); return sel ? sel.fee : 0n; }
   catch { return 0n; }
+}
+
+// the largest amount sendable at `fast`: sweep every coin to a single output, minus that fee.
+export async function mvBtcMax(fast = false) {
+  try {
+    const ring = btcKeyring();
+    const acct = await api('btcAccount', { addresses: Object.keys(ring) });
+    const coins = [...acct.utxos].filter(c => ring[c.address]);
+    if (!coins.length) return 0n;
+    const S = coins.reduce((a, c) => a + BigInt(c.value), 0n), fee = btcSendFee(coins.length, 1, fast);
+    return S > fee ? S - fee : 0n;
+  } catch { return 0n; }
 }
 
 export async function mvSendBtc(dest, amountBtc, fast = false) {
   if (!(amountBtc > 0)) throw new Error(tr('enter a quantity'));
   let toSpk; try { toSpk = btcDecodeAddress(dest, btcHrp()); } catch (e) { throw new Error(tr('bad address')); }
-  const plan = await planBtcSend(toSpk, BigInt(Math.round(amountBtc * 1e8)), fast);
-  if (!plan) throw new Error(tr('not enough BTC'));
-  const { rawtx, txid } = btcP2wpkhSend({ inputs: plan.inputs, outputs: plan.outputs });
+  const amount = BigInt(Math.round(amountBtc * 1e8));
+  const sel = await selectBtcCoins(amount, fast);
+  if (!sel) throw new Error(tr('not enough BTC'));
+  const outputs = [{ spk: toSpk, value: amount }];
+  if (sel.change > 0n) outputs.push({ spk: btcP2wpkhSpk(btcAcctPub()), value: sel.change });   // change back
+  const inputs = sel.picked.map(c => ({ prevTxid: c.txid, vout: c.vout, valueSats: BigInt(c.value), key: sel.ring[c.address] }));
+  const { rawtx, txid } = btcP2wpkhSend({ inputs, outputs });
   await api('btcBroadcast', { rawtx });
   refreshBtc();
   return txid;

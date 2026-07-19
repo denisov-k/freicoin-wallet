@@ -20,13 +20,13 @@ import { refreshPushSubs } from '@/services/push.mjs';
 import { api, ctx, p2pKey, HOST_TAG, decimalsOf, scaleOf, assetName, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND } from '@/state/market-ctx.mjs';
 import { opIn, signInput, committedOutpoints, myCoinsOf, freeFrcKria, sendFrcToSpk, hostFeeCoin, lockAssetToHtlc } from '@/services/market/swap-lib.mjs';
 import { btcHrp, btcAcctAddr, btcFundHtlc, btcToStr, refreshBtc,
-  mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, initBtcAccount, btcResetAcct } from '@/services/market/btc-account.mjs';
+  mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvBtcMax, initBtcAccount, btcResetAcct } from '@/services/market/btc-account.mjs';
 import { recoverBtcNonces, mvBtcHistory, initActivity, resetRecovery } from '@/services/market/activity.mjs';
 import { driveP2p, checkP2pRefunds, checkBtcRefunds, initDrive } from '@/services/market/swap-drive.mjs';
 import { $, q, rev, frc, num, setOptions, skel, skelRows } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
 import { armOverlay, closeOverlay } from '@/components/modal.mjs';
-export { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee };   // BTC account lives in its own module; re-exported so the wallet imports stay stable
+export { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvBtcMax };   // BTC account lives in its own module; re-exported so the wallet imports stay stable
 export { mvBtcHistory };                                      // activity/recovery in mv-activity.mjs; re-exported for the wallet
 
 const ACCOUNT = "m/84'/1'/0'";              // nv3 = coin type 1 (Freimarkets shares the regtest branch)

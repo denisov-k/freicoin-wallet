@@ -8,7 +8,7 @@ import { openModal, closeOverlay } from '@/components/modal.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import QRCode from 'qrcode';
 import { deriveAddress, isValidAddress, addrToSpk, buildSignedTx } from '@/services/wallet.mjs';
-import { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvOwnedAssets, mvSendAsset, mvTokenCoins, mvSendTokenCoin, tokLabel } from '@/views/exchange.mjs';
+import { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvBtcMax, mvOwnedAssets, mvSendAsset, mvTokenCoins, mvSendTokenCoin, tokLabel } from '@/views/exchange.mjs';
 
 /** deps injected by the app shell (see main.mjs initSend) */
 let d;
@@ -62,14 +62,26 @@ export async function renderSend() {
      ${showCur ? `<label>${d.MKT() ? tr('Asset') : tr('Currency')}<select id="sendAsset"><option value="">FRC</option></select></label>` : ''}
      <label>${tr('To address')}<input id="to" placeholder="fc1…" autocomplete="off"></label>
      <label id="amtLabel">${tr('Amount (FRC)')}<div class="amtrow"><input id="amt" type="number" step="0.00000001" min="0" placeholder="0.0"><button id="maxBtn" class="ghost">${tr('Max')}</button></div></label>
+     <div class="stack" id="btcSpeedRow" hidden>
+       <label>${tr('Speed')}<select id="btcSpeed"><option value="eco">${tr('Economy (cheaper)')}</option><option value="fast">${tr('Fast (next block)')}</option></select></label>
+       <div class="rrow"><span class="sub">${tr('Fee')}</span><b id="btcFee" class="sub">—</b></div>
+     </div>
      <div class="stack" id="sendTokPick" hidden></div>
      <button id="reviewBtn">${tr('Review')}</button></div><div id="sendResult" class="stack"></div>`);
+  // live BTC fee for the form (recomputed on amount/speed change) — see btcFast()/updBtcFee below
+  const btcFast = () => $('#btcSpeed')?.value === 'fast';
+  const updBtcFee = async () => {
+    const el = $('#btcFee'); if (!el) return;
+    const a = parseFloat($('#amt')?.value); if (!(a > 0)) { el.textContent = '—'; return; }
+    el.textContent = '…'; const sats = await mvBtcSendFee(a, btcFast()); if (!$('#btcFee')) return;
+    el.textContent = sats > 0n ? `${(Number(sats) / 1e8).toFixed(8)} BTC (${sats} sat)` : tr('not enough BTC');
+  };
   $('#reviewBtn').onclick = doReview;
   // Max dispatches on the selected currency: asset → its whole quantity; FRC → balance − fee.
   let sendBal = null;
-  $('#maxBtn').onclick = () => {
+  $('#maxBtn').onclick = async () => {
     const sel = $('#sendAsset');
-    if (sel && sel.value === 'BTC') { const b = mvBtc().balance; $('#amt').value = b ? Math.max(0, (Number(BigInt(b)) - 1000) / 1e8).toFixed(8) : '0'; }
+    if (sel && sel.value === 'BTC') { const max = await mvBtcMax(btcFast()); $('#amt').value = (Number(max) / 1e8).toFixed(8); updBtcFee(); }
     else if (sel && sel.value) $('#amt').value = sel.selectedOptions[0].dataset.qty;
     else if (sendBal != null) $('#amt').value = Math.max(0, sendBal - 0.001).toFixed(8);
   };
@@ -85,7 +97,13 @@ export async function renderSend() {
       $('#amtLabel').firstChild.textContent = isFrc ? tr('Amount (FRC)') : isBtc ? tr('Amount (BTC)') : tr('Quantity');
       const amt = $('#amt'); amt.step = isBtc || isFrc ? '0.00000001' : String(1 / 10 ** dec); amt.placeholder = isBtc || isFrc ? '0.0' : '0'; amt.value = '';
       $('#to').placeholder = isBtc ? `${btc.hrp}1…` : 'fc1…';
-      $('#avail').style.display = isFrc ? '' : 'none';   // the FRC line doesn't describe an asset/BTC
+      // available line: FRC balance for FRC, BTC balance for BTC, hidden for assets
+      const av = $('#avail'); av.style.display = v && !isBtc ? 'none' : '';
+      if (isBtc) { const b = mvBtc().balance; av.textContent = `${tr('available ')}${b != null ? (Number(BigInt(b)) / 1e8).toFixed(8) : '—'} BTC`; }
+      else if (isFrc && sendBal != null) av.textContent = `${tr('available ')}${fmt(sendBal)} FRC`;
+      // BTC-only speed + live fee block
+      $('#btcSpeedRow').hidden = !isBtc;
+      if (isBtc) updBtcFee();
       // token asset: quantity is not a choice — the items are. Swap the amount input for checkboxes.
       const tokCoins = v && !isBtc ? mvTokenCoins(v) : [];
       const pick = $('#sendTokPick');
@@ -97,6 +115,8 @@ export async function renderSend() {
     };
   }).catch(() => {});
   $('#amt').addEventListener('keydown', e => { if (e.key === 'Enter') doReview(); });
+  $('#amt').addEventListener('input', () => { if ($('#sendAsset')?.value === 'BTC') updBtcFee(); });
+  $('#btcSpeed').onchange = updBtcFee;
   // Instant: approximate available (verified cache > streamed partial > preview); the verified
   // value replaces it in place and binds Max.
   const seed = d.seedState();
@@ -187,23 +207,15 @@ async function doReviewBtc() {
   const to = $('#to').value.trim(), amt = parseFloat($('#amt').value);
   if (!mvBtcValidAddr(to)) return toast(tr('bad address'), 'err');
   if (!(amt > 0)) return toast(tr('enter an amount'), 'err');
-  // Speed choice: a plain transfer has no deadline, so default to the economy tariff (mempool floor).
-  // "Fast" pays the estimator rate for next-block-ish confirmation. The shown fee is the REAL fee
-  // the tx will pay at the chosen speed (same coin selection), refreshed when the toggle changes.
-  let fast = false;
+  // Speed was chosen on the form; carry it into the confirm screen and the send.
+  const fast = $('#btcSpeed')?.value === 'fast';
+  const feeSats = await mvBtcSendFee(amt, fast);
   showReview(
     `<div class="rrow"><span>${tr('To')}</span><b>${short(to)}</b></div>
      <div class="rrow"><span>${tr('Amount')}</span><b>${amt.toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC</b></div>
-     <label>${tr('Speed')}<select id="btcSpeed"><option value="eco">${tr('Economy (cheaper)')}</option><option value="fast">${tr('Fast (next block)')}</option></select></label>
-     <div class="rrow"><span>${tr('Fee')}</span><b id="btcFee">…</b></div>
+     <div class="rrow"><span>${tr('Speed')}</span><b>${fast ? tr('Fast (next block)') : tr('Economy (cheaper)')}</b></div>
+     <div class="rrow"><span>${tr('Fee')}</span><b>${feeSats > 0n ? `${(Number(feeSats) / 1e8).toFixed(8)} BTC` : tr('not enough BTC')}</b></div>
      <div class="row"><button id="confirmBtn">${tr('Send')}</button><button id="cancelBtn" class="ghost">${tr('Cancel')}</button></div>`);
-  const showFee = async () => {
-    const el = $('#btcFee'); if (!el) return; el.textContent = '…';
-    const sats = await mvBtcSendFee(to, amt, fast); if (!$('#btcFee')) return;
-    el.textContent = sats > 0n ? `${(Number(sats) / 1e8).toFixed(8)} BTC (${sats} sat)` : tr('not enough BTC');
-  };
-  const sp = $('#btcSpeed'); if (sp) sp.onchange = () => { fast = sp.value === 'fast'; showFee(); };
-  showFee();
   $('#cancelBtn').onclick = showForm;
   $('#confirmBtn').onclick = async () => {
     const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
