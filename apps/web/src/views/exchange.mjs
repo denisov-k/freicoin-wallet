@@ -124,7 +124,7 @@ async function doRefresh() {
       resetRecovery();   // let recovery re-run against the new chain
     }
   } catch {}
-  state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos: r.assetUtxos, ...(r.provisional ? { provisional: true } : {}) }, swap, p2p };
+  state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos: r.assetUtxos, pendingChange: BigInt(r.pendingChange || '0'), ...(r.provisional ? { provisional: true } : {}) }, swap, p2p };
   ctx.state = state;                          // mirror for the extracted modules (read via ctx)
   // cache relay defs for the light client's next boot (seedDefs) — rates for history valuation only.
   // Deliberately WITHOUT decimals: display decimals are self-certified on-chain, so they must come from
@@ -1349,6 +1349,10 @@ function paintAssetBalance() {
   const pvU = u => assetPresentValue(BigInt(u.value), h - u.refheight, rateOf(u.assetTag));
   const byAsset = new Map();
   for (const u of state.mine.utxos) { const k = u.assetTag ?? 'FRC'; const e = byAsset.get(k) ?? { nominal: 0n, pv: 0n }; e.nominal += BigInt(u.value); e.pv += pvU(u); byAsset.set(k, e); }
+  // credit the pending-send CHANGE (already present-valued) to FRC so the swap balance drops only by
+  // what actually left the wallet — matching the plain balance card and activity, no double-debit.
+  const pc = state.mine.pendingChange || 0n;
+  if (pc) { const e = byAsset.get('FRC') ?? { nominal: 0n, pv: 0n }; e.nominal += pc; e.pv += pc; byAsset.set('FRC', e); }
   const amt = (tag, v) => tag === 'FRC' ? frc(v)
     : (Number(BigInt(v)) / scaleOf(tag)).toLocaleString(getLang(), { maximumFractionDigits: decimalsOf(tag) });
   const rows = [...byAsset.entries()].map(([tag, e]) => {

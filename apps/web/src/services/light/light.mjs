@@ -119,6 +119,10 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       // nV3 asset-aware view (all coins incl. user assets, + self-certified defs) — kept for the
       // merged wallet's Issue/Exchange tabs, which the plain host-only `utxos` above hides.
       assetDefs: r.assetDefs || {},
+      // present-valued FRC CHANGE from our own pending sends — NOT part of assetUtxos (those back
+      // coin selection and must stay confirmed), but the per-asset Balance table adds it to the FRC
+      // row so the swap view agrees with the plain balance + activity (no phantom double-debit).
+      pendingChangeKria: (r.pendingChange || 0n).toString(),
       assetUtxos: r.utxos.map(u => ({ outpoint: `${u.txid}:${u.vout}`, spk: u.script, assetTag: (!u.assetTag || u.assetTag === '0'.repeat(40)) ? null : u.assetTag, value: String(u.value), refheight: u.refheight, coinbase: !!u.coinbase, ...(u.tokenHash ? { tokens: u.tokens ?? [], tokenHash: u.tokenHash } : {}) })),
       // history entries are per-currency legs; user assets are integer tokens (scale 1).
       // Normalize the all-zero host tag AND merge legs of the same (txid, currency) — entries
@@ -209,8 +213,13 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     const key = p => p.txid + ':' + (p.assetTag ?? '');
     const pseen = new Set((tailPrev.pending || []).map(key));
     const pending = [...(tailPrev.pending || []), ...(part.pending || []).filter(p => !pseen.has(key(p)))];
-    let balance = 0n; for (const u of utxos) if (isHostU(u)) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
-    return { ...part, tipHeight: tip, balance, utxos, history, pending };
+    // pending-send CHANGE (same reason as PENDING above): trust the preview's — its tail window is
+    // complete, so it recognizes the send and credits the change; the still-crawling main sweep may
+    // not yet hold the spent input and would compute 0. Without this the balance shows change-less
+    // through the whole sync.
+    const pendingChange = (tailPrev.pendingChange ?? 0n) || (part.pendingChange ?? 0n);
+    let balance = pendingChange; for (const u of utxos) if (isHostU(u)) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
+    return { ...part, tipHeight: tip, balance, pendingChange, utxos, history, pending };
   };
   // ONE state-emit path: refresh the local cache from a live snapshot AND push it to the UI. Used by
   // broadcast (our own send) and by onMempool (a received tx, or a send from another device) — so any
@@ -222,6 +231,12 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
   }
   async function doSync() {
     await initClient();
+    // Classify the restored mempool against our scripts BEFORE the first paint. importState runs
+    // _considerTx with NO _watch (set only at connect, below), so this.mempool stays empty and
+    // _pendingChange returns 0 — a pending SEND's change (which can be most of the balance) is then
+    // missing from the restored emit and only reappears after the full sync re-derives it. Setting
+    // _watch + reconsiderMempool here makes the restored snapshot carry the correct pending balance.
+    try { if (!n.stateClient._watch) n.stateClient._watch = new Set(scripts); n.stateClient.reconsiderMempool(); } catch {}
     // RESTORE: the persisted state (chain+utxos+history+MEMPOOL) is already in the main client from
     // IndexedDB. Emit it right away — BEFORE the checkpoint preview (a separate client with no
     // persisted mempool) can set a pending-less liveState — so the first paint carries the persisted
@@ -234,9 +249,9 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       n.stateClient.onMempool = () => { if (cache) emitState(); };   // live mempool change → refresh (only once the wallet is synced)
       connected = true;
     }
-    // subscribe the MAIN client to the mempool IMMEDIATELY (watch + BIP35) — its raw txs buffer
-    // during the preview; the seeding below then classifies them correctly for the FIRST paint
-    try { if (!n.stateClient._watch) { n.stateClient._watch = new Set(scripts); n.stateClient._send('mempool', Buffer.alloc(0)); } } catch {}
+    // subscribe the MAIN client to the mempool (BIP35) — _watch is already set above; ask the node
+    // for its current mempool ONCE per session so a tx broadcast from another device is picked up.
+    try { if (!mempoolAsked) { mempoolAsked = true; n.stateClient._send('mempool', Buffer.alloc(0)); } } catch {}
     // Full-history import (restore): nothing scanned, nothing cached — float the checkpoint
     // preview alongside the genesis sync. (A resumed or anchored client has scannedHeight>0
     // and skips this naturally.)
@@ -272,7 +287,7 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     } catch { cache.birthAnchor = null; }
     return cache;
   }
-  let connected = false;
+  let connected = false, mempoolAsked = false;
   const ensure = async () => cache || sync();
 
   /** Last-known state, instantly and without any network: the persisted chain/UTXO set
@@ -297,7 +312,7 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     async utxos() { const c = await sync(); return { balance: c.balance, spendable: c.spendable, tipHeight: c.tipHeight, utxos: c.utxos, pending: c.pending, history: c.history, agreement: c.agreement, birthAuto: c.birthAuto, birthAnchor: c.birthAnchor }; },
     async history() { const c = await ensure(); return { txs: [...c.pending, ...c.history] }; },
     // nV3 asset-aware snapshot for the Issue/Exchange tabs (per-asset utxos + self-certified defs)
-    async assets() { const c = await sync(); return { tipHeight: c.tipHeight, assetUtxos: c.assetUtxos || [], assetDefs: c.assetDefs || {} }; },   // sync() not ensure(): the asset/token coins that back sends must be as fresh as FRC's utxos(), never a stale cache (a reorg/reindex silently invalidates cached outpoints)
+    async assets() { const c = await sync(); return { tipHeight: c.tipHeight, assetUtxos: c.assetUtxos || [], assetDefs: c.assetDefs || {}, pendingChange: c.pendingChangeKria || '0' }; },   // sync() not ensure(): the asset/token coins that back sends must be as fresh as FRC's utxos(), never a stale cache (a reorg/reindex silently invalidates cached outpoints)
     preview,
     async broadcast(rawtx) {
       if (!n) await sync();
