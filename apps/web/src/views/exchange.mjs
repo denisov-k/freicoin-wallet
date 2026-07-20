@@ -1117,7 +1117,19 @@ function renderP2pPay(m, rec) {
   }, 4000);
   // back out. v2: BEFORE paying nothing is at stake — just drop the record (the relay zombie-expires
   // the take). AFTER paying, the BTC comes home automatically at the HTLC timeout (checkBtcRefunds).
+  let cancelArmT;
   q(m, '#pyCancel').onclick = async () => {
+    const btn = q(m, '#pyCancel');
+    if (btn.dataset.armed !== '1') {   // FIRST tap arms; a second tap within 4s confirms the cancel
+      btn.dataset.armed = '1';
+      btn.textContent = tr('Tap again to cancel');
+      btn.style.setProperty('color', 'var(--warn)', 'important');
+      btn.style.setProperty('border-color', 'var(--warn)', 'important');
+      clearTimeout(cancelArmT);
+      cancelArmT = setTimeout(() => { const b = q(m, '#pyCancel'); if (b && b.dataset.armed === '1') { b.dataset.armed = ''; b.textContent = tr('Cancel purchase'); b.style.removeProperty('color'); b.style.removeProperty('border-color'); } }, 4000);
+      return;
+    }
+    clearTimeout(cancelArmT); btn.dataset.armed = ''; btn.textContent = tr('Cancel purchase'); btn.style.removeProperty('color'); btn.style.removeProperty('border-color');
     const rlocal = loadP2p().find(r => r.id === rec.id);
     if (rlocal?.btcHtlc?.txid) {
       // ALREADY PAID: ask the seller to authorize an instant coop refund. Allowed only while they
