@@ -48,6 +48,10 @@ export function btcKeyring() {
 let btcAcct = null;   // last { balance, utxos, hrp, net } from the relay
 // network switch: the old net's BTC snapshot must not linger on the new net's screen
 export function btcResetAcct() { btcAcct = null; }
+// Cache the last balance per-net so a reload shows the BTC row AT ONCE (like FRC from IndexedDB),
+// instead of a blank row until the relay's btcAccount call returns. Display-only (no utxos) — the
+// live refresh overwrites it with the spendable account.
+const btcBalKey = () => 'fw_btc_bal:' + currentNet();
 export const btcToStr = sats => (Number(BigInt(sats)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 });
 
 // One-time MIGRATION: sweep whatever sits on the legacy (custom-derivation) account address onto
@@ -79,8 +83,11 @@ export async function refreshBtc() {
   // and waiting for ctx.state (which lands only after the FULL light sync) kept the BTC row
   // invisible for minutes on a restore. If the relay has no BTC node the call just fails silently.
   if (!ctx.seed) return;
+  // instant: show the last-known balance from localStorage while the relay call is in flight
+  if (!btcAcct) { try { const c = localStorage.getItem(btcBalKey()); if (c != null) btcAcct = { balance: c, utxos: [], _cached: true }; } catch {} }
   if (recoverNonces) await recoverNonces();   // one-time: rebuild the address book for swaps whose record was dropped
   try { btcAcct = await api('btcAccount', { addresses: Object.keys(btcKeyring()) }); } catch { return; }
+  try { localStorage.setItem(btcBalKey(), String(btcAcct.balance)); } catch {}   // cache for the next reload's first paint
   sweepLegacy(btcAcct.utxos).catch(() => {});   // migrate legacy-address coins to the BIP84 account
   const cell = document.querySelector('#btcBalCell'); if (cell) cell.textContent = btcToStr(btcAcct.balance);   // BTC row in the assets table
 }
