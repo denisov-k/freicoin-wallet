@@ -512,37 +512,45 @@ export class Neutrino {
     return spent;
   }
 
-  /** Present value of CHANGE from our own pending sends. A send's spent inputs leave the
-   *  balance at once (via _mempoolSpent), but its change output isn't a confirmed UTXO yet —
-   *  crediting it here keeps the balance dropping only by what actually left the wallet
-   *  (recipient + fee), not by the whole input (which reads as the send debited twice).
-   *  Only self-outputs of txs that spend OUR coins are counted (a pending incoming receive
-   *  leaves the balance confirmed-only, unchanged from before). */
-  _pendingChange(at) {
-    if (!this._mempoolRaw?.size || !this._watch) return 0n;
+  /** Spendable CHANGE outputs of our own pending sends: self-outputs of mempool txs that spend OUR
+   *  coins, not yet confirmed and not already re-spent by a chained tx. Returned as utxo objects so
+   *  they can be BOTH credited to the balance and SPENT — chaining onto your own unconfirmed change
+   *  is safe (you won't replace your own parent) and Freicoin accepts mempool chains. refheight is
+   *  the parent's lockHeight (Freicoin's demurrage reference is the creating tx's lock_height, not a
+   *  block height), so the present value AND the spend sighash are correct before the parent confirms.
+   *  Incoming pending receives are NOT included (only txs that spend our coins). */
+  _pendingOuts(at = this.chain.length - 1) {
+    if (!this._mempoolRaw?.size || !this._watch) return [];
     const rev = h => Buffer.from(h, 'hex').reverse().toString('hex');
     const sp = this._mempoolSpent();
     const ours = new Set(this.utxos.keys());   // confirmed coins + pending self-outputs (chained sends)
     for (const tx of this._mempoolRaw.values()) { const id = txidOf(tx); tx.vout.forEach((o, i) => { if (this._watch.has(o.scriptPubKey)) ours.add(id + ':' + i); }); }
-    let v = 0n;
+    const outs = [];
     for (const tx of this._mempoolRaw.values()) {
       if (!tx.vin.some(vin => ours.has(rev(vin.prevout.txid) + ':' + vin.prevout.vout))) continue;   // not our send (incoming) → skip
       const id = txidOf(tx);
       tx.vout.forEach((o, i) => {
         if (!this._watch.has(o.scriptPubKey) || !isHostCoin(o) || sp.has(id + ':' + i)) return;   // chained mempool spend already consumed this change
-        const dist = at + 1 - tx.lockHeight;
-        v += dist >= 0 ? timeAdjustValue(o.value, dist) : o.value;
+        if (this.utxos.has(id + ':' + i)) return;   // already a confirmed UTXO (the send landed) — counted in `live`, not pending
+        outs.push({ txid: id, vout: i, value: o.value, refheight: tx.lockHeight, script: o.scriptPubKey, coinbase: false, assetTag: null, unconfirmed: true });
       });
     }
+    return outs;
+  }
+  /** Present value of the pending change (sum of _pendingOuts) — the balance credit. */
+  _pendingChange(at) {
+    let v = 0n;
+    for (const u of this._pendingOuts(at)) { const dist = at + 1 - u.refheight; v += dist >= 0 ? timeAdjustValue(u.value, dist) : u.value; }
     return v;
   }
 
   _result(at = this.chain.length - 1) {
     const sp = this._mempoolSpent();
     const live = [...this.utxos.values()].filter(u => u.refheight <= at && !sp.has(u.txid + ':' + u.vout));
-    const pendingChange = this._pendingChange(at);
+    const pendingOuts = this._pendingOuts(at);
+    let pendingChange = 0n; for (const u of pendingOuts) { const d = at + 1 - u.refheight; pendingChange += d >= 0 ? timeAdjustValue(u.value, d) : u.value; }
     let balance = pendingChange; for (const u of live) if (isHostCoin(u)) balance += timeAdjustValue(u.value, at + 1 - u.refheight);
-    return { tipHeight: at, balance, pendingChange, utxos: live, history: [...this.history].reverse(), pending: [...this.mempool.values()].flat(), assetDefs: Object.fromEntries(this.assetDefs) };
+    return { tipHeight: at, balance, pendingChange, utxos: [...live, ...pendingOuts], history: [...this.history].reverse(), pending: [...this.mempool.values()].flat(), assetDefs: Object.fromEntries(this.assetDefs) };
   }
 
   /** Consume a static cfilter snapshot for a from-genesis scan: filters stream over HTTP
@@ -706,9 +714,10 @@ export class Neutrino {
     const tip = this.chain.length - 1;
     const sp = this._mempoolSpent();
     const live = [...this.utxos.values()].filter(u => u.refheight <= tip && !sp.has(u.txid + ':' + u.vout));
-    const pendingChange = this._pendingChange(tip);
+    const pendingOuts = this._pendingOuts(tip);
+    let pendingChange = 0n; for (const u of pendingOuts) { const d = tip + 1 - u.refheight; pendingChange += d >= 0 ? timeAdjustValue(u.value, d) : u.value; }
     let balance = pendingChange; for (const u of live) if (isHostCoin(u)) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
-    return { tipHeight: tip, balance, pendingChange, utxos: live, history: [...this.history].reverse(), pending: [...this.mempool.values()].flat(), assetDefs: Object.fromEntries(this.assetDefs) };
+    return { tipHeight: tip, balance, pendingChange, utxos: [...live, ...pendingOuts], history: [...this.history].reverse(), pending: [...this.mempool.values()].flat(), assetDefs: Object.fromEntries(this.assetDefs) };
   }
 
   /** Serialize the incremental state (JSON-safe) for persistence across page reloads.
