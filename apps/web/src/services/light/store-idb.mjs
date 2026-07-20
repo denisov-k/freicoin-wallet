@@ -71,7 +71,7 @@ export class IdbStore {
       if (r.c * CHUNK !== chain.length) { await this.clear(); return false; }   // gap → store corrupt, start fresh
       for (const e of r.hs) chain.push({ hash: e[0], time: e[e.length - 1] || 0 });   // [hash,time] (v2 rows [hash,prevHash,time] read compatibly)
     }
-    const ok = chain.length > 0 && client.importState({ net: client.net, genesis: client.genesis, base, scannedHeight: w.scannedHeight, scannedOnce: w.scannedOnce, chain, utxos: w.utxos, history: w.history });
+    const ok = chain.length > 0 && client.importState({ net: client.net, genesis: client.genesis, base, scannedHeight: w.scannedHeight, scannedOnce: w.scannedOnce, chain, utxos: w.utxos, history: w.history, mempoolRaw: w.mempoolRaw });
     this.persistedTip = ok ? chain.length - 1 : -1;
     if (!ok) await this.clear();
     return ok;
@@ -112,6 +112,7 @@ export class IdbStore {
       k: 'state', scriptsKey, base, scannedHeight: Math.min(o.scannedHeight, tip), scannedOnce: o.scannedOnce,
       utxos: [...o.utxos.values()].filter(u => u.refheight <= tip).map(u => ({ ...u, value: u.value.toString() })),
       history: o.history.filter(e => e.height <= tip).map(e => ({ ...e, amount: e.amount.toString() })),
+      mempoolRaw: o.serializeMempool ? o.serializeMempool() : [],   // unconfirmed txs — a reload shows them at once
     });
     await txDone(t);
   }

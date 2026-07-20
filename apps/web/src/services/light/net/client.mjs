@@ -726,6 +726,13 @@ export class Neutrino {
     return true;
   }
 
+  /** Serialized mempool (raw tx hex, capped) for persistence — the IdbStore writes this so a reload
+   *  shows unconfirmed rows at once. Kept separate from exportState so the store, which persists the
+   *  chain in its own chunked format, can attach just the mempool to its wallet record. */
+  serializeMempool() {
+    return [...this._mempoolRaw.values()].slice(0, 50).map(tx => { try { return serializeTx(tx); } catch { return null; } }).filter(Boolean);
+  }
+
   /** Broadcast a signed raw tx over P2P (send `tx`). Records it as pending immediately. */
   broadcast(rawHex) {
     this._send('tx', Buffer.from(rawHex, 'hex'));
