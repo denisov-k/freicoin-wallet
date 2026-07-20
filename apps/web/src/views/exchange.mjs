@@ -1036,10 +1036,10 @@ function renderP2pPay(m, rec) {
   let paying = false;
   // ALREADY PAID (a reload after funding): the record carries a funding txid — lock the pay path so a
   // second tap can't double-spend the BTC. The poll below still follows the swap through to completion.
-  if (rec.btcHtlc?.txid) { paying = true; const pw0 = $('#pyWallet'); if (pw0) { pw0.disabled = true; pw0.textContent = tr('awaiting the seller'); } const st0 = $('#pyStatus'); if (st0) st0.textContent = tr('confirming payment on the network'); }
+  if (rec.btcHtlc?.txid) { paying = true; const pw0 = $('#pyWallet'); if (pw0) { pw0.disabled = true; pw0.textContent = tr('confirming payment on the network'); } }
   const payFromWallet = async () => {
     const pw = $('#pyWallet'); if (!pw) return;
-    paying = true; pw.disabled = true; pw.textContent = tr('awaiting the seller');
+    paying = true; pw.disabled = true; pw.textContent = tr('confirming payment on the network');
     try {
       const fund = await btcFundHtlc(b.addr, amt);
       // remember the funding txid on the local record so this BTC spend is folded into the trade row
@@ -1050,7 +1050,8 @@ function renderP2pPay(m, rec) {
       // BTC spend. 'btc_funded' + the txid make the reload show the awaiting state instead.
       putP2p({ ...rl, status: 'btc_funded', btcHtlc: { ...(rl.btcHtlc || b), txid: fund.txid, vout: fund.vout, value: fund.value } });
       try { await api('p2pBtcFunded', { id: rec.id, btcTxid: fund.txid }); } catch {}   // nudge the relay; auto-detect is the fallback
-      // paid — the (disabled) button keeps reading "Ожидание продавца"; no separate status line for it
+      // paid — the (disabled) button now reads "подтверждение оплаты сетью (x/2)" until the relay
+      // accepts the funding (2 confs), then the poll flips it to "ожидание продавца". No status line.
       refreshBtc();
     } catch (e) { toast(e.message, 'err'); paying = false; updateWalletBtn(); }
   };
@@ -1083,9 +1084,18 @@ function renderP2pPay(m, rec) {
         if (st) st.textContent = tr('swap complete ✅');
         setTimeout(() => m.remove(), 1800); mvRefresh(); return;
       }
-      if (w.status !== 'taken') {                            // payment landed — now on the seller
+      const pw = $('#pyWallet');
+      if (w.status === 'taken') {
+        // paid, but the relay won't accept the funding until it has 2 BTC confirmations — the seller
+        // physically CAN'T lock yet. Show the network-confirmation progress, not "awaiting the seller".
+        if (pw && rlocal.btcHtlc?.txid) {
+          let confs = null;
+          try { confs = ((await api('btcAccount', { addresses: [b.addr] })).utxos || []).find(u => u.txid === rlocal.btcHtlc.txid)?.confirmations; } catch {}
+          pw.textContent = confs != null ? `${tr('confirming payment on the network')} (${Math.min(confs, 2)}/2)` : tr('confirming payment on the network');
+        }
+      } else {                                                // payment accepted — now genuinely the seller's turn
         if (!paidSeen) { paidSeen = true; putP2p({ ...rlocal, status: 'btc_funded' }); mvRefresh(); }
-        // the awaiting state lives on the button ("Ожидание продавца"); only surface the claiming step here
+        if (pw) pw.textContent = tr('awaiting the seller');
         if (st && w.status === 'frc_funded') st.textContent = tr('claiming your funds…');
       }
     } catch {}
