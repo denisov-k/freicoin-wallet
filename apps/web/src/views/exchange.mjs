@@ -1045,9 +1045,12 @@ function renderP2pPay(m, rec) {
   });
   // pay the HTLC straight from the in-wallet BTC account (one tap); auto-detect finishes the swap
   let paying = false;
+  // once paid, the payment-method chooser (#paySeg) and the wallet-balance line (#pyBalRow) are moot —
+  // hide them so the window shows only the amount, the confirmation status and Cancel.
+  const hidePayInputs = () => { for (const s of ['#paySeg', '#pyBalRow']) { const el = $(s); if (el) el.style.display = 'none'; } };
   // ALREADY PAID (a reload after funding): the record carries a funding txid — lock the pay path so a
   // second tap can't double-spend the BTC. The poll below still follows the swap through to completion.
-  if (rec.btcHtlc?.txid) { paying = true; const pw0 = $('#pyWallet'); if (pw0) { pw0.disabled = true; pw0.textContent = tr('confirming payment on the network'); } }
+  if (rec.btcHtlc?.txid) { paying = true; const pw0 = $('#pyWallet'); if (pw0) { pw0.disabled = true; pw0.textContent = tr('confirming payment on the network'); } hidePayInputs(); }
   const payFromWallet = async () => {
     const pw = $('#pyWallet'); if (!pw) return;
     paying = true; pw.disabled = true; pw.textContent = tr('confirming payment on the network');
@@ -1060,6 +1063,7 @@ function renderP2pPay(m, rec) {
       // the relay poll confirmed, so a reload in that window re-offered "Pay" and risked a second
       // BTC spend. 'btc_funded' + the txid make the reload show the awaiting state instead.
       putP2p({ ...rl, status: 'btc_funded', btcHtlc: { ...(rl.btcHtlc || b), txid: fund.txid, vout: fund.vout, value: fund.value } });
+      hidePayInputs();   // paid — drop the method chooser + Available line, leave amount/status/Cancel
       try { await api('p2pBtcFunded', { id: rec.id, btcTxid: fund.txid }); } catch {}   // nudge the relay; auto-detect is the fallback
       // paid — the (disabled) button now reads "подтверждение оплаты сетью (x/2)" until the relay
       // accepts the funding (2 confs), then the poll flips it to "ожидание продавца". No status line.
