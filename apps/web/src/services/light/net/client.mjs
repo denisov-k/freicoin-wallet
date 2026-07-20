@@ -38,6 +38,7 @@ export class Neutrino {
     this.reorgFloor = null;              // lowest fork height rolled back since last persist (signal for the store)
     this.mempool = new Map();            // txid -> {txid,category,amount,time} — unconfirmed wallet txs
     this._mempoolRaw = new Map();        // txid -> parsed tx, kept for reconsiderMempool()
+    this._seenAt = new Map();            // txid -> first-seen unix time — survives mempool.clear() so a pending row's time doesn't jump to "now" on every reconsiderMempool()
     this._selfTxids = new Set();         // txids WE broadcast — their outputs to us are trusted (creditable while
                                          //   unconfirmed) even when the tx spends coins we don't own (a swap CLAIM)
     this.peerHeight = 0;                 // peer's chain height from the version handshake (progress target)
@@ -71,7 +72,7 @@ export class Neutrino {
   /** Wipe all wallet/chain state (after a failed PoW verification — nothing is trustable). */
   _resetState() {
     this.chain = new HeaderChain(this.genesis);
-    this.utxos = new Map(); this.history = []; this._histKeys = new Set(); this.mempool = new Map();
+    this.utxos = new Map(); this.history = []; this._histKeys = new Set(); this.mempool = new Map(); this._seenAt = new Map();
     this.scannedHeight = 0; this.scannedOnce = false; this.reorgFloor = null; this._mempoolSettled = false;
     this.verifiedHeight = 0; this._pendingVerify = []; this._verifying = null;
     this._auxDone = 0; this._auxTotal = 0;
@@ -240,7 +241,8 @@ export class Neutrino {
     }
     for (const o of tx.vout) if (this._watch.has(o.scriptPubKey)) add(recvBy, isHostCoin(o) ? null : o.assetTag, o.value);
     if (!recvBy.size && !sentBy.size) return;
-    const now = Math.floor(Date.now() / 1000);
+    const now = this._seenAt.get(id) ?? Math.floor(Date.now() / 1000);
+    this._seenAt.set(id, now);   // remember first-seen — a later reconsiderMempool() reuses it, not a fresh clock
     this.mempool.set(id, [...new Set([...recvBy.keys(), ...sentBy.keys()])].map(tag => {
       const recv = recvBy.get(tag) ?? 0n, sent = sentBy.get(tag) ?? 0n;
       return { txid: id, assetTag: tag, category: recv >= sent ? 'receive' : 'send', amount: recv - sent, time: now };
@@ -701,7 +703,7 @@ export class Neutrino {
     await headersP; await follower; await previewP;
     if (headersErr) throw headersErr;
     for (const id of this.mempool.keys())  // confirmed now? drop from pending
-      if (this.history.some(e => e.txid === id)) { this.mempool.delete(id); this._mempoolRaw.delete(id); this._selfTxids.delete(id); }
+      if (this.history.some(e => e.txid === id)) { this.mempool.delete(id); this._mempoolRaw.delete(id); this._selfTxids.delete(id); this._seenAt.delete(id); }
     // Provisional: the scan is done but some PoW proofs are still verifying — surface the
     // balance now, clearly marked; the final (verified) result follows when the queue drains.
     if (onProvisional && (this._verifying || this._pendingVerify.length)) onProvisional(this._result());
@@ -751,6 +753,7 @@ export class Neutrino {
       // that has since confirmed is dropped by the confirmed-drop pass; the raw tx is kept so its
       // spent inputs still leave the balance until then. (Cap: don't bloat the store with a huge set.)
       mempoolRaw: [...this._mempoolRaw.values()].slice(0, 50).map(tx => { try { return serializeTx(tx); } catch { return null; } }).filter(Boolean),
+      mempoolSeen: [...this._seenAt].filter(([id]) => this._mempoolRaw.has(id)).slice(0, 50),   // first-seen times so a reload keeps a pending row's real time, not the reload clock
       selfTxids: this.serializeSelf(),   // which restored mempool txs are OUR broadcasts (credit their outputs)
     };
   }
@@ -772,10 +775,11 @@ export class Neutrino {
     // them against the restored utxo set (a spend reads correctly since its inputs are present).
     this._mempoolRaw = new Map(); this.mempool = new Map();
     this._selfTxids = new Set(s.selfTxids || []);   // restore which pending txs are our own broadcasts
+    this._seenAt = new Map(s.mempoolSeen || []);    // restore first-seen times BEFORE _considerTx so pending rows keep their real time
     for (const hex of (s.mempoolRaw || [])) { try { const tx = parseTx(hex); this._mempoolRaw.set(txidOf(tx), tx); } catch {} }
     this._bulkMempool = true; try { for (const tx of this._mempoolRaw.values()) this._considerTx(tx); } catch {} this._bulkMempool = false;
     // drop any restored pending that the persisted history already shows as confirmed
-    for (const id of [...this.mempool.keys()]) if (this.history.some(e => e.txid === id)) { this.mempool.delete(id); this._mempoolRaw.delete(id); this._selfTxids.delete(id); }
+    for (const id of [...this.mempool.keys()]) if (this.history.some(e => e.txid === id)) { this.mempool.delete(id); this._mempoolRaw.delete(id); this._selfTxids.delete(id); this._seenAt.delete(id); }
     return true;
   }
 
@@ -790,6 +794,11 @@ export class Neutrino {
   }
   serializeMempool() {
     return [...this._mempoolRaw.values()].slice(0, 50).map(tx => { try { return serializeTx(tx); } catch { return null; } }).filter(Boolean);
+  }
+  /** First-seen times [txid, unixSec] for the persisted mempool — so a reload keeps each pending row's
+   *  real time instead of resetting it to the reload clock (or the next header-update clock). */
+  serializeSeenAt() {
+    return [...this._seenAt].filter(([id]) => this._mempoolRaw.has(id)).slice(0, 50);
   }
 
   /** Broadcast a signed raw tx over P2P (send `tx`). Records it as pending immediately. */

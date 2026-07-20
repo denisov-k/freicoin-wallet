@@ -71,7 +71,7 @@ export class IdbStore {
       if (r.c * CHUNK !== chain.length) { await this.clear(); return false; }   // gap → store corrupt, start fresh
       for (const e of r.hs) chain.push({ hash: e[0], time: e[e.length - 1] || 0 });   // [hash,time] (v2 rows [hash,prevHash,time] read compatibly)
     }
-    const ok = chain.length > 0 && client.importState({ net: client.net, genesis: client.genesis, base, scannedHeight: w.scannedHeight, scannedOnce: w.scannedOnce, chain, utxos: w.utxos, history: w.history, mempoolRaw: w.mempoolRaw, selfTxids: w.selfTxids });
+    const ok = chain.length > 0 && client.importState({ net: client.net, genesis: client.genesis, base, scannedHeight: w.scannedHeight, scannedOnce: w.scannedOnce, chain, utxos: w.utxos, history: w.history, mempoolRaw: w.mempoolRaw, mempoolSeen: w.mempoolSeen, selfTxids: w.selfTxids });
     this.persistedTip = ok ? chain.length - 1 : -1;
     if (!ok) await this.clear();
     return ok;
@@ -113,6 +113,7 @@ export class IdbStore {
       utxos: [...o.utxos.values()].filter(u => u.refheight <= tip).map(u => ({ ...u, value: u.value.toString() })),
       history: o.history.filter(e => e.height <= tip).map(e => ({ ...e, amount: e.amount.toString() })),
       mempoolRaw: o.serializeMempool ? o.serializeMempool() : [],   // unconfirmed txs — a reload shows them at once
+      mempoolSeen: o.serializeSeenAt ? o.serializeSeenAt() : [],    // their first-seen times — a reload keeps the real time, not the reload clock
       selfTxids: o.serializeSelf ? o.serializeSelf() : [],          // which of those we broadcast (credit their outputs)
     });
     await txDone(t);
