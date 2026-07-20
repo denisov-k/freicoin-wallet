@@ -250,8 +250,8 @@ async function doBroadcast() {
   if (!pending) return;
   const btn = $('#confirmBtn'); btn.disabled = true; btn.textContent = tr('broadcasting…');
   try {
-    const { txid } = await d.ds().broadcast(pending);
-    d.setPending(null); d.resetCache();
+    const { txid } = await d.ds().broadcast(pending);   // seeds both caches with the pending-inclusive state
+    d.setPending(null);
     successScreen(txid);
   } catch (e) { toast(tr('broadcast failed: ') + e.message, 'err'); btn.disabled = false; btn.textContent = tr('Send'); }
 }

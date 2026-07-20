@@ -144,7 +144,10 @@ function ds() {
       health: () => wcall('health'), balance: () => wcall('balance'), utxos: () => wcall('utxos'),
       history: () => wcall('history'), refresh: () => wcall('refresh'), preview: () => wcall('preview'),
       assets: () => wcall('assets'),   // nV3 asset-aware view for the Issue/Exchange tabs
-      reset: () => wcall('reset'), broadcast: rawtx => wcall('broadcast', rawtx),
+      reset: () => wcall('reset'),
+      // seed BOTH caches with the broadcast's fresh state (pending + reduced balance) so a paint
+      // right after the send already carries the pending row alongside the confirmed history.
+      broadcast: async rawtx => { const r = await wcall('broadcast', rawtx); if (r?.state) { cache = r.state; liveState = r.state; } return r; },
       close() {
         const w = worker; worker = null;
         wCalls.forEach(c => c.rej(new Error('closed'))); wCalls.clear();

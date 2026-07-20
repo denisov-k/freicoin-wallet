@@ -284,8 +284,12 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       // next tab-open paints from a cache snapshotted before the send and the pending row/updated
       // balance only appear on the next poll (~5s later). cache is refreshed too so a paint sourced
       // from it (renderActivity/renderBalance seed) already carries the pending.
-      try { const snap = n.snapshot(); cache = toCache(snap); onProvisional?.(toCache(snap, 'partial')); } catch {}
-      return { txid: txidOf(parseTx(rawtx)) };
+      let state = null;
+      try { const snap = n.snapshot(); cache = toCache(snap); state = cache; onProvisional?.(toCache(snap, 'partial')); } catch {}
+      // return the fresh state (pending + reduced balance) so the caller can seed its OWN cache
+      // synchronously — the async 'provisional' message may not have landed by the time the user
+      // opens Activity right after the send, which showed confirmed rows first, pending a beat later.
+      return { txid: txidOf(parseTx(rawtx)), state };
     },
     refresh: sync,
     // Wipe persisted chain/UTXO state and re-sync from genesis. For a throwaway experimental
