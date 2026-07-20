@@ -122,7 +122,7 @@ const RU = {
   'I give (coin)': 'Отдаю (монету)', 'Total price': 'Сумма за всё', 'no coins yet': 'монет пока нет',
   'I sell': 'Продаю', 'enter a price': 'укажите цену', 'enter a quantity': 'укажите количество',
   'Free to lock': 'Свободно для запирания', 'only': 'доступно только', 'free to lock (rest backs your open offers)': 'свободно для запирания (остальное занято вашими офферами)',
-  'Cancel purchase': 'Отменить покупку', 'swap declined': 'обмен отменён', 'payment sent — awaiting the seller': 'оплачено · ожидание продавца',
+  'Cancel purchase': 'Отменить покупку', 'swap declined': 'обмен отменён', 'confirming payment on the network': 'подтверждение оплаты сетью',
   'BTC balance': 'Баланс BTC', 'Receive BTC': 'Получить BTC', 'Send BTC': 'Отправить BTC', 'BTC sent': 'BTC отправлены',
   'Available': 'Доступно', 'Copied': 'Скопировано', 'bad address': 'плохой адрес', 'not enough BTC': 'недостаточно BTC', 'signing…': 'подписываем…',
   'Send BTC to this address; it shows in your balance once the network sees it.': 'Отправьте BTC на этот адрес — он появится в балансе, как только его увидит сеть.', 'Amount (BTC)': 'Сумма (BTC)',

@@ -671,7 +671,7 @@ function p2pStatusLabel(o, mineRec) {
   } else {
     if (st === 'taken') return tr('pay to continue');                                 // my payment opens the swap
     if (st === 'frc_funded' || st === 'btc_funded_rev') return tr('claiming…');       // my funds are up — claiming
-    if (st.startsWith('btc_funded') || st.startsWith('frc_funded')) return tr('payment sent — awaiting the seller');   // I paid; the seller locks next
+    if (st.startsWith('btc_funded') || st.startsWith('frc_funded')) return tr('confirming payment on the network');   // I paid; the seller locks next
     if (st === 'frc_claimed' || st === 'btc_claimed_rev') return tr('swap complete ✅');
   }
   return tr(st);
@@ -997,7 +997,7 @@ function renderP2pPay(m, rec) {
   let paying = false;
   // ALREADY PAID (a reload after funding): the record carries a funding txid — lock the pay path so a
   // second tap can't double-spend the BTC. The poll below still follows the swap through to completion.
-  if (rec.btcHtlc?.txid) { paying = true; const pw0 = $('#pyWallet'); if (pw0) { pw0.disabled = true; pw0.textContent = tr('awaiting the seller'); } const st0 = $('#pyStatus'); if (st0) st0.textContent = tr('payment sent — awaiting the seller'); }
+  if (rec.btcHtlc?.txid) { paying = true; const pw0 = $('#pyWallet'); if (pw0) { pw0.disabled = true; pw0.textContent = tr('awaiting the seller'); } const st0 = $('#pyStatus'); if (st0) st0.textContent = tr('confirming payment on the network'); }
   const payFromWallet = async () => {
     const pw = $('#pyWallet'); if (!pw) return;
     paying = true; pw.disabled = true; pw.textContent = tr('awaiting the seller');
