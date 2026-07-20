@@ -242,10 +242,14 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     // persisted mempool) can set a pending-less liveState — so the first paint carries the persisted
     // unconfirmed rows and balance, not a mempool-less preview that the sync then augments.
     if (!cache && n.stateClient.chain.length > 1 && (n.stateClient.history.length || n.stateClient.mempool.size)) {
-      // 'restored' (not 'partial'): this is a COMPLETE prior scan from IndexedDB — a trustworthy
-      // balance. The UI shows it and holds it; the untrustworthy 'partial' sweep emits (which
-      // overcount mid-scan — receives are found before their spends) must NOT clobber it upward.
-      try { onProvisional?.(toCache(n.stateClient.snapshot(), 'restored')); } catch {}
+      // The restored balance is trustworthy ONLY if a full scan ever completed (scannedOnce). A
+      // persisted state from an INCOMPLETE first scan is an OVERCOUNT — mid-scan a coin is found
+      // (receive) but its spend, higher up the chain, isn't scanned yet — so it would show e.g. 30
+      // for a real 15. Mark it 'sweep' (untrustworthy for the balance) then; the checkpoint
+      // preview's complete tail-window scan (which can only undercount, never over) shows instead.
+      // Either way the emit carries history, so Activity still paints from it.
+      const mark = n.stateClient.scannedOnce ? 'restored' : 'sweep';
+      try { onProvisional?.(toCache(n.stateClient.snapshot(), mark)); } catch {}
     }
     if (!connected) {
       await n.connect(); n.stateClient.onProgress = progress;
