@@ -1120,6 +1120,9 @@ function renderP2pPay(m, rec) {
       // haven't locked (server-enforced); if they have, the BTC comes home at the timeout instead.
       const w = await api('p2pList').then(l => l.swaps.find(s => s.id === rec.id)).catch(() => null);
       if (w?.frcHtlc?.txid) { toast(tr('seller already locked — BTC auto-refunds at the timeout'), 'warn'); return; }
+      // payment still confirming (relay hasn't accepted it — <2 confs): a coop cancel isn't possible yet
+      // and the BTC is already broadcast, so explain it calmly instead of surfacing the raw relay error.
+      if (!w || w.status === 'taken' || !w.btcHtlc?.txid) { toast(tr('payment is still confirming — if the seller never locks, your BTC auto-refunds at the timeout'), 'warn'); return; }
       try {
         await api('p2pBtcCancelReq', { id: rec.id, takerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')) });
         toast(tr('cancel requested — waiting for the seller to authorize the refund'), 'ok');
