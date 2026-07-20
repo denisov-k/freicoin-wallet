@@ -305,20 +305,28 @@ export async function renderActivity() {
     }).catch(() => {});
   } else actFilter.cur = '';
   let painted = false;
-  // SEED (instant): the synced cache OR the restored snapshot (both now carry history+pending — the
-  // mempool is persisted, so a reload shows unconfirmed rows at once). On a SWAP net the paint holds
-  // for the BTC trade legs fetched below, so it never shows an FRC-only half. Exactly ONE async
-  // BTC-legs fetch (the Promise.all) — a second, earlier one used to race it and repaint a stale
-  // list first (the intermittent split). The preview() fallback covers a first-ever load (no cache).
+  // BTC trade legs (relay-backed, no chain sync) gate the SWAP activity paint. Fetch them on their
+  // OWN — NOT behind ds().history(), which awaits the full FRC sync — so the list unblocks during
+  // the sweep instead of only after it. When they land, set the gate and repaint from the seed so
+  // the preview's history shows at once. The persisted mempool means the seed already carries BOTH
+  // confirmed and pending, so this single (early) legs fetch no longer causes the confirmed/pending
+  // split the old duplicate fetch did.
+  if (d.SWAP()) mvBtcHistory().then(btc => {
+    if (gen !== d.renderGen() || !btc) return;
+    setBtcLegs(btc);
+    const s = d.seedState();
+    if (s && s.history) paintActivity([...(s.pending || []), ...s.history], d.cacheReady());
+  }).catch(() => {});
+  // SEED (instant): the synced cache OR the restored snapshot (both carry history+pending). On a SWAP
+  // net this paint is held until the legs land (above); a returning user's cache paints immediately.
+  // The preview() fallback covers a first-ever load (no cache).
   const seed = d.seedState();
   if (seed && seed.history) painted = paintActivity([...(seed.pending || []), ...seed.history], d.cacheReady()) || painted;
   else { try { const pv = await d.ds().preview(); if (pv) painted = paintActivity([...pv.pending, ...pv.history], false) || painted; } catch {} }
   try {
-    // fetch FRC history + BTC trade legs together, then paint ONCE with the complete list.
-    const hres = await Promise.all([d.ds().history(), d.SWAP() ? mvBtcHistory() : Promise.resolve(null)]);
-    const { txs } = hres[0]; const btc = hres[1];
+    // FRC full history is authoritative (awaits the sync) — this final paint replaces the seed.
+    const { txs } = await d.ds().history();
     if (gen !== d.renderGen()) return;
-    if (d.SWAP() && btc) setBtcLegs(btc);
     painted = paintActivity(txs) || painted;
     d.setStatus('ok');
   } catch (e) {
