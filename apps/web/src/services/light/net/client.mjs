@@ -40,6 +40,9 @@ export class Neutrino {
     this._mempoolRaw = new Map();        // txid -> parsed tx, kept for reconsiderMempool()
     this.peerHeight = 0;                 // peer's chain height from the version handshake (progress target)
     this.onProgress = null;              // optional ({phase, ...}) callback for sync progress
+    this.onMempool = null;               // fired when a LIVE wallet tx enters the mempool (receive, or a
+                                         // send from another device) so the UI updates without waiting for a poll
+    this._bulkMempool = false;           // suppresses onMempool during reconsiderMempool's clear+rebuild
     this._watch = null;                  // scripts watched for mempool activity
     this._inflight = new Set();          // reject fns of in-flight _await promises (rejected on disconnect)
     // deferred aux-pow verification: headers are linked+pushed immediately; their proofs
@@ -112,8 +115,10 @@ export class Neutrino {
    *  like a tiny change-receive). Called at sync end / after the restore preview's scan. */
   reconsiderMempool() {
     if (!this._mempoolRaw?.size) return;
+    this._bulkMempool = true;   // one notification after the rebuild, not one per re-added tx
     this.mempool.clear();
     for (const tx of this._mempoolRaw.values()) { try { this._considerTx(tx); } catch {} }
+    this._bulkMempool = false;
   }
 
   /** Block locator with exponential back-off, so the node can find the fork point after a reorg. */
@@ -229,6 +234,7 @@ export class Neutrino {
       const recv = recvBy.get(tag) ?? 0n, sent = sentBy.get(tag) ?? 0n;
       return { txid: id, assetTag: tag, category: recv >= sent ? 'receive' : 'send', amount: recv - sent, time: now };
     }));
+    if (!this._bulkMempool) try { this.onMempool?.(); } catch {}   // live tx → notify the UI now
   }
 
   /** Incrementally extend the chain from the current tip, verifying linkage + PoW.

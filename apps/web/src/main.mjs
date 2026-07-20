@@ -116,10 +116,16 @@ function ds() {
       }
       if (m.type === 'provisional') {
         liveState = m.c;
+        // In a SYNCED session (cache already built) a provisional is a complete live snapshot from
+        // a mempool change (receive / cross-device send / our own broadcast) — advance the seed
+        // cache so the next tab-open paints the current state in one shot, not a stale cache first
+        // and the change a beat later. During a restore (cache still null) it feeds only liveState,
+        // so the growing preview isn't frozen into a partial cache.
+        if (cache && !m.c.stale) cache = m.c;
         try { paintBalance(m.c); } catch {}
         try { paintActivity([...m.c.pending, ...m.c.history], false); } catch {}
         try { paintSendAvail(m.c, true); } catch {}
-        setStatus('sync', undefined, m.c.tipHeight);
+        setStatus(m.c.stale ? 'sync' : 'ok', undefined, m.c.tipHeight);
         return;
       }
       const c = wCalls.get(m.id); if (!c) return; wCalls.delete(m.id);

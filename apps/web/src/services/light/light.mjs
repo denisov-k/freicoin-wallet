@@ -212,9 +212,21 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     let balance = 0n; for (const u of utxos) if (isHostU(u)) balance += timeAdjustValue(u.value, tip + 1 - u.refheight);
     return { ...part, tipHeight: tip, balance, utxos, history, pending };
   };
+  // ONE state-emit path: refresh the local cache from a live snapshot AND push it to the UI. Used by
+  // broadcast (our own send) and by onMempool (a received tx, or a send from another device) — so any
+  // change to what the wallet holds reaches the screen at once, complete (balance + history + pending).
+  function emitState() {
+    // a synced snapshot (verified chain + current mempool) — NOT stale; a pending tx is part of the
+    // real current state. The main thread advances its seed cache from it and keeps status 'ok'.
+    try { const snap = n.snapshot(); cache = toCache(snap); onProvisional?.(cache); return cache; } catch { return null; }
+  }
   async function doSync() {
     await initClient();
-    if (!connected) { await n.connect(); n.stateClient.onProgress = progress; connected = true; }
+    if (!connected) {
+      await n.connect(); n.stateClient.onProgress = progress;
+      n.stateClient.onMempool = () => { if (cache) emitState(); };   // live mempool change → refresh (only once the wallet is synced)
+      connected = true;
+    }
     // subscribe the MAIN client to the mempool IMMEDIATELY (watch + BIP35) — its raw txs buffer
     // during the preview; the seeding below then classifies them correctly for the FIRST paint
     try { if (!n.stateClient._watch) { n.stateClient._watch = new Set(scripts); n.stateClient._send('mempool', Buffer.alloc(0)); } } catch {}
@@ -283,15 +295,9 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     async broadcast(rawtx) {
       if (!n) await sync();
       n.broadcast(rawtx);   // adds the tx to the client's mempool (optimistic pending)
-      // Push the new state (pending row + reduced balance) to the UI RIGHT NOW. Without this the
-      // next tab-open paints from a cache snapshotted before the send and the pending row/updated
-      // balance only appear on the next poll (~5s later). cache is refreshed too so a paint sourced
-      // from it (renderActivity/renderBalance seed) already carries the pending.
-      let state = null;
-      try { const snap = n.snapshot(); cache = toCache(snap); state = cache; onProvisional?.(toCache(snap, 'partial')); } catch {}
-      // return the fresh state (pending + reduced balance) so the caller can seed its OWN cache
-      // synchronously — the async 'provisional' message may not have landed by the time the user
-      // opens Activity right after the send, which showed confirmed rows first, pending a beat later.
+      // Refresh cache + push the new state now, AND return it so the caller seeds its own cache
+      // synchronously (the async provisional message may lag a tab-open right after the send).
+      const state = emitState();
       return { txid: txidOf(parseTx(rawtx)), state };
     },
     refresh: sync,
