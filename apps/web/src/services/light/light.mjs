@@ -271,8 +271,11 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
 
   return {
     async health() { return { ok: true, network: net + ' (light)' }; },
-    async balance() { const c = await ensure(); return { balance: c.balance, spendable: c.spendable, tipHeight: c.tipHeight, unit: 'present-value', pending: c.pending, agreement: c.agreement, birthAuto: c.birthAuto }; },
-    async utxos() { const c = await sync(); return { balance: c.balance, spendable: c.spendable, tipHeight: c.tipHeight, utxos: c.utxos, pending: c.pending, agreement: c.agreement, birthAuto: c.birthAuto, birthAnchor: c.birthAnchor }; },
+    // include `history` too: main.mjs `cache` = utxos(), and renderActivity seeds its first paint
+    // from it — without history the seed carried only pending, so confirmed and pending rows landed
+    // from different sources a beat apart. A complete cache paints both together.
+    async balance() { const c = await ensure(); return { balance: c.balance, spendable: c.spendable, tipHeight: c.tipHeight, unit: 'present-value', pending: c.pending, history: c.history, agreement: c.agreement, birthAuto: c.birthAuto }; },
+    async utxos() { const c = await sync(); return { balance: c.balance, spendable: c.spendable, tipHeight: c.tipHeight, utxos: c.utxos, pending: c.pending, history: c.history, agreement: c.agreement, birthAuto: c.birthAuto, birthAnchor: c.birthAnchor }; },
     async history() { const c = await ensure(); return { txs: [...c.pending, ...c.history] }; },
     // nV3 asset-aware snapshot for the Issue/Exchange tabs (per-asset utxos + self-certified defs)
     async assets() { const c = await sync(); return { tipHeight: c.tipHeight, assetUtxos: c.assetUtxos || [], assetDefs: c.assetDefs || {} }; },   // sync() not ensure(): the asset/token coins that back sends must be as fresh as FRC's utxos(), never a stale cache (a reorg/reindex silently invalidates cached outpoints)
