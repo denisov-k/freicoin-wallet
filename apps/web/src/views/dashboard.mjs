@@ -298,15 +298,16 @@ export async function renderActivity() {
     }).catch(() => {});
   } else actFilter.cur = '';
   let painted = false;
-  // Instant: verified cache > streamed partial > persisted preview; live partials keep updating the
-  // list via the worker's provisional events while the sync runs.
+  // SEED (instant): a synced session's cache already holds balance+history+pending; paint it at once.
+  // On a SWAP net the paint holds for BTC trade legs (fetched below) so it never shows an FRC-only
+  // half. On a restore (no cache) the persisted preview seeds it instead. NOTE: exactly ONE async
+  // BTC-legs fetch (in the Promise.all below) — a second, earlier fetch used to race it and repaint
+  // a stale list first, which is what made the pending/confirmed split appear "sometimes".
   const seed = d.seedState();
-  // kick the BTC legs fetch NOW (parallel with the preview) — paintActivity holds until they land
-  if (d.SWAP() && !btcActReady) mvBtcHistory().then(b => { if (gen === d.renderGen()) { setBtcLegs(b); paintActivity(actLastTxs, actGotFinal); } }).catch(() => {});
   if (seed) painted = paintActivity([...(seed.pending || []), ...(seed.history || [])], d.cacheReady() && !!seed.history) || painted;
   else { try { const pv = await d.ds().preview(); if (pv) painted = paintActivity([...pv.pending, ...pv.history], false) || painted; } catch {} }
   try {
-    // both histories in parallel — the first real paint is the COMPLETE list (FRC + BTC)
+    // fetch FRC history + BTC trade legs together, then paint ONCE with the complete list.
     const [{ txs }, btc] = await Promise.all([d.ds().history(), d.SWAP() ? mvBtcHistory() : Promise.resolve(null)]);
     if (gen !== d.renderGen()) return;
     if (d.SWAP() && btc) setBtcLegs(btc);
