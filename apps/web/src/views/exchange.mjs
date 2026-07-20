@@ -1356,11 +1356,9 @@ function paintAssetBalance() {
   const amt = (tag, v) => tag === 'FRC' ? frc(v)
     : (Number(BigInt(v)) / scaleOf(tag)).toLocaleString(getLang(), { maximumFractionDigits: decimalsOf(tag) });
   const rows = [...byAsset.entries()].map(([tag, e]) => {
-    const constant = tag !== 'FRC' && rateOf(tag).k >= 64;   // k=64 ≈ constant: the one-off rounding unit isn't "melting"
-    const melt = !constant && e.pv < e.nominal, grow = !constant && e.pv > e.nominal;
     // token-bearing assets show only their quantity here — the items and the send action live
     // in the Send flow, not the balance table.
-    return `<tr><td${tag === 'FRC' ? '' : ` title="${tag}"`}>${assetName(tag === 'FRC' ? null : tag)}</td><td class="r ${melt ? 'melt' : grow ? 'grow' : ''}">${amt(tag, e.pv)}</td></tr>`;
+    return `<tr><td${tag === 'FRC' ? '' : ` title="${tag}"`}>${assetName(tag === 'FRC' ? null : tag)}</td><td class="r">${amt(tag, e.pv)}</td></tr>`;
   });
   // BTC sits in the same table (held in-wallet on signet); the cell fills in when refreshBtc returns.
   if (state.swap?.available) rows.push(`<tr><td>BTC</td><td class="r" id="btcBalCell">${mvBtc().balance != null ? btcToStr(mvBtc().balance) : '…'}</td></tr>`);
