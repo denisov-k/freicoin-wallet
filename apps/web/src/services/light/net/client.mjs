@@ -10,7 +10,7 @@ import { parseAuxPow, checkAuxPoW } from './auxpow.mjs';
 import { blockHash, parseBlock, extractAssetDefs, txTokenMap } from './scan.mjs';
 import { HeaderChain } from './chain.mjs';
 import { makePool } from './verifypool.mjs';
-import { parseTx, txid as txidOf } from '@core/tx.mjs';
+import { parseTx, serializeTx, txid as txidOf } from '@core/tx.mjs';
 import { timeAdjustValue } from '@core/demurrage.mjs';
 import { assetPresentValue } from '@core/assets.mjs';
 import { sha256d } from '@core/crypto.mjs';
@@ -70,7 +70,7 @@ export class Neutrino {
   _resetState() {
     this.chain = new HeaderChain(this.genesis);
     this.utxos = new Map(); this.history = []; this._histKeys = new Set(); this.mempool = new Map();
-    this.scannedHeight = 0; this.scannedOnce = false; this.reorgFloor = null;
+    this.scannedHeight = 0; this.scannedOnce = false; this.reorgFloor = null; this._mempoolSettled = false;
     this.verifiedHeight = 0; this._pendingVerify = []; this._verifying = null;
     this._auxDone = 0; this._auxTotal = 0;
   }
@@ -664,6 +664,10 @@ export class Neutrino {
     // mid-handshake, silently lost it). Without this a fresh session is blind to a tx broadcast
     // seconds earlier from another device. The reply (inv → getdata → tx) lands async; callers that
     // need it in a snapshot (the restore preview) wait a beat after syncWallet before reading.
+    // Ask for the node's mempool. The reply is queued behind the sync's block traffic and lands
+    // ~8s later, so we DON'T wait for it — a reload shows pending from the PERSISTED mempool at
+    // once, and this reply just reconciles in the background (fires onMempool → emitState). A live
+    // receive arriving on an open session comes through the same path.
     try { this._send('mempool', Buffer.alloc(0)); } catch {}
     this.reconsiderMempool();   // classify pending txs against the now-complete utxo set
     return this._result();
@@ -690,6 +694,12 @@ export class Neutrino {
       net: this.net, genesis: this.genesis, base, scannedHeight: this.scannedHeight, scannedOnce: this.scannedOnce, chain,
       utxos: [...this.utxos.values()].map(u => ({ ...u, value: u.value.toString() })),
       history: this.history.map(e => ({ ...e, amount: e.amount.toString() })),
+      // PERSIST the mempool: a reload then shows unconfirmed rows (and the reduced balance) INSTANTLY
+      // from IndexedDB. The BIP35 re-query reply is queued behind the sync's block traffic and lands
+      // ~8s late, so it can't seed the first paint — persistence does. The next sync reconciles: a tx
+      // that has since confirmed is dropped by the confirmed-drop pass; the raw tx is kept so its
+      // spent inputs still leave the balance until then. (Cap: don't bloat the store with a huge set.)
+      mempoolRaw: [...this._mempoolRaw.values()].slice(0, 50).map(tx => { try { return serializeTx(tx); } catch { return null; } }).filter(Boolean),
     };
   }
 
@@ -706,6 +716,13 @@ export class Neutrino {
     this.scannedHeight = s.scannedHeight | 0;
     this.scannedOnce = !!s.scannedOnce;
     this.verifiedHeight = this.chain.length - 1;   // persisted headers were verified before saving
+    // restore the persisted mempool so unconfirmed rows show at once; reconsiderMempool classifies
+    // them against the restored utxo set (a spend reads correctly since its inputs are present).
+    this._mempoolRaw = new Map(); this.mempool = new Map();
+    for (const hex of (s.mempoolRaw || [])) { try { const tx = parseTx(hex); this._mempoolRaw.set(txidOf(tx), tx); } catch {} }
+    this._bulkMempool = true; try { for (const tx of this._mempoolRaw.values()) this._considerTx(tx); } catch {} this._bulkMempool = false;
+    // drop any restored pending that the persisted history already shows as confirmed
+    for (const id of [...this.mempool.keys()]) if (this.history.some(e => e.txid === id)) { this.mempool.delete(id); this._mempoolRaw.delete(id); }
     return true;
   }
 

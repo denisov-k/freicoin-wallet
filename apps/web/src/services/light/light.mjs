@@ -218,10 +218,17 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
   function emitState() {
     // a synced snapshot (verified chain + current mempool) — NOT stale; a pending tx is part of the
     // real current state. The main thread advances its seed cache from it and keeps status 'ok'.
-    try { const snap = n.snapshot(); cache = toCache(snap); onProvisional?.(cache); return cache; } catch { return null; }
+    try { const snap = n.snapshot(); cache = toCache(snap); onProvisional?.(cache); store.save(n, skey).catch(() => {}); return cache; } catch { return null; }
   }
   async function doSync() {
     await initClient();
+    // RESTORE: the persisted state (chain+utxos+history+MEMPOOL) is already in the main client from
+    // IndexedDB. Emit it right away — BEFORE the checkpoint preview (a separate client with no
+    // persisted mempool) can set a pending-less liveState — so the first paint carries the persisted
+    // unconfirmed rows and balance, not a mempool-less preview that the sync then augments.
+    if (!cache && n.stateClient.chain.length > 1 && (n.stateClient.history.length || n.stateClient.mempool.size)) {
+      try { onProvisional?.(toCache(n.stateClient.snapshot(), 'partial')); } catch {}
+    }
     if (!connected) {
       await n.connect(); n.stateClient.onProgress = progress;
       n.stateClient.onMempool = () => { if (cache) emitState(); };   // live mempool change → refresh (only once the wallet is synced)
