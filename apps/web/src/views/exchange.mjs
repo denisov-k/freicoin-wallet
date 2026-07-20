@@ -4,6 +4,7 @@
 // light client (ds().assets()), and the relay (:5181, proxied at /api) provides only the order
 // book, issuance funding and broadcast — it can mislabel but never steal.
 import { deriveAddress, currentNet, addrToSpk } from '@/services/wallet.mjs';
+import { NETWORKS } from '@/state/network-params.mjs';
 import { derivePath, ckdPriv, wpkProgramHex } from '@core/hd.mjs';
 import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
 import { segwitV0Sighash, rangedSighash, SIGHASH_ALL, SIGHASH_BUNDLE } from '@core/sighash.mjs';
@@ -29,7 +30,10 @@ import { armOverlay, closeOverlay } from '@/components/modal.mjs';
 export { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvBtcMax };   // BTC account lives in its own module; re-exported so the wallet imports stay stable
 export { mvBtcHistory };                                      // activity/recovery in mv-activity.mjs; re-exported for the wallet
 
-const ACCOUNT = "m/84'/1'/0'";              // nv3 = coin type 1 (Freimarkets shares the regtest branch)
+// BIP84 account for swap keys/payout — MUST match the main wallet's derivation (m/84'/coinType'/0')
+// or claimed coins land on addresses the wallet doesn't watch. Was hardcoded to coin type 1 (nv3/
+// regtest), which on MAINNET (coin 0) sent bought FRC to an unwatched coin-1 address.
+const accountPath = () => `m/84'/${NETWORKS[currentNet()].coinType}'/0'`;
 // $/q/rev/frc/num/setOptions/skelRows → @/components/dom.mjs; toast → @/components/toast.mjs
 
 let seed = null, km = {}, spks = [], myAddress = '', state = null, _ds = null;
@@ -55,7 +59,7 @@ export const mvRelayAssets = () => api('info').then(i => i.assets || []);
 
 // ---- keys: same vault, market derivation on the regtest branch ----
 function deriveKeys() {
-  const acct = derivePath(seed, ACCOUNT);
+  const acct = derivePath(seed, accountPath());
   km = {}; spks = [];
   for (const chain of [0, 1]) {
     const c = ckdPriv(acct, chain);
@@ -67,6 +71,37 @@ function deriveKeys() {
   }
   myAddress = deriveAddress(seed, 0, 0);
   ctx.spks = spks; ctx.km = km;               // mirror for the extracted modules (read via ctx)
+}
+
+// ONE-TIME RECOVERY: mainnet swaps briefly derived swap keys/payout on coin type 1 (a hardcoded
+// regtest path), so bought FRC landed on m/84'/1'/0' addresses the coin-0 wallet never watches.
+// Sweep any funds sitting on those legacy addresses back to a watched coin-0 address. Runs once
+// (localStorage flag), no-op on the coin-1 nets (there the wallet IS coin 1 — nothing legacy).
+async function sweepLegacyCoin1() {
+  if (!seed || NETWORKS[currentNet()].coinType === 1 || !ctx.state?.mine) return;
+  const MIG = lsKey('fw_coin1_swept');
+  try { if (localStorage.getItem(MIG)) return; } catch {}
+  try {
+    const acct = derivePath(seed, "m/84'/1'/0'");
+    const km1 = {}, spks1 = [];
+    for (const chain of [0, 1]) { const c = ckdPriv(acct, chain); for (let i = 0; i < 12; i++) { const node = ckdPriv(c, i); const spk = '0014' + wpkProgramHex(node); km1[spk] = node; spks1.push(spk); } }
+    const utxos = ((await api('utxos', { spks: spks1 })).utxos || []).filter(u => (u.assetTag ?? null) === null && km1[u.spk]);
+    if (!utxos.length) { try { localStorage.setItem(MIG, '1'); } catch {} return; }   // nothing on the old branch — done
+    const L = ctx.state.mine.height, fee = 10000n;
+    const coins = utxos.map(u => ({ outpoint: u.outpoint, spk: u.spk, value: BigInt(u.value), refheight: u.refheight, pv: assetPresentValue(BigInt(u.value), L - u.refheight, { k: 20, interest: false }) }));
+    let S = 0n; for (const c of coins) S += c.pv;
+    if (S <= fee) return;
+    const dest = ctx.spks[0];   // a watched coin-0 wallet address (deriveKeys now uses the network coin type)
+    const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, vin: coins.map(c => opIn(c.outpoint)), vout: [{ value: S - fee, scriptPubKey: dest }] };
+    coins.forEach((c, i) => {   // sign with the LEGACY coin-1 keys (km1), not ctx.km
+      const sec = km1[c.spk].priv.toString(16).padStart(64, '0'), code = '21' + pubkeyCompressed(sec) + 'ac';
+      const sh = segwitV0Sighash(tx, i, code, c.value, BigInt(c.refheight), SIGHASH_ALL);
+      tx.vin[i].witness = [signEcdsa(sec, sh) + SIGHASH_ALL.toString(16).padStart(2, '0'), '00' + code, ''];
+    });
+    await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+    try { localStorage.setItem(MIG, '1'); } catch {}
+    toast(`${tr('recovered')} ${frc(S - fee)} FRC`, 'ok'); mvRefresh();
+  } catch { /* relay/utxo hiccup — retry on the next load (flag only set on success or empty) */ }
 }
 // signInput / opIn / coin-selection / HTLC-funding helpers moved to mv-swap-lib.mjs (shared with the drive)
 
@@ -138,6 +173,7 @@ async function doRefresh() {
   checkMySwaps();                                           // refund any of my LP swaps stalled past their timeout
   checkP2pRefunds();                                        // auto-refund a P2P HTLC I locked once its CLTV passes
   checkBtcRefunds();                                        // auto-refund my BTC HTLC (buyer paid, seller vanished) once T2 passes
+  sweepLegacyCoin1().catch(() => {});                       // one-time: bring home FRC bought to a legacy coin-1 address
   driveP2p();                                               // advance my P2P swaps (both roles) on my turn
   refreshBtc();                                             // refresh the in-wallet BTC balance (watch-only)
   refreshPushSubs();                                        // keep the relay's push book pointed at my swap keys (throttled)
