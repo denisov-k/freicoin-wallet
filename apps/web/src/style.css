@@ -107,6 +107,11 @@ table.mkt td { padding:5px 8px; border-bottom:1px solid var(--line); font-family
 table.mkt .r { text-align:right; }
 table.mkt .act-cell { text-align:right; white-space:nowrap; }   /* Buy/Cancel hug the right edge */
 table.mkt .act-cell span { white-space:normal; display:inline-block; }   /* text statuses wrap instead of stretching the table past the screen */
+/* action column = one compact icon per row (buy/pay = accent, cancel/status = outline) so nothing overflows */
+table.mkt .act-cell button { width:34px; height:34px; padding:0; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; vertical-align:middle; }
+table.mkt .act-cell button svg { width:18px; height:18px; display:block; }
+table.mkt .act-cell button:not(.rbtn) { background:none; border:1px solid var(--line); color:var(--fg); }
+table.mkt .act-cell .p2pstatus { border-color:var(--accent); color:var(--accent); }   /* in-flight: tap for status + cancel */
 .offer-row > label { flex:1; } .offer-row .numfield { flex:0 0 90px; }   /* number fields narrow + equal, selects fill */
 #rMinMax .numfield { flex:1; }   /* Min/Max are the only two fields on their row — each takes half the width */
 .melt { color:var(--warn); } .grow { color:var(--ok); } .filled { opacity:.45; }

@@ -695,6 +695,17 @@ function openOfferModal() {
   };
   paint(); syncPartial();                // populate #rAsset / #rWant now
 }
+// action-cell icons (Feather, MIT) — the book's action column is one compact square per row, so a
+// long status like "подтверждение оплаты сетью" never stretches the table past the screen. The full
+// text lives in the button's title/aria-label (and, for in-flight swaps, inside the modal it opens).
+const SVG = {
+  buy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>',
+  pay: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>',
+  cancel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  wait: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+};
+const actBtn = (cls, id, ic, label) => `<button class="${cls}" data-id="${id}" title="${label}" aria-label="${label}">${SVG[ic]}</button>`;
+
 // human, role-aware status for a P2P swap row — the SELLER sees "waiting for the buyer" once
 // they've locked, "claiming…" while collecting; the buyer sees "waiting for the seller" / progress.
 // v2 order — forward: taken (buyer pays) → btc_funded (seller locks) → frc_funded (buyer claims)
@@ -1536,15 +1547,22 @@ function paint() {
         const takerDone = mineRec?.role === 'taker' && ['frc_claimed', 'btc_claimed_rev'].includes(o.status);
         if (mineRec && !isOffer && (o.status === 'done' || makerDone || takerDone)) { dropP2p(o.id); continue; }
         let act;
-        if (isOffer) act = mineRec ? `<button class="p2pcancel" data-id="${o.id}">${tr('Cancel')}</button>`
-          : `<button class="p2ptakepart rbtn" data-id="${o.id}">${tr('Buy')}</button>`;   // pick an amount
-        else if (mineRec) act = (!isRev && mineRec.status === 'need_btc' && !o.btcHtlc?.txid && !mineRec.btcHtlc?.txid) ? `<button class="p2ppay rbtn" data-id="${o.id}">${tr('Pay')}</button>`
-          : (o.status === 'open' && !o.frcHtlc && !o.btcHtlc) ? `<button class="p2pcancel" data-id="${o.id}">${tr('Cancel')}</button>`
-          // MY dangling take with NOTHING funded (e.g. the funding step failed for lack of coins):
-          // let the taker release the reservation instead of leaving the offer hostage to the grace timer
-          : (mineRec.role === 'taker' && o.status === 'taken' && !o.frcHtlc?.txid && !o.btcHtlc?.txid) ? `<button class="p2puntake" data-id="${o.id}">${tr('Cancel')}</button>`
+        // paid-but-still-'taken' means the relay hasn't accepted the funding yet (needs 2 BTC confs) —
+        // the honest label there is "confirming payment", not the seller-turn wording.
+        const stLabel = (!isRev && mineRec?.role === 'taker' && mineRec.btcHtlc?.txid && o.status === 'taken') ? tr('confirming payment on the network') : p2pStatusLabel(o, mineRec);
+        if (isOffer) act = mineRec ? actBtn('p2pcancel', o.id, 'cancel', tr('Cancel'))
+          : actBtn('p2ptakepart rbtn', o.id, 'buy', tr('Buy'));   // pick an amount
+        else if (mineRec) act = (!isRev && mineRec.status === 'need_btc' && !o.btcHtlc?.txid && !mineRec.btcHtlc?.txid) ? actBtn('p2ppay rbtn', o.id, 'pay', tr('Pay'))
+          : (o.status === 'open' && !o.frcHtlc && !o.btcHtlc) ? actBtn('p2pcancel', o.id, 'cancel', tr('Cancel'))
+          // MY paid forward purchase, still settling → a CLICKABLE status icon that reopens the pay/status
+          // window (which carries its own "Отменить покупку"). Covers confirming-payment → awaiting-seller → claiming.
+          : (!isRev && mineRec.role === 'taker' && mineRec.btcHtlc?.txid && !['frc_claimed', 'done', 'btc_claimed_rev'].includes(o.status)) ? actBtn('p2pstatus', o.id, 'wait', stLabel)
+          // MY dangling take with NOTHING funded (the funding step failed) AND no BTC actually sent — let
+          // the taker release the reservation. NEVER offer this once I've funded (!mineRec.btcHtlc) — a
+          // p2puntake there would drop the reservation while my BTC sits locked in the HTLC → stranded coin.
+          : (mineRec.role === 'taker' && o.status === 'taken' && !o.frcHtlc?.txid && !o.btcHtlc?.txid && !mineRec.btcHtlc?.txid) ? actBtn('p2puntake', o.id, 'cancel', tr('Cancel'))
           : `<span class="sub">${p2pStatusLabel(o, mineRec)}</span>`;
-        else act = o.status === 'open' ? `<button class="p2ptake rbtn" data-id="${o.id}">${tr('Buy')}</button>` : `<span class="sub">${p2pStatusLabel(o, mineRec)}</span>`;
+        else act = o.status === 'open' ? actBtn('p2ptake rbtn', o.id, 'buy', tr('Buy')) : `<span class="sub">${p2pStatusLabel(o, mineRec)}</span>`;
         // MY in-progress swaps carry a live action (Pay / a status) — never dim them; .filled is for
         // settled/other rows only (here that never actually triggers, but keep the intent explicit)
         if (o.status === 'open' || (mineRec && !isOffer))
@@ -1575,6 +1593,9 @@ function paint() {
       const o = (state.p2p?.swaps || []).find(x => x.id === b.dataset.id); if (o) openP2pTakePartial(o);
     });
     $('#bookBody').querySelectorAll('.p2ppay').forEach(b => b.onclick = () => {
+      const rec = loadP2p().find(x => x.id === b.dataset.id); if (rec) openP2pPayModal(rec);
+    });
+    $('#bookBody').querySelectorAll('.p2pstatus').forEach(b => b.onclick = () => {   // in-flight swap → reopen the pay/status window (with Cancel inside)
       const rec = loadP2p().find(x => x.id === b.dataset.id); if (rec) openP2pPayModal(rec);
     });
     $('#bookBody').querySelectorAll('.p2puntake').forEach(b => b.onclick = async () => {
