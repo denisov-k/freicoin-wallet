@@ -52,8 +52,10 @@ selector:
   price/bounds *descriptor*, pre-signed **rung ladders** so a maker can go
   offline, and a permissionless matcher that splices crossing offers.
 - **Cross-chain BTC ↔ FRC atomic swaps** (3-branch HTLC, taker-first
-  anti-griefing protocol) coordinated by an untrusted relay — live between the
-  rehearsal chain and Bitcoin signet, mainnet launch pending.
+  anti-griefing protocol) coordinated by an untrusted relay — **live on
+  Bitcoin ↔ Freicoin mainnet**, plus a rehearsal chain against Bitcoin signet
+  for testing. A cooperative-cancel branch refunds a paid-but-unmatched taker
+  instantly; otherwise the HTLC timeout brings the coin home.
 
 The normative protocol description is
 [`docs/nv3-lite-spec.md`](docs/nv3-lite-spec.md); the matching C++ node lives on
