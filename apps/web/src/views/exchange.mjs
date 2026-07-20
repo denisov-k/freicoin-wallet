@@ -964,7 +964,7 @@ function renderP2pPay(m, rec) {
   const rcvTag = rec.assetTag ?? null;   // what the buyer receives for the BTC (FRC or a user asset)
   const rcv = rec.frcAmount ? `${(Number(rec.frcAmount) / scaleOf(rcvTag)).toLocaleString(getLang(), { maximumFractionDigits: rcvTag ? decimalsOf(rcvTag) : 8 })} ${assetName(rcvTag)}` : '';
   m.innerHTML = `<div class="review">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Pay BTC')}</b><button id="pyClose" class="icon">✕</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} ${assetName(rcvTag)}</b><button id="pyClose" class="icon">✕</button></div>
     <div class="sub" style="margin:-4px 0 8px;font-size:13px">${tr('Order')} ${rec.id}</div>
     ${hasWallet ? `<div class="seg" id="paySeg"><button data-pay="wallet" class="on">${tr('From wallet')}</button><button data-pay="ext">${tr('External payment')}</button></div>` : ''}
     <div class="rrow" id="pyBalRow"${hasWallet ? '' : ' style="display:none"'}><span>${tr('Available')}</span><b id="pyBal" class="sub">${tr('checking balance…')}</b></div>
@@ -1013,9 +1013,9 @@ function renderP2pPay(m, rec) {
   // don't lock them to a stale read. Balance lives on its own row now; the button just acts.
   const updateWalletBtn = () => {
     const pw = $('#pyWallet'), bl = $('#pyBal'), info = mvBtc(); if (!pw || !info.available || paying) return;
-    if (info.balance == null) { pw.disabled = true; if (bl) bl.textContent = tr('checking balance…'); return; }
+    if (info.balance == null) { pw.disabled = true; if (bl) { bl.textContent = tr('checking balance…'); bl.classList.add('sub'); } return; }
     const bal = BigInt(info.balance), ok = bal >= amt + 1000n;
-    if (bl) bl.textContent = `${(Number(bal) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`;
+    if (bl) { bl.textContent = `${(Number(bal) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`; bl.classList.remove('sub'); }   // match the Amount/You-receive rows once the real figure lands
     pw.disabled = !ok;
     pw.textContent = ok ? tr('Pay') : tr('not enough BTC in wallet');
     pw.onclick = ok ? payFromWallet : null;
