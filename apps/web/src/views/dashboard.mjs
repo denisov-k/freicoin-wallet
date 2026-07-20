@@ -65,12 +65,14 @@ export function paintBalance(s) {
     // paint only once there is a NONZERO figure — an early sweep partial legitimately reports 0
     // long before the preview lands, and flashing "0" reads as "no money" (keep the skeleton).
     if (body && (body.querySelector('.skel-line') || $('#provRow'))) {
-      if (+s.balance > 0) provBest = Math.max(provBest, +s.balance);
-      // This is the PROVISIONAL path (during sync): here 0 means "still scanning, coins not found
-      // yet", NOT "you have 0" — flashing "FRC 0" then climbing 25→40 during the first header load
-      // reads as funds lost. Keep the skeleton until a real (nonzero) figure exists; a returning
-      // user's restored balance is >0 and paints at once. The FINAL table (paintAssetBalance) is
-      // what legitimately shows a 0 once the scan has actually completed.
+      // Only TRUSTWORTHY figures reach the balance during sync: the restored (complete prior scan)
+      // and live/final emits. A 'partial'/'provisional' emit is an INCOMPLETE sweep — mid-scan it
+      // overcounts (receives are found before their spends), so 25→40 climbed past the real 15 and
+      // Math.max even locked the overshoot in. Ignore those; the final table corrects everything.
+      const trustworthy = !s.stale || s.stale === 'restored';
+      if (trustworthy) provBest = +s.balance;
+      // 0 in the provisional path means "still scanning, nothing shown yet", not "you have 0" —
+      // keep the skeleton until a real figure exists (the final table legitimately shows a 0).
       if (provBest > 0) {
         const b = mvBtc();
         const rows = [`<tr><td>FRC</td><td class="r">${provBest.toLocaleString(getLang(), { maximumFractionDigits: 8 })}</td></tr>`];

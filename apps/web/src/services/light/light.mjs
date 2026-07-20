@@ -242,7 +242,10 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     // persisted mempool) can set a pending-less liveState — so the first paint carries the persisted
     // unconfirmed rows and balance, not a mempool-less preview that the sync then augments.
     if (!cache && n.stateClient.chain.length > 1 && (n.stateClient.history.length || n.stateClient.mempool.size)) {
-      try { onProvisional?.(toCache(n.stateClient.snapshot(), 'partial')); } catch {}
+      // 'restored' (not 'partial'): this is a COMPLETE prior scan from IndexedDB — a trustworthy
+      // balance. The UI shows it and holds it; the untrustworthy 'partial' sweep emits (which
+      // overcount mid-scan — receives are found before their spends) must NOT clobber it upward.
+      try { onProvisional?.(toCache(n.stateClient.snapshot(), 'restored')); } catch {}
     }
     if (!connected) {
       await n.connect(); n.stateClient.onProgress = progress;
