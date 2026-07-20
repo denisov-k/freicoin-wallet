@@ -88,22 +88,21 @@ async function rpc(method, ...params) {
   if (j.error) throw new Error(j.error.message || String(j.error));
   return j.result;
 }
-const DESCS = ctx.spks.map(s => `raw(${s})`);
 async function refreshState() {
-  const [info, swap, p2p, height] = await Promise.all([
+  // Coins from the relay's INDEXED utxo endpoint (instant, complete, NOMINAL values — the same view
+  // the wallet uses), not a per-minute `scantxoutset` full-chain scan (heavy, and it returned
+  // present-valued amounts + could stall on a "concurrent scan", leaving the bot stuck on a stale,
+  // under-counted balance). Height stays from the node — authoritative for HTLC timelocks.
+  const [info, swap, p2p, height, ux] = await Promise.all([
     api('info').catch(() => ({ assets: [], book: [], events: [], height: 0 })),
     api('swapInfo').catch(() => null),
     api('p2pList').catch(() => null),
     rpc('getblockcount'),
+    api('utxos', { spks: ctx.spks }).catch(() => ({ utxos: [] })),
   ]);
-  let scan;
-  for (let i = 0; ; i++) {   // a concurrent scan (rare) makes scantxoutset throw — retry once
-    try { scan = await rpc('scantxoutset', 'start', DESCS); break; }
-    catch (e) { if (i >= 2) throw e; await new Promise(r => setTimeout(r, 3000)); }
-  }
-  const utxos = (scan.unspents || []).map(u => ({
-    outpoint: `${u.txid}:${u.vout}`, spk: u.scriptPubKey, value: String(Math.round(u.value * 1e8)),
-    refheight: u.refheight, assetTag: null, coinbase: !!u.coinbase,
+  const utxos = (ux.utxos || []).map(u => ({
+    outpoint: u.outpoint, spk: u.spk, value: String(u.value), refheight: u.refheight,
+    assetTag: u.assetTag ?? null, coinbase: !!u.coinbase,
   }));
   ctx.state = { info, defs: {}, mine: { height, utxos }, swap, p2p };
 }

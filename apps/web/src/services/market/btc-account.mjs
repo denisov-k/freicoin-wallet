@@ -89,7 +89,9 @@ export async function refreshBtc() {
   try { btcAcct = await api('btcAccount', { addresses: Object.keys(btcKeyring()) }); } catch { return; }
   try { localStorage.setItem(btcBalKey(), String(btcAcct.balance)); } catch {}   // cache for the next reload's first paint
   sweepLegacy(btcAcct.utxos).catch(() => {});   // migrate legacy-address coins to the BIP84 account
-  const cell = document.querySelector('#btcBalCell'); if (cell) cell.textContent = btcToStr(btcAcct.balance);   // BTC row in the assets table
+  // headless-safe: the DOM only exists in the browser; the bot funds BTC HTLCs from the same account
+  // but has no #btcBalCell to paint.
+  if (typeof document !== 'undefined') { const cell = document.querySelector('#btcBalCell'); if (cell) cell.textContent = btcToStr(btcAcct.balance); }   // BTC row in the assets table
 }
 
 // fund a BTC HTLC from the account (swap plumbing): pick coins, sign locally, broadcast, and remember
