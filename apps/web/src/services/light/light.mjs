@@ -268,8 +268,11 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       // Scan done but PoW proofs still verifying: surface the balance immediately, clearly
       // marked provisional. cache is NOT set — Send must never build on unverified data.
       onProvisional: prov => { try { onProvisional?.(toCache(prov, 'provisional')); } catch {} },
-      // Progressive balance during the sweep: what the scan has found so far, marked partial.
-      onPartial: part => { try { onProvisional?.(toCache(mergeTail(part), 'partial')); } catch {} },
+      // Progressive balance during the sweep, marked 'sweep' — the ONLY untrustworthy balance: a
+      // from-genesis linear scan finds receives before their spends, so this running total
+      // OVERCOUNTS until the scan reaches the tip. The UI must not show it as the balance (it made
+      // 15 climb to 25→40). Activity rows still paint from it; only the balance figure ignores it.
+      onPartial: part => { try { onProvisional?.(toCache(mergeTail(part), 'sweep')); } catch {} },
       // (the in-sync P2P tail preview is superseded by the checkpoint preview above — not passing
       // onTail disables it; it had no timeout and could hang the sync tail on a lost block reply)
     });

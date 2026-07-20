@@ -65,11 +65,12 @@ export function paintBalance(s) {
     // paint only once there is a NONZERO figure — an early sweep partial legitimately reports 0
     // long before the preview lands, and flashing "0" reads as "no money" (keep the skeleton).
     if (body && (body.querySelector('.skel-line') || $('#provRow'))) {
-      // Only TRUSTWORTHY figures reach the balance during sync: the restored (complete prior scan)
-      // and live/final emits. A 'partial'/'provisional' emit is an INCOMPLETE sweep — mid-scan it
-      // overcounts (receives are found before their spends), so 25→40 climbed past the real 15 and
-      // Math.max even locked the overshoot in. Ignore those; the final table corrects everything.
-      const trustworthy = !s.stale || s.stale === 'restored';
+      // The balance figure takes only TRUSTWORTHY sources: restored (complete prior scan), the
+      // checkpoint preview (a complete tail-window scan), the proofs-pending result (scan complete),
+      // and live/final. The ONLY thing ignored is the mid-sweep 'sweep' emit, which OVERCOUNTS
+      // (a from-genesis scan finds receives before their spends), so 15 climbed to 25→40. Everything
+      // else is a real figure; the final table corrects any preview undercount once the scan lands.
+      const trustworthy = s.stale !== 'sweep';
       if (trustworthy) provBest = +s.balance;
       // 0 in the provisional path means "still scanning, nothing shown yet", not "you have 0" —
       // keep the skeleton until a real figure exists (the final table legitimately shows a 0).
