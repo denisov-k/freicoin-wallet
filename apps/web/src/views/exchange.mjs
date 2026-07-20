@@ -1108,10 +1108,13 @@ function renderP2pPay(m, rec) {
           try { confs = ((await api('btcAccount', { addresses: [b.addr] })).utxos || []).find(u => u.txid === rlocal.btcHtlc.txid)?.confirmations; } catch {}
           pw.textContent = confs != null ? `${tr('confirming payment on the network')} (${Math.min(confs, 2)}/2)` : tr('confirming payment on the network');
         }
-      } else {                                                // payment accepted — now genuinely the seller's turn
+      } else if (w.status === 'btc_funded') {                 // payment accepted — the seller's lock isn't recorded yet
         if (!paidSeen) { paidSeen = true; putP2p({ ...rlocal, status: 'btc_funded' }); mvRefresh(); }
         if (pw) pw.textContent = tr('awaiting the seller');
-        if (st && w.status === 'frc_funded') st.textContent = tr('claiming your funds…');
+      } else {                                                // seller LOCKED (frc_funded/…) — I'm receiving the FRC now
+        if (!paidSeen) { paidSeen = true; putP2p({ ...rlocal, status: 'btc_funded' }); mvRefresh(); }
+        if (pw) pw.textContent = tr('confirming receipt');
+        if (st) st.textContent = tr('claiming your funds…');
       }
     } catch {}
   }, 4000);
