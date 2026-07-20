@@ -1371,11 +1371,10 @@ export function renderExchange(el) {
       <label>${tr('Selling')}<select id="fGive">${fopt}</select></label>
       <label>${tr('Wants')}<select id="fWant">${fopt}</select></label>
     </div>
-    <label class="chk"><input type="checkbox" id="fOpen" checked>${tr('open only')}</label>
     <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" style="padding:14px 2px 4px;border-bottom:none">${skel(3)}</td></tr></tbody></table>
     <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>`;
   $('#openOffer').onclick = openOfferModal;
-  ['#fGive', '#fWant', '#fOpen'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });
+  ['#fGive', '#fWant'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });
   if (state) paint(); else mvRefresh();
 }
 // per-asset balance table (FRC + user assets) — the wallet's Balance tab shows this on nv3
@@ -1449,7 +1448,7 @@ function paint() {
   if (!$('#bookBody').contains(document.activeElement)) {
     const giveOf = o => o.give ? (o.give.assetTag ?? 'FRC') : '';
     const wantOf = o => o.ranged ? ((o.desc.payoutAsset && o.desc.payoutAsset !== HOST_TAG) ? o.desc.payoutAsset : 'FRC') : (o.want?.assetTag ?? 'FRC');
-    const fg = $('#fGive')?.value || '', fw = $('#fWant')?.value || '', fo = $('#fOpen')?.checked;
+    const fg = $('#fGive')?.value || '', fw = $('#fWant')?.value || '';
     const bookRow = o => {
       const mine = spks.includes(o.makerSpk);
       const give = o.give ? fmtA(o.give.assetTag ?? 'FRC', BigInt(o.give.pv)) : '—';
@@ -1472,7 +1471,7 @@ function paint() {
       return `<tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td><td>${give}</td>
         <td>${fmtA(o.want.assetTag ?? 'FRC', BigInt(o.want.value))}</td><td class="act-cell">${o.status}</td></tr>`;
     };
-    const filtered = state.info.book.filter(o => (!fg || giveOf(o) === fg) && (!fw || wantOf(o) === fw) && (!fo || o.status === 'open')).reverse();
+    const filtered = state.info.book.filter(o => (!fg || giveOf(o) === fg) && (!fw || wantOf(o) === fw) && o.status === 'open').reverse();
     // tickets sold individually (1-token whole offers) COLLAPSE to one row per
     // (asset, maker, price, want) — "N tickets · price each". Others render one-per-row.
     const isTicket = o => o.ranged && o.status === 'open' && o.give?.tokenHash && (o.give.tokens?.length === 1);

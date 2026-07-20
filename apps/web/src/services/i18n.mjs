@@ -157,7 +157,7 @@ const RU = {
   '…or send exactly this amount from any Bitcoin wallet to the address. The swap continues automatically once the payment is seen.': '…или отправьте ровно эту сумму с любого Bitcoin-кошелька на адрес. Обмен продолжится автоматически, как только платёж будет виден.',
   'swap cancelled — seller refunds instantly': 'обмен отменён — продавец вернёт средства мгновенно', 'you need an older FRC coin (tap Faucet) for the network fee': 'нужна более старая FRC-монета (Кран) на комиссию',
   'Issue asset': 'Выпустить актив',
-  'Selling': 'Продают', 'Wants': 'Хотят', 'open only': 'только открытые', 'all': 'все', 'no offers match': 'нет офферов по фильтру',
+  'Selling': 'Продают', 'Wants': 'Хотят', 'all': 'все', 'no offers match': 'нет офферов по фильтру',
   'Currency': 'Валюта',
   'Offer cancelled': 'Оффер отменён', 'not your offer': 'это не ваш оффер',
   'you need an FRC coin (tap Faucet) to cancel': 'нужна монета FRC (нажмите Кран) для отмены',
