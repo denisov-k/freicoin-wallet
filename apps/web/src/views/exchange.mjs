@@ -671,7 +671,7 @@ function p2pStatusLabel(o, mineRec) {
   } else {
     if (st === 'taken') return tr('pay to continue');                                 // my payment opens the swap
     if (st === 'frc_funded' || st === 'btc_funded_rev') return tr('claiming…');       // my funds are up — claiming
-    if (st.startsWith('btc_funded') || st.startsWith('frc_funded')) return tr('awaiting the seller');
+    if (st.startsWith('btc_funded') || st.startsWith('frc_funded')) return tr('payment sent — awaiting the seller');   // I paid; the seller locks next
     if (st === 'frc_claimed' || st === 'btc_claimed_rev') return tr('swap complete ✅');
   }
   return tr(st);
@@ -1490,7 +1490,7 @@ function paint() {
         let act;
         if (isOffer) act = mineRec ? `<button class="p2pcancel" data-id="${o.id}">${tr('Cancel')}</button>`
           : `<button class="p2ptakepart rbtn" data-id="${o.id}">${tr('Buy')}</button>`;   // pick an amount
-        else if (mineRec) act = (!isRev && mineRec.status === 'need_btc') ? `<button class="p2ppay rbtn" data-id="${o.id}">${tr('Pay')}</button>`
+        else if (mineRec) act = (!isRev && mineRec.status === 'need_btc' && !o.btcHtlc?.txid && !mineRec.btcHtlc?.txid) ? `<button class="p2ppay rbtn" data-id="${o.id}">${tr('Pay')}</button>`
           : (o.status === 'open' && !o.frcHtlc && !o.btcHtlc) ? `<button class="p2pcancel" data-id="${o.id}">${tr('Cancel')}</button>`
           // MY dangling take with NOTHING funded (e.g. the funding step failed for lack of coins):
           // let the taker release the reservation instead of leaving the offer hostage to the grace timer
