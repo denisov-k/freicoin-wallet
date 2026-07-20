@@ -277,7 +277,16 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     // nV3 asset-aware snapshot for the Issue/Exchange tabs (per-asset utxos + self-certified defs)
     async assets() { const c = await sync(); return { tipHeight: c.tipHeight, assetUtxos: c.assetUtxos || [], assetDefs: c.assetDefs || {} }; },   // sync() not ensure(): the asset/token coins that back sends must be as fresh as FRC's utxos(), never a stale cache (a reorg/reindex silently invalidates cached outpoints)
     preview,
-    async broadcast(rawtx) { if (!n) await sync(); n.broadcast(rawtx); return { txid: txidOf(parseTx(rawtx)) }; },
+    async broadcast(rawtx) {
+      if (!n) await sync();
+      n.broadcast(rawtx);   // adds the tx to the client's mempool (optimistic pending)
+      // Push the new state (pending row + reduced balance) to the UI RIGHT NOW. Without this the
+      // next tab-open paints from a cache snapshotted before the send and the pending row/updated
+      // balance only appear on the next poll (~5s later). cache is refreshed too so a paint sourced
+      // from it (renderActivity/renderBalance seed) already carries the pending.
+      try { const snap = n.snapshot(); cache = toCache(snap); onProvisional?.(toCache(snap, 'partial')); } catch {}
+      return { txid: txidOf(parseTx(rawtx)) };
+    },
     refresh: sync,
     // Wipe persisted chain/UTXO state and re-sync from genesis. For a throwaway experimental
     // chain that was rewound, the stored header chain no longer connects to the node ('headers
