@@ -185,7 +185,16 @@ async function driveP2pInner() {
   }
   mine = env.loadP2p();   // pick up freshly added child records
   for (const rec of mine) {
-    const w = byId.get(rec.id); if (!w) { if (rec.partial || rec.parent) env.dropP2p(rec.id); continue; }   // offer/child gone from relay ⇒ settled
+    const w = byId.get(rec.id);
+    if (!w) {
+      // The relay no longer has this swap (settled, or dropped after a cancel). Drop the LOCAL record
+      // ONLY when nothing is at stake — if my BTC HTLC or FRC leg is still funded and not yet
+      // refunded, KEEP it so checkBtcRefunds / checkP2pRefunds can sweep it home at the timeout (they
+      // drop it themselves once the refund lands). Dropping a funded, cancelled child here orphaned
+      // the buyer's BTC (recoverable only via nonce-recovery).
+      if ((rec.partial || rec.parent) && !rec.btcHtlc?.txid && !rec.funding?.txid) env.dropP2p(rec.id);
+      continue;
+    }
     try {
       if (w.v !== 2 && w.kind !== 'offer') {
         // legacy v1 swap: the v2 engine can't advance it — only the timeout/coop refund machinery
