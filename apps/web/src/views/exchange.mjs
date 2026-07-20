@@ -24,6 +24,7 @@ import { btcHrp, btcAcctAddr, btcFundHtlc, btcToStr, refreshBtc,
   mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvBtcMax, initBtcAccount, btcResetAcct } from '@/services/market/btc-account.mjs';
 import { recoverBtcNonces, mvBtcHistory, initActivity, resetRecovery } from '@/services/market/activity.mjs';
 import { driveP2p, checkP2pRefunds, checkBtcRefunds, initDrive } from '@/services/market/swap-drive.mjs';
+import { recoverOrphanBtcHtlcs } from '@/services/market/btc-recovery.mjs';
 import { browserSwapEnv } from '@/services/market/swap-env.mjs';
 import { $, q, rev, frc, num, setOptions, skel, skelRows } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
@@ -173,6 +174,7 @@ async function doRefresh() {
   maybeResignRanged();                                      // keep my ranged offers alive after partial fills
   checkMySwaps();                                           // refund any of my LP swaps stalled past their timeout
   checkP2pRefunds();                                        // auto-refund a P2P HTLC I locked once its CLTV passes
+  recoverOrphanBtcHtlcs().then(checkBtcRefunds).catch(() => {}); // rebuild any orphaned BTC HTLC record (lost swap), then sweep it home
   checkBtcRefunds();                                        // auto-refund my BTC HTLC (buyer paid, seller vanished) once T2 passes
   sweepLegacyCoin1().catch(() => {});                       // one-time: bring home FRC bought to a legacy coin-1 address
   driveP2p();                                               // advance my P2P swaps (both roles) on my turn
