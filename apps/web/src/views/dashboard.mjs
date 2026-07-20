@@ -66,13 +66,17 @@ export function paintBalance(s) {
     // long before the preview lands, and flashing "0" reads as "no money" (keep the skeleton).
     if (body && (body.querySelector('.skel-line') || $('#provRow'))) {
       if (+s.balance > 0) provBest = Math.max(provBest, +s.balance);
-      const b = mvBtc();
-      const rows = [];
-      // consistency rule (user call): a row shows as soon as its SOURCE has answered — even with 0
-      // (the final table shows zeros too); it is hidden only while the answer is pending.
-      rows.push(`<tr><td>FRC</td><td class="r">${provBest.toLocaleString(getLang(), { maximumFractionDigits: 8 })}</td></tr>`);
-      if (b.balance != null) rows.push(`<tr><td>BTC</td><td class="r">${btcToStr(b.balance)}</td></tr>`);   // relay-backed, needs no chain sync
-      if (rows.length) body.innerHTML = `<tbody id="provRow" hidden></tbody>`.slice(0,0) + rows.join('') + `<tr id="provRow" hidden></tr>`;
+      // This is the PROVISIONAL path (during sync): here 0 means "still scanning, coins not found
+      // yet", NOT "you have 0" — flashing "FRC 0" then climbing 25→40 during the first header load
+      // reads as funds lost. Keep the skeleton until a real (nonzero) figure exists; a returning
+      // user's restored balance is >0 and paints at once. The FINAL table (paintAssetBalance) is
+      // what legitimately shows a 0 once the scan has actually completed.
+      if (provBest > 0) {
+        const b = mvBtc();
+        const rows = [`<tr><td>FRC</td><td class="r">${provBest.toLocaleString(getLang(), { maximumFractionDigits: 8 })}</td></tr>`];
+        if (b.balance != null) rows.push(`<tr><td>BTC</td><td class="r">${btcToStr(b.balance)}</td></tr>`);   // relay-backed, needs no chain sync
+        body.innerHTML = rows.join('') + `<tr id="provRow" hidden></tr>`;
+      }
     }
     return;
   }
