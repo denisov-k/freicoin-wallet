@@ -24,6 +24,7 @@ import { btcHrp, btcAcctAddr, btcFundHtlc, btcToStr, refreshBtc,
   mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvBtcMax, initBtcAccount, btcResetAcct } from '@/services/market/btc-account.mjs';
 import { recoverBtcNonces, mvBtcHistory, initActivity, resetRecovery } from '@/services/market/activity.mjs';
 import { driveP2p, checkP2pRefunds, checkBtcRefunds, initDrive } from '@/services/market/swap-drive.mjs';
+import { browserSwapEnv } from '@/services/market/swap-env.mjs';
 import { $, q, rev, frc, num, setOptions, skel, skelRows } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
 import { armOverlay, closeOverlay } from '@/components/modal.mjs';
@@ -38,7 +39,7 @@ const accountPath = () => `m/84'/${NETWORKS[currentNet()].coinType}'/0'`;
 
 let seed = null, km = {}, spks = [], myAddress = '', state = null, _ds = null;
 // wired from the wallet: initMarketView(ds) injects its light source; mvSetSeed(hexSeed) on unlock.
-export function initMarketView(ds) { _ds = ds; initBtcAccount(recoverBtcNonces); initActivity(doRefresh); initDrive({ toast, mvRefresh, observe: rawtx => _ds().observe(rawtx) }); }
+export function initMarketView(ds) { _ds = ds; initBtcAccount(recoverBtcNonces); initActivity(doRefresh); initDrive(browserSwapEnv({ toast, mvRefresh, observe: rawtx => _ds().observe(rawtx) })); }
 export function mvSetSeed(hexSeed) {
   // A DIFFERENT key ⇒ drop the previous seed's snapshot (asset balances + BTC account) so the
   // balance repaints a skeleton, not the old account's numbers, until the next mvRefresh lands —

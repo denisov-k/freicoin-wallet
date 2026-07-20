@@ -73,7 +73,8 @@ ctx.seed = seed;
 const { deriveAddress } = await import('@/services/wallet.mjs');
 log('bot FRC address:', deriveAddress(seed, 0, 0));
 
-initDrive({ toast: (m, kind) => log(`[${kind || 'info'}]`, m), mvRefresh: () => { wantRefresh = true; } });
+const { browserSwapEnv } = await import('@/services/market/swap-env.mjs');
+initDrive(browserSwapEnv({ toast: (m, kind) => log(`[${kind || 'info'}]`, m), mvRefresh: () => { wantRefresh = true; }, observe: () => {} }));
 initBtcAccount(() => {});   // no browser-side nonce recovery needed: the bot's records never leave BOT_DIR
 
 // ---- local FRC node (trusted — it's ours): height + UTXOs via scantxoutset ----
