@@ -97,8 +97,11 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     // fresh mining this equals `balance`; on one holding just-mined rewards it is lower (often 0),
     // which is what Send/Max must reflect so the user isn't offered coins consensus won't let them
     // move. COINBASE_MATURITY = 100.
+    // Coinbase maturity is checked at the SPEND height (the tx lands in a block ≥ tip+1), so a coin
+    // is spendable once (tip+1) − refheight ≥ 100, i.e. at 100 confirmations. Using `tip − refheight`
+    // required 101 and hid a just-matured block (activity, which counts confirmations, showed it mature).
     const spendableKria = r.utxos.reduce((a, u) =>
-      ((!u.assetTag || u.assetTag === '0'.repeat(40)) && !(u.coinbase && (tip - u.refheight) < 100))
+      ((!u.assetTag || u.assetTag === '0'.repeat(40)) && !(u.coinbase && (tip + 1 - u.refheight) < 100))
         ? a + timeAdjustValue(u.value, tip + 1 - u.refheight) : a, 0n);
     return {
       stale, tipHeight: tip,

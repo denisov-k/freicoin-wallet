@@ -17,7 +17,9 @@ const rev = h => h.match(/../g).reverse().join('');
 // FRC — stranding the taker's BTC until the HTLC refund (exactly what happened on the first live
 // mainnet swap). L is the chain tip height; refheight is the coin's own (lock/mined) height.
 export const COINBASE_MATURITY = 100;
-export const spendableAt = (u, L) => u.refheight <= L && !(u.coinbase && (L - u.refheight) < COINBASE_MATURITY);
+// spendable at the SPEND height (a tx lands in a block ≥ L+1): coinbase matures when (L+1) − refheight
+// ≥ 100, i.e. at 100 confirmations. `L − refheight` demanded 101 and hid a just-matured reward.
+export const spendableAt = (u, L) => u.refheight <= L && !(u.coinbase && (L + 1 - u.refheight) < COINBASE_MATURITY);
 // a vin entry from an "txid:vout" outpoint string
 export const opIn = op => ({ prevout: { txid: rev(op.split(':')[0]), vout: +op.split(':')[1] }, scriptSig: '', sequence: 0xffffffff, witness: [] });
 
