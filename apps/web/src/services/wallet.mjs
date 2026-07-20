@@ -91,7 +91,11 @@ export function buildSignedTx({ seed, utxos, toAddress, amountFrc, tipHeight, fe
   const km = keyMap(seed);
   const target = toKria(amountFrc);
   const COINBASE_MATURITY = 100;   // coinbase outputs are unspendable until 100 deep
-  const spendable = utxos.filter(u => !u.coinbase || tipHeight - u.refheight >= COINBASE_MATURITY);
+  // The node checks maturity at the SPEND height = tip+1 (validation.cpp mempool_spend_height), so a
+  // coin is spendable when (tip+1) − refheight ≥ 100, i.e. at 100 confirmations. Using `tip − refheight`
+  // demanded 101 — the balance's "available" (toCache) counted a just-matured block this filter then
+  // refused, so Send failed with "insufficient funds" for a coin the wallet showed as available.
+  const spendable = utxos.filter(u => !u.coinbase || tipHeight + 1 - u.refheight >= COINBASE_MATURITY);
   const sel = selectCoins(
     spendable.map(u => ({ value: toKria(u.nominal), refheight: u.refheight, _u: u })),
     target, BigInt(feerate), tipHeight,
