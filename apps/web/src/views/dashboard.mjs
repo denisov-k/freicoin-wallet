@@ -145,13 +145,20 @@ export function paintActivity(txs, final = true) {
   // A PROVISIONAL paint with an empty FRC history (mid-resync) must not show a BTC-only list — hold
   // the skeleton until real FRC legs arrive or the FINAL paint says the history is truly empty.
   if (!final && !txs.filter(t => !t.btc).length) { if (!list.querySelector('.skel')) list.innerHTML = skel(3); return false; }
-  // ANTI-FLICKER: a paint sourced from a cache snapshotted BEFORE a just-broadcast tx would drop
-  // its pending row (keyed reconcile removes absent keys) until the next sync tick re-adds it.
-  // Carry recent 0-conf rows the incoming set doesn't know about; a confirmed/known txid wins.
+  // ANTI-FLICKER. Two shapes to guard against, both from a paint whose source lags the true state:
+  //   1) a cache snapshotted BEFORE a just-broadcast tx lacks its pending row;
+  //   2) a thin PROVISIONAL (e.g. mempool-only, history not merged yet) has FEWER rows than shown.
+  // A PROVISIONAL paint may only ADD — carry forward every prior row the incoming set lacks, so it
+  // never shrinks the list. A FINAL paint is authoritative (full history+legs) and only carries a
+  // recent pending the set doesn't yet know about; a confirmed/known txid in the set always wins.
   {
-    const have = new Set(txs.map(t => t.txid));
+    const k = i => i.txid + '|' + (i.trade ? '#trade' : (i.assetTag ?? 'FRC') + '|' + i.category);
+    const have = new Set(txs.map(k));
     const now = Date.now() / 1000;
-    for (const p of actLastTxs) if (!have.has(p.txid) && p.confirmations === 0 && now - (p.time || now) < 3600) txs = [...txs, p];
+    for (const p of actLastTxs) {
+      if (have.has(k(p))) continue;
+      if (!final || (p.confirmations === 0 && now - (p.time || now) < 3600)) txs = [...txs, p];
+    }
   }
   // A cross-chain trade knows the raw FRC leg it replaces (frcTxid) — adopt that leg's real
   // time/confirmations before the leg itself is hidden. AMOUNTS stay the trade's NOMINAL ones.
