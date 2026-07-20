@@ -226,7 +226,16 @@ export class Neutrino {
     // per-asset legs, mirroring _applyBlocks (mempool value = ARRAY of entries per tx)
     const recvBy = new Map(), sentBy = new Map();
     const add = (m, tag, v) => m.set(tag, (m.get(tag) ?? 0n) + v);
-    for (const vin of tx.vin) { const u = this.utxos.get(rev(vin.prevout.txid) + ':' + vin.prevout.vout); if (u) { const tg = isHostCoin(u) ? null : u.assetTag; add(sentBy, tg, this._pvIn(u, tg, tx.lockHeight)); } }   // value at the tx's lock_height (see _applyBlocks)
+    for (const vin of tx.vin) {
+      // resolve the input: a confirmed UTXO, OR a self-output of an earlier mempool tx (a chained
+      // send off our own unconfirmed change) — without the latter the spend leg is uncounted and a
+      // chained −5 send shows as a tiny −change amount. A mempool parent's output refheight is its
+      // lock_height (see _applyBlocks / _pendingOuts).
+      const pid = rev(vin.prevout.txid), key = pid + ':' + vin.prevout.vout;
+      let u = this.utxos.get(key);
+      if (!u) { const p = this._mempoolRaw.get(pid), o = p?.vout[vin.prevout.vout]; if (o && this._watch.has(o.scriptPubKey)) u = { value: o.value, refheight: p.lockHeight, assetTag: o.assetTag ?? null, script: o.scriptPubKey }; }
+      if (u) { const tg = isHostCoin(u) ? null : u.assetTag; add(sentBy, tg, this._pvIn(u, tg, tx.lockHeight)); }
+    }
     for (const o of tx.vout) if (this._watch.has(o.scriptPubKey)) add(recvBy, isHostCoin(o) ? null : o.assetTag, o.value);
     if (!recvBy.size && !sentBy.size) return;
     const now = Math.floor(Date.now() / 1000);
