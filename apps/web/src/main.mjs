@@ -154,6 +154,7 @@ function ds() {
       // seed BOTH caches with the broadcast's fresh state (pending + reduced balance) so a paint
       // right after the send already carries the pending row alongside the confirmed history.
       broadcast: async rawtx => { const r = await wcall('broadcast', rawtx); if (r?.state) { cache = r.state; liveState = r.state; } return r; },
+      observe: async rawtx => { const st = await wcall('observe', rawtx); if (st && !st.stale) { cache = st; liveState = st; } return st; },   // a tx we built, broadcast elsewhere (swap claim) → into the mempool view
       close() {
         const w = worker; worker = null;
         wCalls.forEach(c => c.rej(new Error('closed'))); wCalls.clear();

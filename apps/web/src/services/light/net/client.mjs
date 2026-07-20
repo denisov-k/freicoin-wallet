@@ -38,6 +38,8 @@ export class Neutrino {
     this.reorgFloor = null;              // lowest fork height rolled back since last persist (signal for the store)
     this.mempool = new Map();            // txid -> {txid,category,amount,time} — unconfirmed wallet txs
     this._mempoolRaw = new Map();        // txid -> parsed tx, kept for reconsiderMempool()
+    this._selfTxids = new Set();         // txids WE broadcast — their outputs to us are trusted (creditable while
+                                         //   unconfirmed) even when the tx spends coins we don't own (a swap CLAIM)
     this.peerHeight = 0;                 // peer's chain height from the version handshake (progress target)
     this.onProgress = null;              // optional ({phase, ...}) callback for sync progress
     this.onMempool = null;               // fired when a LIVE wallet tx enters the mempool (receive, or a
@@ -536,8 +538,12 @@ export class Neutrino {
     for (const tx of this._mempoolRaw.values()) { const id = txidOf(tx); tx.vout.forEach((o, i) => { if (this._watch.has(o.scriptPubKey)) ours.add(id + ':' + i); }); }
     const outs = [];
     for (const tx of this._mempoolRaw.values()) {
-      if (!tx.vin.some(vin => ours.has(rev(vin.prevout.txid) + ':' + vin.prevout.vout))) continue;   // not our send (incoming) → skip
       const id = txidOf(tx);
+      const spendsOurs = tx.vin.some(vin => ours.has(rev(vin.prevout.txid) + ':' + vin.prevout.vout));
+      // credit outputs of a tx that spends OUR coins (a send's change) OR that WE broadcast (a swap
+      // claim — spends the HTLC, not our coins, but pays us and is safe as we won't replace it). A
+      // third-party incoming receive (neither) stays uncredited until it confirms.
+      if (!spendsOurs && !this._selfTxids.has(id)) continue;
       tx.vout.forEach((o, i) => {
         if (!this._watch.has(o.scriptPubKey) || !isHostCoin(o) || sp.has(id + ':' + i)) return;   // chained mempool spend already consumed this change
         if (this.utxos.has(id + ':' + i)) return;   // already a confirmed UTXO (the send landed) — counted in `live`, not pending
@@ -695,7 +701,7 @@ export class Neutrino {
     await headersP; await follower; await previewP;
     if (headersErr) throw headersErr;
     for (const id of this.mempool.keys())  // confirmed now? drop from pending
-      if (this.history.some(e => e.txid === id)) { this.mempool.delete(id); this._mempoolRaw.delete(id); }
+      if (this.history.some(e => e.txid === id)) { this.mempool.delete(id); this._mempoolRaw.delete(id); this._selfTxids.delete(id); }
     // Provisional: the scan is done but some PoW proofs are still verifying — surface the
     // balance now, clearly marked; the final (verified) result follows when the queue drains.
     if (onProvisional && (this._verifying || this._pendingVerify.length)) onProvisional(this._result());
@@ -745,6 +751,7 @@ export class Neutrino {
       // that has since confirmed is dropped by the confirmed-drop pass; the raw tx is kept so its
       // spent inputs still leave the balance until then. (Cap: don't bloat the store with a huge set.)
       mempoolRaw: [...this._mempoolRaw.values()].slice(0, 50).map(tx => { try { return serializeTx(tx); } catch { return null; } }).filter(Boolean),
+      selfTxids: this.serializeSelf(),   // which restored mempool txs are OUR broadcasts (credit their outputs)
     };
   }
 
@@ -764,16 +771,23 @@ export class Neutrino {
     // restore the persisted mempool so unconfirmed rows show at once; reconsiderMempool classifies
     // them against the restored utxo set (a spend reads correctly since its inputs are present).
     this._mempoolRaw = new Map(); this.mempool = new Map();
+    this._selfTxids = new Set(s.selfTxids || []);   // restore which pending txs are our own broadcasts
     for (const hex of (s.mempoolRaw || [])) { try { const tx = parseTx(hex); this._mempoolRaw.set(txidOf(tx), tx); } catch {} }
     this._bulkMempool = true; try { for (const tx of this._mempoolRaw.values()) this._considerTx(tx); } catch {} this._bulkMempool = false;
     // drop any restored pending that the persisted history already shows as confirmed
-    for (const id of [...this.mempool.keys()]) if (this.history.some(e => e.txid === id)) { this.mempool.delete(id); this._mempoolRaw.delete(id); }
+    for (const id of [...this.mempool.keys()]) if (this.history.some(e => e.txid === id)) { this.mempool.delete(id); this._mempoolRaw.delete(id); this._selfTxids.delete(id); }
     return true;
   }
 
   /** Serialized mempool (raw tx hex, capped) for persistence — the IdbStore writes this so a reload
    *  shows unconfirmed rows at once. Kept separate from exportState so the store, which persists the
    *  chain in its own chunked format, can attach just the mempool to its wallet record. */
+  /** Txids among the (capped) persisted mempool that we broadcast ourselves — the store keeps this so
+   *  a reload still credits a pending swap-claim's coins to the balance (not just until it confirms). */
+  serializeSelf() {
+    const keep = new Set([...this._mempoolRaw.keys()].slice(0, 50));
+    return [...this._selfTxids].filter(id => keep.has(id));
+  }
   serializeMempool() {
     return [...this._mempoolRaw.values()].slice(0, 50).map(tx => { try { return serializeTx(tx); } catch { return null; } }).filter(Boolean);
   }
@@ -781,8 +795,14 @@ export class Neutrino {
   /** Broadcast a signed raw tx over P2P (send `tx`). Records it as pending immediately. */
   broadcast(rawHex) {
     this._send('tx', Buffer.from(rawHex, 'hex'));
-    if (this._watch) try { this._considerTx(parseTx(rawHex)); } catch {}
+    if (this._watch) try { const tx = parseTx(rawHex); this._selfTxids.add(txidOf(tx)); this._considerTx(tx); } catch {}
     return null;
+  }
+  /** Feed a tx WE built into the mempool view WITHOUT re-broadcasting (already on the wire via the
+   *  relay) — a swap claim reaches us this way so the bought coins show in the balance at once. */
+  observe(rawHex) {
+    if (!this._watch) return;
+    try { const tx = parseTx(rawHex); this._selfTxids.add(txidOf(tx)); this._considerTx(tx); } catch {}
   }
 
   close() {
@@ -880,6 +900,7 @@ export class NeutrinoPool {
   }
 
   broadcast(rawHex) { for (const p of this.peers) p.broadcast(rawHex); return null; }
+  observe(rawHex) { this.primary.observe(rawHex); }
   snapshot() { return this.primary.snapshot(); }
   exportState() { return this.primary.exportState(); }
   importState(s) { return this.primary.importState(s); }

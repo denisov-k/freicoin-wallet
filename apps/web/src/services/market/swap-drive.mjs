@@ -24,7 +24,11 @@ const btcSpendFee = () => btcFeeFor(VB_HTLC_SPEND);
 let toast = () => {};
 /** @type {() => void} */
 let mvRefresh = () => {};
-export function initDrive(deps) { ({ toast, mvRefresh } = deps); }
+/** feed a tx we built (already broadcast via the relay) into the wallet's mempool view so the coins
+ *  it moves show in the balance/activity at once — set by initMarketView.
+ *  @type {(rawtx: string) => any} */
+let observe = () => {};
+export function initDrive(deps) { ({ toast, mvRefresh } = deps); if (deps.observe) observe = deps.observe; }
 
 // AUTO-REFUND (FRC/asset leg): a leg I locked (forward maker: frc_funded; reverse taker: frc_funded_rev)
 // that never completed comes back to me once its CLTV passes — a plain HTLC refund can't be instant (the
@@ -68,7 +72,7 @@ export async function checkP2pRefunds() {
           } else {
             cr = htlcCoopRefundHost({ funding: { txid: funding.txid, vout: funding.vout, value: BigInt(live.value), refheight: refh }, leafHex: leaf, refundKey: ourKey, otherSig: w.coopSig, toSpk: ctx.spks[0], fee: 10000n });
           }
-          await api('tx', { rawtx: cr.rawtx, kind: 'send' });
+          await api('tx', { rawtx: cr.rawtx, kind: 'send' }); try { observe(cr.rawtx); } catch {}   // reflect it in the wallet's balance/activity now
           dropP2p(rec.id);
           toast(`${rec.id}: ${tr(tag ? 'asset refunded (cancelled)' : 'FRC refunded (cancelled)')}`, 'ok'); mvRefresh();
           continue;
@@ -84,7 +88,7 @@ export async function checkP2pRefunds() {
       } else {
         rf = refundGiven({ funding: { txid: funding.txid, vout: funding.vout, value: BigInt(live.value), refheight: Number(funding.refheight) }, leaf, cltv, ourKey, toSpk: ctx.spks[0], fee: 10000n });
       }
-      await api('tx', { rawtx: rf.rawtx, kind: 'send' });
+      await api('tx', { rawtx: rf.rawtx, kind: 'send' }); try { observe(rf.rawtx); } catch {}   // reflect it in the wallet's balance/activity now
       dropP2p(rec.id);
       toast(`${rec.id}: ${tr(tag ? 'asset refunded' : 'FRC refunded')}`, 'ok'); mvRefresh();
     } catch (e) { /* too early, coin gone, or missing fee coin — retry next cycle */ }
@@ -263,7 +267,7 @@ async function driveP2pInner() {
           } else {
             cF = claimReceived({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leaf: f.leaf, preimage: R, ourKey: p2pKey(rec.nonce, 'frc'), toSpk: ctx.spks[0], fee: 10000n });
           }
-          await api('tx', { rawtx: cF.rawtx, kind: 'send' });
+          await api('tx', { rawtx: cF.rawtx, kind: 'send' }); try { observe(cF.rawtx); } catch {}   // reflect it in the wallet's balance/activity now
           await api('p2pDone', { id: rec.id });
           addSwapHist({ id: rec.id, category: 'sale', assetTag: tag, frcAmount: w.frcAmount, btcAmount: w.btcAmount, btcTxid: null, btcFundTxid: rec.btcHtlc?.txid ?? null, frcTxid: cF.txid ?? null, time: Math.floor(Date.now() / 1000) });
           dropP2p(rec.id);
@@ -325,7 +329,7 @@ async function driveP2pRev(rec, w, info) {
       } else {
         cF = claimReceived({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leaf: f.leaf, preimage: R, ourKey: p2pKey(rec.nonce, 'frc'), toSpk: ctx.spks[0], fee: 10000n });
       }
-      await api('tx', { rawtx: cF.rawtx, kind: 'send' });
+      await api('tx', { rawtx: cF.rawtx, kind: 'send' }); try { observe(cF.rawtx); } catch {}   // reflect it in the wallet's balance/activity now
       addSwapHist({ id: rec.id, category: 'purchase', assetTag: tag, frcAmount: w.frcAmount, btcAmount: w.btcAmount, btcTxid: null, btcFundTxid: rec.btcHtlc?.txid ?? null, frcTxid: cF.txid ?? null, time: Math.floor(Date.now() / 1000) });
       if (rec.parent) dropP2p(rec.id); else putP2p({ ...rec, status: 'done' });
       toast(`${w.id}: ${tr(tag ? 'asset received ✅' : 'FRC received ✅')}`, 'ok'); mvRefresh();

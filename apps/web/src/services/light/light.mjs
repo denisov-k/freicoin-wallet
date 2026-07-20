@@ -335,6 +335,12 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
       const state = emitState();
       return { txid: txidOf(parseTx(rawtx)), state };
     },
+    // Observe a tx WE built that was already broadcast elsewhere (a swap claim goes out via the relay)
+    // — feed it to the mempool view + mark it ours so the bought coins credit the balance at once.
+    async observe(rawtx) {
+      if (!n) await sync();
+      try { n.observe(rawtx); return emitState(); } catch { return null; }
+    },
     refresh: sync,
     // Wipe persisted chain/UTXO state and re-sync from genesis. For a throwaway experimental
     // chain that was rewound, the stored header chain no longer connects to the node ('headers

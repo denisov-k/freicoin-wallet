@@ -34,7 +34,7 @@ const ACCOUNT = "m/84'/1'/0'";              // nv3 = coin type 1 (Freimarkets sh
 
 let seed = null, km = {}, spks = [], myAddress = '', state = null, _ds = null;
 // wired from the wallet: initMarketView(ds) injects its light source; mvSetSeed(hexSeed) on unlock.
-export function initMarketView(ds) { _ds = ds; initBtcAccount(recoverBtcNonces); initActivity(doRefresh); initDrive({ toast, mvRefresh }); }
+export function initMarketView(ds) { _ds = ds; initBtcAccount(recoverBtcNonces); initActivity(doRefresh); initDrive({ toast, mvRefresh, observe: rawtx => _ds().observe(rawtx) }); }
 export function mvSetSeed(hexSeed) {
   // A DIFFERENT key ⇒ drop the previous seed's snapshot (asset balances + BTC account) so the
   // balance repaints a skeleton, not the old account's numbers, until the next mvRefresh lands —

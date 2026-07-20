@@ -25,6 +25,8 @@ export async function handle(msg, post) {
       throw new Error('not initialized');
     } else if (method === 'broadcast') {
       result = await src.broadcast(params);
+    } else if (method === 'observe') {
+      result = await src.observe(params);
     } else {
       result = await src[method]();          // health | balance | utxos | history | refresh
     }
