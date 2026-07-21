@@ -202,8 +202,13 @@ async function strategy() {
   // always fill (minFill ≤ frcAmount by construction) — comparing to minPieceK*2 there misfired and
   // reposted every tick whenever minFill was a large fraction of the lot (infinite loop).
   const dustRemainder = remaining < BigInt(s.frcAmount) && remaining < minPieceK(s);
-  if (drift > REPRICE || dustRemainder || grown) {
-    log(`repost ${rec.id}: drift ${(drift * 100).toFixed(1)}%, remaining ${Number(remaining) / 1e8} FRC, target ${Number(target) / 1e8}`);
+  // SHRINK: the advertised remainder must never sit far above what the bot can actually lock — an
+  // oversized offer (posted from an inflated pre-coinbase-fix balance, or after coins moved into
+  // locks) stalls any take larger than the real free float. 2/3 vs the grown trigger's 3/2 keeps
+  // the two bands from oscillating.
+  const shrunk = target < (remaining * 2n) / 3n && remaining - target >= floorK;
+  if (drift > REPRICE || dustRemainder || grown || shrunk) {
+    log(`repost ${rec.id}: drift ${(drift * 100).toFixed(1)}%, remaining ${Number(remaining) / 1e8} FRC, target ${Number(target) / 1e8}${shrunk ? ' (shrink)' : ''}`);
     if (DRY) return;
     await cancelOffer(rec);
     if (target >= floorK) await postOffer(target, ask);
