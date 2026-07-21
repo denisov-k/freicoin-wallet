@@ -288,6 +288,20 @@ async function driveP2pInner() {
           env.toast(`${w.id}: ${tr('BTC received ✅')}`, 'ok'); env.refreshBtc(); env.mvRefresh();
         }
       } else {   // taker (forward): I paid first; the seller locked → claim my FRC/asset (reveals R)
+        // QUEUED CANCEL: the user asked to cancel while the payment was still confirming (the relay
+        // can't accept a cancel before it registers the funding) — file it the moment it can land.
+        // If the seller sent their lock in the meantime (frcPending/frcHtlc), the cancel is moot:
+        // drop the flag and let the normal claim path finish the swap.
+        if (rec.cancelWanted) {
+          if (w.frcHtlc?.txid || w.frcPending) env.putP2p({ ...rec, cancelWanted: false });
+          else if (w.status === 'btc_funded' && !w.cancelReq) {
+            try {
+              await api('p2pBtcCancelReq', { id: rec.id, takerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')) });
+              env.putP2p({ ...rec, cancelWanted: false });
+              env.toast(`${w.id}: ${tr('cancel requested — waiting for the seller to authorize the refund')}`, 'ok'); env.mvRefresh();
+            } catch { /* the seller may have locked this instant — retry/clear next tick */ }
+          }
+        }
         if (w.status === 'frc_funded' && w.frcHtlc?.txid) {
           const R = p2pKey(rec.nonce, 'R'), f = w.frcHtlc, tag = w.assetTag ?? f.assetTag ?? null;
           // verify BEFORE revealing R: (1) the HTLC leaf is exactly (MY H, MY claim key, their
