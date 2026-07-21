@@ -85,6 +85,58 @@ const checks = {
     await http('http://127.0.0.1:5183/api/info');
     return null;
   },
+  // ---- посетители (метрика, не поломка): парсит nginx access.log.
+  // Мгновенный ALERT на БИРЖЕВОЕ ДЕЙСТВИЕ (p2pTake/p2pTakeB/p2pPost с внешнего IP) — чужой тейк
+  // на живой бирже надо видеть сразу. Раз в сутки (первый прогон после 07:00 МСК) — дайджест за
+  // прошлые сутки: сколько IP грузили кошелёк, сколько дошли до биржи, сколько открыли кошелёк
+  // с сидом. Свои IP не исключаются (они динамические) — дайджест перечисляет всех, дежурный
+  // отфильтрует знакомых.
+  async visitors(state) {
+    const OWN = new Set(['78.17.151.40', '127.0.0.1']);
+    const v = state.visitors ??= { known: {}, seenActs: [], lastDigest: '' };
+    let raw = '';
+    try { raw = readFileSync('/var/log/nginx/access.log', 'utf8'); } catch { return null; }
+    try { raw = readFileSync('/var/log/nginx/access.log.1', 'utf8') + raw; } catch {}
+    const msk = t => new Date(t.getTime() + 3 * 3600e3);
+    const dayOf = t => msk(t).toISOString().slice(0, 10);
+    const today = dayOf(new Date()), yesterday = dayOf(new Date(Date.now() - 86400e3));
+    const RX = /^(\S+) \S+ \S+ \[(\d+)\/(\w+)\/(\d+):(\d+):(\d+):\d+ [^\]]+\] "(\S+) (\S+)/;
+    const MON = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+    const perDay = {};   // day -> ip -> {bundle, book, seeded}
+    const acts = [];
+    for (const line of raw.split('\n')) {
+      const m = RX.exec(line); if (!m) continue;
+      const [, ip, dd, mon, yyyy, hh, mm, method, path] = m;
+      if (OWN.has(ip)) continue;
+      const day = dayOf(new Date(Date.UTC(+yyyy, MON[mon], +dd, +hh, +mm)));
+      if (day !== today && day !== yesterday) continue;
+      const rec = ((perDay[day] ??= {})[ip] ??= { bundle: 0, book: 0, seeded: 0 });
+      if (method === 'GET' && /^\/assets\/index-[\w-]+\.js/.test(path)) rec.bundle++;
+      else if (path.startsWith('/api/p2pList') || path.startsWith('/api/info')) rec.book++;
+      else if (method === 'POST' && /^\/api(-main)?\/(btcAccount|utxos|btcHistory)/.test(path)) rec.seeded++;
+      if (method === 'POST' && /^\/api(-main)?\/(p2pTake|p2pTakeB|p2pPost)/.test(path))
+        acts.push(`${ip} ${msk(new Date(Date.UTC(+yyyy, MON[mon], +dd, +hh, +mm))).toISOString().slice(5, 16).replace('T', ' ')} МСК ${path}`);
+    }
+    // мгновенно: новые биржевые действия
+    const seen = new Set(v.seenActs);
+    const fresh = acts.filter(a => !seen.has(a));
+    if (fresh.length) {
+      v.seenActs = [...v.seenActs, ...fresh].slice(-500);
+      await notify('👤 биржевое действие', fresh.join('; ').slice(0, 300));
+    }
+    // раз в сутки: дайджест за вчера (МСК), после 07:00
+    if (v.lastDigest !== today && msk(new Date()).getUTCHours() >= 7) {
+      const d = perDay[yesterday] ?? {};
+      const ips = Object.entries(d).filter(([, r]) => r.bundle > 0);
+      const fresh = ips.filter(([ip]) => !v.known[ip]);
+      for (const [ip] of ips) v.known[ip] ??= yesterday;
+      const book = ips.filter(([, r]) => r.book > 0).length, seeded = ips.filter(([, r]) => r.seeded > 0).length;
+      v.lastDigest = today;
+      if (ips.length) await notify('📊 посетители за вчера',
+        `${ips.length} IP грузили кошелёк (новых ${fresh.length}), до биржи дошли ${book}, с сидом работали ${seeded}: ${ips.map(([ip, r]) => `${ip}(${r.bundle}/${r.book}/${r.seeded})`).join(' ').slice(0, 220)}`);
+    }
+    return null;   // метрика ничего не «ломает»
+  },
 };
 
 // ---- алерты: только state-файл + лог (их разбирает дежурная Claude-сессия) ----
