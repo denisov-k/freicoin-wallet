@@ -1050,7 +1050,19 @@ function renderP2pPay(m, rec) {
   const hidePayInputs = () => { for (const s of ['#paySeg', '#pyBalRow']) { const el = $(s); if (el) el.style.display = 'none'; } };
   // ALREADY PAID (a reload after funding): the record carries a funding txid — lock the pay path so a
   // second tap can't double-spend the BTC. The poll below still follows the swap through to completion.
-  if (rec.btcHtlc?.txid) { paying = true; const pw0 = $('#pyWallet'); if (pw0) { pw0.disabled = true; pw0.textContent = tr('confirming payment on the network'); } hidePayInputs(); }
+  if (rec.btcHtlc?.txid) {
+    paying = true; const pw0 = $('#pyWallet');
+    if (pw0) {
+      pw0.disabled = true;
+      // initial label from the last board snapshot — the swap may already be past the payment
+      // confirmations (seller's turn, or the claim), and reopening must not flash a stale
+      // "confirming payment"; the immediate poll below refines it with fresh relay data
+      const w0 = (state.p2p?.swaps || []).find(x => x.id === rec.id);
+      pw0.textContent = !w0 || w0.status === 'taken' ? tr('confirming payment on the network')
+        : w0.status === 'btc_funded' ? tr('awaiting the seller') : tr('confirming receipt');
+    }
+    hidePayInputs();
+  }
   const payFromWallet = async () => {
     const pw = $('#pyWallet'); if (!pw) return;
     paying = true; pw.disabled = true; pw.textContent = tr('confirming payment on the network');
@@ -1087,7 +1099,7 @@ function renderP2pPay(m, rec) {
   // claimed), not merely until the payment is seen. The background drive claims the funds and drops
   // the local record; the modal stays open through the seller's turn and only closes on completion.
   let paidSeen = false;
-  const poll = setInterval(async () => {
+  const pollTick = async () => {
     try {
       const w = (await api('p2pList')).swaps.find(x => x.id === rec.id);
       const rlocal = loadP2p().find(r => r.id === rec.id);
@@ -1117,7 +1129,9 @@ function renderP2pPay(m, rec) {
         if (st) st.textContent = tr('claiming your funds…');
       }
     } catch {}
-  }, 4000);
+  };
+  const poll = setInterval(pollTick, 4000);
+  pollTick();   // fresh state NOW — don't leave the snapshot label up for a full interval
   // back out. v2: BEFORE paying nothing is at stake — just drop the record (the relay zombie-expires
   // the take). AFTER paying, the BTC comes home automatically at the HTLC timeout (checkBtcRefunds).
   let cancelArmT;
