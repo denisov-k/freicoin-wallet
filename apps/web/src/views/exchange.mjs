@@ -1510,7 +1510,30 @@ function chartSvg(pts, H) {
       ${pts.map(x => `<circle cx="${X(x.t).toFixed(1)}" cy="${Y(x.p).toFixed(1)}" r="2" fill="var(--accent)" opacity="0.6"/>`).join('')}
     </svg>`;
 }
-// full history window: bigger chart + the archived trades, newest first (tap the sparkline)
+// detailed chart for the history window: drawn at the element's REAL pixel width (no viewBox
+// stretching, so text stays true), with a dashed price grid, time labels and a soft area fill.
+function detailChart(el, pts) {
+  const W = el.clientWidth || 380, H = 200, L = 8, R = 52, T = 12, B = 26;
+  const t0 = pts[0].t, t1 = pts.at(-1).t;
+  let lo = Math.min(...pts.map(x => x.p)), hi = Math.max(...pts.map(x => x.p));
+  if (hi === lo) { lo -= lo * 0.05 || 0.5; hi += hi * 0.05 || 0.5; }   // flat series: pad the band so the line sits mid-chart
+  const X = t => L + (W - L - R) * (t1 === t0 ? 1 : (t - t0) / (t1 - t0));
+  const Y = p => T + (H - T - B) * (1 - (p - lo) / (hi - lo));
+  const line = pts.map((x, i) => `${i ? 'L' : 'M'}${X(x.t).toFixed(1)},${Y(x.p).toFixed(1)}`).join('');
+  const area = `${line} L${X(t1).toFixed(1)},${(H - B).toFixed(1)} L${X(t0).toFixed(1)},${(H - B).toFixed(1)} Z`;
+  const fmtT = t => new Date(t).toLocaleString(getLang(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const levels = [lo, (lo + hi) / 2, hi];
+  el.innerHTML = `<svg width="${W}" height="${H}" style="display:block">
+    ${levels.map(p => `<line x1="${L}" y1="${Y(p).toFixed(1)}" x2="${W - R}" y2="${Y(p).toFixed(1)}" stroke="var(--line)" stroke-dasharray="3 4"/>
+      <text x="${W - R + 6}" y="${(Y(p) + 3.5).toFixed(1)}" font-size="11" fill="var(--sub)">${p.toFixed(2)}</text>`).join('')}
+    <path d="${area}" fill="var(--accent)" opacity="0.07"/>
+    <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${pts.map((x, i) => `<circle cx="${X(x.t).toFixed(1)}" cy="${Y(x.p).toFixed(1)}" r="2.5" fill="var(--accent)"${i === pts.length - 1 ? '' : ' opacity="0.55"'}/>`).join('')}
+    <text x="${L}" y="${H - 8}" font-size="11" fill="var(--sub)">${fmtT(t0)}</text>
+    <text x="${W - R}" y="${H - 8}" font-size="11" fill="var(--sub)" text-anchor="end">${fmtT(t1)}</text>
+  </svg>`;
+}
+// full history window: detailed chart + the archived trades, newest first (tap the sparkline)
 function openTradeHistory() {
   if ($('#modal')) return;
   const m = document.createElement('div'); m.id = 'modal';
@@ -1521,10 +1544,11 @@ function openTradeHistory() {
     .sort((a, b) => b.archivedAt - a.archivedAt);
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Trade history')}</b><button id="thClose" class="icon">✕</button></div>
-    ${pts.length > 1 ? chartSvg(pts, 150) : `<p class="sub">${tr('no trades yet')}</p>`}
+    ${pts.length > 1 ? '<div id="thChart"></div>' : `<p class="sub">${tr('no trades yet')}</p>`}
     <table class="mkt"><thead><tr><th></th><th class="r">FRC</th><th class="r">sat/FRC</th></tr></thead>
       <tbody>${trades.map(w => `<tr><td class="sub">${new Date(+w.archivedAt).toLocaleString(getLang(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
         <td class="r">${frc(w.frcAmount)}</td><td class="r">${(Number(w.btcAmount) / Number(w.frcAmount) * 1e8).toFixed(2)}</td></tr>`).join('')}</tbody></table></div>`;
+  const ch = q(m, '#thChart'); if (ch) detailChart(ch, pts);   // after mount — needs the real width
   m.onclick = e => { if (e.target === m) m.remove(); };
   q(m, '#thClose').onclick = () => m.remove();
 }
