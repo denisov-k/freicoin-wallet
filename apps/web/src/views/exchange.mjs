@@ -1018,6 +1018,7 @@ function renderP2pPay(m, rec) {
     <div class="sub" style="margin:-4px 0 8px;font-size:13px">${tr('Order')} ${rec.id}</div>
     ${hasWallet ? `<div class="seg" id="paySeg"><button data-pay="wallet" class="on">${tr('From wallet')}</button><button data-pay="ext">${tr('External payment')}</button></div>` : ''}
     <div class="rrow" id="pyBalRow"${hasWallet ? '' : ' style="display:none"'}><span>${tr('Available')}</span><b id="pyBal" class="sub">${tr('checking balance…')}</b></div>
+    <div class="rrow" id="pyFeeRow"${hasWallet ? '' : ' style="display:none"'}><span>${tr('Network fee')}</span><b id="pyFee" class="sub"></b></div>
     <div class="rrow"><span>${tr('Amount')}</span><b>${btcToStr(amt)} BTC</b></div>
     ${rcv ? `<div class="rrow"><span>${tr('You receive')}</span><b>${rcv}</b></div>` : ''}
     <div id="pyWalletPane"${hasWallet ? '' : ' style="display:none"'}>
@@ -1038,16 +1039,17 @@ function renderP2pPay(m, rec) {
   if (seg) seg.querySelectorAll('button').forEach(sb => sb.onclick = () => {
     seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === sb));
     const wallet = sb.dataset.pay === 'wallet';
-    const wp = $('#pyWalletPane'), ep = $('#pyExtPane'), br = $('#pyBalRow');
+    const wp = $('#pyWalletPane'), ep = $('#pyExtPane'), br = $('#pyBalRow'), fr = $('#pyFeeRow');
     if (wp) wp.style.display = wallet ? '' : 'none';
     if (br) br.style.display = wallet ? '' : 'none';
+    if (fr) fr.style.display = wallet ? '' : 'none';   // the external wallet pays its own fee
     if (ep) ep.style.display = wallet ? 'none' : '';
   });
   // pay the HTLC straight from the in-wallet BTC account (one tap); auto-detect finishes the swap
   let paying = false;
   // once paid, the payment-method chooser (#paySeg) and the wallet-balance line (#pyBalRow) are moot —
   // hide them so the window shows only the amount, the confirmation status and Cancel.
-  const hidePayInputs = () => { for (const s of ['#paySeg', '#pyBalRow']) { const el = $(s); if (el) el.style.display = 'none'; } };
+  const hidePayInputs = () => { for (const s of ['#paySeg', '#pyBalRow', '#pyFeeRow']) { const el = $(s); if (el) el.style.display = 'none'; } };
   // once the seller's lock is CONFIRMED (frc_funded+) the claim is running and a cancel can do
   // nothing (the relay refuses coop-sign, and the claim reveals R anyway) — drop the button
   const hideCancel = () => { const c = q(m, '#pyCancel'); if (c) c.style.display = 'none'; };
@@ -1093,7 +1095,9 @@ function renderP2pPay(m, rec) {
     if (info.balance == null) { pw.disabled = true; if (bl) { bl.textContent = tr('checking balance…'); bl.classList.add('sub'); } return; }
     // required = amount + the REAL HTLC-funding fee at the current rate (a flat 1000-sat margin
     // rejected payable orders: 514 sat of headroom is enough when the fee is ~400)
-    const bal = BigInt(info.balance), ok = bal >= amt + btcFeeFor(VB_HTLC_FUND);
+    const fee = btcFeeFor(VB_HTLC_FUND);
+    const fEl = $('#pyFee'); if (fEl) fEl.textContent = `≈ ${fee} sat`;
+    const bal = BigInt(info.balance), ok = bal >= amt + fee;
     if (bl) { bl.textContent = `${(Number(bal) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`; bl.classList.remove('sub'); }   // match the Amount/You-receive rows once the real figure lands
     pw.disabled = !ok;
     pw.textContent = ok ? tr('Pay') : tr('not enough BTC in wallet');
