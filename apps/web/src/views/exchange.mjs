@@ -1492,6 +1492,7 @@ function cachedFilterOpts() {
 // at least two points — no axes, no grid, one line and one figure.
 function paintOfferChart() {
   const el = $('#offerChart'); if (!el || !state) return;
+  /** @type {{t:number,p:number,live?:boolean}[]} */
   const pts = [...(state.p2p?.archive || [])]
     .filter(w => w.archivedAt && !w.assetTag && +w.frcAmount > 0 && +w.btcAmount > 0)
     .map(w => ({ t: +w.archivedAt, p: Number(w.btcAmount) / Number(w.frcAmount) * 1e8 }))
