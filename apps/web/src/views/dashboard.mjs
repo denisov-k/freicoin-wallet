@@ -229,16 +229,27 @@ export function paintActivity(txs, final = true) {
      ${i.trade
     ? `<div class="act-a"><span class="pos">${amtStr(i.recv)}</span><span class="neg">${amtStr(i.paid)}</span></div>`
     : `<div class="act-a ${(+i.amount) < 0 ? 'neg' : 'pos'}"><span>${amtStr(i)}</span>${isImmatureGen(i) ? `<span class="sub immature">${tr('immature')} ${i.confirmations}/${COINBASE_MATURITY}</span>` : i.confirmations === 0 ? `<span class="sub immature">${tr('confirming')} 0/1</span>` : i.note ? `<span class="sub">${tr(i.note)}</span>` : ''}</div>`}`;
-  const txBlock = (label, v) => `<span class="sub">${label}</span><div class="txid">${v}</div><button class="ghost copyTx" data-v="${v}">${tr('Copy txid')}</button>`;
-  // a cross-chain trade has TWO real txids (FRC leg + BTC leg) — show both; its `txid` field is
-  // just the stable row key (often the swap id), which a block explorer can't resolve
+  // per-leg id line: truncated hash + compact copy / open-in-explorer actions. A cross-chain trade
+  // has TWO real txids (FRC leg + BTC leg) — its `txid` field is just the stable row key (often
+  // the swap id), which no block explorer can resolve.
+  const EXPL = {
+    frc: () => d.curNet() === 'main' ? 'https://freicoin.ru/explorer/tx/' : null,
+    btc: () => mvBtc().hrp === 'bc' ? 'https://mempool.space/tx/' : 'https://mempool.space/signet/tx/',
+  };
+  const abtn = 'width:auto;padding:5px 11px;font-size:14px;line-height:1';
+  const legRow = (label, txid, base) => `<div style="display:flex;align-items:center;gap:8px">
+      ${label ? `<span class="sub" style="min-width:30px">${label}</span>` : ''}
+      <span class="txid" style="flex:1">${txid.length > 28 ? txid.slice(0, 12) + '…' + txid.slice(-12) : txid}</span>
+      <button class="ghost copyTx" data-v="${txid}" title="${tr('Copy txid')}" aria-label="${tr('Copy txid')}" style="${abtn}">⧉</button>
+      ${base ? `<a href="${base}${txid}" target="_blank" rel="noopener" title="${tr('Open in explorer')}" aria-label="${tr('Open in explorer')}"><button class="ghost" style="${abtn}" tabindex="-1">↗</button></a>` : ''}
+    </div>`;
   const idsHtml = i => {
     if (i.trade && (i.frcTxid || i.btcLegTxid)) {
       return (i.orderId ? `<span class="sub">${tr('Order')} ${i.orderId}</span>` : '')
-        + (i.frcTxid ? txBlock('FRC txid', i.frcTxid) : '')
-        + (i.btcLegTxid ? txBlock('BTC txid', i.btcLegTxid) : '');
+        + (i.frcTxid ? legRow('FRC', i.frcTxid, EXPL.frc()) : '')
+        + (i.btcLegTxid ? legRow('BTC', i.btcLegTxid, EXPL.btc()) : '');
     }
-    return txBlock('txid', i.txid);
+    return legRow('', i.txid, i.trade ? null : (i.btc ? EXPL.btc() : EXPL.frc()));
   };
   const detailHtml = i => `<div class="detail"><span class="sub">${i.confirmations > 0 ? i.confirmations + ' ' + tr('conf') : tr('confirming') + ' 0/1'} · ${new Date(i.time * 1000).toLocaleString(getLang())}</span>${isImmatureGen(i) ? `<span class="sub immature">🔒 ${tr('immature')} · ${tr('spendable in')} ${COINBASE_MATURITY - i.confirmations} ${tr('blocks')}</span>` : ''}${idsHtml(i)}</div>`;
   const keyOf = i => i.txid + '|' + (i.trade ? '#trade' : (i.assetTag ?? 'FRC') + '|' + i.category);
