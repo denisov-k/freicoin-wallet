@@ -1190,6 +1190,7 @@ const api = {
     if (w.taker?.frcPub !== takerFrcPub) throw new Error('своп не ваш');
     if (w.dir === 'sellBtc') throw new Error('обратный своп: отмена FRC-ноги');
     if (w.frcHtlc?.txid) throw new Error('продавец уже заперся — возврат BTC только по таймауту');
+    if (w.frcPending) throw new Error('продавец уже отправил лок — сделка завершится после его подтверждения');
     if (!w.btcHtlc?.txid) throw new Error('оплата ещё не подтверждена');
     w.cancelReq = true; saveP2p();
     pushSwap(w, 'maker', 'Покупатель просит отмену — откройте кошелёк, чтобы подтвердить');
@@ -1199,7 +1200,7 @@ const api = {
   async p2pBtcCoopSign({ id, makerFrcPub, sig }) {
     const w = p2p.find(x => x.id === id && x.kind !== 'offer'); if (!w) throw new Error('нет такого свопа');
     if (w.maker?.frcPub !== makerFrcPub) throw new Error('не ваш своп');
-    if (w.frcHtlc?.txid) throw new Error('нельзя: FRC уже заперт');   // safety: R-holder would double-dip
+    if (w.frcHtlc?.txid || w.frcPending) throw new Error('нельзя: FRC уже заперт');   // safety: R-holder would double-dip (a mempool lock counts too)
     if (!/^[0-9a-f]{130,150}$/.test(sig || '')) throw new Error('плохая подпись');
     w.btcCoopSig = sig; saveP2p();
     pushSwap(w, 'taker', 'Продавец подтвердил отмену — откройте кошелёк, BTC вернутся автоматически');
@@ -1281,7 +1282,7 @@ const api = {
       swaps: p2p.slice(-80).map(w => ({ id: w.id, v: w.v ?? 1, kind: w.kind ?? 'swap', parent: w.parent ?? null, postedAt: w.postedAt ?? null, takenAt: w.takenAt ?? null, partial: !!w.partial, remaining: w.remaining ?? null, minFill: w.minFill ?? null, maxFill: w.maxFill ?? null,
         dir: w.dir ?? 'sellFrc', status: w.status, assetTag: w.assetTag ?? null, frcAmount: w.frcAmount, btcAmount: w.btcAmount,
         maker: w.maker, taker: w.taker, paymentHash: w.paymentHash, t1: w.t1, t2: w.t2,
-        frcHtlc: w.frcHtlc, btcHtlc: w.btcHtlc, preimage: w.preimage ?? null, coopSig: w.coopSig ?? null, cancelReq: !!w.cancelReq, btcCoopSig: w.btcCoopSig ?? null, frcSpendTxid: w.frcSpendTxid ?? null })),
+        frcHtlc: w.frcHtlc, frcPending: w.frcPending ?? null, btcHtlc: w.btcHtlc, preimage: w.preimage ?? null, coopSig: w.coopSig ?? null, cancelReq: !!w.cancelReq, btcCoopSig: w.btcCoopSig ?? null, frcSpendTxid: w.frcSpendTxid ?? null })),
       archive: p2pArchive.slice(-30).map(w => ({ id: w.id, v: w.v ?? 1, parent: w.parent ?? null, postedAt: w.postedAt ?? null, takenAt: w.takenAt ?? null, dir: w.dir ?? 'sellFrc', status: 'done', assetTag: w.assetTag ?? null, frcAmount: w.frcAmount, btcAmount: w.btcAmount,
         maker: w.maker, taker: w.taker, paymentHash: w.paymentHash,
         frcHtlc: w.frcHtlc, btcHtlc: w.btcHtlc, preimage: w.preimage ?? null, archivedAt: w.archivedAt ?? null, frcSpendTxid: w.frcSpendTxid ?? null })) };
@@ -1391,7 +1392,25 @@ const api = {
     const wantTag = w.assetTag ?? null;
     // DISTINCT errors: "not indexed yet" (the funding is valid but still in the mempool on a real
     // chain — the client must RETRY, never heal/re-lock) vs a genuine spk/tag "mismatch".
-    if (!u) throw new Error('HTLC ещё не в блоке — повторите');
+    if (!u) {
+      // remember a VERIFIED mempool lock as frcPending: the buyer's UI can then say honestly that
+      // the seller has already sent the FRC (and a cancel is refused below) — the swap itself still
+      // advances only once the funding is mined and indexed.
+      if (!w.frcPending) {
+        try {
+          const raw = await rpc('getrawtransaction', txid, true);
+          const o = raw?.vout?.[Number(vout)];
+          const spkHex = o?.scriptPubKey?.hex ?? '';
+          const dec = decodeAssetSpk(spkHex);
+          const okSpk = (dec ? dec.baseSpk : spkHex) === htlcSpk(leaf) && (dec?.assetTag ?? null) === wantTag;
+          if (okSpk && BigInt(Math.round(o.value * 1e8)) >= BigInt(w.frcAmount)) {
+            w.frcPending = { txid, vout: Number(vout) }; saveP2p();
+            say(`P2P ${id}: лок мейкера уже в мемпуле — ждём блок`);
+          }
+        } catch { /* tx not even in the mempool — nothing to remember */ }
+      }
+      throw new Error('HTLC ещё не в блоке — повторите');
+    }
     if ((u.assetTag ?? null) !== wantTag || u.spk !== htlcSpk(leaf)) throw new Error('HTLC не совпал');
     if (u.value < BigInt(w.frcAmount)) throw new Error('в HTLC меньше оговоренного');
     const h = await rpc('getblockcount');
@@ -1401,6 +1420,7 @@ const api = {
     // ±10 min on either side, expressed in this chain's blocks (min 2 blocks so fast chains work)
     if (Number(t1) < h + V2_FRC_NEAR - FRC_SLACK || Number(t1) > h + V2_FRC_NEAR + FRC_SLACK) throw new Error('таймаут T1 вне окна');
     w.frcHtlc = { txid, vout, value: String(u.value), refheight: u.refheight, leaf, cltv: Number(t1), assetTag: wantTag }; w.t1 = Number(t1);
+    delete w.frcPending;   // superseded by the confirmed lock
     w.status = 'frc_funded'; saveP2p();
     say(`P2P ${id}: ${wantTag ? 'актив' : 'FRC'} заперт — тейкер забирает его (раскроет секрет)`);
     pushSwap(w, 'taker', 'Продавец заблокировал FRC — откройте кошелёк, чтобы забрать покупку');
