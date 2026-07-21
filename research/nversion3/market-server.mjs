@@ -390,14 +390,21 @@ function reconcileP2p() {
   //   - terminal states (done/cancelled/expired) go immediately;
   //   - a completed swap: btc_claimed whose FRC HTLC coin was spent (taker claimed) is done;
   //   - a 'taken' offer the maker never funded within a grace window is a zombie.
-  const GRACE = 30;
+  const GRACE = 30;                 // block-based fallback (pre-takenTime takes, reverse takes)
+  const TAKE_TTL = 60 * 60e3;       // an unpaid FORWARD take holds its reservation for 1 hour
   let changed = false;
   for (let i = p2p.length - 1; i >= 0; i--) {
     const w = p2p[i];
     // a partial-offer CHILD that was taken but never funded within grace: hand its reserved amount
     // back to the parent offer's `remaining` before removing it, so the offer keeps selling.
-    // v2: at 'taken' the HTLC TERMS exist but no coin — zombie = nothing FUNDED (txid), any format
-    const zombie = w.status === 'taken' && !w.frcHtlc?.txid && !w.btcHtlc?.txid && w.takenAt != null && indexedHeight - w.takenAt > GRACE;
+    // v2: at 'taken' the HTLC TERMS exist but no coin — zombie = nothing FUNDED, and no funding
+    // even DETECTED (btcFundSeen marks a 0-conf payment; frcPending a reverse lock in the mempool):
+    // a buyer who paid at minute 59 must never be swept while their tx confirms.
+    const unpaid = w.status === 'taken' && !w.frcHtlc?.txid && !w.btcHtlc?.txid && !w.btcFundSeen && !w.frcPending;
+    const zombie = unpaid && (
+      w.dir !== 'sellBtc' && w.takenTime
+        ? Date.now() - w.takenTime > TAKE_TTL
+        : (w.takenAt != null && indexedHeight - w.takenAt > GRACE));
     // v2 heartbeat: an open offer whose maker hasn't polled the relay in 24 h is abandoned —
     // retire it so a taker's first-mover funding isn't stranded. A DAY (not the old 40 min):
     // web-push wakes a maker whose tab is closed, so a human maker stays reachable without a
@@ -465,9 +472,12 @@ async function watchP2p() {
           btcDeepScan([w.btcHtlc.addr]);   // debounced; retries next tick if a rescan is already in flight
         }
         // BTC_MINCONF gates the transition: the maker responds only to a funding that can no
-        // longer be RBF'd out from under them
-        const utxo = await btcWatch('listunspent', BTC_MINCONF, 9999999, [w.btcHtlc.addr]).catch(() => []);
-        const hit = (utxo || []).find(u => BigInt(Math.round(u.amount * 1e8)) >= BigInt(w.btcAmount));
+        // longer be RBF'd out from under them. A 0-conf sighting is still recorded (btcFundSeen)
+        // so the unpaid-take zombie never sweeps a take whose payment is merely confirming.
+        const utxo = await btcWatch('listunspent', 0, 9999999, [w.btcHtlc.addr]).catch(() => []);
+        const hit0 = (utxo || []).find(u => BigInt(Math.round(u.amount * 1e8)) >= BigInt(w.btcAmount));
+        if (hit0 && !w.btcFundSeen) { w.btcFundSeen = Date.now(); saveP2p(); }
+        const hit = hit0 && hit0.confirmations >= BTC_MINCONF ? hit0 : null;
         if (hit) {
           w.btcHtlc.txid = hit.txid; w.btcHtlc.vout = hit.vout; w.btcHtlc.value = String(Math.round(hit.amount * 1e8));
           w.status = 'btc_funded'; saveP2p();
@@ -1246,7 +1256,7 @@ const api = {
       if (o) { const back = w.dir === 'sellBtc' ? w.btcAmount : w.frcAmount; o.remaining = String(BigInt(o.remaining) + BigInt(back)); if (o.status === 'closed') o.status = 'open'; }
       p2p.splice(i, 1);
     } else {   // whole offer: back to the board, clean of this taker's H/terms
-      w.status = 'open'; w.taker = null; w.paymentHash = null; w.btcHtlc = null; w.frcHtlc = null; w.takenAt = null;
+      w.status = 'open'; w.taker = null; w.paymentHash = null; w.btcHtlc = null; w.frcHtlc = null; w.takenAt = null; w.takenTime = null; w.btcFundSeen = null;
     }
     saveP2p();
     say(`P2P ${id}: бронь снята покупателем`);
@@ -1362,7 +1372,7 @@ const api = {
       const child = { id: cid, v: 2, parent: id, dir: 'sellFrc', assetTag: o.assetTag ?? null,
         frcAmount: String(f), btcAmount: String(btc), paymentHash,
         maker: { ...o.maker }, taker: { frcPub: takerFrcPub, btcPub: takerBtcPub, frcAddr: takerFrcAddr },
-        frcHtlc: null, btcHtlc: null, preimage: null, t1: 0, t2, status: 'taken', takenAt: indexedHeight };
+        frcHtlc: null, btcHtlc: null, preimage: null, t1: 0, t2, status: 'taken', takenAt: indexedHeight, takenTime: Date.now() };
       child.btcHtlc = mkBtcHtlc(child);
       o.remaining = String(rem - f); if (BigInt(o.remaining) <= 0n) o.status = 'closed';
       p2p.push(child); saveP2p();
@@ -1375,7 +1385,7 @@ const api = {
     o.taker = { frcPub: takerFrcPub, btcPub: takerBtcPub, frcAddr: takerFrcAddr };
     o.paymentHash = paymentHash;
     o.btcHtlc = mkBtcHtlc(o); o.t2 = t2;
-    o.status = 'taken'; o.takenAt = indexedHeight; saveP2p();
+    o.status = 'taken'; o.takenAt = indexedHeight; o.takenTime = Date.now(); saveP2p();
     await watchAddress(o.btcHtlc.addr);
     say(`P2P-оффер ${id}: взят — тейкер финансирует BTC HTLC ${o.btcHtlc.addr}`);
     pushSwap(o, 'maker', 'Оффер взят — ждём оплату покупателя');
@@ -1549,7 +1559,7 @@ const api = {
       const child = { id: cid, v: 2, parent: id, dir: 'sellBtc', assetTag: o.assetTag ?? null,
         frcAmount: String(frcAmt), btcAmount: String(f), paymentHash,
         maker: { ...o.maker }, taker: { frcPub: takerFrcPub, btcPub: takerBtcPub, btcAddr: takerBtcAddr },
-        frcHtlc: null, btcHtlc: null, preimage: null, t1: tf, t2: 0, status: 'taken', takenAt: indexedHeight };
+        frcHtlc: null, btcHtlc: null, preimage: null, t1: tf, t2: 0, status: 'taken', takenAt: indexedHeight, takenTime: Date.now() };
       child.frcHtlc = mkFrcHtlc(child);
       o.remaining = String(rem - f); if (BigInt(o.remaining) <= 0n) o.status = 'closed';
       p2p.push(child); saveP2p();
@@ -1561,7 +1571,7 @@ const api = {
     o.taker = { frcPub: takerFrcPub, btcPub: takerBtcPub, btcAddr: takerBtcAddr };
     o.paymentHash = paymentHash;
     o.frcHtlc = mkFrcHtlc(o); o.t1 = tf;
-    o.status = 'taken'; o.takenAt = indexedHeight; saveP2p();
+    o.status = 'taken'; o.takenAt = indexedHeight; o.takenTime = Date.now(); saveP2p();
     say(`P2P-оффер ${id}: взят (обратный) — тейкер финансирует FRC HTLC`);
     pushSwap(o, 'maker', 'Оффер взят — покупатель вносит FRC');
     return { id, maker: o.maker, assetTag: o.assetTag ?? null, frcAmount: o.frcAmount, btcAmount: o.btcAmount, frcHtlc: { spk: o.frcHtlc.spk, leaf: o.frcHtlc.leaf, cltv: tf } };
