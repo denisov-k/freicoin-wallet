@@ -85,15 +85,13 @@ const checks = {
     await http('http://127.0.0.1:5183/api/info');
     return null;
   },
-  // ---- посетители (метрика, не поломка): парсит nginx access.log.
-  // Мгновенный ALERT на БИРЖЕВОЕ ДЕЙСТВИЕ (p2pTake/p2pTakeB/p2pPost с внешнего IP) — чужой тейк
-  // на живой бирже надо видеть сразу. Раз в сутки (первый прогон после 07:00 МСК) — дайджест за
-  // прошлые сутки: сколько IP грузили кошелёк, сколько дошли до биржи, сколько открыли кошелёк
-  // с сидом. Свои IP не исключаются (они динамические) — дайджест перечисляет всех, дежурный
-  // отфильтрует знакомых.
+  // ---- посетители (метрика, не поломка): парсит nginx access.log. Раз в сутки (первый прогон
+  // после 07:00 МСК) — дайджест за прошлые сутки: сколько IP грузили кошелёк, сколько дошли до
+  // биржи, сколько работали с сидом, плюс список биржевых действий (тейки/офферы) за день.
+  // Свои IP не исключаются (они динамические) — дежурный отфильтрует знакомых.
   async visitors(state) {
     const OWN = new Set(['78.17.151.40', '127.0.0.1']);
-    const v = state.visitors ??= { known: {}, seenActs: [], lastDigest: '' };
+    const v = state.visitors ??= { known: {}, lastDigest: '' };
     let raw = '';
     try { raw = readFileSync('/var/log/nginx/access.log', 'utf8'); } catch { return null; }
     try { raw = readFileSync('/var/log/nginx/access.log.1', 'utf8') + raw; } catch {}
@@ -117,13 +115,6 @@ const checks = {
       if (method === 'POST' && /^\/api(-main)?\/(p2pTake|p2pTakeB|p2pPost)/.test(path))
         acts.push(`${ip} ${msk(new Date(Date.UTC(+yyyy, MON[mon], +dd, +hh, +mm))).toISOString().slice(5, 16).replace('T', ' ')} МСК ${path}`);
     }
-    // мгновенно: новые биржевые действия
-    const seen = new Set(v.seenActs);
-    const fresh = acts.filter(a => !seen.has(a));
-    if (fresh.length) {
-      v.seenActs = [...v.seenActs, ...fresh].slice(-500);
-      await notify('👤 биржевое действие', fresh.join('; ').slice(0, 300));
-    }
     // раз в сутки: дайджест за вчера (МСК), после 07:00
     if (v.lastDigest !== today && msk(new Date()).getUTCHours() >= 7) {
       const d = perDay[yesterday] ?? {};
@@ -132,8 +123,9 @@ const checks = {
       for (const [ip] of ips) v.known[ip] ??= yesterday;
       const book = ips.filter(([, r]) => r.book > 0).length, seeded = ips.filter(([, r]) => r.seeded > 0).length;
       v.lastDigest = today;
+      const dayActs = acts.filter(a => a.includes(`${yesterday.slice(5)} `));
       if (ips.length) await notify('📊 посетители за вчера',
-        `${ips.length} IP грузили кошелёк (новых ${fresh.length}), до биржи дошли ${book}, с сидом работали ${seeded}: ${ips.map(([ip, r]) => `${ip}(${r.bundle}/${r.book}/${r.seeded})`).join(' ').slice(0, 220)}`);
+        `${ips.length} IP грузили кошелёк (новых ${fresh.length}), до биржи дошли ${book}, с сидом работали ${seeded}: ${ips.map(([ip, r]) => `${ip}(${r.bundle}/${r.book}/${r.seeded})`).join(' ').slice(0, 220)}${dayActs.length ? ` · биржевые действия: ${dayActs.join('; ').slice(0, 200)}` : ''}`);
     }
     return null;   // метрика ничего не «ломает»
   },
