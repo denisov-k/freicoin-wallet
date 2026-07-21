@@ -721,7 +721,7 @@ function p2pStatusLabel(o, mineRec) {
   } else {
     if (st === 'taken') return tr('pay to continue');                                 // my payment opens the swap
     if (st === 'frc_funded' || st === 'btc_funded_rev') return tr('claiming…');       // my funds are up — claiming
-    if (st.startsWith('btc_funded') || st.startsWith('frc_funded')) return tr('confirming payment on the network');   // I paid; the seller locks next
+    if (st.startsWith('btc_funded') || st.startsWith('frc_funded')) return `${tr('confirming receipt')} (0/1)`;   // I paid; the seller's lock confirms next
     if (st === 'frc_claimed' || st === 'btc_claimed_rev') return tr('swap complete ✅');
   }
   return tr(st);
@@ -1059,7 +1059,7 @@ function renderP2pPay(m, rec) {
       // "confirming payment"; the immediate poll below refines it with fresh relay data
       const w0 = (state.p2p?.swaps || []).find(x => x.id === rec.id);
       pw0.textContent = !w0 || w0.status === 'taken' ? tr('confirming payment on the network')
-        : w0.status === 'btc_funded' ? tr('awaiting the seller') : tr('confirming receipt');
+        : w0.status === 'btc_funded' ? `${tr('confirming receipt')} (0/1)` : `${tr('confirming receipt')} (1/1)`;
     }
     hidePayInputs();
   }
@@ -1120,12 +1120,12 @@ function renderP2pPay(m, rec) {
           try { confs = ((await api('btcAccount', { addresses: [b.addr] })).utxos || []).find(u => u.txid === rlocal.btcHtlc.txid)?.confirmations; } catch {}
           pw.textContent = confs != null ? `${tr('confirming payment on the network')} (${Math.min(confs, 2)}/2)` : tr('confirming payment on the network');
         }
-      } else if (w.status === 'btc_funded') {                 // payment accepted — the seller's lock isn't recorded yet
+      } else if (w.status === 'btc_funded') {                 // payment accepted — the seller's lock isn't in a block yet
         if (!paidSeen) { paidSeen = true; putP2p({ ...rlocal, status: 'btc_funded' }); mvRefresh(); }
-        if (pw) pw.textContent = tr('awaiting the seller');
-      } else {                                                // seller LOCKED (frc_funded/…) — I'm receiving the FRC now
+        if (pw) pw.textContent = `${tr('confirming receipt')} (0/1)`;
+      } else {                                                // seller's lock CONFIRMED (frc_funded/…) — I'm claiming the FRC now
         if (!paidSeen) { paidSeen = true; putP2p({ ...rlocal, status: 'btc_funded' }); mvRefresh(); }
-        if (pw) pw.textContent = tr('confirming receipt');
+        if (pw) pw.textContent = `${tr('confirming receipt')} (1/1)`;
         if (st) st.textContent = tr('claiming your funds…');
       }
     } catch {}
