@@ -1490,19 +1490,13 @@ function cachedFilterOpts() {
 // minimalist price sparkline above the book: completed FRC↔BTC trades from the relay archive
 // (sat/FRC over time) with the current best ask as the live endpoint. Hidden until there are
 // at least two points — no axes, no grid, one line and one figure.
-// chart data: completed FRC↔BTC trades from the relay archive (sat/FRC over time) with the
-// current best ask as the live endpoint
+// chart data: COMPLETED FRC↔BTC trades from the relay archive only (sat/FRC over time) —
+// open offers are the table below, not history
 function tradePts() {
-  /** @type {{t:number,p:number,live?:boolean}[]} */
-  const pts = [...(state.p2p?.archive || [])]
+  return [...(state.p2p?.archive || [])]
     .filter(w => w.archivedAt && !w.assetTag && +w.frcAmount > 0 && +w.btcAmount > 0)
     .map(w => ({ t: +w.archivedAt, p: Number(w.btcAmount) / Number(w.frcAmount) * 1e8 }))
     .sort((a, b) => a.t - b.t);
-  const asks = (state.p2p?.swaps || [])
-    .filter(o => o.status === 'open' && !o.assetTag && o.dir !== 'sellBtc' && +o.frcAmount > 0)
-    .map(o => Number(o.btcAmount) / Number(o.frcAmount) * 1e8);
-  if (asks.length) pts.push({ t: Date.now(), p: Math.min(...asks), live: true });
-  return pts;
 }
 // one accent polyline + dots, no axes/grid; theme-aware via CSS vars
 function chartSvg(pts, H) {
@@ -1513,7 +1507,7 @@ function chartSvg(pts, H) {
   const path = pts.map((x, i) => `${i ? 'L' : 'M'}${X(x.t).toFixed(1)},${Y(x.p).toFixed(1)}`).join('');
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:${H}px;display:block">
       <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>
-      ${pts.map(x => `<circle cx="${X(x.t).toFixed(1)}" cy="${Y(x.p).toFixed(1)}" r="${x.live ? 2.5 : 2}" fill="var(--accent)"${x.live ? '' : ' opacity="0.5"'}/>`).join('')}
+      ${pts.map(x => `<circle cx="${X(x.t).toFixed(1)}" cy="${Y(x.p).toFixed(1)}" r="2" fill="var(--accent)" opacity="0.6"/>`).join('')}
     </svg>`;
 }
 // full history window: bigger chart + the archived trades, newest first (tap the sparkline)
