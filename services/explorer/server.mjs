@@ -37,7 +37,9 @@ body{margin:0;font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;backgrou
 a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
 h1{font-size:18px}h1 a{color:var(--fg)}h2{font-size:15px;color:var(--sub)}
 table{width:100%;border-collapse:collapse;background:var(--card);border-radius:10px;overflow:hidden}
-td,th{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;word-break:break-all}
+td,th{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;white-space:nowrap}
+.kv td{white-space:normal;word-break:break-all}
+.tw{overflow-x:auto;border-radius:10px}
 th{color:var(--sub);font-weight:normal}
 .k{color:var(--sub);white-space:nowrap;width:160px}
 form{display:flex;gap:8px;margin:12px 0}
@@ -49,7 +51,7 @@ button{background:var(--acc);color:#04121f;border:0;border-radius:8px;padding:9p
 <form action="${PREFIX}/search"><input name="q" placeholder="height / block hash / txid / address"><button>Search</button></form>
 ${body}</div></body></html>`;
 
-const kv = rows => `<table>${rows.map(([k, v]) => `<tr><td class="k">${esc(k)}</td><td>${v}</td></tr>`).join('')}</table>`;
+const kv = rows => `<table class="kv">${rows.map(([k, v]) => `<tr><td class="k">${esc(k)}</td><td>${v}</td></tr>`).join('')}</table>`;
 
 async function home() {
   const [bc, mp, net] = await Promise.all([rpc('getblockchaininfo'), rpc('getmempoolinfo'), rpc('getnetworkinfo')]);
@@ -64,8 +66,8 @@ async function home() {
       ['connections', `${net.connections}`],
       ['node', esc(net.subversion)],
     ]) +
-    `<h2>latest blocks</h2><table><tr><th>height</th><th>time</th><th class="r">txs</th><th class="r">size</th></tr>` +
-    blocks.map(b => `<tr><td>${L('/block/' + b.hash, b.height)}</td><td class="sub">${fmtT(b.time)}</td><td class="r">${b.nTx}</td><td class="r">${(b.size / 1024).toFixed(1)} kB</td></tr>`).join('') + '</table>');
+    `<h2>latest blocks</h2><div class="tw"><table><tr><th>height</th><th>time (UTC)</th><th class="r">txs</th><th class="r">size</th></tr>` +
+    blocks.map(b => `<tr><td>${L('/block/' + b.hash, b.height)}</td><td class="sub">${fmtT(b.time).slice(5, 16)}</td><td class="r">${b.nTx}</td><td class="r">${(b.size / 1024).toFixed(1)}kB</td></tr>`).join('') + '</table></div>');
 }
 
 async function blockPage(id) {
@@ -81,12 +83,12 @@ async function blockPage(id) {
       ['prev', b.previousblockhash ? L('/block/' + b.previousblockhash, b.previousblockhash) : '—'],
       ['next', b.nextblockhash ? L('/block/' + b.nextblockhash, b.nextblockhash) : '—'],
     ]) +
-    `<h2>${b.nTx} transaction(s)</h2><table><tr><th>txid</th><th class="r">in</th><th class="r">out</th><th class="r">value out (nominal)</th></tr>` +
+    `<h2>${b.nTx} transaction(s)</h2><div class="tw"><table><tr><th>txid</th><th class="r">in</th><th class="r">out</th><th class="r">value out (nominal)</th></tr>` +
     b.tx.map((t, i) => {
       const out = t.vout.reduce((a, o) => a + o.value, 0);
       const tag = i === 0 ? ' <span class="sub">coinbase</span>' : (i === b.tx.length - 1 && b.tx.length > 1 && t.vin[0]?.coinbase === undefined && t.vout.length === 1 ? '' : '');
       return `<tr><td>${L('/tx/' + t.txid, t.txid)}${tag}</td><td class="r">${t.vin.length}</td><td class="r">${t.vout.length}</td><td class="r">${out.toFixed(8)}</td></tr>`;
-    }).join('') + '</table>');
+    }).join('') + '</table></div>');
 }
 
 async function txPage(txid) {
@@ -106,8 +108,8 @@ async function txPage(txid) {
       ['lock_height', `${t.lockheight ?? t.lock_height ?? '—'} <span class="sub">(demurrage reference)</span>`],
       ['fee', t.fee !== undefined ? t.fee.toFixed(8) + ' FRC' : '—'],
     ]) +
-    `<h2>inputs</h2><table><tr><th>outpoint</th><th>address</th><th class="r">value</th></tr>${vin}</table>` +
-    `<h2>outputs <span class="sub">(nominal)</span></h2><table><tr><th>#</th><th>address</th><th class="r">value</th></tr>${vout}</table>`);
+    `<h2>inputs</h2><div class="tw"><table><tr><th>outpoint</th><th>address</th><th class="r">value</th></tr>${vin}</table></div>` +
+    `<h2>outputs <span class="sub">(nominal)</span></h2><div class="tw"><table><tr><th>#</th><th>address</th><th class="r">value</th></tr>${vout}</table></div>`);
 }
 
 async function addrPage(addr) {
@@ -120,8 +122,8 @@ async function addrPage(addr) {
       ['balance (present value)', `${(+scan.total_amount).toFixed(8)} FRC`],
     ]) +
     `<p class="sub">current unspent outputs only — spent history is not indexed</p>` +
-    `<table><tr><th>outpoint</th><th class="r">height</th><th class="r">amount</th></tr>` +
-    rows.map(u => `<tr><td>${L('/tx/' + u.txid, u.txid)}:${u.vout}</td><td class="r">${L('/block/' + u.height, u.height)}</td><td class="r">${u.amount.toFixed(8)}</td></tr>`).join('') + '</table>');
+    `<div class="tw"><table><tr><th>outpoint</th><th class="r">height</th><th class="r">amount</th></tr>` +
+    rows.map(u => `<tr><td>${L('/tx/' + u.txid, u.txid)}:${u.vout}</td><td class="r">${L('/block/' + u.height, u.height)}</td><td class="r">${u.amount.toFixed(8)}</td></tr>`).join('') + '</table></div>');
 }
 
 // ---- Freigeld clock: live demurrage dashboard ----------------------------------
