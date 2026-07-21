@@ -1184,7 +1184,7 @@ function renderP2pPay(m, rec) {
       <p class="sub" style="margin:0">${sellerLocked
         ? tr('The seller has already sent the FRC — the lock is confirming on the network, so the deal can no longer be cancelled. If the lock somehow never confirms, your BTC returns automatically at the timeout') + eta + '.'
         : paid
-          ? tr('You have already paid. The seller will be asked to authorize an instant refund — the BTC then returns to your wallet right away. If the seller has already locked the FRC or stays silent, the BTC returns automatically at the timeout') + eta + '.'
+          ? tr('You have already paid, and the seller has not sent the FRC yet. The seller will be asked to authorize an instant refund — the BTC then returns to your wallet right away; if the seller does not respond, the BTC returns automatically at the timeout') + eta + '.'
           : tr('The order will simply be released — nothing has been paid, nothing is lost.')}</p>
       ${sellerLocked ? '' : `<button id="pyDoCancel" style="width:100%;background:transparent;color:var(--warn);border:1px solid var(--warn)">${tr('Cancel the deal')}</button>`}
       <button id="pyBack" class="ghost">${tr('Back')}</button>`;
