@@ -1048,6 +1048,9 @@ function renderP2pPay(m, rec) {
   // once paid, the payment-method chooser (#paySeg) and the wallet-balance line (#pyBalRow) are moot —
   // hide them so the window shows only the amount, the confirmation status and Cancel.
   const hidePayInputs = () => { for (const s of ['#paySeg', '#pyBalRow']) { const el = $(s); if (el) el.style.display = 'none'; } };
+  // once the seller's lock is CONFIRMED (frc_funded+) the claim is running and a cancel can do
+  // nothing (the relay refuses coop-sign, and the claim reveals R anyway) — drop the button
+  const hideCancel = () => { const c = q(m, '#pyCancel'); if (c) c.style.display = 'none'; };
   // ALREADY PAID (a reload after funding): the record carries a funding txid — lock the pay path so a
   // second tap can't double-spend the BTC. The poll below still follows the swap through to completion.
   if (rec.btcHtlc?.txid) {
@@ -1060,6 +1063,7 @@ function renderP2pPay(m, rec) {
       const w0 = (state.p2p?.swaps || []).find(x => x.id === rec.id);
       pw0.textContent = !w0 || w0.status === 'taken' ? tr('confirming payment on the network')
         : w0.status === 'btc_funded' ? `${tr('confirming receipt')} (0/1)` : `${tr('confirming receipt')} (1/1)`;
+      if (w0 && !['taken', 'btc_funded'].includes(w0.status)) hideCancel();
     }
     hidePayInputs();
   }
@@ -1127,6 +1131,7 @@ function renderP2pPay(m, rec) {
         if (!paidSeen) { paidSeen = true; putP2p({ ...rlocal, status: 'btc_funded' }); mvRefresh(); }
         if (pw) pw.textContent = `${tr('confirming receipt')} (1/1)`;
         if (st) st.textContent = tr('claiming your funds…');
+        hideCancel();
       }
     } catch {}
   };

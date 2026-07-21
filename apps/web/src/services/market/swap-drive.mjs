@@ -212,8 +212,12 @@ async function driveP2pInner() {
       if (rec.role === 'maker') {
         // buyer asked to cancel and I HAVEN'T locked → authorize the instant BTC refund (costs me
         // nothing; I never committed). SAFETY: refuse once I've locked — the buyer holds R and could
-        // then reclaim BTC *and* claim my FRC. Relay enforces this too.
-        if (w.cancelReq && !w.btcCoopSig && !w.frcHtlc?.txid && w.btcHtlc?.txid && w.btcHtlc.leaf) {
+        // then reclaim BTC *and* claim my FRC. The check MUST include my LOCAL state, not just the
+        // relay's: while my lock sits in the mempool the relay still shows frcHtlc:null, and signing
+        // in that window hands a malicious buyer both legs. (rec.status flips to 'frc_funded' the
+        // moment the lock broadcasts — before the relay accepts the report.)
+        if (w.cancelReq && !w.btcCoopSig && !w.frcHtlc?.txid && rec.status !== 'frc_funded' && !rec.funding?.txid
+            && w.btcHtlc?.txid && w.btcHtlc.leaf) {
           const sig = btcHtlcCoopSig({ prevTxid: w.btcHtlc.txid, vout: w.btcHtlc.vout, valueSats: BigInt(w.btcHtlc.value), leafHex: w.btcHtlc.leaf, claimKey: p2pKey(rec.nonce, 'btc') });
           await api('p2pBtcCoopSign', { id: rec.id, makerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')), sig });
           env.toast(`${w.id}: ${tr('authorized the buyer’s cancel')}`, 'ok'); env.mvRefresh();
