@@ -398,10 +398,12 @@ function reconcileP2p() {
     // back to the parent offer's `remaining` before removing it, so the offer keeps selling.
     // v2: at 'taken' the HTLC TERMS exist but no coin — zombie = nothing FUNDED (txid), any format
     const zombie = w.status === 'taken' && !w.frcHtlc?.txid && !w.btcHtlc?.txid && w.takenAt != null && indexedHeight - w.takenAt > GRACE;
-    // v2 heartbeat: an open offer whose maker hasn't polled the relay in 40 min is unattended —
-    // taking it would strand the taker's first-mover funding, so retire it instead.
+    // v2 heartbeat: an open offer whose maker hasn't polled the relay in 24 h is abandoned —
+    // retire it so a taker's first-mover funding isn't stranded. A DAY (not the old 40 min):
+    // web-push wakes a maker whose tab is closed, so a human maker stays reachable without a
+    // live heartbeat; and even in the worst case the taker's BTC auto-refunds at t2 (~4 h).
     if (w.v === 2 && w.status === 'open' && w.maker?.frcPub
-      && Date.now() - (makerSeen.get(w.maker.frcPub) ?? 0) > 40 * 60e3) { w.status = 'expired'; changed = true; }
+      && Date.now() - (makerSeen.get(w.maker.frcPub) ?? 0) > 24 * 3600e3) { w.status = 'expired'; changed = true; }
     if (zombie && w.parent) {
       const o = p2p.find(x => x.id === w.parent && x.kind === 'offer');
       // restore in the SOLD unit: forward offers track remaining in FRC/asset, reverse in BTC
