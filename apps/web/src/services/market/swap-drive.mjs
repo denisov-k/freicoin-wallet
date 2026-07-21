@@ -305,11 +305,15 @@ async function driveP2pInner() {
           } else {
             cF = claimReceived({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leaf: f.leaf, preimage: R, ourKey: p2pKey(rec.nonce, 'frc'), toSpk: env.spks()[0], fee: 10000n });
           }
+          // a hist entry with the claim txid means this is a resurrected RE-broadcast (the claim is
+          // still confirming and the relay's status lags a block) — don't repeat the «received» toast
+          const reclaim = !!env.loadSwapHist?.().find(x => x.id === rec.id)?.frcTxid;
           await api('tx', { rawtx: cF.rawtx, kind: 'send' }); try { env.observe(cF.rawtx); } catch {}   // reflect it in the wallet's balance/activity now
           await api('p2pDone', { id: rec.id });
           env.addSwapHist({ id: rec.id, category: 'sale', assetTag: tag, frcAmount: w.frcAmount, btcAmount: w.btcAmount, btcTxid: null, btcFundTxid: rec.btcHtlc?.txid ?? null, frcTxid: cF.txid ?? null, time: Math.floor(Date.now() / 1000) });
           env.dropP2p(rec.id);
-          env.toast(`${w.id}: ${tr(tag ? 'asset received ✅' : 'FRC received ✅')}`, 'ok'); env.mvRefresh();
+          if (!reclaim) env.toast(`${w.id}: ${tr(tag ? 'asset received ✅' : 'FRC received ✅')}`, 'ok');
+          env.mvRefresh();
         }
       }
       if (w.status === 'done') env.dropP2p(rec.id);
@@ -368,10 +372,13 @@ async function driveP2pRev(rec, w, info) {
       } else {
         cF = claimReceived({ funding: { txid: f.txid, vout: f.vout, value: BigInt(f.value), refheight: f.refheight }, leaf: f.leaf, preimage: R, ourKey: p2pKey(rec.nonce, 'frc'), toSpk: env.spks()[0], fee: 10000n });
       }
+      // resurrected re-broadcast of a still-confirming claim (see the forward-taker path) — no repeat toast
+      const reclaim = !!env.loadSwapHist?.().find(x => x.id === rec.id)?.frcTxid;
       await api('tx', { rawtx: cF.rawtx, kind: 'send' }); try { env.observe(cF.rawtx); } catch {}   // reflect it in the wallet's balance/activity now
       env.addSwapHist({ id: rec.id, category: 'purchase', assetTag: tag, frcAmount: w.frcAmount, btcAmount: w.btcAmount, btcTxid: null, btcFundTxid: rec.btcHtlc?.txid ?? null, frcTxid: cF.txid ?? null, time: Math.floor(Date.now() / 1000) });
       if (rec.parent) env.dropP2p(rec.id); else env.putP2p({ ...rec, status: 'done' });
-      env.toast(`${w.id}: ${tr(tag ? 'asset received ✅' : 'FRC received ✅')}`, 'ok'); env.mvRefresh();
+      if (!reclaim) env.toast(`${w.id}: ${tr(tag ? 'asset received ✅' : 'FRC received ✅')}`, 'ok');
+      env.mvRefresh();
     }
   } else {   // taker: I locked at take; the seller's BTC is up → claim it (reveals R)
     if (w.status === 'frc_funded_rev' && rec.status === 'frc_funded_rev' && rec.funding?.txid && !w.frcHtlc?.txid) {

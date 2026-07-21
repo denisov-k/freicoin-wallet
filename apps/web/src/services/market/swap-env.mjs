@@ -4,7 +4,7 @@
 // the caller (initMarketView) since they live in the view layer. The headless bot builds its own env
 // from server-native pieces (relay HTTP + file store + core keys) and calls the SAME engine.
 import { ctx, api, p2pKey, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND } from '@/state/market-ctx.mjs';
-import { loadP2p, putP2p, dropP2p, addSwapHist, addRefundedFund } from '@/services/storage.mjs';
+import { loadP2p, putP2p, dropP2p, addSwapHist, loadSwapHist, addRefundedFund } from '@/services/storage.mjs';
 import { hostFeeCoin, sendFrcToSpk, lockAssetToHtlc } from '@/services/market/swap-lib.mjs';
 import { btcFundHtlc, btcAcctPub, btcHrp, refreshBtc } from '@/services/market/btc-account.mjs';
 import { verifyFrcOutput, verifyBtcOutput } from '@/services/market/verify.mjs';
@@ -16,7 +16,7 @@ export function browserSwapEnv(ui) {
     state: () => ctx.state,
     spks: () => ctx.spks,
     p2pKey, api,
-    loadP2p, putP2p, dropP2p, addSwapHist, addRefundedFund,
+    loadP2p, putP2p, dropP2p, addSwapHist, loadSwapHist, addRefundedFund,
     hostFeeCoin, sendFrcToSpk, lockAssetToHtlc,
     btcFundHtlc, btcAcctPub, btcHrp, refreshBtc,
     verifyFrcOutput, verifyBtcOutput,
