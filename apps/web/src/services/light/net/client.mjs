@@ -720,6 +720,14 @@ export class Neutrino {
     // once, and this reply just reconciles in the background (fires onMempool → emitState). A live
     // receive arriving on an open session comes through the same path.
     try { this._send('mempool', Buffer.alloc(0)); } catch {}
+    // REBROADCAST our own still-unconfirmed txs. broadcast() is fire-and-forget over the WS: a tab
+    // backgrounded mid-write (mobile!) can lose the bytes while the UI already shows the tx as
+    // pending — a phantom in no mempool anywhere. Re-sending is idempotent (nodes ignore known
+    // txs), so every completed sync pushes whatever we still believe is pending.
+    for (const id of this._selfTxids) {
+      const tx = this._mempoolRaw.get(id);
+      if (tx && !this.history.some(e => e.txid === id)) { try { this._send('tx', Buffer.from(serializeTx(tx), 'hex')); } catch {} }
+    }
     this.reconsiderMempool();   // classify pending txs against the now-complete utxo set
     return this._result();
   }

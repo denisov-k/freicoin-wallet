@@ -45,7 +45,7 @@ input{flex:1;background:var(--card);border:1px solid var(--line);border-radius:8
 button{background:var(--acc);color:#04121f;border:0;border-radius:8px;padding:9px 16px;font:inherit;cursor:pointer}
 .sub{color:var(--sub)}.r{text-align:right}.mono{font-family:inherit}
 </style></head><body><div class="wrap">
-<h1>${L('/', '⛓ Freicoin Explorer')} <span class="sub" style="font-size:12px">mainnet · powered by <a href="https://wallet.testtty.ru">wallet.testtty.ru</a></span></h1>
+<h1>${L('/', '⛓ Freicoin Explorer')} <span class="sub" style="font-size:12px">mainnet · powered by <a href="https://freicoin.ru">freicoin.ru</a></span></h1>
 <form action="${PREFIX}/search"><input name="q" placeholder="height / block hash / txid / address"><button>Search</button></form>
 ${body}</div></body></html>`;
 
@@ -176,7 +176,7 @@ age like the goods it buys — otherwise its holder can extract interest just by
 (2012) implements this: every unspent coin loses ~3.3%/year to demurrage, and the same amount is
 re-minted to miners forever. Saving is possible — hoarding is expensive. Total supply provably
 converges to 100M FRC: this page is that theorem, ticking.</div>
-<div class="foot"><a href="https://wallet.testtty.ru">wallet</a> · <a href="/explorer">explorer</a> · <a href="https://wallet.testtty.ru/mine">mine</a> · <a href="https://freico.in">freico.in</a></div>
+<div class="foot"><a href="https://freicoin.ru">wallet</a> · <a href="/explorer">explorer</a> · <a href="https://freico.in">freico.in</a></div>
 </div><script>
 const f2 = n => n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 let base = null, opened = null;
