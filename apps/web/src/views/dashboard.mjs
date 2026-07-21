@@ -270,13 +270,13 @@ export function paintActivity(txs, final = true) {
       const dd = document.createElement('div');
       dd.id = 'actDetail'; dd.dataset.key = k; dd.innerHTML = detailHtml(i);
       el.insertAdjacentElement('afterend', dd);
-      dd.querySelectorAll('.copyTx').forEach(b => b.onclick = e => copy(b.dataset.v, e.target));
+      dd.querySelectorAll('.copyTx').forEach(b => b.onclick = e => copy(b.getAttribute('data-v'), e.target));
     };
     place(el);
     const det = $('#actDetail');
     if (det?.dataset.key === k) {   // opened detail: keep it glued under its row, content live
       const dh = detailHtml(i);
-      if (det._src !== dh) { det.innerHTML = dh; det._src = dh; det.querySelectorAll('.copyTx').forEach(b => b.onclick = e => copy(b.dataset.v, e.target)); }
+      if (det._src !== dh) { det.innerHTML = dh; det._src = dh; det.querySelectorAll('.copyTx').forEach(b => b.onclick = e => copy(b.getAttribute('data-v'), e.target)); }
       place(det);
     }
   }
