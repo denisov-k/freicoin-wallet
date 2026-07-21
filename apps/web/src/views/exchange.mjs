@@ -881,7 +881,7 @@ function openP2pTakePartial(offer) {
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} ${aname}</b><button id="tkClose" class="icon">✕</button></div>
-    <div class="sub" style="font-size:13px">${tr('Available')}: ${rem.toLocaleString(getLang())} ${aname} · ${tr('per-buy')} ${mn.toLocaleString(getLang())}–${mx.toLocaleString(getLang())}</div>
+    <div class="sub" style="font-size:13px">${tr('Available')}: ${rem.toLocaleString(getLang())} ${aname}<br>${tr('per-buy')} ${mn.toLocaleString(getLang())}–${mx.toLocaleString(getLang())}</div>
     <label class="numfield">${tr('Amount')}<input id="tpAmt" type="text" inputmode="decimal" placeholder="${mn.toLocaleString(getLang())}–${mx.toLocaleString(getLang())}"></label>
     <div class="rrow"><span>${tr('You pay')}</span><b id="tpCost">—</b></div>
     <button id="tkGo">${tr('Buy')}</button>
@@ -1291,7 +1291,7 @@ function openBuyModal(o) {
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} ${assetName(giveTag)}</b><button id="bClose" class="icon">✕</button></div>
     ${o.give.tokenHash ? `<div class="sub" style="font-size:13px">🎟 ${(o.give.tokens ?? []).map(tokLabel).join(' · ') || tr('recovering…')}</div>` : ''}
-    ${whole ? '' : `<div class="sub" style="font-size:13px">${tr('Available')}: ${maxU.toLocaleString(getLang())} ${assetName(giveTag)} · ${tr('per-buy')} ${minU.toLocaleString(getLang())}–${capU.toLocaleString(getLang())}</div>`}
+    ${whole ? '' : `<div class="sub" style="font-size:13px">${tr('Available')}: ${maxU.toLocaleString(getLang())} ${assetName(giveTag)}<br>${tr('per-buy')} ${minU.toLocaleString(getLang())}–${capU.toLocaleString(getLang())}</div>`}
     <label>${tr('Quantity')}<div class="amtrow"><input id="bQty" type="text" inputmode="decimal" ${whole ? `value="${maxU}" disabled` : `placeholder="${minU.toLocaleString(getLang())}–${capU.toLocaleString(getLang())}"`}>${whole ? '' : `<button id="bMax" class="ghost">${tr('Max')}</button>`}</div></label>
     ${whole ? `<p class="sub" style="font-size:12px">${tr('this offer sells only as a whole')}</p>` : ''}
     <div class="rrow"><span>${tr('You pay')}</span><b id="bCost"></b></div>
