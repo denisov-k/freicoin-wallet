@@ -18,7 +18,7 @@ import { btcHtlcClaim, btcAddress } from '@core/btc.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import { loadMySwaps, putMySwap, dropMySwap, loadP2p, putP2p, dropP2p, addBtcNonce, addFeeTxid, lsKey } from '@/services/storage.mjs';
 import { refreshPushSubs } from '@/services/push.mjs';
-import { api, ctx, p2pKey, HOST_TAG, decimalsOf, scaleOf, assetName, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND } from '@/state/market-ctx.mjs';
+import { api, ctx, p2pKey, HOST_TAG, decimalsOf, scaleOf, assetName, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND, VB_HTLC_FUND } from '@/state/market-ctx.mjs';
 import { opIn, signInput, committedOutpoints, myCoinsOf, freeFrcKria, sendFrcToSpk, hostFeeCoin, lockAssetToHtlc } from '@/services/market/swap-lib.mjs';
 import { btcHrp, btcAcctAddr, btcFundHtlc, btcToStr, refreshBtc,
   mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvBtcMax, initBtcAccount, btcResetAcct } from '@/services/market/btc-account.mjs';
@@ -405,7 +405,7 @@ async function postRangedOffer() {
       const wantTag = $('#rWant').value === 'FRC' ? null : $('#rWant').value;   // FRC or a constant asset to BUY
       if (!(btcQ > 0)) throw new Error(tr('enter a quantity'));
       if (!(wantV > 0)) throw new Error(tr('enter a quantity'));
-      const bal = mvBtc().balance, maxSats = bal ? BigInt(bal) - 1000n : 0n;
+      const bal = mvBtc().balance, maxSats = bal ? BigInt(bal) - btcFeeFor(VB_HTLC_FUND) : 0n;
       if (BigInt(Math.round(btcQ * 1e8)) > maxSats)
         throw new Error(`${tr('only')} ${(Number(maxSats > 0n ? maxSats : 0n) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC ${tr('free to lock (rest backs your open offers)')}`);
       // partial sell of BTC: buyers take pieces (min/max in BTC); remaining tracked in BTC
@@ -1091,7 +1091,9 @@ function renderP2pPay(m, rec) {
   const updateWalletBtn = () => {
     const pw = $('#pyWallet'), bl = $('#pyBal'), info = mvBtc(); if (!pw || !info.available || paying) return;
     if (info.balance == null) { pw.disabled = true; if (bl) { bl.textContent = tr('checking balance…'); bl.classList.add('sub'); } return; }
-    const bal = BigInt(info.balance), ok = bal >= amt + 1000n;
+    // required = amount + the REAL HTLC-funding fee at the current rate (a flat 1000-sat margin
+    // rejected payable orders: 514 sat of headroom is enough when the fee is ~400)
+    const bal = BigInt(info.balance), ok = bal >= amt + btcFeeFor(VB_HTLC_FUND);
     if (bl) { bl.textContent = `${(Number(bal) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`; bl.classList.remove('sub'); }   // match the Amount/You-receive rows once the real figure lands
     pw.disabled = !ok;
     pw.textContent = ok ? tr('Pay') : tr('not enough BTC in wallet');
