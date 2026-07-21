@@ -24,6 +24,7 @@ import { pubkeyCompressed } from '@core/ecdsa.mjs';
  * @property {(rec:any)=>void} putP2p
  * @property {(id:string)=>void} dropP2p
  * @property {(h:any)=>void} addSwapHist
+ * @property {()=>any[]} [loadSwapHist]
  * @property {(txid:string)=>void} addRefundedFund
  * @property {(refh:number|bigint, need:bigint)=>any} hostFeeCoin
  * @property {(spk:string, amount:bigint)=>Promise<{txid:string,vout:number,refheight?:number}>} sendFrcToSpk
