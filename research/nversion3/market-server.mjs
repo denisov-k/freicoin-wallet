@@ -135,6 +135,9 @@ const say = m => { events.unshift({ t: Date.now(), m }); if (events.length > 100
 // v2 maker liveness: last time each maker key polled us (p2pPing / posting). Memory-only — the
 // bootstrap seeds it for loaded offers so a relay restart grants every maker a fresh grace window.
 const makerSeen = new Map();
+// an unpaid FORWARD take holds its reservation for this long (reconcileP2p sweeps it after;
+// exposed via p2pList so the buyer's UI can show a live countdown)
+const TAKE_TTL = 60 * 60e3;
 const heartbeat = pub => { if (pub) makerSeen.set(pub, Date.now()); };
 
 const addU = (op, u) => { utxos.set(op, u); (spkIndex.get(u.spk) ?? spkIndex.set(u.spk, new Set()).get(u.spk)).add(op); };
@@ -391,7 +394,6 @@ function reconcileP2p() {
   //   - a completed swap: btc_claimed whose FRC HTLC coin was spent (taker claimed) is done;
   //   - a 'taken' offer the maker never funded within a grace window is a zombie.
   const GRACE = 30;                 // block-based fallback (pre-takenTime takes, reverse takes)
-  const TAKE_TTL = 60 * 60e3;       // an unpaid FORWARD take holds its reservation for 1 hour
   let changed = false;
   for (let i = p2p.length - 1; i >= 0; i--) {
     const w = p2p[i];
@@ -1294,9 +1296,10 @@ const api = {
       feeRate,   // sat/vB the client should price its BTC HTLC funding/claim at
       feeMin: feeCache.floor ?? FEE_MIN,   // honest mempool floor (sat/vB) — plain sends (no deadline) may ride it
       minSwap: String(await minSwapSats().catch(() => 546n)),   // smallest sane BTC side (sats) — fills below this are refused
+      takeTtlMs: TAKE_TTL,   // unpaid-take reservation lifetime (UI countdown)
       v2: { btcFar: V2_BTC_FAR, frcNear: V2_FRC_NEAR, frcFar: V2_FRC_FAR, btcNear: V2_BTC_NEAR },
       assetDefs: Object.fromEntries([...assets.entries()].map(([tag, a]) => [tag, { name: a.name, decimals: a.decimals, shift: a.shift }])),
-      swaps: p2p.slice(-80).map(w => ({ id: w.id, v: w.v ?? 1, kind: w.kind ?? 'swap', parent: w.parent ?? null, postedAt: w.postedAt ?? null, takenAt: w.takenAt ?? null, partial: !!w.partial, remaining: w.remaining ?? null, minFill: w.minFill ?? null, maxFill: w.maxFill ?? null,
+      swaps: p2p.slice(-80).map(w => ({ id: w.id, v: w.v ?? 1, kind: w.kind ?? 'swap', parent: w.parent ?? null, postedAt: w.postedAt ?? null, takenAt: w.takenAt ?? null, takenTime: w.takenTime ?? null, partial: !!w.partial, remaining: w.remaining ?? null, minFill: w.minFill ?? null, maxFill: w.maxFill ?? null,
         dir: w.dir ?? 'sellFrc', status: w.status, assetTag: w.assetTag ?? null, frcAmount: w.frcAmount, btcAmount: w.btcAmount,
         maker: w.maker, taker: w.taker, paymentHash: w.paymentHash, t1: w.t1, t2: w.t2,
         frcHtlc: w.frcHtlc, frcPending: w.frcPending ?? null, btcHtlc: w.btcHtlc, preimage: w.preimage ?? null, coopSig: w.coopSig ?? null, cancelReq: !!w.cancelReq, btcCoopSig: w.btcCoopSig ?? null, frcSpendTxid: w.frcSpendTxid ?? null })),

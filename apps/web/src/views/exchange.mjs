@@ -1018,7 +1018,8 @@ function renderP2pPay(m, rec) {
   const rcv = rec.frcAmount ? `${(Number(rec.frcAmount) / scaleOf(rcvTag)).toLocaleString(getLang(), { maximumFractionDigits: rcvTag ? decimalsOf(rcvTag) : 8 })} ${assetName(rcvTag)}` : '';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} ${assetName(rcvTag)}</b><button id="pyClose" class="icon">✕</button></div>
-    <div class="sub" style="margin:-4px 0 8px;font-size:13px">${tr('Order')} ${rec.id}</div>
+    <div class="sub" style="margin:-4px 0 0;font-size:13px">${tr('Order')} ${rec.id}</div>
+    <div class="sub" id="pyTtl" style="margin:0 0 8px;font-size:13px"></div>
     ${hasWallet ? `<div class="seg" id="paySeg"><button data-pay="wallet" class="on">${tr('From wallet')}</button><button data-pay="ext">${tr('External payment')}</button></div>` : ''}
     <div class="rrow" id="pyBalRow"${hasWallet ? '' : ' style="display:none"'}><span>${tr('Available')}</span><b id="pyBal" class="sub">${tr('checking balance…')}</b></div>
     <div class="rrow"><span>${tr('Cost')}</span><b>${btc8(amt)} BTC</b></div>
@@ -1034,7 +1035,26 @@ function renderP2pPay(m, rec) {
     </div>
     <div id="pyStatus" class="sub" style="font-size:13px"></div>
     <button id="pyCancel" class="ghost">${tr('Cancel purchase')}</button></div>`;
-  const close = () => { clearInterval(poll); clearInterval(balTimer); m.remove(); };
+  // RESERVATION COUNTDOWN: an unpaid take is swept by the relay after takeTtlMs — show the buyer
+  // how long the order is held. Hidden the moment anything is paid (the swap then lives by its
+  // HTLC timelocks, not the reservation).
+  let ttlDeadline = null;
+  const syncTtl = w => {
+    ttlDeadline = w && w.status === 'taken' && w.takenTime && !(loadP2p().find(r => r.id === rec.id) || rec).btcHtlc?.txid
+      ? w.takenTime + (state.p2p?.takeTtlMs ?? 3600e3) : null;
+  };
+  syncTtl((state.p2p?.swaps || []).find(x => x.id === rec.id));
+  const paintTtl = () => {
+    const el = $('#pyTtl'); if (!el) return;
+    if (!ttlDeadline) { el.textContent = ''; return; }
+    const left = ttlDeadline - Date.now();
+    if (left <= 0) { el.textContent = tr('reservation expired'); return; }
+    const mm = Math.floor(left / 60000), ss = Math.floor(left % 60000 / 1000);
+    el.textContent = `${tr('reserved for another')} ${mm}:${String(ss).padStart(2, '0')}`;
+  };
+  paintTtl();
+  const ttlTimer = setInterval(paintTtl, 1000);
+  const close = () => { clearInterval(poll); clearInterval(balTimer); clearInterval(ttlTimer); m.remove(); };
   m.onclick = e => { if (e.target === m) close(); };
   q(m, '#pyClose').onclick = close;
   // wallet / external toggle: swap which pane is visible, highlight the active segment.
@@ -1089,6 +1109,7 @@ function renderP2pPay(m, rec) {
       // BTC spend. 'btc_funded' + the txid make the reload show the awaiting state instead.
       putP2p({ ...rl, status: 'btc_funded', btcHtlc: { ...(rl.btcHtlc || b), txid: fund.txid, vout: fund.vout, value: fund.value } });
       hidePayInputs();   // paid — drop the method chooser + Available line, leave amount/status/Cancel
+      ttlDeadline = null; paintTtl();   // the reservation clock is moot once the BTC is sent
       try { await api('p2pBtcFunded', { id: rec.id, btcTxid: fund.txid }); } catch {}   // nudge the relay; auto-detect is the fallback
       // paid — the (disabled) button now reads "подтверждение оплаты сетью (x/2)" until the relay
       // accepts the funding (2 confs), then the poll flips it to "ожидание продавца". No status line.
@@ -1121,6 +1142,7 @@ function renderP2pPay(m, rec) {
     try {
       const w = (await api('p2pList')).swaps.find(x => x.id === rec.id);
       const rlocal = loadP2p().find(r => r.id === rec.id);
+      syncTtl(w);
       const st = $('#pyStatus');
       // v2 completion for the BUYER = my FRC/asset is claimed (frc_claimed); 'done' is just the
       // seller collecting their BTC afterwards. A dropped local record also means the drive finished.
