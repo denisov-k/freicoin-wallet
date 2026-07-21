@@ -1191,6 +1191,9 @@ const api = {
     if (w.dir === 'sellBtc') throw new Error('обратный своп: отмена FRC-ноги');
     if (w.frcHtlc?.txid) throw new Error('продавец уже заперся — возврат BTC только по таймауту');
     if (w.frcPending) throw new Error('продавец уже отправил лок — сделка завершится после его подтверждения');
+    // a FRESH lock intent = the maker is broadcasting its lock right now — the cancel lost the race.
+    // A stale intent (maker died between intent and lock) expires so the buyer isn't blocked forever.
+    if (w.lockIntent && Date.now() - w.lockIntent < 10 * 60e3) throw new Error('продавец уже запирает FRC — сделка завершится');
     if (!w.btcHtlc?.txid) throw new Error('оплата ещё не подтверждена');
     w.cancelReq = true; saveP2p();
     pushSwap(w, 'maker', 'Покупатель просит отмену — откройте кошелёк, чтобы подтвердить');
@@ -1379,6 +1382,18 @@ const api = {
   // For a child sub-swap the maker supplies its per-swap keys + secret hash here (set at fund time).
   // v2: the maker locks the FRC/asset HTLC only AFTER the taker's BTC funding is on-chain
   // (status btc_funded) — with the NEAR timeout. Relay verifies coin, leaf and the timeout window.
+  // TWO-PHASE LOCK, phase 1: the maker asks PERMISSION before broadcasting its FRC lock. The check
+  // and the marker are set in one synchronous step, so a cancel request and a lock serialize here:
+  // whichever touches the relay first wins, and the maker's coins never hit the chain on a swap
+  // that is already cancelling (that used to strand both sides into timeout unwinds).
+  async p2pFrcIntent({ id, makerFrcPub }) {
+    const w = p2p.find(x => x.id === id && x.kind !== 'offer'); if (!w) throw new Error('нет такого свопа');
+    if (w.maker?.frcPub !== makerFrcPub) throw new Error('не ваш своп');
+    if (w.status !== 'btc_funded') throw new Error('оффер не на этой стадии (сначала BTC тейкера)');
+    if (w.btcCoopSig || w.cancelReq) throw new Error('своп отменяется — запирать FRC нельзя');
+    w.lockIntent = Date.now(); saveP2p();
+    return { ok: true };
+  },
   async p2pFrcFunded({ id, txid, vout, t1 }) {
     const w = p2p.find(x => x.id === id && x.kind !== 'offer'); if (!w) throw new Error('нет такого свопа');
     if (w.status !== 'btc_funded') throw new Error('оффер не на этой стадии (сначала BTC тейкера)');
@@ -1420,7 +1435,7 @@ const api = {
     // ±10 min on either side, expressed in this chain's blocks (min 2 blocks so fast chains work)
     if (Number(t1) < h + V2_FRC_NEAR - FRC_SLACK || Number(t1) > h + V2_FRC_NEAR + FRC_SLACK) throw new Error('таймаут T1 вне окна');
     w.frcHtlc = { txid, vout, value: String(u.value), refheight: u.refheight, leaf, cltv: Number(t1), assetTag: wantTag }; w.t1 = Number(t1);
-    delete w.frcPending;   // superseded by the confirmed lock
+    delete w.frcPending; delete w.lockIntent;   // superseded by the confirmed lock
     w.status = 'frc_funded'; saveP2p();
     say(`P2P ${id}: ${wantTag ? 'актив' : 'FRC'} заперт — тейкер забирает его (раскроет секрет)`);
     pushSwap(w, 'taker', 'Продавец заблокировал FRC — откройте кошелёк, чтобы забрать покупку');
@@ -1644,7 +1659,7 @@ function flushPersist() {
 for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { flushPersist(); process.exit(0); });
 const WRITE_CALLS = new Set(['p2pPost', 'p2pPostB', 'p2pTake', 'p2pTakeB', 'p2pUntake', 'p2pCancel',
   'p2pFrcFunded', 'p2pFrcFundedB', 'p2pBtcFunded', 'p2pBtcFundedB', 'p2pBtcClaim', 'p2pBtcClaimB',
-  'p2pFrcClaimB', 'p2pDone', 'p2pDoneB', 'p2pCoopSign', 'tx', 'btcBroadcast', 'issue', 'faucet',
+  'p2pFrcClaimB', 'p2pFrcIntent', 'p2pDone', 'p2pDoneB', 'p2pCoopSign', 'tx', 'btcBroadcast', 'issue', 'faucet',
   'offer', 'cancel', 'resignRanged', 'pushSub', 'pushUnsub']);
 const buckets = new Map();   // ip → { read: {n, at}, write: {n, at} }
 setInterval(() => { const now = Date.now(); for (const [ip, b] of buckets) if (now - Math.max(b.read.at, b.write.at) > 300e3) buckets.delete(ip); }, 60e3).unref?.();

@@ -268,6 +268,13 @@ async function driveP2pInner() {
             }
             continue;
           }
+          // TWO-PHASE LOCK: ask the relay's PERMISSION before the coins hit the chain — the relay
+          // atomically refuses if a cancel request beat us (and blocks new cancels once granted),
+          // so a lock and a cancel can never cross mid-air (which stranded both sides into
+          // timeout unwinds). An old relay without the endpoint just errors — tolerate it and
+          // fall back to the pre-intent behaviour (the remaining guards still hold).
+          try { await api('p2pFrcIntent', { id: rec.id, makerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')) }); }
+          catch (e) { if (/отменя/.test(e.message)) throw e; }
           // NEAR timeout, anchored to the RELAY's height (+ drift buffer): the light client's tip
           // can lag and land "outside the window" at the relay.
           const T1 = Math.max(env.state().mine.height, info.frcHeight || 0) + (info.v2?.frcNear || 60);
