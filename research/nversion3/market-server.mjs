@@ -144,6 +144,7 @@ async function indexBlock(h) {
   const hash = await rpc('getblockhash', h);
   const blk = await rpc('getblock', hash, 2);
   for (const tx of blk.tx) {
+    const isCoinbase = !!tx.vin[0]?.coinbase || !tx.vin[0]?.txid;
     for (const vin of tx.vin) if (vin.txid) delU(`${vin.txid}:${vin.vout}`);
     // record the SPENDER of each p2p FRC-HTLC (the claim — or refund — tx): clients rebuilding
     // trade history on a fresh device can't re-derive an ASSET claim's txid (its fee coin was picked
@@ -221,6 +222,7 @@ async function indexBlock(h) {
       const baseSpk = dec ? dec.baseSpk : o.scriptPubKey.hex;
       const tag = dec?.assetTag ?? (o.assetTag ? rev(o.assetTag) : null);
       const u = { spk: baseSpk, assetTag: tag, value: BigInt(Math.round(o.value * 1e8)), refheight: tx.lockheight,
+        ...(isCoinbase ? { coinbase: true } : {}),
         ...(dec?.tokenHash ? { tokenHash: dec.tokenHash, tokens: tokMap.get(n) ?? [] } : {}) };
       addU(`${tx.txid}:${n}`, u);
       if (tag && assets.has(tag) && h === (assets.get(tag).issuedAt ?? h)) assets.get(tag).supply += u.value;
@@ -837,7 +839,9 @@ const api = {
     const out = [];
     for (const spk of spks ?? []) for (const op of spkIndex.get(spk) ?? []) {
       const u = utxos.get(op);
-      out.push({ outpoint: op, spk, assetTag: u.assetTag, value: String(u.value), refheight: u.refheight, pv: String(pvOf(u, h)) });
+      // coinbase flag: without it a client's spendableAt() can't exclude immature block rewards,
+      // and pv-descending coin selection ALWAYS picks the freshest coinbase first (least decay)
+      out.push({ outpoint: op, spk, assetTag: u.assetTag, value: String(u.value), refheight: u.refheight, pv: String(pvOf(u, h)), ...(u.coinbase ? { coinbase: true } : {}) });
     }
     return { height: h, utxos: out };
   },

@@ -157,7 +157,14 @@ async function postOffer(frcK, satPerFrc) {
 }
 async function cancelOffer(rec) {
   try { await api('p2pCancel', { id: rec.id, makerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')) }); } catch (e) { log('cancel', rec.id, e.message); }
-  dropP2p(rec.id);
+  // If takes of this offer are still in flight on the relay, the record must SURVIVE the cancel:
+  // driveP2p adopts a committed take by copying the offer-level nonce from the parent record —
+  // dropping it here left a paying taker facing a seller that could never lock (p2p13.4).
+  // 'cancelled' keeps it out of myOffers() so the strategy reposts; driveP2p GCs it once the
+  // last take settles.
+  const inFlight = (ctx.state.p2p?.swaps || []).some(s => s.parent === rec.id);
+  if (inFlight) { putP2p({ ...rec, status: 'cancelled' }); log(`cancel ${rec.id}: kept (takes in flight)`); }
+  else dropP2p(rec.id);
 }
 
 async function strategy() {

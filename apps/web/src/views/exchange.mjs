@@ -1634,7 +1634,10 @@ function paint() {
       const rec = loadP2p().find(x => x.id === b.dataset.id); if (!rec) return;
       try {
         await api('p2pCancel', { id: rec.id, makerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')) });
-        dropP2p(rec.id);
+        // takes of this offer still in flight → the record must survive (its nonce serves them);
+        // driveP2p drops it once the last take settles
+        (state.p2p?.swaps || []).some(s => s.parent === rec.id)
+          ? putP2p({ ...rec, status: 'cancelled' }) : dropP2p(rec.id);
         b.closest('tr')?.remove();   // OPTIMISTIC: the relay confirmed — don't wait for a repaint
         toast(tr('offer cancelled'), 'ok');
         // an ALREADY-inflight refresh carries a pre-cancel snapshot and would resurrect the row —

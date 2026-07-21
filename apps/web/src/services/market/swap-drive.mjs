@@ -192,7 +192,12 @@ async function driveP2pInner() {
       // refunded, KEEP it so checkBtcRefunds / checkP2pRefunds can sweep it home at the timeout (they
       // drop it themselves once the refund lands). Dropping a funded, cancelled child here orphaned
       // the buyer's BTC (recoverable only via nonce-recovery).
-      if ((rec.partial || rec.parent) && !rec.btcHtlc?.txid && !rec.funding?.txid) env.dropP2p(rec.id);
+      // A cancelled partial OFFER's record is also at stake while the relay still lists in-flight
+      // takes of it: child adoption above copies the offer-level nonce FROM THIS RECORD — dropping it
+      // while a taker's payment confirms leaves the maker unable to serve the take (seller never
+      // locks, the taker waits out the full BTC timeout).
+      const liveChild = rec.partial && rec.role === 'maker' && info.swaps.some(s => s.parent === rec.id);
+      if ((rec.partial || rec.parent) && !rec.btcHtlc?.txid && !rec.funding?.txid && !liveChild) env.dropP2p(rec.id);
       continue;
     }
     try {
