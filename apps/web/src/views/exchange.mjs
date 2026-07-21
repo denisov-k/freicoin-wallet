@@ -1487,6 +1487,36 @@ function cachedFilterOpts() {
   return `<option value="">${tr('all')}</option><optgroup label="${tr('Currency')}"><option value="FRC">FRC</option><option value="BTC">BTC</option></optgroup>`
     + (assetOpts ? `<optgroup label="${tr('Assets')}">${assetOpts}</optgroup>` : '');
 }
+// minimalist price sparkline above the book: completed FRC↔BTC trades from the relay archive
+// (sat/FRC over time) with the current best ask as the live endpoint. Hidden until there are
+// at least two points — no axes, no grid, one line and one figure.
+function paintOfferChart() {
+  const el = $('#offerChart'); if (!el || !state) return;
+  const pts = [...(state.p2p?.archive || [])]
+    .filter(w => w.archivedAt && !w.assetTag && +w.frcAmount > 0 && +w.btcAmount > 0)
+    .map(w => ({ t: +w.archivedAt, p: Number(w.btcAmount) / Number(w.frcAmount) * 1e8 }))
+    .sort((a, b) => a.t - b.t);
+  const asks = (state.p2p?.swaps || [])
+    .filter(o => o.status === 'open' && !o.assetTag && o.dir !== 'sellBtc' && +o.frcAmount > 0)
+    .map(o => Number(o.btcAmount) / Number(o.frcAmount) * 1e8);
+  const live = asks.length ? Math.min(...asks) : null;
+  if (live != null) pts.push({ t: Date.now(), p: live, live: true });
+  if (pts.length < 2) { el.innerHTML = ''; return; }
+  const W = 600, H = 44, P = 5;
+  const t0 = pts[0].t, t1 = pts.at(-1).t, lo = Math.min(...pts.map(x => x.p)), hi = Math.max(...pts.map(x => x.p));
+  const X = t => P + (W - 2 * P) * (t1 === t0 ? 1 : (t - t0) / (t1 - t0));
+  const Y = p => H - P - (H - 2 * P) * (hi === lo ? 0.5 : (p - lo) / (hi - lo));
+  const path = pts.map((x, i) => `${i ? 'L' : 'M'}${X(x.t).toFixed(1)},${Y(x.p).toFixed(1)}`).join('');
+  const last = pts.at(-1);
+  const html = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:44px;display:block">
+      <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>
+      ${pts.map(x => `<circle cx="${X(x.t).toFixed(1)}" cy="${Y(x.p).toFixed(1)}" r="2" fill="var(--accent)"${x.live ? '' : ' opacity="0.5"'}/>`).join('')}
+    </svg>
+    <div class="sub" style="display:flex;justify-content:space-between;font-size:12px;margin:0 0 6px">
+      <span>${tr('trades')} · ${lo.toFixed(2)}–${hi.toFixed(2)}</span><span>${last.p.toFixed(2)} sat/FRC</span>
+    </div>`;
+  if (el._src !== html) { el.innerHTML = html; el._src = html; }
+}
 export function renderExchange(el) {
   const fopt = cachedFilterOpts();
   el.innerHTML = `
@@ -1494,6 +1524,7 @@ export function renderExchange(el) {
       <label>${tr('Selling')}<select id="fGive">${fopt}</select></label>
       <label>${tr('Wants')}<select id="fWant">${fopt}</select></label>
     </div>
+    <div id="offerChart"></div>
     <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" style="padding:14px 2px 4px;border-bottom:none">${skel(3)}</td></tr></tbody></table>
     <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>`;
   $('#openOffer').onclick = openOfferModal;
@@ -1534,6 +1565,7 @@ function paintAssetBalance() {
 
 function paint() {
   if (!state || !$('#bookBody')) return;
+  paintOfferChart();
   const h = state.mine.height;
   const pvU = u => assetPresentValue(BigInt(u.value), h - u.refheight, rateOf(u.assetTag));
   const byAsset = new Map();
