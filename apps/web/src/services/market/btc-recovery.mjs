@@ -35,7 +35,9 @@ export async function recoverOrphanBtcHtlcs() {
   const cands = new Map();   // addr -> funding txid
   for (const t of hist) {
     if (t.category !== 'send') continue;
-    for (const addr of (t.addresses || [])) {
+    // t.outs = the send's EXTERNAL output addresses (the HTLC-funding destination). Older relays
+    // only sent t.addresses (my own outputs), which never held the HTLC address — fall back to it.
+    for (const addr of (t.outs || t.addresses || [])) {
       if (mineAddrs.has(addr) || known.has(addr) || cands.has(addr)) continue;
       if (!/^(bc1|tb1|bcrt1)[a-z0-9]{58,}$/.test(addr)) continue;   // P2WSH shape (a plain P2WPKH is 42 chars)
       cands.set(addr, t.txid);

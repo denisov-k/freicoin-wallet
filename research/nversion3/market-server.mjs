@@ -1075,8 +1075,8 @@ const api = {
     for (const txid of cand) {
       const tx = await btcWatch('gettransaction', txid, true, true).catch(() => null);   // (include_watchonly, verbose→.decoded)
       const raw = tx?.decoded; if (!raw) continue;
-      let recv = 0, spent = 0; const recvAddrs = [];
-      for (const o of raw.vout || []) { const a = o.scriptPubKey?.address; if (a && set.has(a)) { recv += o.value; recvAddrs.push(a); } }
+      let recv = 0, spent = 0; const recvAddrs = [], extAddrs = [];
+      for (const o of raw.vout || []) { const a = o.scriptPubKey?.address; if (a) { if (set.has(a)) { recv += o.value; recvAddrs.push(a); } else extAddrs.push(a); } }
       for (const vin of raw.vin || []) {
         const pt = await btcTx(vin.txid);
         const po = pt?.vout?.[vin.vout], a = po?.scriptPubKey?.address;
@@ -1085,8 +1085,10 @@ const api = {
       const net = +(recv - spent).toFixed(8);
       if (!net) continue;
       // ins: the spent txids — lets the client recognize an HTLC-refund receive (it spends a
-      // funding txid the client remembers) and label the round-trip instead of a bare "receive"
-      txs.push({ txid, category: net > 0 ? 'receive' : 'send', amount: net, confirmations: tx.confirmations ?? 0, time: tx.blocktime ?? tx.time ?? 0, addresses: recvAddrs, ins: (raw.vin || []).map(v => v.txid).filter(Boolean) });
+      // funding txid the client remembers) and label the round-trip instead of a bare "receive".
+      // outs: the EXTERNAL (non-mine) output addresses of a send — the HTLC-funding destination so
+      // the orphaned-HTLC recovery can spot a paid HTLC whose local swap record was lost.
+      txs.push({ txid, category: net > 0 ? 'receive' : 'send', amount: net, confirmations: tx.confirmations ?? 0, time: tx.blocktime ?? tx.time ?? 0, addresses: recvAddrs, outs: extAddrs, ins: (raw.vin || []).map(v => v.txid).filter(Boolean) });
     }
     return { txs };
   },
