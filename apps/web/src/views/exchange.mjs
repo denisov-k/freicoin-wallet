@@ -1010,6 +1010,9 @@ function openP2pPayModal(rec) {
 function renderP2pPay(m, rec) {
   const b = rec.btcHtlc; if (!b) return;
   const amt = BigInt(rec.btcAmount);
+  // all BTC rows in this window print FIXED 8 decimals — mixed precision (0,000006 next to
+  // 0,00003015) breaks the visual column and makes Available vs Amount hard to compare
+  const btc8 = sats => (Number(BigInt(sats)) / 1e8).toLocaleString(getLang(), { minimumFractionDigits: 8, maximumFractionDigits: 8 });
   const hasWallet = mvBtc().available;
   const rcvTag = rec.assetTag ?? null;   // what the buyer receives for the BTC (FRC or a user asset)
   const rcv = rec.frcAmount ? `${(Number(rec.frcAmount) / scaleOf(rcvTag)).toLocaleString(getLang(), { maximumFractionDigits: rcvTag ? decimalsOf(rcvTag) : 8 })} ${assetName(rcvTag)}` : '';
@@ -1018,7 +1021,7 @@ function renderP2pPay(m, rec) {
     <div class="sub" style="margin:-4px 0 8px;font-size:13px">${tr('Order')} ${rec.id}</div>
     ${hasWallet ? `<div class="seg" id="paySeg"><button data-pay="wallet" class="on">${tr('From wallet')}</button><button data-pay="ext">${tr('External payment')}</button></div>` : ''}
     <div class="rrow" id="pyBalRow"${hasWallet ? '' : ' style="display:none"'}><span>${tr('Available')}</span><b id="pyBal" class="sub">${tr('checking balance…')}</b></div>
-    <div class="rrow"><span>${tr('Cost')}</span><b>${btcToStr(amt)} BTC</b></div>
+    <div class="rrow"><span>${tr('Cost')}</span><b>${btc8(amt)} BTC</b></div>
     <div class="rrow" id="pyFeeRow"${hasWallet ? '' : ' style="display:none"'}><span>${tr('Network fee')}</span><b id="pyFee"></b></div>
     <div class="rrow" id="pyTotalRow"${hasWallet ? '' : ' style="display:none"'}><span>${tr('Amount')}</span><b id="pyTotal"></b></div>
     ${rcv ? `<div class="rrow"><span>${tr('You receive')}</span><b>${rcv}</b></div>` : ''}
@@ -1100,10 +1103,10 @@ function renderP2pPay(m, rec) {
     // required = amount + the REAL HTLC-funding fee at the current rate (a flat 1000-sat margin
     // rejected payable orders: 514 sat of headroom is enough when the fee is ~400)
     const fee = btcFeeFor(VB_HTLC_FUND);
-    const fEl = $('#pyFee'); if (fEl) fEl.textContent = `${btcToStr(fee)} BTC`;
-    const tEl = $('#pyTotal'); if (tEl) tEl.textContent = `${btcToStr(amt + fee)} BTC`;   // Amount = cost + fee, what actually leaves the wallet
+    const fEl = $('#pyFee'); if (fEl) fEl.textContent = `${btc8(fee)} BTC`;
+    const tEl = $('#pyTotal'); if (tEl) tEl.textContent = `${btc8(amt + fee)} BTC`;   // Amount = cost + fee, what actually leaves the wallet
     const bal = BigInt(info.balance), ok = bal >= amt + fee;
-    if (bl) { bl.textContent = `${(Number(bal) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 })} BTC`; bl.classList.remove('sub'); }   // match the Amount/You-receive rows once the real figure lands
+    if (bl) { bl.textContent = `${btc8(bal)} BTC`; bl.classList.remove('sub'); }   // match the Amount/You-receive rows once the real figure lands
     pw.disabled = !ok;
     pw.textContent = ok ? tr('Pay') : tr('not enough BTC in wallet');
     pw.onclick = ok ? payFromWallet : null;
