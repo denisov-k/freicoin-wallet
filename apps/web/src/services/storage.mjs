@@ -56,10 +56,13 @@ const SWHIST_LS = 'fw_swap_hist';
 export const loadSwapHist = () => { try { return JSON.parse(localStorage.getItem(lsKey(SWHIST_LS)) || '[]'); } catch { return []; } };
 // upsert by id: a later, better-informed write WINS for non-empty fields (values are derived
 // deterministically from the chain/archive, so re-runs converge — and corrected upstream data,
-// e.g. a fixed funding txid, must be able to replace an earlier wrong value)
+// e.g. a fixed funding txid, must be able to replace an earlier wrong value).
+// EXCEPT `time`: it records the FIRST completion moment. A reload while the claim is still
+// unconfirmed re-runs the (idempotent) claim and would re-stamp the trade with the reload clock —
+// the row's time crept forward on every refresh until the tx confirmed.
 export const addSwapHist = e => { try {
   const a = loadSwapHist(), i = a.findIndex(x => x.id === e.id);
-  if (i >= 0) { for (const [k, v] of Object.entries(e)) if (v != null && v !== 0) a[i][k] = v; }
+  if (i >= 0) { for (const [k, v] of Object.entries(e)) { if (v == null || v === 0) continue; if (k === 'time' && a[i].time) continue; a[i][k] = v; } }
   else a.push(e);
   localStorage.setItem(lsKey(SWHIST_LS), JSON.stringify(a));
 } catch {} };
