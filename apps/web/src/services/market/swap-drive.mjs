@@ -62,18 +62,21 @@ export async function checkP2pRefunds() {
       if (!isMaker && !isRevTaker) continue;
       // reverse taker's leaf/cltv come from the relay record (its own funding stored only txid/vout)
       let leaf = rec.leaf, cltv = rec.T1, funding = rec.funding, tag = rec.assetTag ?? null;
-      let w; try { w = (await api('p2pList')).swaps.find(s => s.id === rec.id); } catch { w = null; }
+      // a FAILED fetch must never masquerade as "the relay doesn't know this swap": deciding on
+      // missing data is how a relay restart made the bot drop its own funded lock (p2p14.1)
+      let w, listOk = true; try { w = (await api('p2pList')).swaps.find(s => s.id === rec.id); } catch { w = null; listOk = false; }
       if (isRevTaker) {
         if (!w?.frcHtlc) continue;
         leaf = w.frcHtlc.leaf; cltv = w.frcHtlc.cltv; tag = w.assetTag ?? w.frcHtlc.assetTag ?? null;
         funding = { txid: rec.funding.txid, vout: rec.funding.vout ?? 0, value: w.frcHtlc.value, refheight: w.frcHtlc.refheight };
       }
-      const live = await api('utxos', { spks: [htlcSpk(leaf)] }).then(r => (r.utxos || []).find(u => u.outpoint === `${funding.txid}:${funding.vout}`)).catch(() => null);
+      let ux; try { ux = await api('utxos', { spks: [htlcSpk(leaf)] }); } catch { continue; }   // relay unreachable — decide nothing
+      const live = (ux.utxos || []).find(u => u.outpoint === `${funding.txid}:${funding.vout}`);
       if (!live) {
         // v2 ORDER FLIP: the taker CLAIMING my lock is not the end of my swap — I still collect
         // the BTC side after (frc_claimed → p2pBtcClaim). Dropping the record here orphaned that
         // claim. Drop only when the swap is gone/terminal — the drive owns the happy path.
-        if (!w || ['done', 'cancelled', 'expired'].includes(w.status)) env.dropP2p(rec.id);
+        if (listOk && (!w || ['done', 'cancelled', 'expired'].includes(w.status))) env.dropP2p(rec.id);
         continue;
       }
       const ourKey = p2pKey(rec.nonce, 'frc');

@@ -168,6 +168,10 @@ async function cancelOffer(rec) {
 }
 
 async function strategy() {
+  // the relay was unreachable this tick (restart/reindex): an empty p2p view is MISSING DATA, not an
+  // empty board — GC'ing records against it dropped a live offer AND its funded child (p2p14/14.1),
+  // then re-posted a duplicate offer from scratch.
+  if (!ctx.state.p2p?.swaps) return;
   const price = await fetchPrice().catch(e => { log('price feed:', e.message); return lastPrice; });
   if (!price) return;   // no reference at all — don't quote blind
   lastPrice = price;
