@@ -1,0 +1,8 @@
+# The explorer's block/tx/address graph is an infinite crawl surface and every page costs a
+# node RPC — keep crawlers on the finite pages (landing, wallet, explorer front).
+User-agent: *
+Disallow: /explorer/tx/
+Disallow: /explorer/block/
+Disallow: /explorer/address/
+Disallow: /explorer/search
+Crawl-delay: 10
