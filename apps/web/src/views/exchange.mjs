@@ -1513,7 +1513,7 @@ function chartSvg(pts, H) {
 // detailed chart for the history window: drawn at the element's REAL pixel width (no viewBox
 // stretching, so text stays true), with a dashed price grid, time labels and a soft area fill.
 function detailChart(el, pts) {
-  const W = el.clientWidth || 380, H = 200, L = 8, R = 52, T = 12, B = 26;
+  const W = el.clientWidth || 380, H = 200, L = 8, R = 8, T = 16, B = 26;
   const t0 = pts[0].t, t1 = pts.at(-1).t;
   let lo = Math.min(...pts.map(x => x.p)), hi = Math.max(...pts.map(x => x.p));
   if (hi === lo) { lo -= lo * 0.05 || 0.5; hi += hi * 0.05 || 0.5; }   // flat series: pad the band so the line sits mid-chart
@@ -1523,9 +1523,11 @@ function detailChart(el, pts) {
   const area = `${line} L${X(t1).toFixed(1)},${(H - B).toFixed(1)} L${X(t0).toFixed(1)},${(H - B).toFixed(1)} Z`;
   const fmtT = t => new Date(t).toLocaleString(getLang(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   const levels = [lo, (lo + hi) / 2, hi];
+  // price labels live INSIDE the plot (right-aligned above their gridline) — a reserved label
+  // column made the chart visibly narrower than the table under it
   el.innerHTML = `<svg width="${W}" height="${H}" style="display:block">
     ${levels.map(p => `<line x1="${L}" y1="${Y(p).toFixed(1)}" x2="${W - R}" y2="${Y(p).toFixed(1)}" stroke="var(--line)" stroke-dasharray="3 4"/>
-      <text x="${W - R + 6}" y="${(Y(p) + 3.5).toFixed(1)}" font-size="11" fill="var(--sub)">${p.toFixed(2)}</text>`).join('')}
+      <text x="${W - R - 2}" y="${(Y(p) - 4).toFixed(1)}" font-size="11" fill="var(--sub)" text-anchor="end">${p.toFixed(2)}</text>`).join('')}
     <path d="${area}" fill="var(--accent)" opacity="0.07"/>
     <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
     ${pts.map((x, i) => `<circle cx="${X(x.t).toFixed(1)}" cy="${Y(x.p).toFixed(1)}" r="2.5" fill="var(--accent)"${i === pts.length - 1 ? '' : ' opacity="0.55"'}/>`).join('')}
