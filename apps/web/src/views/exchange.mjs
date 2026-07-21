@@ -1490,8 +1490,9 @@ function cachedFilterOpts() {
 // minimalist price sparkline above the book: completed FRC↔BTC trades from the relay archive
 // (sat/FRC over time) with the current best ask as the live endpoint. Hidden until there are
 // at least two points — no axes, no grid, one line and one figure.
-function paintOfferChart() {
-  const el = $('#offerChart'); if (!el || !state) return;
+// chart data: completed FRC↔BTC trades from the relay archive (sat/FRC over time) with the
+// current best ask as the live endpoint
+function tradePts() {
   /** @type {{t:number,p:number,live?:boolean}[]} */
   const pts = [...(state.p2p?.archive || [])]
     .filter(w => w.archivedAt && !w.assetTag && +w.frcAmount > 0 && +w.btcAmount > 0)
@@ -1500,23 +1501,49 @@ function paintOfferChart() {
   const asks = (state.p2p?.swaps || [])
     .filter(o => o.status === 'open' && !o.assetTag && o.dir !== 'sellBtc' && +o.frcAmount > 0)
     .map(o => Number(o.btcAmount) / Number(o.frcAmount) * 1e8);
-  const live = asks.length ? Math.min(...asks) : null;
-  if (live != null) pts.push({ t: Date.now(), p: live, live: true });
-  if (pts.length < 2) { el.innerHTML = ''; return; }
-  const W = 600, H = 44, P = 5;
+  if (asks.length) pts.push({ t: Date.now(), p: Math.min(...asks), live: true });
+  return pts;
+}
+// one accent polyline + dots, no axes/grid; theme-aware via CSS vars
+function chartSvg(pts, H) {
+  const W = 600, P = 5;
   const t0 = pts[0].t, t1 = pts.at(-1).t, lo = Math.min(...pts.map(x => x.p)), hi = Math.max(...pts.map(x => x.p));
   const X = t => P + (W - 2 * P) * (t1 === t0 ? 1 : (t - t0) / (t1 - t0));
   const Y = p => H - P - (H - 2 * P) * (hi === lo ? 0.5 : (p - lo) / (hi - lo));
   const path = pts.map((x, i) => `${i ? 'L' : 'M'}${X(x.t).toFixed(1)},${Y(x.p).toFixed(1)}`).join('');
-  const last = pts.at(-1);
-  const html = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:44px;display:block">
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:${H}px;display:block">
       <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>
-      ${pts.map(x => `<circle cx="${X(x.t).toFixed(1)}" cy="${Y(x.p).toFixed(1)}" r="2" fill="var(--accent)"${x.live ? '' : ' opacity="0.5"'}/>`).join('')}
-    </svg>
+      ${pts.map(x => `<circle cx="${X(x.t).toFixed(1)}" cy="${Y(x.p).toFixed(1)}" r="${x.live ? 2.5 : 2}" fill="var(--accent)"${x.live ? '' : ' opacity="0.5"'}/>`).join('')}
+    </svg>`;
+}
+// full history window: bigger chart + the archived trades, newest first (tap the sparkline)
+function openTradeHistory() {
+  if ($('#modal')) return;
+  const m = document.createElement('div'); m.id = 'modal';
+  document.body.appendChild(m);
+  const pts = tradePts();
+  const trades = [...(state.p2p?.archive || [])]
+    .filter(w => w.archivedAt && !w.assetTag && +w.frcAmount > 0 && +w.btcAmount > 0)
+    .sort((a, b) => b.archivedAt - a.archivedAt);
+  m.innerHTML = `<div class="review">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Trade history')}</b><button id="thClose" class="icon">✕</button></div>
+    ${pts.length > 1 ? chartSvg(pts, 150) : `<p class="sub">${tr('no trades yet')}</p>`}
+    <table class="mkt"><thead><tr><th></th><th class="r">FRC</th><th class="r">sat/FRC</th></tr></thead>
+      <tbody>${trades.map(w => `<tr><td class="sub">${new Date(+w.archivedAt).toLocaleString(getLang(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+        <td class="r">${frc(w.frcAmount)}</td><td class="r">${(Number(w.btcAmount) / Number(w.frcAmount) * 1e8).toFixed(2)}</td></tr>`).join('')}</tbody></table></div>`;
+  m.onclick = e => { if (e.target === m) m.remove(); };
+  q(m, '#thClose').onclick = () => m.remove();
+}
+function paintOfferChart() {
+  const el = $('#offerChart'); if (!el || !state) return;
+  const pts = tradePts();
+  if (pts.length < 2) { el.innerHTML = ''; return; }
+  const lo = Math.min(...pts.map(x => x.p)), hi = Math.max(...pts.map(x => x.p)), last = pts.at(-1);
+  const html = chartSvg(pts, 44) + `
     <div class="sub" style="display:flex;justify-content:space-between;font-size:12px;margin:0 0 6px">
       <span>${tr('trades')} · ${lo.toFixed(2)}–${hi.toFixed(2)}</span><span>${last.p.toFixed(2)} sat/FRC</span>
     </div>`;
-  if (el._src !== html) { el.innerHTML = html; el._src = html; }
+  if (el._src !== html) { el.innerHTML = html; el._src = html; el.style.cursor = 'pointer'; el.onclick = openTradeHistory; }
 }
 export function renderExchange(el) {
   const fopt = cachedFilterOpts();
