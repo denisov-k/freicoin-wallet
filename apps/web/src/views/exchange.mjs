@@ -1173,8 +1173,13 @@ function renderP2pPay(m, rec) {
     let eta = '';
     const cltv = rec.btcHtlc?.cltv, bh = state.p2p?.btcHeight;
     if (paid && cltv && bh && cltv > bh) eta = ` (≈ ${Math.max(1, Math.round((cltv - bh) * 10 / 60))} ${tr('h')})`;
+    // swap the card's content for the confirmation (no absolute overlay: the card keeps its OWN
+    // height otherwise, leaving a tall empty area under the two confirm buttons)
+    const kids = [...card.children].map(el => [el, el.style.display]);
+    kids.forEach(([el]) => { el.style.display = 'none'; });
+    const restore = () => { ov.remove(); kids.forEach(([el, d]) => { el.style.display = d; }); };
     const ov = document.createElement('div'); ov.id = 'pyConfirm';
-    ov.style.cssText = 'position:absolute;inset:0;background:var(--card);border-radius:inherit;display:flex;flex-direction:column;justify-content:center;gap:12px;padding:20px;z-index:5';
+    ov.style.cssText = 'display:flex;flex-direction:column;gap:12px';
     ov.innerHTML = `<b>${tr('Cancel the purchase?')}</b>
       <p class="sub" style="margin:0">${sellerLocked
         ? tr('The seller has already sent the FRC — the lock is confirming on the network, so the deal can no longer be cancelled. If the lock somehow never confirms, your BTC returns automatically at the timeout') + eta + '.'
@@ -1183,10 +1188,9 @@ function renderP2pPay(m, rec) {
           : tr('The order will simply be released — nothing has been paid, nothing is lost.')}</p>
       ${sellerLocked ? '' : `<button id="pyDoCancel" style="width:100%;background:transparent;color:var(--warn);border:1px solid var(--warn)">${tr('Cancel the deal')}</button>`}
       <button id="pyBack" class="ghost">${tr('Back')}</button>`;
-    card.style.position = 'relative';
     card.appendChild(ov);
-    q(ov, '#pyBack').onclick = () => ov.remove();
-    const dc = q(ov, '#pyDoCancel'); if (dc) dc.onclick = async () => { ov.remove(); await doCancel(); };
+    q(ov, '#pyBack').onclick = restore;
+    const dc = q(ov, '#pyDoCancel'); if (dc) dc.onclick = async () => { restore(); await doCancel(); };
   };
 }
 
