@@ -38,7 +38,7 @@ a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
 h1{font-size:18px}h1 a{color:var(--fg)}h2{font-size:15px;color:var(--sub)}
 table{width:100%;border-collapse:collapse;background:var(--card);border-radius:10px;overflow:hidden}
 td,th{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;white-space:nowrap}
-.kv td{white-space:normal;word-break:break-all}
+.kv td{white-space:normal;overflow-wrap:anywhere}
 .tw{overflow-x:auto;border-radius:10px}
 th{color:var(--sub);font-weight:normal}
 .k{color:var(--sub);white-space:nowrap;width:160px}
@@ -87,7 +87,7 @@ async function blockPage(id) {
     b.tx.map((t, i) => {
       const out = t.vout.reduce((a, o) => a + o.value, 0);
       const tag = i === 0 ? ' <span class="sub">coinbase</span>' : (i === b.tx.length - 1 && b.tx.length > 1 && t.vin[0]?.coinbase === undefined && t.vout.length === 1 ? '' : '');
-      return `<tr><td>${L('/tx/' + t.txid, t.txid)}${tag}</td><td class="r">${t.vin.length}</td><td class="r">${t.vout.length}</td><td class="r">${out.toFixed(8)}</td></tr>`;
+      return `<tr><td>${L('/tx/' + t.txid, t.txid.slice(0, 16) + '…' + t.txid.slice(-8))}${tag}</td><td class="r">${t.vin.length}</td><td class="r">${t.vout.length}</td><td class="r">${out.toFixed(8)}</td></tr>`;
     }).join('') + '</table></div>');
 }
 
@@ -95,7 +95,7 @@ async function txPage(txid) {
   const t = await rpc('getrawtransaction', [txid, 2]);
   const vin = t.vin.map(v => v.coinbase !== undefined
     ? `<tr><td class="sub">coinbase</td><td></td><td class="r"></td></tr>`
-    : `<tr><td>${L('/tx/' + v.txid, v.txid)}:${v.vout}</td><td>${v.prevout?.scriptPubKey?.address ? L('/address/' + v.prevout.scriptPubKey.address, v.prevout.scriptPubKey.address) : '<span class="sub">—</span>'}</td><td class="r">${v.prevout ? v.prevout.value.toFixed(8) : ''}</td></tr>`).join('');
+    : `<tr><td>${L('/tx/' + v.txid, v.txid.slice(0, 12) + '…')}:${v.vout}</td><td>${v.prevout?.scriptPubKey?.address ? L('/address/' + v.prevout.scriptPubKey.address, v.prevout.scriptPubKey.address) : '<span class="sub">—</span>'}</td><td class="r">${v.prevout ? v.prevout.value.toFixed(8) : ''}</td></tr>`).join('');
   const vout = t.vout.map(o =>
     `<tr><td>#${o.n}</td><td>${o.scriptPubKey.address ? L('/address/' + o.scriptPubKey.address, o.scriptPubKey.address) : '<span class="sub">' + esc(o.scriptPubKey.type) + '</span>'}</td><td class="r">${o.value.toFixed(8)}</td></tr>`).join('');
   return page('Tx ' + txid.slice(0, 12),
@@ -123,7 +123,7 @@ async function addrPage(addr) {
     ]) +
     `<p class="sub">current unspent outputs only — spent history is not indexed</p>` +
     `<div class="tw"><table><tr><th>outpoint</th><th class="r">height</th><th class="r">amount</th></tr>` +
-    rows.map(u => `<tr><td>${L('/tx/' + u.txid, u.txid)}:${u.vout}</td><td class="r">${L('/block/' + u.height, u.height)}</td><td class="r">${u.amount.toFixed(8)}</td></tr>`).join('') + '</table></div>');
+    rows.map(u => `<tr><td>${L('/tx/' + u.txid, u.txid.slice(0, 12) + '…')}:${u.vout}</td><td class="r">${L('/block/' + u.height, u.height)}</td><td class="r">${u.amount.toFixed(8)}</td></tr>`).join('') + '</table></div>');
 }
 
 // ---- Freigeld clock: live demurrage dashboard ----------------------------------
