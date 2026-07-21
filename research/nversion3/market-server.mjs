@@ -582,7 +582,9 @@ async function btcFeeRate() {
       rate = floorVb * 1.5;
     }
   } catch {}
-  rate = Math.min(FEE_MAX, Math.max(FEE_MIN, Math.ceil(rate)));
+  // keep CENTS of precision: consumers ceil at the FINAL sat amount (rate × vbytes), so rounding
+  // the rate itself to whole sat/vB (2.01 → 3) silently over-paid every swap tx by up to ~50%
+  rate = Math.min(FEE_MAX, Math.max(FEE_MIN, Math.ceil(rate * 100) / 100));
   // round off FP noise before ceiling: 0.00001*1e8/1000 === 1.0000000000000002, and a naive
   // ceil would report a 2 sat/vB "floor" on a 1 sat/vB mempool
   feeCache = { at: Date.now(), rate, floor: Math.max(1, Math.ceil(Math.round(floorVb * 1e6) / 1e6)) };
