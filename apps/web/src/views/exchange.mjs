@@ -1139,19 +1139,7 @@ function renderP2pPay(m, rec) {
   pollTick();   // fresh state NOW — don't leave the snapshot label up for a full interval
   // back out. v2: BEFORE paying nothing is at stake — just drop the record (the relay zombie-expires
   // the take). AFTER paying, the BTC comes home automatically at the HTLC timeout (checkBtcRefunds).
-  let cancelArmT;
-  q(m, '#pyCancel').onclick = async () => {
-    const btn = q(m, '#pyCancel');
-    if (btn.dataset.armed !== '1') {   // FIRST tap arms; a second tap within 4s confirms the cancel
-      btn.dataset.armed = '1';
-      btn.textContent = tr('Tap again to cancel');
-      btn.style.setProperty('color', 'var(--warn)', 'important');
-      btn.style.setProperty('border-color', 'var(--warn)', 'important');
-      clearTimeout(cancelArmT);
-      cancelArmT = setTimeout(() => { const b = q(m, '#pyCancel'); if (b && b.dataset.armed === '1') { b.dataset.armed = ''; b.textContent = tr('Cancel purchase'); b.style.removeProperty('color'); b.style.removeProperty('border-color'); } }, 4000);
-      return;
-    }
-    clearTimeout(cancelArmT); btn.dataset.armed = ''; btn.textContent = tr('Cancel purchase'); btn.style.removeProperty('color'); btn.style.removeProperty('border-color');
+  const doCancel = async () => {
     const rlocal = loadP2p().find(r => r.id === rec.id);
     if (rlocal?.btcHtlc?.txid) {
       // ALREADY PAID: ask the seller to authorize an instant coop refund. Allowed only while they
@@ -1171,6 +1159,28 @@ function renderP2pPay(m, rec) {
     // not paid yet: release the reservation right away (best-effort; zombie grace backs it up)
     try { await api('p2pUntake', { id: rec.id, takerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')) }); } catch {}
     dropP2p(rec.id); close(); toast(tr('purchase cancelled'), 'ok'); mvRefresh();
+  };
+  // "Cancel purchase" opens an in-window CONFIRMATION step: what the cancel does at THIS stage
+  // (release the unpaid order / ask the seller for an instant refund with the timeout as fallback),
+  // then a "Cancel the deal" button — an accidental tap can't fire the cancel any more.
+  q(m, '#pyCancel').onclick = () => {
+    const card = m.querySelector('.review'); if (!card || q(m, '#pyConfirm')) return;
+    const paid = !!(loadP2p().find(r => r.id === rec.id) || rec).btcHtlc?.txid;
+    let eta = '';
+    const cltv = rec.btcHtlc?.cltv, bh = state.p2p?.btcHeight;
+    if (paid && cltv && bh && cltv > bh) eta = ` (≈ ${Math.max(1, Math.round((cltv - bh) * 10 / 60))} ${tr('h')})`;
+    const ov = document.createElement('div'); ov.id = 'pyConfirm';
+    ov.style.cssText = 'position:absolute;inset:0;background:var(--card);border-radius:inherit;display:flex;flex-direction:column;justify-content:center;gap:12px;padding:20px;z-index:5';
+    ov.innerHTML = `<b>${tr('Cancel the purchase?')}</b>
+      <p class="sub" style="margin:0">${paid
+        ? tr('You have already paid. The seller will be asked to authorize an instant refund — the BTC then returns to your wallet right away. If the seller has already locked the FRC or stays silent, the BTC returns automatically at the timeout') + eta + '.'
+        : tr('The order will simply be released — nothing has been paid, nothing is lost.')}</p>
+      <button id="pyDoCancel" style="width:100%;background:transparent;color:var(--warn);border:1px solid var(--warn)">${tr('Cancel the deal')}</button>
+      <button id="pyBack" class="ghost">${tr('Back')}</button>`;
+    card.style.position = 'relative';
+    card.appendChild(ov);
+    q(ov, '#pyBack').onclick = () => ov.remove();
+    q(ov, '#pyDoCancel').onclick = async () => { ov.remove(); await doCancel(); };
   };
 }
 
