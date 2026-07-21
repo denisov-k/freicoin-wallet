@@ -204,6 +204,9 @@ export async function mvBtcHistory() {
       const btcLeg = s => ({ amount: s * btcAmt, btc: true });
       items.push({ trade: true, txid: recv?.txid || h.btcTxid || h.id, time: recv?.time || h.time || 0, confirmations: recv?.confirmations ?? 1,
         category: gotBtc ? 'sale' : 'purchase', assetName: tag ? assetName(tag) : 'FRC', frcTxid: h.frcTxid ?? null,
+        // REAL per-leg txids for the detail view — a trade's `txid` above is only a stable row key
+        // (often the swap id), not something a block explorer can resolve
+        orderId: h.id, btcLegTxid: recv?.txid ?? h.btcTxid ?? h.btcFundTxid ?? null,
         recv: gotBtc ? btcLeg(1) : assetLeg(1),
         paid: gotBtc ? assetLeg(-1) : btcLeg(-1) });
     }

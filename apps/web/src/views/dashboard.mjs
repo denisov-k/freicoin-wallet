@@ -229,7 +229,18 @@ export function paintActivity(txs, final = true) {
      ${i.trade
     ? `<div class="act-a"><span class="pos">${amtStr(i.recv)}</span><span class="neg">${amtStr(i.paid)}</span></div>`
     : `<div class="act-a ${(+i.amount) < 0 ? 'neg' : 'pos'}"><span>${amtStr(i)}</span>${isImmatureGen(i) ? `<span class="sub immature">${tr('immature')} ${i.confirmations}/${COINBASE_MATURITY}</span>` : i.confirmations === 0 ? `<span class="sub immature">${tr('confirming')} 0/1</span>` : i.note ? `<span class="sub">${tr(i.note)}</span>` : ''}</div>`}`;
-  const detailHtml = i => `<div class="detail"><span class="sub">${i.confirmations > 0 ? i.confirmations + ' ' + tr('conf') : tr('confirming') + ' 0/1'} · ${new Date(i.time * 1000).toLocaleString(getLang())}</span>${isImmatureGen(i) ? `<span class="sub immature">🔒 ${tr('immature')} · ${tr('spendable in')} ${COINBASE_MATURITY - i.confirmations} ${tr('blocks')}</span>` : ''}<span class="sub">txid</span><div class="txid">${i.txid}</div><button id="copyTxid" class="ghost">${tr('Copy txid')}</button></div>`;
+  const txBlock = (label, v) => `<span class="sub">${label}</span><div class="txid">${v}</div><button class="ghost copyTx" data-v="${v}">${tr('Copy txid')}</button>`;
+  // a cross-chain trade has TWO real txids (FRC leg + BTC leg) — show both; its `txid` field is
+  // just the stable row key (often the swap id), which a block explorer can't resolve
+  const idsHtml = i => {
+    if (i.trade && (i.frcTxid || i.btcLegTxid)) {
+      return (i.orderId ? `<span class="sub">${tr('Order')} ${i.orderId}</span>` : '')
+        + (i.frcTxid ? txBlock('FRC txid', i.frcTxid) : '')
+        + (i.btcLegTxid ? txBlock('BTC txid', i.btcLegTxid) : '');
+    }
+    return txBlock('txid', i.txid);
+  };
+  const detailHtml = i => `<div class="detail"><span class="sub">${i.confirmations > 0 ? i.confirmations + ' ' + tr('conf') : tr('confirming') + ' 0/1'} · ${new Date(i.time * 1000).toLocaleString(getLang())}</span>${isImmatureGen(i) ? `<span class="sub immature">🔒 ${tr('immature')} · ${tr('spendable in')} ${COINBASE_MATURITY - i.confirmations} ${tr('blocks')}</span>` : ''}${idsHtml(i)}</div>`;
   const keyOf = i => i.txid + '|' + (i.trade ? '#trade' : (i.assetTag ?? 'FRC') + '|' + i.category);
 
   // KEYED RECONCILE — update rows in place instead of rewriting the container, so a refresh never
@@ -259,13 +270,13 @@ export function paintActivity(txs, final = true) {
       const dd = document.createElement('div');
       dd.id = 'actDetail'; dd.dataset.key = k; dd.innerHTML = detailHtml(i);
       el.insertAdjacentElement('afterend', dd);
-      $('#copyTxid').onclick = e => copy(i.txid, e.target);
+      dd.querySelectorAll('.copyTx').forEach(b => b.onclick = e => copy(b.dataset.v, e.target));
     };
     place(el);
     const det = $('#actDetail');
     if (det?.dataset.key === k) {   // opened detail: keep it glued under its row, content live
       const dh = detailHtml(i);
-      if (det._src !== dh) { det.innerHTML = dh; det._src = dh; det.querySelector('#copyTxid').onclick = e => copy(i.txid, e.target); }
+      if (det._src !== dh) { det.innerHTML = dh; det._src = dh; det.querySelectorAll('.copyTx').forEach(b => b.onclick = e => copy(b.dataset.v, e.target)); }
       place(det);
     }
   }
