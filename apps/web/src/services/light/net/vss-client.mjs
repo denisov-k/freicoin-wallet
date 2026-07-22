@@ -37,7 +37,7 @@ export class VssClient {
   async put(key, version, plaintext) {
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await this._keyP,
-      plaintext instanceof Uint8Array ? plaintext : enc.encode(plaintext)));
+      /** @type {BufferSource} */ (plaintext instanceof Uint8Array ? plaintext : enc.encode(plaintext))));
     const blob = b64(iv) + '.' + b64(ct);   // iv.ciphertext
     const res = await this._call('vssPut', { nodeId: this.nodeId, key, version, blob });
     this.hw.set(key, version);

@@ -11,13 +11,14 @@ import { parseBtcBlock } from './btc-block.mjs';
 const revHex = h => Buffer.from(h, 'hex').reverse().toString('hex');
 
 export class BtcNeutrino {
-  /** @param {{url:string, net:'btcmain'|'btcregtest'|'btcsignet', adapter:import('./ldk-chain.mjs').LdkChainAdapter}} o */
+  /** @param {{url:string, net:'btcmain'|'btcregtest'|'btcsignet', adapter:any}} o */
   constructor({ url, net, adapter }) {
     this.url = url; this.net = net; this.adapter = adapter;
     this.headers = [];        // [{hash, prevHash, height, raw(80)}]
     this.byHash = new Map();
     this.scannedIdx = -1;     // highest headers[] INDEX already fed to LDK (index, not height)
     this.ws = null; this._ready = false; this._waiters = new Map();
+    this._pull = null; this.debug = false; this._anchorHash = null; this._startHeight = -1;
     // LDK's Filter registrations grow the watch-set; a fresh script re-scans from the funding
     // height so a channel opened after the last scan is still seen.
     adapter.onWatch = () => { this._rescanFrom = 0; };

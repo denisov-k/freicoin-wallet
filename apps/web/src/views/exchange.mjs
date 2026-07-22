@@ -16,6 +16,7 @@ import { frcLeg, refundGiven } from '@core/swap.mjs';
 import { paymentHashOf } from '@core/htlc.mjs';
 import { btcHtlcClaim, btcAddress } from '@core/btc.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
+import QRCode from 'qrcode';
 import { loadMySwaps, putMySwap, dropMySwap, loadP2p, putP2p, dropP2p, addBtcNonce, addFeeTxid, lsKey } from '@/services/storage.mjs';
 import { refreshPushSubs } from '@/services/push.mjs';
 import { api, ctx, p2pKey, HOST_TAG, decimalsOf, scaleOf, assetName, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND, VB_HTLC_FUND } from '@/state/market-ctx.mjs';
@@ -26,7 +27,7 @@ import { recoverBtcNonces, mvBtcHistory, initActivity, resetRecovery } from '@/s
 import { driveP2p, checkP2pRefunds, checkBtcRefunds, initDrive } from '@/services/market/swap-drive.mjs';
 import { recoverOrphanBtcHtlcs } from '@/services/market/btc-recovery.mjs';
 import { browserSwapEnv } from '@/services/market/swap-env.mjs';
-import { $, q, rev, frc, num, setOptions, skel, skelRows } from '@/components/dom.mjs';
+import { $, q, rev, frc, num, setOptions, skel, skelRows, copy } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
 import { armOverlay, closeOverlay } from '@/components/modal.mjs';
 export { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvBtcMax };   // BTC account lives in its own module; re-exported so the wallet imports stay stable
@@ -928,7 +929,7 @@ async function takeP2pPart(offer, fillUnits, log) {
     const r = await api('p2pTake', { id: offer.id, fill: String(fill), takerFrcPub: frcPub, takerBtcPub: btcPub, takerFrcAddr: deriveAddress(seed, 0, 0), paymentHash: H });
     addBtcNonce(nonce);
     // v2: the relay hands the BTC HTLC right away — the pay step opens immediately
-    putP2p({ id: r.id, role: 'taker', dir: offer.dir, parent: offer.id, nonce, status: 'need_btc', assetTag: offer.assetTag ?? null, frcAmount: r.frcAmount, btcAmount: r.btcAmount, paymentHash: H, btcHtlc: r.btcHtlc });
+    putP2p({ id: r.id, role: 'taker', dir: offer.dir, parent: offer.id, nonce, status: 'need_btc', assetTag: offer.assetTag ?? null, frcAmount: r.frcAmount, btcAmount: r.btcAmount, paymentHash: H, btcHtlc: r.btcHtlc, ln: !!offer.ln });
     mvRefresh();
     return r.id;
   } catch (e) { log('⚠ ' + e.message); toast(e.message, 'err'); return null; }
@@ -989,7 +990,7 @@ async function takeP2p(offer, log) {
     const H = paymentHashOf(p2pKey(nonce, 'R'));   // v2: I hold the secret and pay first
     const r = await api('p2pTake', { id: offer.id, takerFrcPub: frcPub, takerBtcPub: btcPub, takerFrcAddr: deriveAddress(seed, 0, 0), paymentHash: H });
     addBtcNonce(nonce);
-    putP2p({ id: offer.id, role: 'taker', nonce, status: 'need_btc', assetTag: offer.assetTag ?? null, frcAmount: offer.frcAmount, btcAmount: offer.btcAmount, paymentHash: H, btcHtlc: r.btcHtlc });
+    putP2p({ id: offer.id, role: 'taker', nonce, status: 'need_btc', assetTag: offer.assetTag ?? null, frcAmount: offer.frcAmount, btcAmount: offer.btcAmount, paymentHash: H, btcHtlc: r.btcHtlc, ln: !!offer.ln });
     mvRefresh();
     return true;
   } catch (e) { log('⚠ ' + e.message); toast(e.message, 'err'); if (go) { go.disabled = false; go.textContent = tr('Buy'); } return false; }
@@ -1020,7 +1021,7 @@ function renderP2pPay(m, rec) {
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} ${assetName(rcvTag)}</b><button id="pyClose" class="icon">✕</button></div>
     <div class="sub" style="margin:-4px 0 0;font-size:13px">${tr('Order')} ${rec.id}</div>
     <div class="sub" id="pyTtl" style="margin:0 0 8px;font-size:13px"></div>
-    ${hasWallet ? `<div class="seg" id="paySeg"><button data-pay="wallet" class="on">${tr('From wallet')}</button><button data-pay="ext">${tr('External payment')}</button></div>` : ''}
+    ${(hasWallet || rec.ln) ? `<div class="seg" id="paySeg">${hasWallet ? `<button data-pay="wallet" class="on">${tr('From wallet')}</button>` : ''}<button data-pay="ext"${hasWallet ? '' : ' class="on"'}>${tr('External payment')}</button>${rec.ln ? `<button data-pay="ln">⚡ Lightning</button>` : ''}</div>` : ''}
     <div class="rrow" id="pyBalRow"${hasWallet ? '' : ' style="display:none"'}><span>${tr('Available')}</span><b id="pyBal" class="sub">${tr('checking balance…')}</b></div>
     <div class="rrow"><span>${tr('Cost')}</span><b>${btc8(amt)} BTC</b></div>
     <div class="rrow" id="pyFeeRow"${hasWallet ? '' : ' style="display:none"'}><span>${tr('Network fee')}</span><b id="pyFee"></b></div>
@@ -1033,6 +1034,12 @@ function renderP2pPay(m, rec) {
       <p class="sub">${tr('Send exactly this amount from any Bitcoin wallet to the address. The swap continues automatically once the payment is seen.')}</p>
       <label>${tr('HTLC address')}<div class="addr" style="user-select:all">${b.addr}</div></label>
     </div>
+    ${rec.ln ? `<div id="pyLnPane" style="display:none">
+      <p class="sub">${tr('Pay this invoice from any Lightning wallet — the swap continues in seconds, no on-chain fee.')}</p>
+      <div id="pyLnQr" class="qr skel" style="margin:6px auto;height:200px;width:200px"></div>
+      <div id="pyLnInv" class="addr" style="user-select:all;display:none"></div>
+      <button id="pyLnCopy" class="ghost" style="display:none">${tr('Copy invoice')}</button>
+    </div>` : ''}
     <div id="pyStatus" class="sub" style="font-size:13px"></div>
     <button id="pyCancel" class="ghost">${tr('Cancel purchase')}</button></div>`;
   // RESERVATION COUNTDOWN: an unpaid take is swept by the relay after takeTtlMs — show the buyer
@@ -1059,24 +1066,45 @@ function renderP2pPay(m, rec) {
   q(m, '#pyClose').onclick = close;
   // wallet / external toggle: swap which pane is visible, highlight the active segment.
   // the Available line belongs to the wallet path, so it follows the toggle too.
+  // LIGHTNING: ask the seller (their LND) for a hold invoice under THIS swap's H, show the bolt11
+  // + QR; the buyer pays from any LN wallet and the existing poll flips to "confirming receipt" the
+  // moment the seller's node holds the payment (relay: lnPaid → status btc_funded). Requested once.
+  let lnAsked = false;
+  const requestLnInvoice = async () => {
+    if (lnAsked) return; lnAsked = true;
+    try {
+      const r = await api('p2pLnRequest', { id: rec.id, takerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')) });
+      let bolt11 = r.bolt11;
+      for (let i = 0; !bolt11 && i < 15; i++) {   // maker issues it on its next drive tick (~seconds)
+        await new Promise(res => setTimeout(res, 2000));
+        bolt11 = (await api('p2pList')).swaps.find(x => x.id === rec.id)?.lnInvoice;
+      }
+      const qr = $('#pyLnQr'), inv = $('#pyLnInv'), cp = $('#pyLnCopy');
+      if (!bolt11) { if (qr) { qr.className = ''; qr.textContent = tr('the seller did not issue an invoice — try another payment method'); } return; }
+      if (inv) { inv.textContent = bolt11; inv.style.display = ''; }
+      if (cp) { cp.style.display = ''; cp.onclick = e => copy(bolt11, e.target); }
+      if (qr) { const img = await QRCode.toDataURL(bolt11.toUpperCase(), { margin: 1, width: 200 }); qr.className = 'qr'; qr.innerHTML = `<img src="${img}" alt="qr" style="width:100%;height:100%">`; }
+    } catch (e) { const qr = $('#pyLnQr'); if (qr) { qr.className = ''; qr.textContent = e.message; } }
+  };
   const seg = $('#paySeg');
   if (seg) seg.querySelectorAll('button').forEach(sb => sb.onclick = () => {
     seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === sb));
-    const wallet = sb.dataset.pay === 'wallet';
-    const wp = $('#pyWalletPane'), ep = $('#pyExtPane'), br = $('#pyBalRow'), fr = $('#pyFeeRow'), tr2 = $('#pyTotalRow');
-    if (wp) wp.style.display = wallet ? '' : 'none';
-    if (br) br.style.display = wallet ? '' : 'none';
-    // fee + fee-inclusive total are OUR wallet's economics — an external wallet pays its own fee
-    // and must send exactly the Cost
-    if (fr) fr.style.display = wallet ? '' : 'none';
-    if (tr2) tr2.style.display = wallet ? '' : 'none';
-    if (ep) ep.style.display = wallet ? 'none' : '';
+    const mode = sb.dataset.pay;   // wallet | ext | ln
+    const show = (sel, on) => { const el = $(sel); if (el) el.style.display = on ? '' : 'none'; };
+    show('#pyWalletPane', mode === 'wallet');
+    show('#pyBalRow', mode === 'wallet');
+    // fee + fee-inclusive total are OUR wallet's economics — external/LN pay their own way
+    show('#pyFeeRow', mode === 'wallet');
+    show('#pyTotalRow', mode === 'wallet');
+    show('#pyExtPane', mode === 'ext');
+    show('#pyLnPane', mode === 'ln');
+    if (mode === 'ln') requestLnInvoice();
   });
   // pay the HTLC straight from the in-wallet BTC account (one tap); auto-detect finishes the swap
   let paying = false;
   // once paid, the payment-method chooser (#paySeg) and the wallet-balance line (#pyBalRow) are moot —
   // hide them so the window shows only the amount, the confirmation status and Cancel.
-  const hidePayInputs = () => { for (const s of ['#paySeg', '#pyBalRow', '#pyFeeRow', '#pyTotalRow']) { const el = $(s); if (el) el.style.display = 'none'; } };
+  const hidePayInputs = () => { for (const s of ['#paySeg', '#pyBalRow', '#pyFeeRow', '#pyTotalRow', '#pyExtPane', '#pyLnPane']) { const el = $(s); if (el) el.style.display = 'none'; } };
   // once the seller's lock is CONFIRMED (frc_funded+) the claim is running and a cancel can do
   // nothing (the relay refuses coop-sign, and the claim reveals R anyway) — drop the button
   const hideCancel = () => { const c = q(m, '#pyCancel'); if (c) c.style.display = 'none'; };
@@ -1160,11 +1188,12 @@ function renderP2pPay(m, rec) {
           try { confs = ((await api('btcAccount', { addresses: [b.addr] })).utxos || []).find(u => u.txid === rlocal.btcHtlc.txid)?.confirmations; } catch {}
           pw.textContent = confs != null ? `${tr('confirming payment on the network')} (${Math.min(confs, 2)}/2)` : tr('confirming payment on the network');
         }
-      } else if (w.status === 'btc_funded') {                 // payment accepted — the seller's lock isn't in a block yet
-        if (!paidSeen) { paidSeen = true; putP2p({ ...rlocal, status: 'btc_funded' }); mvRefresh(); }
+      } else if (w.status === 'btc_funded') {                 // payment accepted (incl. LN held) — seller's lock isn't in a block yet
+        if (!paidSeen) { paidSeen = true; putP2p({ ...rlocal, status: 'btc_funded' }); hidePayInputs(); mvRefresh(); }
         if (pw) pw.textContent = `${tr('confirming receipt')} (0/1)`;
+        if (st && rlocal.ln && !rlocal.btcHtlc?.txid) st.textContent = `${tr('confirming receipt')} (0/1)`;   // LN: the pay button is hidden, surface progress in the status line
       } else {                                                // seller's lock CONFIRMED (frc_funded/…) — I'm claiming the FRC now
-        if (!paidSeen) { paidSeen = true; putP2p({ ...rlocal, status: 'btc_funded' }); mvRefresh(); }
+        if (!paidSeen) { paidSeen = true; putP2p({ ...rlocal, status: 'btc_funded' }); hidePayInputs(); mvRefresh(); }
         if (pw) pw.textContent = `${tr('confirming receipt')} (1/1)`;
         if (st) st.textContent = tr('claiming your funds…');
         hideCancel();
