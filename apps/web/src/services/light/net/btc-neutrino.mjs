@@ -16,7 +16,7 @@ export class BtcNeutrino {
     this.url = url; this.net = net; this.adapter = adapter;
     this.headers = [];        // [{hash, prevHash, height, raw(80)}]
     this.byHash = new Map();
-    this.scanned = -1;        // highest height already fed to LDK
+    this.scannedIdx = -1;     // highest headers[] INDEX already fed to LDK (index, not height)
     this.ws = null; this._ready = false; this._waiters = new Map();
     // LDK's Filter registrations grow the watch-set; a fresh script re-scans from the funding
     // height so a channel opened after the last scan is still seen.
@@ -67,8 +67,8 @@ export class BtcNeutrino {
   /** Fetch headers forward from our tip until caught up. */
   async syncHeaders() {
     for (;;) {
-      const locator = this.headers.length ? this.headers[this.headers.length - 1].hash : (this._anchorHash ?? '00'.repeat(32));
-      this._send('getheaders', buildGetHeaders(70016, locator));
+      const tip = this.headers.length ? this.headers[this.headers.length - 1].hash : (this._anchorHash ?? '00'.repeat(32));
+      this._send('getheaders', buildGetHeaders(70016, [tip]));   // buildGetHeaders wants an ARRAY of locator hashes
       const m = await this._onceOrNull('headers');
       if (!m) break;                                       // silence = caught up (Core sends nothing at tip)
       const hs = parseHeaders(m.payload);
@@ -83,36 +83,41 @@ export class BtcNeutrino {
     }
   }
 
-  /** Scan [from..tip]: request one cfilter per block, match against the LDK watch-set,
-   *  download+split matched blocks, feed the adapter. Blocks without a match only advance the tip. */
-  async scan(from = this.scanned + 1) {
-    const scriptsHex = [...this.adapter.watchedSpks];   // filterMatchesAny hashes the raw spk bytes (hex, natural order)
-    for (let i = Math.max(0, from); i < this.headers.length; i++) {
+  /** Scan headers[fromIdx..end]: one cfilter per block, match against the LDK watch-set,
+   *  download+split matched blocks, feed the adapter. `fromIdx`/`scannedIdx` are ARRAY INDICES
+   *  into headers[], NOT heights (the two diverge — headers[0] is anchor+1). */
+  async scan(fromIdx) {
+    const scriptsHex = [...this.adapter.watchedSpks];
+    if (this.debug) console.log(`  [scan] idx ${fromIdx}..${this.headers.length - 1}, scripts ${scriptsHex.length}`);
+    for (let i = Math.max(0, fromIdx); i < this.headers.length; i++) {
       const hdr = this.headers[i];
+      this.scannedIdx = i;
       this._send('getcfilters', buildGetCFilters(hdr.height, hdr.hash));
       const cfm = await this._onceOrNull('cfilter');
-      if (!cfm) { this.adapter.tipAdvanced(hdr.raw, hdr.height); this.scanned = hdr.height; continue; }
+      if (!cfm) { this.adapter.tipAdvanced(hdr.raw, hdr.height); continue; }
       const cf = parseCFilter(cfm.payload);
       const hit = scriptsHex.length && filterMatchesAny(cf.filter, cf.blockHash, scriptsHex);
-      if (!hit) { this.adapter.tipAdvanced(hdr.raw, hdr.height); this.scanned = hdr.height; continue; }
+      if (this.debug) console.log(`  [scan] h${hdr.height} filter ${cf.filter.length}b hit=${hit}`);
+      if (!hit) { this.adapter.tipAdvanced(hdr.raw, hdr.height); continue; }
       this._send('getdata', buildGetData([{ type: MSG_WITNESS_BLOCK, hashHex: hdr.hash }]));
       const bm = await this._onceOrNull('block', 8000);
-      if (!bm) { this.adapter.tipAdvanced(hdr.raw, hdr.height); this.scanned = hdr.height; continue; }   // no block served — advance, retry next tick
+      if (!bm) { this.adapter.tipAdvanced(hdr.raw, hdr.height); continue; }   // no block served — advance, retry next tick
       const { txs } = await parseBtcBlock(new Uint8Array(Buffer.from(bm.payload)));
       const relevant = txs.filter(t => this.adapter.isRelevant({ txid: t.txid, outs: t.outs }))
         .map(t => ({ index: t.index, raw: Buffer.from(t.raw) }));
-      if (typeof console !== 'undefined' && this.debug) console.log(`  [neutrino] block ${hdr.height} matched, relevant tx ${relevant.length}`);
+      if (this.debug) console.log(`  [neutrino] block ${hdr.height} matched, relevant tx ${relevant.length}`);
       this.adapter.blockConnected(hdr.raw, hdr.height, relevant);
-      this.scanned = hdr.height;
     }
   }
 
-  /** One sync pass: headers forward, then scan the new (or re-scan the watch-widened) range. */
+  /** One sync pass: headers forward, then scan the new (or, after a watch-set widening, the whole)
+   *  range. `scannedIdx` is the last headers[] index fed; a rescan resets it to -1 so the next scan
+   *  re-covers everything (Confirm feeds are idempotent — LDK dedups re-confirmations). */
   async tick() {
     await this.syncHeaders();
-    let from = this.scanned + 1;
-    if (this._rescanFrom != null) { from = this._rescanFrom; this._rescanFrom = null; this.scanned = from - 1; }
-    if (from < this.headers.length) await this.scan(from);
+    if (this._rescanFrom != null) { this.scannedIdx = -1; this._rescanFrom = null; }
+    const fromIdx = this.scannedIdx + 1;
+    if (fromIdx < this.headers.length) await this.scan(fromIdx);
   }
   /** Start scanning from a known height (skip ancient history — a channel's funding is recent). */
   set startHeight(h) { this._startHeight = h; }
