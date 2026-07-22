@@ -43,11 +43,14 @@ export const setBtcLegs = btc => { btcActLegs = btc.legs; btcActHide = new Set(b
 // ---- balance card ----
 const balActions = () => `<div class="row" style="margin-top:12px"><button id="rcvBtn">${tr('Receive')}</button><button id="sndBtn">${tr('Send')}</button></div>`
   + (d.MKT() ? `<div class="row"><button id="issBtn" class="ghost">${tr('Issue asset')}</button></div>
-              <div class="row"><button id="faucetBtn" class="ghost">${tr('Faucet (+1 FRC)')}</button></div>` : '');
+              <div class="row"><button id="faucetBtn" class="ghost">${tr('Faucet (+1 FRC)')}</button></div>` : '')
+  // ⚡-счёт (LDK-узел в кошельке) — только mainnet: фид/LSP живут на прод-реле
+  + (d.curNet() === 'main' ? `<div class="row"><button id="lnBtn" class="ghost">⚡ Lightning</button></div>` : '');
 function wireBalActions() {
   const r = $('#rcvBtn'); if (r) r.onclick = () => renderReceive();
   const s = $('#sndBtn'); if (s) s.onclick = () => renderSend();
   const i = $('#issBtn'); if (i) i.onclick = openIssueModal;
+  const l = $('#lnBtn'); if (l) l.onclick = async () => (await import('@/views/lightning.mjs')).openLnModal();
 }
 export function paintBalance(s) {
   if (!s.stale) d.setStatus('ok', '', s.tipHeight);

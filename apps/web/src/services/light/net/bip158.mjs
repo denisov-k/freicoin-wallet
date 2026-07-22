@@ -10,7 +10,14 @@
 // browsers. BigInt survives only in the one map-to-range multiply per target
 // (hash × N·M needs >64-bit intermediate); its result < N·M fits a Number.
 import { Buffer } from 'buffer';
-import { readVarint } from './p2p.mjs';
+// локальный varint (не тянем p2p.mjs: этот модуль импортирует и релей, у которого нет alias-лоадера)
+function readVarint(buf, o) {
+  const n = buf[o];
+  if (n < 0xfd) return [n, o + 1];
+  if (n === 0xfd) return [buf.readUInt16LE(o + 1), o + 3];
+  if (n === 0xfe) return [buf.readUInt32LE(o + 1), o + 5];
+  return [Number(buf.readBigUInt64LE(o + 1)), o + 9];
+}
 
 // SipHash-2-4 over 32-bit lanes. v = [v0h,v0l, v1h,v1l, v2h,v2l, v3h,v3l].
 function sipround(v) {
@@ -98,6 +105,49 @@ class BitReader {
   }
 }
 function golomb(br, P) { let q = 0; while (br.bit() === 1) q++; return q * 2 ** P + br.bits(P); }
+
+// ---- построение фильтра (обратная сторона матчера). Нужно реле: pruned-узел не может достроить
+// исторический blockfilterindex, поэтому реле считает basic-фильтры для НОВЫХ блоков само и кормит
+// ими браузерный LN-узел. Байт-в-байт с Core (golden-тест против getblockfilter в сьюте).
+class BitWriter {
+  constructor() { this.bytes = []; this.acc = 0; this.cnt = 0; }
+  bit(b) { this.acc = (this.acc << 1) | b; if (++this.cnt === 8) { this.bytes.push(this.acc); this.acc = 0; this.cnt = 0; } }
+  bits(v, n) { for (let i = n - 1; i >= 0; i--) this.bit((v >> i) & 1); }   // v < 2^P ≤ 2^19 — обычный Number
+  done() { if (this.cnt) this.bytes.push((this.acc << (8 - this.cnt)) & 0xff); return Buffer.from(this.bytes); }
+}
+const writeVarint = n => {
+  if (n < 0xfd) return Buffer.from([n]);
+  if (n <= 0xffff) return Buffer.from([0xfd, n & 0xff, n >> 8]);
+  const b = Buffer.alloc(5); b[0] = 0xfe; b.writeUInt32LE(n, 1); return b;
+};
+
+/**
+ * BIP158 basic-фильтр блока: элементы = уникальные scriptPubKey всех выходов (кроме пустых и
+ * OP_RETURN) + prevout-скрипты всех входов (кроме пустых; у coinbase prevout нет).
+ * @param {string} blockHashHex — хеш блока (display order), ключ SipHash
+ * @param {string[]} scriptsHex — сырые скрипты элементов (hex), ДО дедупликации
+ * @returns {Buffer} varint(N) + GCS-битстрим — ровно то, что отдаёт getblockfilter
+ */
+export function buildFilter(blockHashHex, scriptsHex, P = 19, M = 784931n) {
+  const key = Buffer.from(blockHashHex, 'hex').reverse();
+  const k0h = rd32(key, 4), k0l = rd32(key, 0), k1h = rd32(key, 12), k1l = rd32(key, 8);
+  const uniq = [...new Set(scriptsHex.filter(s => s && s.length > 0))];
+  if (!uniq.length) return writeVarint(0);
+  const F = BigInt(uniq.length) * M;
+  // ВАЖНО: хэш-коллизии НЕ дедуплицируются (Core кодирует дельту 0) — N = числу уникальных
+  // СКРИПТОВ, не уникальных хэшей, иначе байты разойдутся с getblockfilter при коллизии.
+  const vals = uniq.map(s => mapToRange(siphash(k0h, k0l, k1h, k1l, Buffer.from(s, 'hex')), F)).sort((a, b) => a - b);
+  const bw = new BitWriter();
+  let prev = 0;
+  for (const v of vals) {
+    const delta = v - prev; prev = v;
+    let q = Math.floor(delta / 2 ** P);
+    while (q--) bw.bit(1);
+    bw.bit(0);
+    bw.bits(delta % 2 ** P, P);
+  }
+  return Buffer.concat([writeVarint(vals.length), bw.done()]);
+}
 
 /**
  * Does the filter (Buffer) for block `blockHashHex` (display order) match any of

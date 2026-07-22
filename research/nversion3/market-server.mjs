@@ -10,7 +10,7 @@
 // It can steal nothing: every asset movement carries a user signature the chain verifies.
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, existsSync, appendFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { serializeTx, parseTx, txid as computeTxid, NV3_TX_VERSION } from '../../core/tx.mjs';
 import { loadOrCreateVapid, sendPush } from './webpush.mjs';
@@ -818,6 +818,7 @@ async function bootstrap() {
   await catchUp();
   reconcileBook();   // retire offers whose coins were spent / expired while the relay was down
   say('маркет запущен (релей книги + майнер + автомэтчер)');
+  if (btcAvail()) btcFeedTick().catch(() => {});   // BIP158-фид для браузерного LN-узла (фаза 2)
   // Tick: on regtest we also MINE (so the dev chain lives); on a real chain we only index+watch.
   setInterval(async () => {
     try {
@@ -830,6 +831,55 @@ async function bootstrap() {
       await watchP2p();
     } catch (e) { say('майнер: ' + String(e.message).slice(0, 80)); }
   }, MINE_EVERY_MS);
+}
+
+// ---- BIP158-фид (фаза 2 Lightning): pruned-узел не может достроить blockfilterindex с генезиса,
+// поэтому реле само считает basic-фильтры для блоков С МОМЕНТА ВКЛЮЧЕНИЯ фида (birthday браузерных
+// LN-кошельков заведомо позже) и отдаёт их + сами блоки. Байт-в-байт с getblockfilter (golden-тест
+// в сьюте). Хранение: JSONL с ретеншном ~45 дней; реорги откатываются по цепочке prev-хешей. ----
+import { buildFilter } from '../../apps/web/src/services/light/net/bip158.mjs';
+const BTC_FEED_FILE = `${DATADIR}/btc-cfilters.jsonl`;
+const BTC_FEED_KEEP = Number(process.env.BTC_FEED_KEEP ?? 6500);   // блоков (~45 сут)
+const btcFeed = new Map();   // height → {hash, prev, f(hex)}
+let btcFeedTip = -1;
+try { for (const line of readFileSync(BTC_FEED_FILE, 'utf8').split('\n')) { if (!line) continue;
+  const r = JSON.parse(line); if (r.del) { btcFeed.delete(r.h); continue; }
+  if (!r.hdr) continue;   // записи до появления hdr неполны — фид перестроит их от вершины
+  btcFeed.set(r.h, r); if (r.h > btcFeedTip) btcFeedTip = r.h; } } catch {}
+const btcFeedAppend = r => { try { appendFileSync(BTC_FEED_FILE, JSON.stringify(r) + '\n'); } catch {} };
+function blockFilterScripts(blk) {
+  const out = [];
+  for (const tx of blk.tx) {
+    for (const o of tx.vout) { const s = o.scriptPubKey?.hex; if (s && !s.startsWith('6a')) out.push(s); }
+    for (const vin of tx.vin) { const s = vin.prevout?.scriptPubKey?.hex; if (s) out.push(s); }
+  }
+  return out;
+}
+async function btcFeedTick() {
+  try {
+    const tip = await btcRpcOn('', 'getblockcount');
+    if (btcFeedTip < 0) btcFeedTip = tip - 1;                     // свежий фид: истории не строим
+    // реорг: наш верх должен совпадать с цепью — иначе откатываемся до общего предка
+    while (btcFeedTip >= 0 && btcFeed.has(btcFeedTip)) {
+      const chainHash = await btcRpcOn('', 'getblockhash', btcFeedTip).catch(() => null);
+      if (chainHash === btcFeed.get(btcFeedTip).hash) break;
+      btcFeedAppend({ del: true, h: btcFeedTip }); btcFeed.delete(btcFeedTip); btcFeedTip--;
+    }
+    for (let h = btcFeedTip + 1; h <= tip; h++) {
+      const hash = await btcRpcOn('', 'getblockhash', h);
+      const blk = await btcRpcOn('', 'getblock', hash, 3);
+      const hdr = await btcRpcOn('', 'getblockheader', hash, false);   // 80 байт — LDK хочет заголовок каждого блока
+      const rec = { h, hash, prev: blk.previousblockhash, hdr, f: buildFilter(hash, blockFilterScripts(blk)).toString('hex') };
+      btcFeed.set(h, rec); btcFeedAppend(rec); btcFeedTip = h;
+      btcFeed.delete(h - BTC_FEED_KEEP);                          // ретеншн (файл чистится компакцией ниже)
+    }
+    // компакция файла раз в ~1000 записей: перепись живого окна начисто
+    if (btcFeed.size && Math.random() < 0.001) {
+      const live = [...btcFeed.values()].sort((a, b) => a.h - b.h).map(r => JSON.stringify(r)).join('\n') + '\n';
+      atomicWrite(BTC_FEED_FILE, live);
+    }
+  } catch (e) { say('btc-фид: ' + String(e.message).slice(0, 80)); }
+  setTimeout(() => btcFeedTick().catch(() => {}), 30e3).unref?.();
 }
 
 // ---- API ----
@@ -1780,6 +1830,25 @@ const api = {
   },
 
   async name({ tag }) { return { name: assets.get(tag)?.name ?? null }; },
+
+  // ---- BIP158-фид для браузерного LN-узла (все — read-only) ----
+  async btcFeedStatus() {
+    const hs = [...btcFeed.keys()];
+    return { start: hs.length ? Math.min(...hs) : null, tip: btcFeedTip, tipHash: btcFeed.get(btcFeedTip)?.hash ?? null };
+  },
+  async btcFeedFilters({ from, count }) {
+    const n = Math.min(Number(count) || 144, 288), f = Number(from);
+    if (!Number.isInteger(f) || f < 0) throw new Error('плохой from');
+    const out = [];
+    for (let h = f; h < f + n && h <= btcFeedTip; h++) { const r = btcFeed.get(h); if (!r) break; out.push({ h, hash: r.hash, prev: r.prev, hdr: r.hdr, f: r.f }); }
+    return { filters: out, tip: btcFeedTip };
+  },
+  async btcFeedBlock({ hash }) {
+    if (!/^[0-9a-f]{64}$/.test(hash || '')) throw new Error('плохой хеш');
+    // отдаём только блоки из живого окна фида (за его пределами клиенту они и не нужны)
+    if (![...btcFeed.values()].some(r => r.hash === hash)) throw new Error('блок вне окна фида');
+    return { hex: await btcRpcOn('', 'getblock', hash, 0) };
+  },
 };
 
 // ---- rate limiting: a token bucket per client IP ----

@@ -1,0 +1,54 @@
+# Freimarkets / Freicoin wallet — freicoin.ru (mirror of f.testtty.ru).
+server {
+    server_name freicoin.ru www.freicoin.ru;
+
+    location /ws/lnd     { proxy_pass http://127.0.0.1:3078; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 1h; proxy_send_timeout 1h; }
+    location /ws/main    { proxy_pass http://127.0.0.1:3041; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 1h; proxy_send_timeout 1h; }
+    location /ws/regtest { proxy_pass http://127.0.0.1:3040; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 1h; proxy_send_timeout 1h; }
+    location /ws/nv3     { proxy_pass http://127.0.0.1:3055; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 1h; proxy_send_timeout 1h; }
+    location /ws/test    { proxy_pass http://127.0.0.1:3042; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 1h; proxy_send_timeout 1h; }
+    location /api-test/  { proxy_pass http://127.0.0.1:5182/api/; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $remote_addr; }
+    location /api-main/  { proxy_pass http://127.0.0.1:5183/api/; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $remote_addr; }
+    location /snap/      { proxy_pass http://127.0.0.1:3050/; proxy_set_header Range $http_range; }
+    location /api/       { proxy_pass http://127.0.0.1:5181/api/; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $remote_addr; }
+    location /explorer   {
+        if ($fw_crawler) { return 403; }
+        limit_req zone=fw_explorer burst=15 nodelay;
+        proxy_pass http://127.0.0.1:3060;
+    }
+    location = /mine     { alias /var/www/fw-mine/index.html; default_type text/html; }
+    location = /about    { alias /var/www/fw-landing/index.html; default_type text/html; }
+    location = /signet   { alias /var/www/fw-signet/index.html; default_type text/html; }
+    # the SPA entry must always revalidate — hashed assets carry the real caching
+    location = /           { proxy_pass http://127.0.0.1:5173; add_header Cache-Control "no-cache"; }
+    location = /index.html { proxy_pass http://127.0.0.1:5173; add_header Cache-Control "no-cache"; }
+    location /           { proxy_pass http://127.0.0.1:5173; }
+
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/freicoin.ru/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/freicoin.ru/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+
+}
+
+server {
+    if ($host = www.freicoin.ru) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    if ($host = freicoin.ru) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    server_name freicoin.ru www.freicoin.ru;
+    return 404; # managed by Certbot
+
+
+
+
+}

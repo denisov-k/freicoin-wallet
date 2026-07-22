@@ -116,6 +116,25 @@ export async function btcFundHtlc(toAddr, sats) {
   return { txid, vout: 0, value: String(amount) };
 }
 
+// Собрать и подписать транзакцию НА СКРИПТ, но НЕ бродкастить — для funding-tx LN-канала:
+// LDK обязан сам публиковать её после обмена подписями (преждевременный бродкаст = потеря денег,
+// у контрагента ещё нет commitment-подписи). txid нужен LDK заранее — он в channel_point.
+export async function btcBuildTx(toSpkHex, sats) {
+  const amount = BigInt(sats), fee = btcFeeFor(VB_HTLC_FUND);
+  const ring = btcKeyring();
+  const acct = await api('btcAccount', { addresses: Object.keys(ring) });
+  const coins = [...acct.utxos].filter(c => ring[c.address]).sort((a, b) => Number(BigInt(b.value) - BigInt(a.value)));
+  const picked = []; let S = 0n;
+  for (const c of coins) { picked.push(c); S += BigInt(c.value); if (S >= amount + fee) break; }
+  if (S < amount + fee) throw new Error(tr('not enough BTC'));
+  const outputs = [{ spk: toSpkHex, value: amount }], change = S - amount - fee;
+  if (change > 546n) outputs.push({ spk: btcP2wpkhSpk(btcAcctPub()), value: change });
+  const inputs = picked.map(c => ({ prevTxid: c.txid, vout: c.vout, valueSats: BigInt(c.value), key: ring[c.address] }));
+  const { rawtx, txid } = btcP2wpkhSend({ inputs, outputs });
+  addFundTxid(txid);   // plumbing канала — Activity не показывает как обычный send
+  return { rawtx, txid, vout: 0, value: String(amount) };
+}
+
 // The wallet's BTC keys as importable WIFs — the escape hatch that keeps "non-custodial" honest:
 // any single key drops into Electrum/Sparrow/BlueWallet even if this service is gone. The BIP84
 // account is also restorable from the PHRASE alone; per-swap keys exist ONLY here (hash-derived),

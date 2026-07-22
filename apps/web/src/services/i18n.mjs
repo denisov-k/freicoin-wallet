@@ -2,6 +2,25 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  // --- LN in-wallet node (phase 2) ---
+  'relay chain feed is not ready': 'чейн-фид реле ещё не готов',
+  'node is off': 'узел выключен',
+  'can send': 'можно отправить',
+  'can receive': 'можно получить',
+  'channels': 'каналы',
+  'Enable ⚡ node': 'Включить ⚡-узел',
+  'Create invoice': 'Создать инвойс',
+  'Channel': 'Канал',
+  'open a channel to the exchange LSP, funded from your in-wallet BTC': 'открыть канал к LSP биржи из вашего BTC в кошельке',
+  'Open channel': 'Открыть канал',
+  'starting… (downloading the node, ~24 MB once)': 'запуск… (узел скачивается, ~24 МБ один раз)',
+  'bad amount': 'плохая сумма',
+  'payment started…': 'платёж запущен…',
+  'minimum channel is 100000 sats': 'минимальный канал — 100000 сат',
+  'channel requested — the funding transaction is being built…': 'канал запрошен — собираем funding-транзакцию…',
+  'channel funding failed': 'фандинг канала не удался',
+  'a full Lightning node inside your wallet: keys from your phrase, encrypted channel backups on the relay, non-custodial': 'полноценный Lightning-узел прямо в кошельке: ключи из вашей фразы, шифрованные бэкапы каналов на реле, некастодиально',
+
   // --- LN payout (sell side) ---
   'create an invoice in your Lightning wallet for the exact sats amount and paste it here': 'создайте в своём Lightning-кошельке инвойс ровно на эту сумму в сатоши и вставьте его сюда',
   'Invoice': 'Инвойс',
@@ -227,6 +246,25 @@ const RU = {
 };
 
 const ES = {
+  // --- LN in-wallet node (phase 2) ---
+  'relay chain feed is not ready': 'el feed de cadena del relay aún no está listo',
+  'node is off': 'nodo apagado',
+  'can send': 'puede enviar',
+  'can receive': 'puede recibir',
+  'channels': 'canales',
+  'Enable ⚡ node': 'Activar nodo ⚡',
+  'Create invoice': 'Crear factura',
+  'Channel': 'Canal',
+  'open a channel to the exchange LSP, funded from your in-wallet BTC': 'abre un canal al LSP del exchange con tu BTC del monedero',
+  'Open channel': 'Abrir canal',
+  'starting… (downloading the node, ~24 MB once)': 'iniciando… (descargando el nodo, ~24 MB una vez)',
+  'bad amount': 'importe inválido',
+  'payment started…': 'pago iniciado…',
+  'minimum channel is 100000 sats': 'canal mínimo: 100000 sats',
+  'channel requested — the funding transaction is being built…': 'canal solicitado — construyendo la transacción de financiación…',
+  'channel funding failed': 'falló la financiación del canal',
+  'a full Lightning node inside your wallet: keys from your phrase, encrypted channel backups on the relay, non-custodial': 'un nodo Lightning completo dentro de tu monedero: claves de tu frase, copias cifradas de canales en el relay, sin custodia',
+
   // --- LN payout (sell side) ---
   'create an invoice in your Lightning wallet for the exact sats amount and paste it here': 'crea una factura en tu monedero Lightning por la cantidad exacta de sats y pégala aquí',
   'Invoice': 'Factura',
@@ -632,6 +670,25 @@ const ES = {
 };
 
 const DE = {
+  // --- LN in-wallet node (phase 2) ---
+  'relay chain feed is not ready': 'der Chain-Feed des Relays ist noch nicht bereit',
+  'node is off': 'Node ist aus',
+  'can send': 'senden möglich',
+  'can receive': 'empfangen möglich',
+  'channels': 'Kanäle',
+  'Enable ⚡ node': '⚡-Node aktivieren',
+  'Create invoice': 'Rechnung erstellen',
+  'Channel': 'Kanal',
+  'open a channel to the exchange LSP, funded from your in-wallet BTC': 'öffne einen Kanal zum Börsen-LSP, finanziert aus deinem Wallet-BTC',
+  'Open channel': 'Kanal öffnen',
+  'starting… (downloading the node, ~24 MB once)': 'startet… (Node wird geladen, einmalig ~24 MB)',
+  'bad amount': 'ungültiger Betrag',
+  'payment started…': 'Zahlung gestartet…',
+  'minimum channel is 100000 sats': 'Mindestkanal: 100000 Sats',
+  'channel requested — the funding transaction is being built…': 'Kanal angefragt — Funding-Transaktion wird gebaut…',
+  'channel funding failed': 'Kanal-Funding fehlgeschlagen',
+  'a full Lightning node inside your wallet: keys from your phrase, encrypted channel backups on the relay, non-custodial': 'ein vollwertiger Lightning-Node direkt in deiner Wallet: Schlüssel aus deiner Phrase, verschlüsselte Kanal-Backups auf dem Relay, non-custodial',
+
   // --- LN payout (sell side) ---
   'create an invoice in your Lightning wallet for the exact sats amount and paste it here': 'erstelle in deiner Lightning-Wallet eine Rechnung über exakt diesen Sats-Betrag und füge sie hier ein',
   'Invoice': 'Rechnung',
@@ -1037,6 +1094,25 @@ const DE = {
 };
 
 const FR = {
+  // --- LN in-wallet node (phase 2) ---
+  'relay chain feed is not ready': "le flux de chaîne du relais n'est pas encore prêt",
+  'node is off': 'nœud éteint',
+  'can send': 'peut envoyer',
+  'can receive': 'peut recevoir',
+  'channels': 'canaux',
+  'Enable ⚡ node': 'Activer le nœud ⚡',
+  'Create invoice': 'Créer une facture',
+  'Channel': 'Canal',
+  'open a channel to the exchange LSP, funded from your in-wallet BTC': "ouvrez un canal vers le LSP de l'échange, financé par vos BTC du portefeuille",
+  'Open channel': 'Ouvrir un canal',
+  'starting… (downloading the node, ~24 MB once)': 'démarrage… (téléchargement du nœud, ~24 Mo une fois)',
+  'bad amount': 'montant invalide',
+  'payment started…': 'paiement lancé…',
+  'minimum channel is 100000 sats': 'canal minimum : 100000 sats',
+  'channel requested — the funding transaction is being built…': 'canal demandé — construction de la transaction de financement…',
+  'channel funding failed': 'échec du financement du canal',
+  'a full Lightning node inside your wallet: keys from your phrase, encrypted channel backups on the relay, non-custodial': 'un nœud Lightning complet dans votre portefeuille : clés issues de votre phrase, sauvegardes chiffrées des canaux sur le relais, non-custodial',
+
   // --- LN payout (sell side) ---
   'create an invoice in your Lightning wallet for the exact sats amount and paste it here': 'créez une facture dans votre portefeuille Lightning pour le montant exact en sats et collez-la ici',
   'Invoice': 'Facture',
@@ -1442,6 +1518,25 @@ const FR = {
 };
 
 const PT = {
+  // --- LN in-wallet node (phase 2) ---
+  'relay chain feed is not ready': 'o feed de cadeia do relay ainda não está pronto',
+  'node is off': 'nó desligado',
+  'can send': 'pode enviar',
+  'can receive': 'pode receber',
+  'channels': 'canais',
+  'Enable ⚡ node': 'Ativar nó ⚡',
+  'Create invoice': 'Criar fatura',
+  'Channel': 'Canal',
+  'open a channel to the exchange LSP, funded from your in-wallet BTC': 'abra um canal para o LSP da exchange com seu BTC da carteira',
+  'Open channel': 'Abrir canal',
+  'starting… (downloading the node, ~24 MB once)': 'iniciando… (baixando o nó, ~24 MB uma vez)',
+  'bad amount': 'valor inválido',
+  'payment started…': 'pagamento iniciado…',
+  'minimum channel is 100000 sats': 'canal mínimo: 100000 sats',
+  'channel requested — the funding transaction is being built…': 'canal solicitado — construindo a transação de financiamento…',
+  'channel funding failed': 'financiamento do canal falhou',
+  'a full Lightning node inside your wallet: keys from your phrase, encrypted channel backups on the relay, non-custodial': 'um nó Lightning completo dentro da sua carteira: chaves da sua frase, backups criptografados dos canais no relay, sem custódia',
+
   // --- LN payout (sell side) ---
   'create an invoice in your Lightning wallet for the exact sats amount and paste it here': 'crie uma fatura na sua carteira Lightning com o valor exato em sats e cole-a aqui',
   'Invoice': 'Fatura',
@@ -1847,6 +1942,25 @@ const PT = {
 };
 
 const ZH = {
+  // --- LN in-wallet node (phase 2) ---
+  'relay chain feed is not ready': '中继链馈送尚未就绪',
+  'node is off': '节点已关闭',
+  'can send': '可发送',
+  'can receive': '可接收',
+  'channels': '通道',
+  'Enable ⚡ node': '启用 ⚡ 节点',
+  'Create invoice': '创建发票',
+  'Channel': '通道',
+  'open a channel to the exchange LSP, funded from your in-wallet BTC': '用钱包内的 BTC 向交易所 LSP 开通道',
+  'Open channel': '开启通道',
+  'starting… (downloading the node, ~24 MB once)': '启动中…（下载节点，一次约 24 MB）',
+  'bad amount': '金额无效',
+  'payment started…': '付款已开始…',
+  'minimum channel is 100000 sats': '最小通道为 100000 聪',
+  'channel requested — the funding transaction is being built…': '已请求通道——正在构建注资交易…',
+  'channel funding failed': '通道注资失败',
+  'a full Lightning node inside your wallet: keys from your phrase, encrypted channel backups on the relay, non-custodial': '钱包内置完整闪电节点：密钥来自您的助记词，通道加密备份在中继上，非托管',
+
   // --- LN payout (sell side) ---
   'create an invoice in your Lightning wallet for the exact sats amount and paste it here': '在您的闪电钱包中创建精确金额（聪）的发票并粘贴到这里',
   'Invoice': '发票',
