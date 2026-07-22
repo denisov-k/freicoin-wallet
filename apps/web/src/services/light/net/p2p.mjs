@@ -14,6 +14,11 @@ export const MAGIC = {
   // Freimarkets is a custom signet since 2026-07-17: magic = sha256d(compactsize ++ challenge)[0..3]
   // for challenge 001430688e98e57a68c551b7711ec2086325be33b8d7.
   nv3: [0xd2, 0xcb, 0x28, 0xb0],
+  // BITCOIN networks — the LN node's chain feed (LDK) runs the same neutrino machinery against
+  // a bitcoind with -peerblockfilters. Plain 80-byte headers (no aux flag in nBits) already parse.
+  btcmain: [0xf9, 0xbe, 0xb4, 0xd9],
+  btcregtest: [0xfa, 0xbf, 0xb5, 0xda],
+  btcsignet: [0x0a, 0x03, 0xcf, 0x40],
 };
 
 /** Frame a message: magic(4) ++ command(12) ++ len(4 LE) ++ checksum(4) ++ payload. */
