@@ -89,6 +89,11 @@ const lnHooks = lnd ? {
   lnLookup: h => lnd.lookupInvoice(h),
   lnSettle: r => lnd.settleInvoice(r),
   lnCancel: h => lnd.cancelInvoice(h),
+  // sell-сторона (LN-выплата продавцу FRC): разбор его инвойса, оплата, добивание исхода после
+  // рестарта. Роутинг-комиссия — из кармана бота (входит в спред): max(15 сат, 1%).
+  lnDecode: payreq => lnd.decodePayReq(payreq),
+  lnPay: ({ payreq, sats }) => lnd.payInvoice({ payreq, feeLimitSat: Math.max(15, Math.ceil(Number(sats) * 0.01)), cltvLimit: 144 }),
+  lnFindPay: h => lnd.findPayment(h),
 } : {};
 initDrive({ ...browserSwapEnv({ toast: (m, kind) => log(`[${kind || 'info'}]`, m), mvRefresh: () => { wantRefresh = true; }, observe: () => {} }), ...lnHooks });
 initBtcAccount(() => {});   // no browser-side nonce recovery needed: the bot's records never leave BOT_DIR
@@ -192,7 +197,7 @@ async function cancelOffer(rec) {
   else dropP2p(rec.id);
 }
 
-async function postBid(btcSats, satPerFrc) {
+async function postBid(btcSats, satPerFrc, lnOnly = false) {
   const frcK = BigInt(Math.round(Number(btcSats) / satPerFrc * 1e8));
   const nonce = sha256(Buffer.from(seed + 'fw-p2p-nonce:B:' + frcK + ':' + btcSats + ':' + ctx.state.mine.height, 'utf8')).toString('hex').slice(0, 16);
   const frcPub = pubkeyCompressed(p2pKey(nonce, 'frc')), btcPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
@@ -204,7 +209,7 @@ async function postBid(btcSats, satPerFrc) {
   const partial = minFill < btcSats;
   if (!partial) minFill = btcSats;
   const r = await api('p2pPostB', { frcAmount: String(frcK), btcAmount: String(btcSats), makerFrcPub: frcPub, makerBtcPub: btcPub,
-    makerFrcAddr: deriveAddress(seed, 0, 0), ...(partial ? { partial: true, minFill: String(minFill), maxFill: String(btcSats) } : {}) });
+    makerFrcAddr: deriveAddress(seed, 0, 0), ...(lnd ? { ln: true } : {}), ...(lnOnly ? { lnOnly: true } : {}), ...(partial ? { partial: true, minFill: String(minFill), maxFill: String(btcSats) } : {}) });
   addBtcNonce(nonce);
   putP2p({ id: r.id, role: 'maker', dir: 'sellBtc', nonce, status: 'open', partial, assetTag: null, frcAmount: String(frcK), btcAmount: String(btcSats) });
   log(`posted ${r.id}: BUY ${Number(frcK) / 1e8} FRC @ ${satPerFrc.toFixed(2)} sat/FRC (pay ${btcSats} sat, ${partial ? 'minFill ' + minFill + ' sat' : 'whole-only'})`);
@@ -217,12 +222,19 @@ async function manageBid(price, live) {
   if (b.balance == null) return;
   const bidRate = price * (1 - SPREAD_BID);
   let free = BigInt(b.balance) - BTC_RESERVE; if (free < 0n) free = 0n;
+  // LN-выплаты платятся из КАНАЛЬНОГО баланса, on-chain тейки — из он-чейн счёта. Бид сайзим по
+  // большей из ёмкостей; если он-чейн не тянет даже минимальный тейк — оффер выплачивает ТОЛЬКО
+  // по ⚡ (lnOnly), и реле не даст взять его без инвойса. 2% удерживаем под роутинг-комиссии.
+  let lnFree = 0n;
+  if (lnd) { try { lnFree = (await lnd.channelBalance()) * 98n / 100n; } catch { lnFree = 0n; } }
+  const lnOnly = !!lnd && free < MIN_BID && lnFree >= MIN_BID;
+  if (lnOnly) free = lnFree; else if (lnd && lnFree > free) free = lnFree;
   const target = free > MAX_BID ? MAX_BID : free;
   const mine = myBids().filter(r => live.some(x => x.id === r.id && x.status === 'open' && (x.kind === 'offer' || x.dir === 'sellBtc')));
   if (!mine.length) {
     if (target < MIN_BID) return;   // empty/small float — the side idles silently
-    if (DRY) { log(`DRY: would bid ${target} sat @ ${bidRate.toFixed(2)} sat/FRC`); return; }
-    return postBid(target, bidRate);
+    if (DRY) { log(`DRY: would bid ${target} sat @ ${bidRate.toFixed(2)} sat/FRC${lnOnly ? ' (⚡ only)' : ''}`); return; }
+    return postBid(target, bidRate, lnOnly);
   }
   const rec = mine[0], x = live.find(o => o.id === rec.id);
   const offerRate = Number(BigInt(x.btcAmount)) / Number(BigInt(x.frcAmount)) * 1e8;
@@ -232,11 +244,13 @@ async function manageBid(price, live) {
   const shrunk = target < (remaining * 2n) / 3n && remaining - target >= MIN_BID;
   const minPiece = x.minFill ? BigInt(x.minFill) : MIN_BID;
   const dustRemainder = remaining < BigInt(x.btcAmount) && remaining < minPiece;
-  if (drift > REPRICE || dustRemainder || grown || shrunk) {
-    log(`repost bid ${rec.id}: drift ${(drift * 100).toFixed(1)}%, remaining ${remaining} sat, target ${target} sat${shrunk ? ' (shrink)' : ''}`);
+  // репост и при смене LN-профиля: LND поднялся после постинга, или lnOnly перестал соответствовать
+  const lnUpgrade = (!!lnd && !x.ln) || (!!x.lnOnly !== lnOnly);
+  if (drift > REPRICE || dustRemainder || grown || shrunk || lnUpgrade) {
+    log(`repost bid ${rec.id}: drift ${(drift * 100).toFixed(1)}%, remaining ${remaining} sat, target ${target} sat${shrunk ? ' (shrink)' : lnUpgrade ? ' (ln profile)' : ''}`);
     if (DRY) return;
     await cancelOffer(rec);
-    if (target >= MIN_BID) await postBid(target, bidRate);
+    if (target >= MIN_BID) await postBid(target, bidRate, lnOnly);
   }
 }
 

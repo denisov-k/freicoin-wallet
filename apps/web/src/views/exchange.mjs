@@ -6,6 +6,7 @@
 import { deriveAddress, currentNet, addrToSpk } from '@/services/wallet.mjs';
 import { NETWORKS } from '@/state/network-params.mjs';
 import { derivePath, ckdPriv, wpkProgramHex } from '@core/hd.mjs';
+import { decodeBolt11 } from '@core/bolt11.mjs';
 import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
 import { segwitV0Sighash, rangedSighash, SIGHASH_ALL, SIGHASH_BUNDLE } from '@core/sighash.mjs';
 import { serializeTx, NV3_TX_VERSION } from '@core/tx.mjs';
@@ -826,7 +827,7 @@ async function postP2pOfferB(btcUnits, wantUnits, wantTag = null, opts = null) {
 export const takerPayCapacity = tag => tag
   ? myCoinsOf(tag, state.mine.height).reduce((s, c) => s + c.pv, 0n)
   : freeFrcKria() - 10000n;
-async function takeP2pB(offer, fillSats = null) {
+async function takeP2pB(offer, fillSats = null, ln = null) {
   try {
     const tag = offer.assetTag ?? null;
     // PRE-FLIGHT: the reverse taker funds FRC/asset immediately after the take registers — check
@@ -839,8 +840,10 @@ async function takeP2pB(offer, fillSats = null) {
       ? sha256(Buffer.from(seed + 'fw-p2p-take:' + offer.id + ':' + fillSats + ':' + state.mine.height, 'utf8')).toString('hex').slice(0, 16)
       : sha256(Buffer.from(seed + 'fw-p2p-take:' + offer.id, 'utf8')).toString('hex').slice(0, 16);
     const frcPub = pubkeyCompressed(p2pKey(nonce, 'frc')), btcPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
-    const H = paymentHashOf(p2pKey(nonce, 'R'));
-    const r = await api('p2pTakeB', { id: offer.id, ...(fillSats != null ? { fill: String(fillSats) } : {}), takerFrcPub: frcPub, takerBtcPub: btcPub, takerBtcAddr: btcAcctAddr(), paymentHash: H });
+    // LN-выплата: H свопа = payment_hash ИНВОЙСА тейкера (секрет живёт в его LN-кошельке и
+    // раскроется мейкеру самим фактом оплаты). Иначе — наш обычный R из нонса.
+    const H = ln ? ln.paymentHash : paymentHashOf(p2pKey(nonce, 'R'));
+    const r = await api('p2pTakeB', { id: offer.id, ...(fillSats != null ? { fill: String(fillSats) } : {}), takerFrcPub: frcPub, takerBtcPub: btcPub, takerBtcAddr: btcAcctAddr(), paymentHash: H, ...(ln ? { lnInvoice: ln.invoice } : {}) });
     addBtcNonce(nonce);
     // fund my give-side HTLC immediately — this IS the commitment that makes the take real.
     // If the funding still fails (coins raced away), UNDO the take so the offer frees instantly.
@@ -853,9 +856,10 @@ async function takeP2pB(offer, fillSats = null) {
     }
     putP2p({ id: r.id, role: 'taker', dir: 'sellBtc', ...(fillSats != null ? { parent: offer.id } : {}), nonce, status: 'frc_funded_rev',
       assetTag: tag, frcAmount: r.frcAmount, btcAmount: r.btcAmount, paymentHash: H, leaf: r.frcHtlc.leaf, T1: r.frcHtlc.cltv,
+      ...(ln ? { lnPayout: true } : {}),
       funding: { txid: fund.txid, vout: fund.vout, value: r.frcAmount, refheight: fund.refheight ?? state.mine.height } });
     await api('p2pFrcFundedB', { id: r.id, txid: fund.txid, vout: fund.vout });
-    toast(tr('locked — the seller sends BTC, it arrives automatically'), 'ok'); mvRefresh();
+    toast(ln ? tr('locked — sats will arrive in your Lightning wallet ⚡') : tr('locked — the seller sends BTC, it arrives automatically'), 'ok'); mvRefresh();
     return r.id;
   } catch (e) { toast(e.message, 'err'); return null; }
 }
@@ -885,6 +889,14 @@ function openP2pTakePartial(offer) {
     <div class="sub" style="font-size:13px">${tr('Available')}: ${rem.toLocaleString(getLang())} ${aname}<br>${tr('Per buy:')} ${mn.toLocaleString(getLang())} – ${mx.toLocaleString(getLang())}</div>
     <label class="numfield">${tr('Amount')}<input id="tpAmt" type="text" inputmode="decimal" placeholder="${mn.toLocaleString(getLang())} – ${mx.toLocaleString(getLang())}"></label>
     <div class="rrow"><span>${tr('You pay')}</span><b id="tpCost">—</b></div>
+    ${isRev && offer.ln ? `<div class="seg" id="tpRecv" style="margin:6px 0">
+      <button data-recv="chain" ${offer.lnOnly ? 'disabled' : 'class="on"'}>BTC on-chain</button>
+      <button data-recv="ln" ${offer.lnOnly ? 'class="on"' : ''}>⚡ Lightning</button></div>
+    <div id="tpLnPane" style="display:${offer.lnOnly ? 'block' : 'none'}">
+      <div class="sub" id="tpLnHint" style="font-size:12px">${tr('create an invoice in your Lightning wallet for the exact sats amount and paste it here')}</div>
+      <label class="numfield">${tr('Invoice')}<input id="tpInv" type="text" autocomplete="off" spellcheck="false" placeholder="lnbc…"></label>
+      <div class="sub" id="tpInvChk" style="font-size:12px"></div>
+    </div>` : ''}
     <button id="tkGo">${tr('Buy')}</button>
     <div id="tkLog" class="sub" style="font-size:12px;white-space:pre-line"></div></div>`;
   document.body.appendChild(m);
@@ -906,11 +918,43 @@ function openP2pTakePartial(offer) {
     }
   };
   q(m, '#tpAmt').oninput = cost; cost();
+  // ⚡-выплата: пользователь получает сатоши на СВОЙ LN-кошелёк. H свопа берём из его инвойса;
+  // сумма инвойса обязана совпасть с BTC-стороной куска ровно (мейкер сверит через свой узел).
+  let recvLn = !!(isRev && offer.lnOnly), lnParsed = null;
+  const wantSats = () => BigInt(Math.round((num($('#tpAmt').value) || 0) * 1e8));
+  const checkInv = () => {
+    const el = q(m, '#tpInvChk'); if (!el) return;
+    lnParsed = null; el.textContent = ''; el.style.color = '';
+    const raw = (q(m, '#tpInv')?.value || '').trim(); if (!raw) return;
+    try {
+      const d = decodeBolt11(raw);
+      const net = state.swap?.btcHrp === 'bc' ? 'bc' : state.swap?.btcHrp === 'bcrt' ? 'bcrt' : 'tb';
+      if (d.net !== net) throw new Error(tr('invoice is for a different network'));
+      if (d.sats == null) throw new Error(tr('invoice must carry an exact amount'));
+      const need = wantSats();
+      if (need > 0n && d.sats !== need) throw new Error(`${tr('invoice amount must be exactly')} ${need} ${tr('sats')} (${tr('got')} ${d.sats})`);
+      if ((d.timestamp + d.expiry) * 1000 < Date.now() + 3600e3) throw new Error(tr('invoice expires too soon — set expiry to 2h+'));
+      if (need > 0n) { lnParsed = { invoice: raw.replace(/^lightning:/i, ''), paymentHash: d.paymentHash }; el.textContent = '✓ ' + tr('invoice matches'); el.style.color = 'var(--ok, #2e7d32)'; }
+    } catch (e) { el.textContent = e.message; el.style.color = 'var(--err, #c62828)'; }
+  };
+  if (q(m, '#tpRecv')) {
+    q(m, '#tpRecv').onclick = e => {
+      const b = e.target.closest('button[data-recv]'); if (!b || b.disabled) return;
+      recvLn = b.dataset.recv === 'ln';
+      for (const x of m.querySelectorAll('#tpRecv button')) x.classList.toggle('on', x === b);
+      q(m, '#tpLnPane').style.display = recvLn ? 'block' : 'none';
+      checkInv();
+    };
+    q(m, '#tpInv').oninput = checkInv;
+    const prevCost = q(m, '#tpAmt').oninput;
+    q(m, '#tpAmt').oninput = () => { prevCost(); checkInv(); };
+  }
   q(m, '#tkGo').onclick = async () => {
     const a = num($('#tpAmt').value);
     if (!(a >= mn && a <= mx)) { toast(`${mn}–${mx} ${aname}`, 'err'); return; }
+    if (recvLn && !lnParsed) { toast(tr('paste a matching Lightning invoice first'), 'err'); return; }
     const go = $('#tkGo'); go.disabled = true; go.textContent = isRev ? tr('locking…') : '…';
-    const cid = await takeP2pPart(offer, a, t => { const el = $('#tkLog'); if (el) el.textContent += (el.textContent ? '\n' : '') + t; });
+    const cid = await takeP2pPart(offer, a, t => { const el = $('#tkLog'); if (el) el.textContent += (el.textContent ? '\n' : '') + t; }, recvLn ? lnParsed : null);
     if (!cid) { go.disabled = false; go.textContent = tr('Buy'); return; }
     if (isRev) { stop(); return; }   // reverse v2: FRC/asset just locked; BTC arrives via the drive
     // forward v2: I pay FIRST — the take returned the BTC HTLC, morph into the pay step now
@@ -918,11 +962,11 @@ function openP2pTakePartial(offer) {
     if (rec?.btcHtlc?.addr) renderP2pPay(m, rec); else stop();
   };
 }
-async function takeP2pPart(offer, fillUnits, log) {
+async function takeP2pPart(offer, fillUnits, log, ln = null) {
   try {
     const isRev = offer.dir === 'sellBtc';
     const fill = BigInt(Math.round(fillUnits * (isRev ? 1e8 : (offer.assetTag ? scaleOf(offer.assetTag) : 1e8))));
-    if (isRev) return await takeP2pB(offer, fill);   // v2: the reverse taker funds FRC/asset right away
+    if (isRev) return await takeP2pB(offer, fill, ln);   // v2: the reverse taker funds FRC/asset right away
     const nonce = sha256(Buffer.from(seed + 'fw-p2p-take:' + offer.id + ':' + fill + ':' + state.mine.height, 'utf8')).toString('hex').slice(0, 16);
     const frcPub = pubkeyCompressed(p2pKey(nonce, 'frc')), btcPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
     const H = paymentHashOf(p2pKey(nonce, 'R'));

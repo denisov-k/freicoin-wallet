@@ -27,6 +27,9 @@ import { pubkeyCompressed } from '@core/ecdsa.mjs';
  * @property {()=>any[]} [loadSwapHist]
  * @property {(a:{hashHex:string,sats:number})=>Promise<string>} [lnAddHold]
  * @property {(hashHex:string)=>Promise<{state:string}>} [lnLookup]
+ * @property {(payreq:string)=>Promise<{paymentHash:string,sats:bigint,timestamp:number,expiry:number}>} [lnDecode]
+ * @property {(a:{payreq:string,sats:string|number})=>Promise<{preimageHex:string}>} [lnPay]
+ * @property {(hashHex:string)=>Promise<{status:string|null,preimageHex:string|null}>} [lnFindPay]
  * @property {(preimageHex:string)=>Promise<any>} [lnSettle]
  * @property {(hashHex:string)=>Promise<any>} [lnCancel]
  * @property {(txid:string)=>void} addRefundedFund
@@ -401,7 +404,46 @@ const driveErr = new Map();   // last surfaced error per (id,status) — avoid t
 async function driveP2pRev(rec, w, info) {
   const { tr, api, p2pKey } = env;
   if (rec.role === 'maker') {
-    if (w.status === 'frc_funded_rev' && w.frcHtlc?.txid) {       // taker locked → lock BTC
+    // LN-ВЫПЛАТА: тейкер запер FRC и оставил инвойс — вместо BTC HTLC мейкер платит по Lightning.
+    // Settlement платежа отдаёт preimage: он и «финансирует», и «клеймит» BTC-ногу атомарно.
+    if (w.lnPayout && env.lnPay && w.status === 'frc_funded_rev' && w.frcHtlc?.txid) {
+      // после рестарта: платёж мог уйти до падения — сперва добиваем исход, а не платим заново
+      if (rec.status === 'ln_paying') {
+        const fp = await env.lnFindPay(w.paymentHash);
+        if (fp.status === 'SUCCEEDED' && fp.preimageHex) {
+          await api('p2pLnPaidB', { id: rec.id, preimage: fp.preimageHex });
+          env.putP2p({ ...rec, status: 'ln_paid' }); env.mvRefresh(); return;
+        }
+        if (fp.status !== 'FAILED') return;                           // in-flight/неизвестен — не рискуем повторной оплатой
+        env.putP2p({ ...rec, status: 'frc_funded_rev' });             // определённый провал — можно попробовать снова
+      }
+      // та же независимая проверка FRC-ноги, что и в on-chain ветке — реле на слово не верим
+      const f = w.frcHtlc, tag = w.assetTag ?? f.assetTag ?? null;
+      const expectFrc = frcLeg({ role: 'receive', ourKey: p2pKey(rec.nonce, 'frc'), theirPub: w.taker.frcPub, paymentHash: w.paymentHash, cltv: f.cltv, net: env.swapNet() });
+      if (expectFrc.leaf !== f.leaf) throw new Error(tr('FRC HTLC mismatch'));
+      await env.verifyFrcOutput({ txid: f.txid, vout: f.vout, spk: expectFrc.spk, minValue: w.frcAmount, assetTag: tag, minConf: 1 });
+      // инвойс глазами СВОЕГО узла: хеш = H свопа, сумма ровно btcAmount, срок не на исходе
+      const d = await env.lnDecode(w.lnPayout);
+      if (d.paymentHash !== w.paymentHash) throw new Error('инвойс не под H свопа');
+      if (String(d.sats) !== String(w.btcAmount)) throw new Error(`инвойс на ${d.sats} сат вместо ${w.btcAmount}`);
+      if ((d.timestamp + d.expiry) * 1000 < Date.now() + 300e3) throw new Error('инвойс истекает — не платим');
+      // FRC-нога должна пережить худший in-flight платёж (cltv_limit 144 BTC-блоков ≈ 24ч) с запасом
+      const farRemSec = Math.max(0, (f.cltv - (info.frcHeight || 0))) * ((info.mineEveryMs || 600000) / 1000);
+      if (farRemSec < 144 * 600 * 1.4) throw new Error('FRC-таймлок не переживёт худший LN-платёж');
+      env.putP2p({ ...rec, status: 'ln_paying' });                    // фиксируем ДО оплаты (краш-барьер)
+      let pay;
+      try { pay = await env.lnPay({ payreq: w.lnPayout, sats: w.btcAmount }); }
+      catch (e) {
+        // таймаут клиента ≠ провал: исход добьёт ветка ln_paying выше на следующем тике
+        if (/timeout|исход неизвестен/i.test(e.message)) return;
+        env.putP2p({ ...rec, status: 'frc_funded_rev' }); throw e;    // определённый провал — можно повторить
+      }
+      await api('p2pLnPaidB', { id: rec.id, preimage: pay.preimageHex });
+      env.putP2p({ ...rec, status: 'ln_paid' });
+      env.toast(`${w.id}: ${tr('⚡ payout sent')}`, 'ok'); env.mvRefresh();
+      return;
+    }
+    if (w.status === 'frc_funded_rev' && w.frcHtlc?.txid && !w.lnPayout) {       // taker locked → lock BTC
       // SECURITY: don't fund real BTC on the relay's word. Independently verify the taker's FRC
       // FAR leg on-chain — rebuild its leaf with MY OWN claim key (the relay can't substitute it)
       // and confirm the funded output holds the promised amount/asset with ≥1 conf — mirroring the
@@ -449,6 +491,14 @@ async function driveP2pRev(rec, w, info) {
       env.mvRefresh();
     }
   } else {   // taker: I locked at take; the seller's BTC is up → claim it (reveals R)
+    // LN-выплата: платить/клеймить нечего — сатоши уже упали в внешний LN-кошелёк тейкера
+    // (settlement инвойса), мейкер забирает FRC сам. Осталось записать историю и убрать запись.
+    if (rec.lnPayout && w.lnPaid && (w.status === 'btc_claimed_rev' || w.status === 'done')) {
+      env.addSwapHist({ id: rec.id, category: 'sale', assetTag: rec.assetTag ?? w.assetTag ?? null, frcAmount: w.frcAmount, btcAmount: w.btcAmount, btcTxid: 'ln', frcTxid: rec.funding?.txid ?? null, time: Math.floor(Date.now() / 1000) });
+      env.dropP2p(rec.id);
+      env.toast(`${w.id}: ${tr('sats arrived in your Lightning wallet ⚡')}`, 'ok'); env.mvRefresh();
+      return;
+    }
     if (w.status === 'frc_funded_rev' && rec.status === 'frc_funded_rev' && rec.funding?.txid && !w.frcHtlc?.txid) {
       // IDEMPOTENT: funded at take but the report never landed — re-report the existing funding
       await api('p2pFrcFundedB', { id: rec.id, txid: rec.funding.txid, vout: rec.funding.vout ?? 0 });

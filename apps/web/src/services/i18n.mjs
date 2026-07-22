@@ -2,6 +2,21 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  // --- LN payout (sell side) ---
+  'create an invoice in your Lightning wallet for the exact sats amount and paste it here': 'создайте в своём Lightning-кошельке инвойс ровно на эту сумму в сатоши и вставьте его сюда',
+  'Invoice': 'Инвойс',
+  'invoice is for a different network': 'инвойс от другой сети',
+  'invoice must carry an exact amount': 'в инвойсе должна быть точная сумма',
+  'invoice amount must be exactly': 'сумма инвойса должна быть ровно',
+  'sats': 'сат',
+  'got': 'а там',
+  'invoice expires too soon — set expiry to 2h+': 'инвойс истекает слишком быстро — поставьте срок от 2 часов',
+  'invoice matches': 'инвойс подходит',
+  'paste a matching Lightning invoice first': 'сначала вставьте подходящий Lightning-инвойс',
+  'locked — sats will arrive in your Lightning wallet ⚡': 'заперто — сатоши придут в ваш Lightning-кошелёк ⚡',
+  'sats arrived in your Lightning wallet ⚡': 'сатоши пришли в ваш Lightning-кошелёк ⚡',
+  '⚡ payout sent': '⚡ выплата отправлена',
+
   "confirming\u2026": "подтверждение…",
   "chain still syncing \u2014 sending unlocks once it is verified": "цепь ещё синхронизируется — отправка откроется после её проверки",
   "Market relay URL (order book & swaps)": "Адрес маркет-relay (биржа и обмены)",
@@ -212,6 +227,21 @@ const RU = {
 };
 
 const ES = {
+  // --- LN payout (sell side) ---
+  'create an invoice in your Lightning wallet for the exact sats amount and paste it here': 'crea una factura en tu monedero Lightning por la cantidad exacta de sats y pégala aquí',
+  'Invoice': 'Factura',
+  'invoice is for a different network': 'la factura es de otra red',
+  'invoice must carry an exact amount': 'la factura debe llevar una cantidad exacta',
+  'invoice amount must be exactly': 'el importe de la factura debe ser exactamente',
+  'sats': 'sats',
+  'got': 'recibido',
+  'invoice expires too soon — set expiry to 2h+': 'la factura caduca demasiado pronto — pon una validez de 2h o más',
+  'invoice matches': 'la factura coincide',
+  'paste a matching Lightning invoice first': 'pega primero una factura Lightning válida',
+  'locked — sats will arrive in your Lightning wallet ⚡': 'bloqueado — los sats llegarán a tu monedero Lightning ⚡',
+  'sats arrived in your Lightning wallet ⚡': 'los sats llegaron a tu monedero Lightning ⚡',
+  '⚡ payout sent': '⚡ pago enviado',
+
   "confirming\u2026": "confirmando…",
   "chain still syncing \u2014 sending unlocks once it is verified": "la cadena aún se sincroniza: el envío se desbloqueará tras verificarla",
   "Market relay URL (order book & swaps)": "URL del relé de mercado (ofertas e intercambios)",
@@ -602,6 +632,21 @@ const ES = {
 };
 
 const DE = {
+  // --- LN payout (sell side) ---
+  'create an invoice in your Lightning wallet for the exact sats amount and paste it here': 'erstelle in deiner Lightning-Wallet eine Rechnung über exakt diesen Sats-Betrag und füge sie hier ein',
+  'Invoice': 'Rechnung',
+  'invoice is for a different network': 'Rechnung gehört zu einem anderen Netzwerk',
+  'invoice must carry an exact amount': 'Rechnung muss einen exakten Betrag enthalten',
+  'invoice amount must be exactly': 'Rechnungsbetrag muss exakt sein:',
+  'sats': 'Sats',
+  'got': 'erhalten',
+  'invoice expires too soon — set expiry to 2h+': 'Rechnung läuft zu früh ab — Gültigkeit auf 2h+ setzen',
+  'invoice matches': 'Rechnung passt',
+  'paste a matching Lightning invoice first': 'füge zuerst eine passende Lightning-Rechnung ein',
+  'locked — sats will arrive in your Lightning wallet ⚡': 'gesperrt — Sats kommen in deine Lightning-Wallet ⚡',
+  'sats arrived in your Lightning wallet ⚡': 'Sats sind in deiner Lightning-Wallet angekommen ⚡',
+  '⚡ payout sent': '⚡ Auszahlung gesendet',
+
   "confirming\u2026": "Bestätigung…",
   "chain still syncing \u2014 sending unlocks once it is verified": "Kette synchronisiert noch — Senden wird nach der Verifizierung freigeschaltet",
   "Market relay URL (order book & swaps)": "Markt-Relay-URL (Orderbuch & Swaps)",
@@ -992,6 +1037,21 @@ const DE = {
 };
 
 const FR = {
+  // --- LN payout (sell side) ---
+  'create an invoice in your Lightning wallet for the exact sats amount and paste it here': 'créez une facture dans votre portefeuille Lightning pour le montant exact en sats et collez-la ici',
+  'Invoice': 'Facture',
+  'invoice is for a different network': 'la facture est pour un autre réseau',
+  'invoice must carry an exact amount': 'la facture doit porter un montant exact',
+  'invoice amount must be exactly': 'le montant de la facture doit être exactement',
+  'sats': 'sats',
+  'got': 'reçu',
+  'invoice expires too soon — set expiry to 2h+': 'la facture expire trop tôt — mettez une validité de 2h ou plus',
+  'invoice matches': 'la facture correspond',
+  'paste a matching Lightning invoice first': "collez d'abord une facture Lightning valide",
+  'locked — sats will arrive in your Lightning wallet ⚡': 'verrouillé — les sats arriveront dans votre portefeuille Lightning ⚡',
+  'sats arrived in your Lightning wallet ⚡': 'les sats sont arrivés dans votre portefeuille Lightning ⚡',
+  '⚡ payout sent': '⚡ paiement envoyé',
+
   "confirming\u2026": "confirmation…",
   "chain still syncing \u2014 sending unlocks once it is verified": "la chaîne se synchronise encore — l’envoi sera débloqué après vérification",
   "Market relay URL (order book & swaps)": "URL du relais de marché (offres et échanges)",
@@ -1382,6 +1442,21 @@ const FR = {
 };
 
 const PT = {
+  // --- LN payout (sell side) ---
+  'create an invoice in your Lightning wallet for the exact sats amount and paste it here': 'crie uma fatura na sua carteira Lightning com o valor exato em sats e cole-a aqui',
+  'Invoice': 'Fatura',
+  'invoice is for a different network': 'a fatura é de outra rede',
+  'invoice must carry an exact amount': 'a fatura deve ter um valor exato',
+  'invoice amount must be exactly': 'o valor da fatura deve ser exatamente',
+  'sats': 'sats',
+  'got': 'recebido',
+  'invoice expires too soon — set expiry to 2h+': 'a fatura expira cedo demais — defina validade de 2h ou mais',
+  'invoice matches': 'a fatura confere',
+  'paste a matching Lightning invoice first': 'cole primeiro uma fatura Lightning válida',
+  'locked — sats will arrive in your Lightning wallet ⚡': 'bloqueado — os sats chegarão à sua carteira Lightning ⚡',
+  'sats arrived in your Lightning wallet ⚡': 'os sats chegaram à sua carteira Lightning ⚡',
+  '⚡ payout sent': '⚡ pagamento enviado',
+
   "confirming\u2026": "confirmando…",
   "chain still syncing \u2014 sending unlocks once it is verified": "a cadeia ainda sincroniza — o envio desbloqueia após a verificação",
   "Market relay URL (order book & swaps)": "URL do relay de mercado (ofertas e trocas)",
@@ -1772,6 +1847,21 @@ const PT = {
 };
 
 const ZH = {
+  // --- LN payout (sell side) ---
+  'create an invoice in your Lightning wallet for the exact sats amount and paste it here': '在您的闪电钱包中创建精确金额（聪）的发票并粘贴到这里',
+  'Invoice': '发票',
+  'invoice is for a different network': '发票属于其他网络',
+  'invoice must carry an exact amount': '发票必须包含确切金额',
+  'invoice amount must be exactly': '发票金额必须恰好为',
+  'sats': '聪',
+  'got': '实际为',
+  'invoice expires too soon — set expiry to 2h+': '发票过期太快——请设置 2 小时以上的有效期',
+  'invoice matches': '发票匹配',
+  'paste a matching Lightning invoice first': '请先粘贴匹配的闪电发票',
+  'locked — sats will arrive in your Lightning wallet ⚡': '已锁定——聪将到达您的闪电钱包 ⚡',
+  'sats arrived in your Lightning wallet ⚡': '聪已到达您的闪电钱包 ⚡',
+  '⚡ payout sent': '⚡ 付款已发送',
+
   "confirming\u2026": "确认中…",
   "chain still syncing \u2014 sending unlocks once it is verified": "链仍在同步——验证完成后即可发送",
   "Market relay URL (order book & swaps)": "市场中继地址（订单簿与交换）",
