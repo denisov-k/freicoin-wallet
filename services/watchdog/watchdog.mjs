@@ -85,6 +85,18 @@ const checks = {
     await http('http://127.0.0.1:5183/api/info');
     return null;
   },
+  // LN-нога свопов: LND должен жить и держать канал с Blocktank активным — иначе ⚡-офферы
+  // рекламируют то, что не сможет выставить инвойс.
+  async lnd() {
+    try { execFileSync('systemctl', ['is-active', '--quiet', 'fw-lnd']); }
+    catch { return 'fw-lnd не активен'; }
+    try {
+      const out = execFileSync('lncli', ['--lnddir=/root/fw-lnd', '--network=mainnet', '--rpcserver=127.0.0.1:10013', 'listchannels'], { encoding: 'utf8' });
+      const n = JSON.parse(out).channels.filter(c => c.active).length;
+      if (!n) return 'LND: нет активных каналов (⚡-приём не работает)';
+    } catch (e) { return 'LND listchannels: ' + String(e.message).slice(0, 60); }
+    return null;
+  },
   // ---- посетители (метрика, не поломка): парсит nginx access.log. Раз в сутки (первый прогон
   // после 07:00 МСК) — дайджест за прошлые сутки: сколько IP грузили кошелёк, сколько дошли до
   // биржи, сколько работали с сидом, плюс список биржевых действий (тейки/офферы) за день.
