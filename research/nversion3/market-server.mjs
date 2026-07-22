@@ -713,6 +713,24 @@ function atomicWrite(file, data) {
   renameSync(tmp, file);
 }
 
+// ---- VSS (Versioned Storage Service): encrypted channel-monitor backup for the LN wallet.
+// The client stores CIPHERTEXT it encrypts with a seed-derived key — the relay never sees plaintext
+// and cannot read a channel's state. The one guarantee the relay MUST provide is anti-rollback:
+// a monitor's version only ever advances, and a get returns the true latest version. That lets the
+// client cross-check against its own high-water mark and refuse a rolled-back monitor (broadcasting
+// a stale/revoked monitor is how a channel is lost to the counterparty's justice tx).
+// Keyed by (nodeId, key); nodeId is the client's LDK node pubkey (namespacing, not auth — ownership
+// rests on the encryption key, and the monotonic version defends against the relay itself).
+const VSS_FILE = `${DATADIR}/vss.json`;
+const vss = new Map();   // `${nodeId}/${key}` -> { version, blob(base64), at }
+try { for (const [k, v] of Object.entries(JSON.parse(readFileSync(VSS_FILE, 'utf8')))) vss.set(k, v); } catch { /* first run */ }
+let vssSaveTimer = null;
+const saveVss = () => { if (vssSaveTimer) return; vssSaveTimer = setTimeout(() => { vssSaveTimer = null;
+  try { atomicWrite(VSS_FILE, JSON.stringify(Object.fromEntries(vss))); } catch {} }, 200); };
+const VSS_MAX_BLOB = 256 * 1024;   // a channel monitor is a few KiB; cap well above, reject abuse
+const isNodeId = s => typeof s === 'string' && /^[0-9a-f]{66}$/.test(s);           // 33-byte pubkey
+const isVssKey = s => typeof s === 'string' && /^[\w.:-]{1,128}$/.test(s);         // monitor name
+
 const P2P_FILE = `${DATADIR}/market-p2p.json`;
 let p2pSaveTimer = null;
 function saveP2p() {
@@ -1290,6 +1308,33 @@ const api = {
     pushSwap(w, 'taker', 'Сделка отменена — Lightning-платёж вернулся в ваш кошелёк');
     return { ok: true };
   },
+  // ---- VSS: versioned encrypted monitor backup (see the vss block up top) ----
+  async vssPut({ nodeId, key, version, blob }) {
+    if (!isNodeId(nodeId) || !isVssKey(key)) throw new Error('плохой ключ VSS');
+    const v = Number(version);
+    if (!Number.isInteger(v) || v < 0) throw new Error('плохая версия');
+    if (typeof blob !== 'string' || blob.length > VSS_MAX_BLOB || !/^[A-Za-z0-9+/=.]*$/.test(blob)) throw new Error('плохой блоб');  // base64 iv '.' base64 ct
+    const k = `${nodeId}/${key}`, cur = vss.get(k);
+    // ANTI-ROLLBACK: version must strictly advance. An equal/lower version is refused so a buggy or
+    // malicious client (or a replayed request) can never move a monitor backwards. Idempotent retries
+    // must bump the version; a same-version rewrite is rejected on purpose.
+    if (cur && v <= cur.version) throw new Error(`версия не растёт (есть ${cur.version}, дали ${v})`);
+    vss.set(k, { version: v, blob, at: Date.now() });
+    saveVss();
+    return { ok: true, version: v };
+  },
+  async vssGet({ nodeId, key }) {
+    if (!isNodeId(nodeId) || !isVssKey(key)) throw new Error('плохой ключ VSS');
+    const rec = vss.get(`${nodeId}/${key}`);
+    return rec ? { version: rec.version, blob: rec.blob } : { version: -1, blob: null };
+  },
+  async vssList({ nodeId }) {
+    if (!isNodeId(nodeId)) throw new Error('плохой nodeId');
+    const pfx = `${nodeId}/`;
+    const keys = [];
+    for (const [k, v] of vss) if (k.startsWith(pfx)) keys.push({ key: k.slice(pfx.length), version: v.version });
+    return { keys };
+  },
   async p2pLnSettled({ id, makerFrcPub }) {
     const w = p2p.find(x => x.id === id && x.kind !== 'offer'); if (!w) throw new Error('нет такого свопа');
     if (w.maker?.frcPub !== makerFrcPub) throw new Error('не ваш своп');
@@ -1729,7 +1774,7 @@ function flushPersist() {
 for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { flushPersist(); process.exit(0); });
 const WRITE_CALLS = new Set(['p2pPost', 'p2pPostB', 'p2pTake', 'p2pTakeB', 'p2pUntake', 'p2pCancel',
   'p2pFrcFunded', 'p2pFrcFundedB', 'p2pBtcFunded', 'p2pBtcFundedB', 'p2pBtcClaim', 'p2pBtcClaimB',
-  'p2pFrcClaimB', 'p2pFrcIntent', 'p2pLnRequest', 'p2pLnInvoice', 'p2pLnPaid', 'p2pLnCancelled', 'p2pLnSettled', 'p2pDone', 'p2pDoneB', 'p2pCoopSign', 'tx', 'btcBroadcast', 'issue', 'faucet',
+  'p2pFrcClaimB', 'p2pFrcIntent', 'p2pLnRequest', 'p2pLnInvoice', 'p2pLnPaid', 'p2pLnCancelled', 'p2pLnSettled', 'vssPut', 'p2pDone', 'p2pDoneB', 'p2pCoopSign', 'tx', 'btcBroadcast', 'issue', 'faucet',
   'offer', 'cancel', 'resignRanged', 'pushSub', 'pushUnsub']);
 const buckets = new Map();   // ip → { read: {n, at}, write: {n, at} }
 setInterval(() => { const now = Date.now(); for (const [ip, b] of buckets) if (now - Math.max(b.read.at, b.write.at) > 300e3) buckets.delete(ip); }, 60e3).unref?.();
