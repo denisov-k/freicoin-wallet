@@ -29,7 +29,9 @@ const seedFile = `${DIR}/seed`; if (!existsSync(seedFile)) writeFileSync(seedFil
 const seed = readFileSync(seedFile);
 const managerFile = `${DIR}/manager.bin`, monitorFile = `${DIR}/monitor0.bin`, metaFile = `${DIR}/meta.json`;
 
-const logger = ldk.Logger.new_impl({ log: r => { const s = r.get_args(); if (/error|warn/i.test(s) && !/gossip/i.test(s)) console.log('  [ldk]', s.slice(0, 130)); } });
+const VERBOSE = process.env.LDK_VERBOSE === '1';
+const logger = ldk.Logger.new_impl({ log: r => { const s = r.get_args();
+  if (VERBOSE ? /Received message|Enqueueing message|reestablish|channel_ready|error|warn|fail/i.test(s) : (/error|warn/i.test(s) && !/gossip/i.test(s))) console.log('  [ldk]', s.slice(0, 160)); } });
 const feeEst = ldk.FeeEstimator.new_impl({ get_est_sat_per_1000_weight: () => 2500 });
 const broadcaster = ldk.BroadcasterInterface.new_impl({ broadcast_transactions: txs => {
   for (const t of txs) { try { btcli('sendrawtransaction', Buffer.from(t).toString('hex')); } catch {} }
@@ -71,10 +73,10 @@ if (MODE === 'init') {
     feeEst, chainMonitor.as_Watch(), broadcaster, router.as_Router(), msgRouter.as_MessageRouter(), logger, config, [monitor]);
   if (!mgrRes.is_ok()) { console.error('manager decode failed'); process.exit(1); }
   chanMgr = mgrRes.res.get_b();
-  const fundTxo = monitor.get_funding_txo();
-  const outpoint = fundTxo.get_a ? fundTxo.get_a() : fundTxo;
-  const wres = chainMonitor.as_Watch().watch_channel(outpoint, monitor);
-  console.log('watch_channel restored:', wres.is_ok?.() ?? 'ok');
+  // ВАЖНО: в LDK 0.2 ключ — ChannelId (не OutPoint); биндинги не типобезопасны и молча
+  // примут не тот указатель → «no such monitor registered» при первом же апдейте
+  const wres = chainMonitor.as_Watch().watch_channel(monitor.channel_id(), monitor);
+  console.log('watch_channel restored, ok:', wres.is_ok());
   tipHeight = JSON.parse(readFileSync(metaFile, 'utf8')).tipHeight;
   console.log('restored manager+monitor; resuming from height', tipHeight);
 }
@@ -86,10 +88,21 @@ let claimed = false, channelReady = false, held = false;
 const handler = ldk.EventHandler.new_impl({ handle_event: e => {
   if (e instanceof ldk.Event_ChannelReady) { channelReady = true; console.log('EVENT ChannelReady'); }
   else if (e instanceof ldk.Event_PaymentClaimable) { held = true; console.log('EVENT PaymentClaimable — claim_funds(R)'); chanMgr.claim_funds(R); }
-  else if (e instanceof ldk.Event_PaymentClaimed) { claimed = true; console.log('EVENT PaymentClaimed ✅'); }
+  else if (e instanceof ldk.Event_PaymentClaimed) {
+    const h = Buffer.from(e.payment_hash).toString('hex');
+    if (h === H.toString('hex')) { claimed = true; console.log('EVENT PaymentClaimed ✅ (this run)'); }
+    else console.log('EVENT PaymentClaimed (replayed, hash', h.slice(0, 12) + '… — не наш)');
+  }
   return ldk.Result_NoneReplayEventZ.constructor_ok();
 } });
-const pump = () => { peerMgr.process_events(); chanMgr.process_pending_htlc_forwards?.(); chanMgr.as_EventsProvider().process_pending_events(handler); chainMonitor.as_EventsProvider().process_pending_events(handler); };
+let lastTick = 0;
+const pump = () => {
+  peerMgr.process_events();
+  chanMgr.process_pending_htlc_forwards?.();
+  if (Date.now() - lastTick > 1000) { lastTick = Date.now(); chanMgr.timer_tick_occurred(); peerMgr.timer_tick_occurred(); }
+  chanMgr.as_EventsProvider().process_pending_events(handler);
+  chainMonitor.as_EventsProvider().process_pending_events(handler);
+};
 const feedTo = height => {
   while (tipHeight < height) {
     tipHeight++;
