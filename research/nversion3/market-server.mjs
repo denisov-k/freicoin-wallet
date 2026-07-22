@@ -1315,10 +1315,12 @@ const api = {
     if (!Number.isInteger(v) || v < 0) throw new Error('плохая версия');
     if (typeof blob !== 'string' || blob.length > VSS_MAX_BLOB || !/^[A-Za-z0-9+/=.]*$/.test(blob)) throw new Error('плохой блоб');  // base64 iv '.' base64 ct
     const k = `${nodeId}/${key}`, cur = vss.get(k);
-    // ANTI-ROLLBACK: version must strictly advance. An equal/lower version is refused so a buggy or
-    // malicious client (or a replayed request) can never move a monitor backwards. Idempotent retries
-    // must bump the version; a same-version rewrite is rejected on purpose.
-    if (cur && v <= cur.version) throw new Error(`версия не растёт (есть ${cur.version}, дали ${v})`);
+    // ANTI-ROLLBACK: version must never DECREASE. A strictly-lower version is refused so a buggy or
+    // malicious client (or a replayed request) can't move a monitor backwards. Equal is allowed —
+    // LDK legitimately re-persists a ChannelMonitor at the same update_id (a new channel, then its
+    // first update, can share an id), and an equal-version rewrite carries the same-or-newer bytes
+    // of the SAME state, so it never rolls anything back.
+    if (cur && v < cur.version) throw new Error(`откат версии (есть ${cur.version}, дали ${v})`);
     vss.set(k, { version: v, blob, at: Date.now() });
     saveVss();
     return { ok: true, version: v };
@@ -1779,6 +1781,7 @@ const WRITE_CALLS = new Set(['p2pPost', 'p2pPostB', 'p2pTake', 'p2pTakeB', 'p2pU
 const buckets = new Map();   // ip → { read: {n, at}, write: {n, at} }
 setInterval(() => { const now = Date.now(); for (const [ip, b] of buckets) if (now - Math.max(b.read.at, b.write.at) > 300e3) buckets.delete(ip); }, 60e3).unref?.();
 function rateOk(ip, kind, limit) {
+  if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return true;   // loopback (our own bot/tools) is trusted
   const now = Date.now();
   const b = buckets.get(ip) ?? { read: { n: 0, at: now }, write: { n: 0, at: now } };
   const c = b[kind];
