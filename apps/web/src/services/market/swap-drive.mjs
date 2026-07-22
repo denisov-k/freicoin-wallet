@@ -25,6 +25,10 @@ import { pubkeyCompressed } from '@core/ecdsa.mjs';
  * @property {(id:string)=>void} dropP2p
  * @property {(h:any)=>void} addSwapHist
  * @property {()=>any[]} [loadSwapHist]
+ * @property {(a:{hashHex:string,sats:number})=>Promise<string>} [lnAddHold]
+ * @property {(hashHex:string)=>Promise<{state:string}>} [lnLookup]
+ * @property {(preimageHex:string)=>Promise<any>} [lnSettle]
+ * @property {(hashHex:string)=>Promise<any>} [lnCancel]
  * @property {(txid:string)=>void} addRefundedFund
  * @property {(refh:number|bigint, need:bigint)=>any} hostFeeCoin
  * @property {(spk:string, amount:bigint)=>Promise<{txid:string,vout:number,refheight?:number}>} sendFrcToSpk
@@ -214,6 +218,30 @@ async function driveP2pInner() {
       }
       if (rec.dir === 'sellBtc') { await driveP2pRev(rec, w, info); if (w.status === 'done') env.dropP2p(rec.id); continue; }
       if (rec.role === 'maker') {
+        // ---- LIGHTNING leg (optional env hooks — the headless bot wires them; a browser maker
+        // simply has none and the branches are inert). The relay is a message board only.
+        if (w.ln && w.status === 'taken' && !w.cancelReq && env.lnAddHold) {
+          if (w.lnRequested && !w.lnInvoice) {
+            // taker asked to pay over LN → issue a hold invoice under the SWAP's hash: my node
+            // holds the payment and cannot take it without R
+            const bolt11 = await env.lnAddHold({ hashHex: w.paymentHash, sats: Number(w.btcAmount) });
+            await api('p2pLnInvoice', { id: rec.id, makerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')), bolt11 });
+            env.mvRefresh();
+          } else if (w.lnInvoice && env.lnLookup) {
+            const st = await env.lnLookup(w.paymentHash).catch(() => null);
+            if (st?.state === 'ACCEPTED')   // held = paid; cltv anchors the far-leg margin check below
+              await api('p2pLnPaid', { id: rec.id, makerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')), cltv: (info.btcHeight || 0) + 144 });
+          }
+        }
+        // LN cancel: the buyer backs out while my lock isn't committed → release the held payment
+        // (instant, free) instead of the on-chain coop-signature dance
+        if (w.cancelReq && w.btcHtlc?.ln && !w.frcHtlc?.txid && rec.status !== 'frc_funded' && !rec.funding?.txid && env.lnCancel) {
+          await env.lnCancel(w.paymentHash);
+          await api('p2pLnCancelled', { id: rec.id, makerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')) });
+          if (rec.parent) env.dropP2p(rec.id);
+          env.toast(`${w.id}: ${tr('authorized the buyer’s cancel')}`, 'ok'); env.mvRefresh();
+          continue;
+        }
         // buyer asked to cancel and I HAVEN'T locked → authorize the instant BTC refund (costs me
         // nothing; I never committed). SAFETY: refuse once I've locked — the buyer holds R and could
         // then reclaim BTC *and* claim my FRC. The check MUST include my LOCAL state, not just the
@@ -221,7 +249,7 @@ async function driveP2pInner() {
         // in that window hands a malicious buyer both legs. (rec.status flips to 'frc_funded' the
         // moment the lock broadcasts — before the relay accepts the report.)
         if (w.cancelReq && !w.btcCoopSig && !w.frcHtlc?.txid && rec.status !== 'frc_funded' && !rec.funding?.txid
-            && w.btcHtlc?.txid && w.btcHtlc.leaf) {
+            && w.btcHtlc?.txid && w.btcHtlc.leaf && !w.btcHtlc.ln) {
           const sig = btcHtlcCoopSig({ prevTxid: w.btcHtlc.txid, vout: w.btcHtlc.vout, valueSats: BigInt(w.btcHtlc.value), leafHex: w.btcHtlc.leaf, claimKey: p2pKey(rec.nonce, 'btc') });
           await api('p2pBtcCoopSign', { id: rec.id, makerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')), sig });
           env.toast(`${w.id}: ${tr('authorized the buyer’s cancel')}`, 'ok'); env.mvRefresh();
@@ -232,6 +260,12 @@ async function driveP2pInner() {
           // promised sats at the leaf we'd claim (their H, my claim key, their refund key). A lie
           // here only wastes our lock (refundable), but verifying keeps us from funding a phantom.
           if (rec.status !== 'frc_funded') {
+            if (w.btcHtlc.ln) {
+              // LN leg: the money is HELD on my own node — that check needs no one's word but LND's
+              if (!env.lnLookup) throw new Error('LN swap without an LN node');
+              const st = await env.lnLookup(w.paymentHash).catch(() => null);
+              if (st?.state !== 'ACCEPTED') throw new Error('LN платёж не удержан');
+            } else {
             // SECURITY: build the taker's BTC leaf with MY OWN derived claim key, never the
             // relay-echoed w.maker.btcPub — else a malicious relay substitutes its key on both
             // sides, the leaf still matches the funded output, I lock FRC, and it (not I) claims
@@ -241,6 +275,7 @@ async function driveP2pInner() {
             const bl = btcHtlcLeaf({ paymentHash: w.paymentHash, claimPub: myBtcPub, refundPub: w.taker.btcPub, cltv: w.btcHtlc.cltv });
             if (bl !== w.btcHtlc.leaf) throw new Error(tr('BTC HTLC mismatch'));
             await env.verifyBtcOutput({ txid: w.btcHtlc.txid, vout: w.btcHtlc.vout, spk: btcHtlcSpk(bl), minValue: w.btcAmount });
+            }
             // far(BTC) must outlast near(FRC) by a safety margin, in wall-clock, or the taker could
             // refund the far leg early AND claim my near leg. Check the RELAY-reported heights.
             const frcNear = info.v2?.frcNear || 60, farRemSec = Math.max(0, (w.btcHtlc.cltv - (info.btcHeight || 0))) * 600;
@@ -287,6 +322,14 @@ async function driveP2pInner() {
           env.putP2p({ ...rec, status: 'frc_funded', leaf: leg.leaf, T1, funding: { txid: fund.txid, vout: fund.vout, value: w.frcAmount, refheight: fund.refheight ?? env.state().mine.height } });
           await api('p2pFrcFunded', { id: rec.id, txid: fund.txid, vout: fund.vout, t1: T1 });
           env.toast(`${w.id}: ${tr('locked — the buyer claims it')}`, 'ok'); env.mvRefresh();
+        } else if (w.status === 'frc_claimed' && w.preimage && w.btcHtlc?.ln) {   // LN leg: settle the held payment with the now-public R
+          if (env.lnSettle) {
+            await env.lnSettle(w.preimage);
+            await api('p2pLnSettled', { id: rec.id, makerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')) });
+            env.addSwapHist({ id: rec.id, category: 'purchase', assetTag: rec.assetTag ?? w.assetTag ?? null, frcAmount: w.frcAmount, btcAmount: w.btcAmount, btcTxid: 'ln', frcTxid: rec.funding?.txid ?? null, time: Math.floor(Date.now() / 1000) });
+            if (rec.parent) env.dropP2p(rec.id); else env.putP2p({ ...rec, status: 'done' });
+            env.toast(`${w.id}: ${tr('BTC received ✅')}`, 'ok'); env.mvRefresh();
+          }
         } else if (w.status === 'frc_claimed' && w.preimage && w.btcHtlc?.txid) {   // buyer claimed (R public) → collect the BTC
           const b = w.btcHtlc;
           // claim straight into the in-wallet BTC ACCOUNT (not the per-nonce address) so proceeds

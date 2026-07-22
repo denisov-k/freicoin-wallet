@@ -74,7 +74,23 @@ const { deriveAddress } = await import('@/services/wallet.mjs');
 log('bot FRC address:', deriveAddress(seed, 0, 0));
 
 const { browserSwapEnv } = await import('@/services/market/swap-env.mjs');
-initDrive(browserSwapEnv({ toast: (m, kind) => log(`[${kind || 'info'}]`, m), mvRefresh: () => { wantRefresh = true; }, observe: () => {} }));
+// ---- Lightning (optional): LND_REST + LND_MACAROON (+LND_TLS) switch the LN leg on. The bot's
+// own node issues hold invoices under the swap's H, so the BTC side becomes instant and ~free;
+// without the env vars every LN branch in the drive is dormant and offers post without the flag.
+let lnd = null;
+if (process.env.LND_REST && process.env.LND_MACAROON) {
+  const { lndRest } = await import('./lnd-rest.mjs');
+  lnd = lndRest({ url: process.env.LND_REST, macaroonPath: process.env.LND_MACAROON, tlsCertPath: process.env.LND_TLS });
+  const i = await lnd.getInfo().catch(e => { log('LND unavailable:', e.message); return null; });
+  if (i) log(`LND connected: ${i.pubkey.slice(0, 16)}… height ${i.blockHeight}`); else lnd = null;
+}
+const lnHooks = lnd ? {
+  lnAddHold: ({ hashHex, sats }) => lnd.addHoldInvoice({ hashHex, sats, memo: 'Freimarkets swap', expiry: 1800, cltvExpiry: 144 }),
+  lnLookup: h => lnd.lookupInvoice(h),
+  lnSettle: r => lnd.settleInvoice(r),
+  lnCancel: h => lnd.cancelInvoice(h),
+} : {};
+initDrive({ ...browserSwapEnv({ toast: (m, kind) => log(`[${kind || 'info'}]`, m), mvRefresh: () => { wantRefresh = true; }, observe: () => {} }), ...lnHooks });
 initBtcAccount(() => {});   // no browser-side nonce recovery needed: the bot's records never leave BOT_DIR
 
 // ---- local FRC node (trusted — it's ours): height + UTXOs via scantxoutset ----
@@ -159,7 +175,7 @@ async function postOffer(frcK, satPerFrc) {
   const partial = minFill < frcK;
   if (!partial) minFill = frcK;
   const r = await api('p2pPost', { frcAmount: String(frcK), btcAmount: String(btcSats), makerFrcPub: frcPub, makerBtcPub: btcPub,
-    makerBtcAddr: myBtcAddr, ...(partial ? { partial: true, minFill: String(minFill), maxFill: String(frcK) } : {}) });
+    makerBtcAddr: myBtcAddr, ...(lnd ? { ln: true } : {}), ...(partial ? { partial: true, minFill: String(minFill), maxFill: String(frcK) } : {}) });
   addBtcNonce(nonce);
   putP2p({ id: r.id, role: 'maker', nonce, status: 'open', partial, assetTag: null, frcAmount: String(frcK), btcAmount: String(btcSats) });
   log(`posted ${r.id}: sell ${Number(frcK) / 1e8} FRC @ ${satPerFrc.toFixed(2)} sat/FRC (total ${btcSats} sat, ${partial ? 'minFill ' + Number(minFill) / 1e8 + ' FRC' : 'whole-only'})`);
