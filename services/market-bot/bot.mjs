@@ -126,6 +126,8 @@ async function fetchPrice() {
 
 // my open offer records (both partial and whole-only maker offers this bot posted)
 const myOffers = () => loadP2p().filter(r => r.role === 'maker' && !r.parent && r.status === 'open');
+const myAsks = () => myOffers().filter(r => r.dir !== 'sellBtc');   // sell FRC for BTC
+const myBids = () => myOffers().filter(r => r.dir === 'sellBtc');   // BUY FRC (sell BTC)
 
 // Min-fill policy: the maker pays a FIXED ~170 vB BTC claim fee on EVERY fill, so a fill at the
 // bare network floor nets the bot ~half the offer price — value burned to miners, not traded.
@@ -134,6 +136,13 @@ const myOffers = () => loadP2p().filter(r => r.role === 'maker' && !r.parent && 
 // of micro-fills; the relay's own floor stays as the absolute lower bound. All three float with
 // live BTC fees / lot size, so the policy self-adjusts when conditions change.
 const FILL_OVERHEAD = Number(process.env.BOT_FILL_OVERHEAD ?? 0.15);
+// ---- BID side (buy FRC with the account's BTC): the other half of the market. The bid sits
+// SPREAD_BID below the reference; the whole float (minus a fee reserve) is offered, capped by the
+// relay's own BTC_MAX_SWAP training-wheels limit. With an empty BTC account the side just idles.
+const SPREAD_BID = Number(process.env.BOT_SPREAD_BID ?? process.env.BOT_SPREAD ?? 0.10);
+const MIN_BID = BigInt(Math.round(Number(process.env.BOT_MIN_BID_SATS ?? 3000)));     // don't bid below this (sats)
+const MAX_BID = BigInt(Math.round(Number(process.env.BOT_MAX_BID_SATS ?? 200000)));   // relay hard-caps swaps at 200k sat
+const BTC_RESERVE = BigInt(Math.round(Number(process.env.BOT_BTC_RESERVE ?? 2000)));  // sats kept for HTLC-funding fees
 async function postOffer(frcK, satPerFrc) {
   const btcSats = BigInt(Math.ceil(Number(frcK) / 1e8 * satPerFrc));
   const nonce = sha256(Buffer.from(seed + 'fw-p2p-nonce:' + frcK + ':' + btcSats + ':' + ctx.state.mine.height, 'utf8')).toString('hex').slice(0, 16);
@@ -167,6 +176,54 @@ async function cancelOffer(rec) {
   else dropP2p(rec.id);
 }
 
+async function postBid(btcSats, satPerFrc) {
+  const frcK = BigInt(Math.round(Number(btcSats) / satPerFrc * 1e8));
+  const nonce = sha256(Buffer.from(seed + 'fw-p2p-nonce:B:' + frcK + ':' + btcSats + ':' + ctx.state.mine.height, 'utf8')).toString('hex').slice(0, 16);
+  const frcPub = pubkeyCompressed(p2pKey(nonce, 'frc')), btcPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
+  // min fill mirrors the ask side: my per-fill cost here is FUNDING the BTC HTLC (~200 vB)
+  const minSwap = BigInt(Math.round(Number(ctx.state.p2p?.minSwap ?? 741)));
+  const fundFee = BigInt(Math.ceil(Math.max(1, Number(ctx.state.p2p?.feeRate ?? 2)) * 200));
+  const overheadFloor = BigInt(Math.ceil(Number(fundFee) / FILL_OVERHEAD));
+  let minFill = [minSwap, overheadFloor, btcSats / 20n].reduce((a, b) => a > b ? a : b);
+  const partial = minFill < btcSats;
+  if (!partial) minFill = btcSats;
+  const r = await api('p2pPostB', { frcAmount: String(frcK), btcAmount: String(btcSats), makerFrcPub: frcPub, makerBtcPub: btcPub,
+    makerFrcAddr: deriveAddress(seed, 0, 0), ...(partial ? { partial: true, minFill: String(minFill), maxFill: String(btcSats) } : {}) });
+  addBtcNonce(nonce);
+  putP2p({ id: r.id, role: 'maker', dir: 'sellBtc', nonce, status: 'open', partial, assetTag: null, frcAmount: String(frcK), btcAmount: String(btcSats) });
+  log(`posted ${r.id}: BUY ${Number(frcK) / 1e8} FRC @ ${satPerFrc.toFixed(2)} sat/FRC (pay ${btcSats} sat, ${partial ? 'minFill ' + minFill + ' sat' : 'whole-only'})`);
+}
+
+// buy side: quote a bid from the account's BTC float. Same trigger bands as the ask
+// (drift >10%, grown 3/2, shrunk 2/3, dust) over amounts measured in SATS.
+async function manageBid(price, live) {
+  const b = mvBtc();
+  if (b.balance == null) return;
+  const bidRate = price * (1 - SPREAD_BID);
+  let free = BigInt(b.balance) - BTC_RESERVE; if (free < 0n) free = 0n;
+  const target = free > MAX_BID ? MAX_BID : free;
+  const mine = myBids().filter(r => live.some(x => x.id === r.id && x.status === 'open' && (x.kind === 'offer' || x.dir === 'sellBtc')));
+  if (!mine.length) {
+    if (target < MIN_BID) return;   // empty/small float — the side idles silently
+    if (DRY) { log(`DRY: would bid ${target} sat @ ${bidRate.toFixed(2)} sat/FRC`); return; }
+    return postBid(target, bidRate);
+  }
+  const rec = mine[0], x = live.find(o => o.id === rec.id);
+  const offerRate = Number(BigInt(x.btcAmount)) / Number(BigInt(x.frcAmount)) * 1e8;
+  const drift = Math.abs(offerRate - bidRate) / bidRate;
+  const remaining = BigInt(x.remaining ?? x.btcAmount);   // reverse offers track remaining in SATS
+  const grown = target > (remaining * 3n) / 2n && target - remaining >= MIN_BID;
+  const shrunk = target < (remaining * 2n) / 3n && remaining - target >= MIN_BID;
+  const minPiece = x.minFill ? BigInt(x.minFill) : MIN_BID;
+  const dustRemainder = remaining < BigInt(x.btcAmount) && remaining < minPiece;
+  if (drift > REPRICE || dustRemainder || grown || shrunk) {
+    log(`repost bid ${rec.id}: drift ${(drift * 100).toFixed(1)}%, remaining ${remaining} sat, target ${target} sat${shrunk ? ' (shrink)' : ''}`);
+    if (DRY) return;
+    await cancelOffer(rec);
+    if (target >= MIN_BID) await postBid(target, bidRate);
+  }
+}
+
 async function strategy() {
   // the relay was unreachable this tick (restart/reindex): an empty p2p view is MISSING DATA, not an
   // empty board — GC'ing records against it dropped a live offer AND its funded child (p2p14/14.1),
@@ -181,15 +238,16 @@ async function strategy() {
   const live = ctx.state.p2p?.swaps || [];
   // recognize BOTH kinds still on the board: a partial offer is kind:'offer'; a whole-only offer is
   // a plain sellFrc swap at status 'open'. Missing the whole-only case made the bot repost every tick.
-  const mine = myOffers().filter(r => live.some(s => s.id === r.id && s.status === 'open' && (s.kind === 'offer' || s.dir === 'sellFrc')));
+  const mine = myAsks().filter(r => live.some(s => s.id === r.id && s.status === 'open' && (s.kind === 'offer' || s.dir === 'sellFrc')));
   for (const r of myOffers()) if (!mine.includes(r) && !live.some(s => s.id === r.id)) dropP2p(r.id);   // gone from the relay ⇒ settled/expired
   // one live offer at a time: size = all free mature FRC (capped)
   const target = free > capK ? capK : free;
   const floorK = BigInt(Math.round(MIN_FRC * 1e8));
   if (!mine.length) {
-    if (target < floorK) { log(`idle: free ${Number(free > 0n ? free : 0n) / 1e8} FRC < min ${MIN_FRC}`); return; }
-    if (DRY) { log(`DRY: would post sell ${Number(target) / 1e8} FRC @ ${ask.toFixed(2)} sat/FRC`); return; }
-    return postOffer(target, ask);
+    if (target < floorK) log(`idle: free ${Number(free > 0n ? free : 0n) / 1e8} FRC < min ${MIN_FRC}`);
+    else if (DRY) log(`DRY: would post sell ${Number(target) / 1e8} FRC @ ${ask.toFixed(2)} sat/FRC`);
+    else await postOffer(target, ask);
+    return manageBid(price, live);
   }
   // reprice/resize: relay board is authoritative for remaining
   const rec = mine[0], s = live.find(x => x.id === rec.id);
@@ -209,10 +267,12 @@ async function strategy() {
   const shrunk = target < (remaining * 2n) / 3n && remaining - target >= floorK;
   if (drift > REPRICE || dustRemainder || grown || shrunk) {
     log(`repost ${rec.id}: drift ${(drift * 100).toFixed(1)}%, remaining ${Number(remaining) / 1e8} FRC, target ${Number(target) / 1e8}${shrunk ? ' (shrink)' : ''}`);
-    if (DRY) return;
-    await cancelOffer(rec);
-    if (target >= floorK) await postOffer(target, ask);
+    if (!DRY) {
+      await cancelOffer(rec);
+      if (target >= floorK) await postOffer(target, ask);
+    }
   }
+  return manageBid(price, live);
 }
 // the offer's own advertised min piece (kria) — falls back to mapping the relay floor through the price
 const minPieceK = s => s.minFill ? BigInt(s.minFill)
