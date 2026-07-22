@@ -1431,7 +1431,7 @@ const api = {
       const mn = minFill != null && BigInt(minFill) > 0n ? BigInt(minFill) : 1n;
       const mx = maxFill != null && BigInt(maxFill) > 0n ? BigInt(maxFill) : frc;
       if (mn > mx || mx > frc) throw new Error('неверные мин/макс выкупа');
-      const w = { id, v: 2, kind: 'offer', partial: true, status: 'open', dir: 'sellFrc', assetTag: tag, postedAt: indexedHeight,
+      const w = { id, v: 2, kind: 'offer', partial: true, status: 'open', dir: 'sellFrc', ln: !!ln, assetTag: tag, postedAt: indexedHeight,
         frcAmount: String(frc), btcAmount: String(btc), remaining: String(frc), minFill: String(mn), maxFill: String(mx), childSeq: 0,
         maker: { frcPub: makerFrcPub, btcPub: makerBtcPub, btcAddr: makerBtcAddr } };
       p2p.push(w); saveP2p(); heartbeat(makerFrcPub);

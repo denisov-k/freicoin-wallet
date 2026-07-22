@@ -281,8 +281,10 @@ async function strategy() {
   // locks) stalls any take larger than the real free float. 2/3 vs the grown trigger's 3/2 keeps
   // the two bands from oscillating.
   const shrunk = target < (remaining * 2n) / 3n && remaining - target >= floorK;
-  if (drift > REPRICE || dustRemainder || grown || shrunk) {
-    log(`repost ${rec.id}: drift ${(drift * 100).toFixed(1)}%, remaining ${Number(remaining) / 1e8} FRC, target ${Number(target) / 1e8}${shrunk ? ' (shrink)' : ''}`);
+  // LND came up after this offer was posted: repost so it advertises the ⚡ leg (ln flag is set at post time)
+  const lnUpgrade = !!lnd && !s.ln;
+  if (drift > REPRICE || dustRemainder || grown || shrunk || lnUpgrade) {
+    log(`repost ${rec.id}: drift ${(drift * 100).toFixed(1)}%, remaining ${Number(remaining) / 1e8} FRC, target ${Number(target) / 1e8}${shrunk ? ' (shrink)' : lnUpgrade ? ' (ln upgrade)' : ''}`);
     if (!DRY) {
       await cancelOffer(rec);
       if (target >= floorK) await postOffer(target, ask);
