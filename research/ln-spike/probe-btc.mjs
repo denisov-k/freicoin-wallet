@@ -1,0 +1,21 @@
+import { readFileSync } from 'node:fs';
+import * as ldk from 'lightningdevkit';
+await ldk.initializeWasmFromBinary(readFileSync('node_modules/lightningdevkit/liblightningjs.wasm'));
+import { execFileSync } from 'node:child_process';
+import { BtcNeutrino } from '../../apps/web/src/services/light/net/btc-neutrino.mjs';
+import { LdkChainAdapter } from './ldk-chain.mjs';
+const btcli=(...a)=>execFileSync('/root/bitcoin-core/bin/bitcoin-cli',['-regtest','-datadir=/root/btc-regtest','-rpcport=18443',...a],{encoding:'utf8'}).trim();
+const h=+btcli('getblockcount'), hash=btcli('getbestblockhash');
+const chain=new LdkChainAdapter();
+const btc=new BtcNeutrino({url:'ws://127.0.0.1:3071',net:'btcregtest',adapter:chain});
+btc.seedAnchor(hash,h);
+console.log('connecting…');
+await btc.connect();
+console.log('connected ✅, syncing headers from', h);
+await btc.syncHeaders();
+console.log('headers now:', btc.headers.length, 'tip', btc.headers.at(-1)?.height ?? h);
+// mine 2 blocks, tick, expect they get fed as tipAdvanced (no watch scripts yet)
+btcli('generatetoaddress','2',btcli('getnewaddress'));
+await btc.tick();
+console.log('after tick: scanned', btc.scanned, 'headers', btc.headers.length);
+process.exit(0);
