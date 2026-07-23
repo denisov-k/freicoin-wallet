@@ -1075,6 +1075,7 @@ function renderP2pPay(m, rec) {
     ${rcv ? `<div class="rrow"><span>${tr('You receive')}</span><b>${rcv}</b></div>` : ''}
     <div id="pyWalletPane"${hasWallet ? '' : ' style="display:none"'}>
       <button id="pyWallet" style="width:100%" disabled>${tr('Pay')}</button>
+      ${rec.ln ? `<p class="sub" id="pyLnHint" style="font-size:12px;display:none">⚡ ${tr('no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”')}</p>` : ''}
     </div>
     <div id="pyLnWalletPane" style="display:none">
       <p class="sub">⚡ ${tr('instant from the built-in balance — no on-chain fee, the route fee is usually <1%')}</p>
@@ -1154,6 +1155,7 @@ function renderP2pPay(m, rec) {
     show('#pyTotalRow', mode === 'wallet' && !lnW);
     show('#pyExtPane', mode === 'ext');
     show('#pyLnPane', mode === 'ext' && !!rec.ln);
+    show('#pyLnHint', mode === 'wallet' && !lnW && !!rec.ln);
     if (lnW || (mode === 'ext' && rec.ln)) requestLnInvoice();
     if (lnW) updLnWalletBtn();
   };
@@ -1197,8 +1199,15 @@ function renderP2pPay(m, rec) {
     try { await lnMod.lnPayBolt(lnBolt11); ttlDeadline = null; paintTtl(); }
     catch (e) { toast(e.message, 'err'); paying = false; updLnWalletBtn(); }
   }; }
-  // стартовый режим: по умолчанию «Из кошелька» (⚡-первый), если уже не оплачено
-  if (!paying && seg) applyMode(hasWallet ? 'wallet' : 'ext');
+  // стартовый режим: «Из кошелька» (⚡-первый); если там платить нечем (⚡ пуст и on-chain BTC
+  // не покрывает сумму) на ⚡-оффере — сразу «Внешний платёж» с инвойсом
+  if (!paying && seg) {
+    const btcBal = BigInt(mvBtc().balance ?? 0);
+    const walletBroke = !lnWalletReady() && btcBal < amt;
+    const startExt = !hasWallet || (rec.ln && walletBroke);
+    seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.pay === (startExt ? 'ext' : 'wallet')));
+    applyMode(startExt ? 'ext' : 'wallet');
+  }
   const payFromWallet = async () => {
     const pw = $('#pyWallet'); if (!pw) return;
     paying = true; pw.disabled = true; pw.textContent = tr('confirming payment on the network');
