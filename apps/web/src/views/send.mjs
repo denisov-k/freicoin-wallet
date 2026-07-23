@@ -40,8 +40,8 @@ export function renderReceive() {
      <div class="row" id="newAddrRow"><button id="newAddr" class="ghost">${tr('New address')}</button></div>
      <div class="row" id="lnAmtBtnRow" hidden><button id="lnAmtBtn" class="ghost">${tr('Invoice with an amount')}</button></div></div>
      <div id="rcvLnAmt" class="stack" hidden>
-       <label class="numfield">${tr('Amount')} (${tr('sats')})<input id="lnRcvAmt" type="text" inputmode="numeric"></label>
-       <div class="row"><button id="lnRcvGo">${tr('Create invoice')}</button></div>
+       <label class="numfield" id="lnAmtField">${tr('Amount')} (${tr('sats')})<input id="lnRcvAmt" type="text" inputmode="numeric"></label>
+       <div class="row" id="lnGoRow"><button id="lnRcvGo">${tr('Create invoice')}</button></div>
        <div id="lnAmtQr" class="qr" style="margin:0 auto;height:220px;display:none"></div>
        <div class="addr" id="lnAmtInv" style="display:none"></div>
        <div class="row" id="lnAmtCopyRow" hidden><button id="lnAmtCopy" class="ghost">⧉ ${tr('Copy')}</button></div>
@@ -66,8 +66,14 @@ export function renderReceive() {
       const cp = $('#copyAddr'); if (cp) { cp.disabled = false; cp.onclick = ev => copy(bolt11, ev.target); }
     } catch (err) { const a = $('#addr'); if (a) a.textContent = err.message; }
   };
-  // экран «инвойс с суммой»: свой QR/строка/копирование, «Назад» возвращает к основному
-  $('#lnAmtBtn').onclick = () => { showAmtScreen(true); $('#lnRcvAmt').focus(); };
+  // экран «инвойс с суммой»: форма → (создан) → только QR/строка/копирование; «Назад» сбрасывает
+  const resetAmtScreen = () => {
+    $('#lnAmtField').hidden = false; $('#lnGoRow').hidden = false; $('#lnRcvAmt').value = '';
+    const b = $('#lnAmtQr'); if (b) { b.style.display = 'none'; b.innerHTML = ''; }
+    const a = $('#lnAmtInv'); if (a) { a.style.display = 'none'; a.textContent = ''; }
+    const cr = $('#lnAmtCopyRow'); if (cr) cr.hidden = true;
+  };
+  $('#lnAmtBtn').onclick = () => { resetAmtScreen(); showAmtScreen(true); $('#lnRcvAmt').focus(); };
   $('#lnAmtBack').onclick = () => showAmtScreen(false);
   $('#lnRcvGo').onclick = async e => {
     e.target.disabled = true;
@@ -75,6 +81,7 @@ export function renderReceive() {
       const sats = Math.round(Number($('#lnRcvAmt').value)); if (!(sats > 0)) throw new Error(tr('bad amount'));
       const bolt11 = await (await import('@/views/lightning.mjs')).lnMakeInvoice(sats);
       const qr = await QRCode.toDataURL(bolt11.toUpperCase(), { margin: 1, width: 220 });
+      $('#lnAmtField').hidden = true; $('#lnGoRow').hidden = true;   // инвойс готов — форма уходит
       const b = $('#lnAmtQr'); if (b) { b.style.display = ''; b.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`; }
       const a = $('#lnAmtInv'); if (a) { a.style.display = ''; a.textContent = bolt11; }
       const cr = $('#lnAmtCopyRow'); if (cr) { cr.hidden = false; $('#lnAmtCopy').onclick = ev => copy(bolt11, ev.target); }
