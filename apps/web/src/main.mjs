@@ -429,7 +429,7 @@ initDashboard({ SWAP, MKT, curNet, getState, ds, setStatus, setStatusUtxos: n =>
 initSettings({ getVault, secret, themeMode, applyTheme, curNet, curBridge, SWAP, renderApp, applyNetSettings, lock, passForm, secure, logout });
 initSend({ hexSeed, recvIndex: () => recvIndex, bumpRecv: () => { recvIndex++; store.set('fw_recv', recvIndex); }, growWatchAfterNewAddr,
   getPending: () => pending, setPending: v => { pending = v; }, resetCache: () => { cache = null; }, cacheReady: () => !!cache,
-  seedState: () => cache || liveState, renderGen: () => renderGen, getState, ds, paintBalance, SWAP, MKT });
+  seedState: () => cache || liveState, renderGen: () => renderGen, getState, ds, paintBalance, SWAP, MKT, curNet });
 configureNetwork(curNet());   // set NET/ACCOUNT before any address derivation
 if (getVault()) renderLock();
 else if (store.get('fw_seed')) { unlockedSecret = store.get('fw_seed'); renderApp(); }
