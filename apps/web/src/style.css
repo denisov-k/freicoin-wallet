@@ -24,6 +24,7 @@ nav button.active { background:var(--card); color:var(--fg); }
 .seg { display:flex; gap:4px; padding:4px; border:1px solid var(--line); border-radius:12px; }
 .seg button { flex:1; background:none !important; border:0; color:var(--sub) !important; padding:8px !important; border-radius:8px; font-size:14px !important; font-weight:500 !important; cursor:pointer; }
 .seg button.on { background:var(--card) !important; color:var(--fg) !important; }
+.seg button:disabled { opacity:.45; cursor:default; }
 main { flex:1; min-height:0; overflow-y:auto; padding:24px 20px; } section { display:flex; flex-direction:column; gap:14px; }
 main, #actList { scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
 main::-webkit-scrollbar, #actList::-webkit-scrollbar { width:6px; }

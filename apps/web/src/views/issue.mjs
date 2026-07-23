@@ -87,7 +87,11 @@ export function openIssueModal() {
       <label>${tr('Unique items (tokens)')}<textarea id="iToks" class="txt-ui" rows="4" placeholder="${tr('one per line')}"></textarea></label>
     </div>
     <div id="iLandBox" class="stack" hidden>
-      <label>${tr('Type')}<select id="iLandKind"><option value="name">${tr('name (human-readable)')}</option></select></label>
+      <div class="seg" id="iLandKind">
+        <button data-k="name" class="on">${tr('name (human-readable)')}</button>
+        <button data-k="ticker" disabled title="${tr('coming soon')}">${tr('ticker')}</button>
+        <button data-k="plot" disabled title="${tr('coming soon')}">${tr('plot')}</button>
+      </div>
       <div class="sub" id="iAvail" style="font-size:12px"></div>
       <label>${tr('Self-assessed value')} (FRC)<input id="iVal" type="text" inputmode="decimal" placeholder="100+"></label>
       <div class="rrow"><span>${tr('Rent (auto, demurrage)')}</span><b id="iRent" class="sub">—</b></div>
