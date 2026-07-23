@@ -1159,10 +1159,10 @@ function renderP2pPay(m, rec) {
         setTimeout(() => m.remove(), 1800); mvRefresh(); return;
       }
       const pw = $('#pyWallet');
-      // ОТМЕНА В ОЧЕРЕДИ: нажал «Отменить», пока оплата подтверждалась — драйв отправит запрос сам,
-      // как только сеть подтвердит. Кнопка становится «отмена запрошена» и блокируется, строкой ниже
-      // — что произойдёт (драйв снимает cancelWanted, когда продавец запрёт FRC → всё вернётся в норму).
-      const canceling = !!rlocal.cancelWanted;
+      // ОТМЕНА ЗАПРОШЕНА: локально (cancelWanted, ещё не дошла до релея) ИЛИ уже зафиксирована у
+      // релея (w.cancelReq — переживает перезагрузку). Кнопка → «отмена запрошена» (блок), строкой
+      // ниже — что произойдёт. После кооп-возврата запись дропается и модалка закроется сама.
+      const canceling = !!rlocal.cancelWanted || !!w.cancelReq;
       if (canceling) { const cx = q(m, '#pyCancel'); if (cx) cx.disabled = true; if (st) st.textContent = tr('the deal will be cancelled as soon as the network confirms the payment'); }
       else if (st) st.textContent = '';
       if (w.status === 'taken') {
