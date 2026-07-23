@@ -23,7 +23,8 @@ async function issue() {
       const L = await import('@/services/market/land.mjs');
       if (!L.validLandName(name)) throw new Error(tr('bad name (1–32: a-z 0-9 _ -)'));
       const v = num($('#iVal')?.value ?? '');
-      if (!(v >= 100)) throw new Error(tr('minimum value is 100 FRC'));
+      const min = await L.minValueFrc();
+      if (!(v >= min)) throw new Error(`${tr('minimum value is')} ${min} FRC`);
       const log = t => { const el = $('#iLog'); if (el) el.textContent = t; };
       const btn = $('#issueBtn'); if (btn) btn.disabled = true;
       try {
@@ -93,7 +94,7 @@ export function openIssueModal() {
         <button data-k="plot" disabled title="${tr('coming soon')}">${tr('plot')}</button>
       </div>
       <div class="sub" id="iAvail" style="font-size:12px"></div>
-      <label>${tr('Self-assessed value')} (FRC)<input id="iVal" type="text" inputmode="decimal" placeholder="100+"></label>
+      <label>${tr('Self-assessed value')} (FRC)<input id="iVal" type="text" inputmode="decimal" placeholder="0.01+"></label>
       <div class="rrow"><span>${tr('Rent (auto, demurrage)')}</span><b id="iRent" class="sub">—</b></div>
     </div>
     <div id="iLog" class="sub" style="font-size:12px;white-space:pre-line"></div>

@@ -47,6 +47,16 @@ export async function listNames() {
   try { return await api('landList'); } catch { return { names: [], minV: '0', height: 0 }; }
 }
 
+// Минимальная самооценка (FRC) — АВТОРИТЕТНО берётся с релея (его LAND_MIN_V), не хардкодится:
+// «по Гезеллю» это лишь dust-пол, и его значение — политика релея, а не магическая константа клиента.
+// Кэшируем (пол меняется редко); фолбэк 0.01 совпадает с дефолтом релея.
+let _minV = null;
+export async function minValueFrc() {
+  if (_minV != null) return _minV;
+  try { _minV = Number(BigInt((await listNames()).minV)) / 1e8; } catch { _minV = 0.01; }
+  return _minV > 0 ? _minV : 0.01;
+}
+
 /** имя → адрес (или null). Основа резолва в «Отправить». */
 export async function resolveName(name) {
   if (!validLandName(name)) return null;

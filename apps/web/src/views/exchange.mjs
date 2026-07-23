@@ -1623,7 +1623,8 @@ async function openNamesModal() {
     const v = prompt(tr('New self-assessed value (FRC)?'), String(Number(BigInt(curPrice)) / 1e8));
     if (v == null) return;
     const nv = num(v);
-    if (!(nv >= 100)) return toast(tr('minimum value is 100 FRC'), 'err');
+    const rmin = await L.minValueFrc();
+    if (!(nv >= rmin)) return toast(`${tr('minimum value is')} ${rmin} FRC`, 'err');
     try {
       await L.revalueName({ name, valueFrc: nv, progress: p => log(
         p === 'rebond' ? tr('rebonding the deposit…')
@@ -1641,7 +1642,8 @@ async function openNamesModal() {
     const vNew = prompt(`${tr('Buy for')} ${fmtFrc(price)} FRC. ${tr('Your new self-assessed value (FRC)?')}`, String(Math.ceil(priceFrc)));
     if (vNew == null) return;
     const v = num(vNew);
-    if (!(v >= 100)) return toast(tr('minimum value is 100 FRC'), 'err');
+    const bmin = await L.minValueFrc();
+    if (!(v >= bmin)) return toast(`${tr('minimum value is')} ${bmin} FRC`, 'err');
     try {
       const look = await api('landLookup', { name });
       if (!look.found || !look.buyable) throw new Error(tr('name is not buyable right now'));

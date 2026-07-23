@@ -740,7 +740,15 @@ const landMsgHash = str => sha256(Buffer.from(str, 'utf8')).toString('hex');
 // безопасная проверка: verifyEcdsaPub бросает на пустой/кривой DER — тут любой сбой = «неверно»
 const landVerify = (pub, str, sig) => { try { return verifyEcdsaPub(pub, landMsgHash(str), sig || ''); } catch { return false; } };
 const LAND_FILE = `${DATADIR}/land.json`;
-const LAND_MIN_V = BigInt(Math.round(Number(process.env.LAND_MIN_V ?? 100) * 1e8));   // минимум залога, кария (по умолч. 100 FRC)
+// Пол ПО ГЕЗЕЛЛЮ: не капитальный ценз, а лишь ТЕХНИЧЕСКИЙ dust-порог. У Гезелля Freiland —
+// универсальный доступ без имущественного барьера; сквоттинг сдерживают самооценка + демерредж
+// (заявил дёшево → дёшево выкупят; заявил дорого → залог тает быстрее), а не минимальный взнос.
+// Единственная уступка арифметике (Фриденбах): ниже ~сотни карий демерредж-залог начинает
+// мусорить округлением / упираться в freeze-зону 1-юнитных монет (см. [[one-unit-coin-freeze]]).
+// 0.01 FRC = на ~6 порядков выше freeze-зоны и на ~4 ниже прежней сотни — барьера входа фактически
+// нет, но арифметика чистая. Полностью «по Гезеллю» не хватает лишь ренты-в-казну вместо майнеров
+// (demurrage-treasury) — это консенсус-изменение (§7 спеки), отдельно. Env-tunable.
+const LAND_MIN_V = BigInt(Math.round(Number(process.env.LAND_MIN_V ?? 0.01) * 1e8));   // dust-пол залога, кария
 const land = new Map();
 try { for (const w of JSON.parse(readFileSync(LAND_FILE, 'utf8'))) land.set(w.name, w); } catch { /* first run */ }
 let landSaveTimer = null;
