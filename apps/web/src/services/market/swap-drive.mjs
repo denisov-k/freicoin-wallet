@@ -303,8 +303,13 @@ async function driveP2pInner() {
         // If the seller sent their lock in the meantime (frcPending/frcHtlc), the cancel is moot:
         // drop the flag and let the normal claim path finish the swap.
         if (rec.cancelWanted) {
-          if (w.frcHtlc?.txid || w.frcPending) env.putP2p({ ...rec, cancelWanted: false });
-          else if (w.status === 'btc_funded' && !w.cancelReq) {
+          if (w.frcHtlc?.txid || w.frcPending) {
+            // отмена ПРОИГРАЛА гонку: продавец запер FRC в тот же миг, как подтвердилась оплата —
+            // по атомарности сделка обязана завершиться. Объясняем, а не бросаем молча (иначе
+            // пользователь видит «подтверждение получения» после нажатой отмены и не понимает).
+            env.putP2p({ ...rec, cancelWanted: false });
+            env.toast(`${w.id}: ${tr('the seller locked first — the deal is completing, you will receive your FRC')}`, 'warn'); env.mvRefresh();
+          } else if (w.status === 'btc_funded' && !w.cancelReq) {
             try {
               await api('p2pBtcCancelReq', { id: rec.id, takerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')) });
               env.putP2p({ ...rec, cancelWanted: false });

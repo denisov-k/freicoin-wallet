@@ -2,6 +2,7 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'the seller locked first — the deal is completing, you will receive your FRC': 'продавец успел запереть FRC — сделка завершается, вы получите свои FRC',
   'the deal will be cancelled as soon as the network confirms the payment': 'сделка отменится, как только сеть подтвердит оплату',
   'cancel requested': 'отмена запрошена',
   'cancel queued — it will be sent as soon as the payment confirms': 'отмена запрошена — уйдёт, как только сеть подтвердит оплату',
@@ -286,6 +287,7 @@ const RU = {
 };
 
 const ES = {
+  'the seller locked first — the deal is completing, you will receive your FRC': 'el vendedor bloqueó primero — la operación se está completando, recibirás tus FRC',
   'the deal will be cancelled as soon as the network confirms the payment': 'la operación se cancelará en cuanto la red confirme el pago',
   'cancel requested': 'cancelación solicitada',
   'cancel queued — it will be sent as soon as the payment confirms': 'cancelación en cola — se enviará en cuanto la red confirme el pago',
@@ -750,6 +752,7 @@ const ES = {
 };
 
 const DE = {
+  'the seller locked first — the deal is completing, you will receive your FRC': 'der Verkäufer hat zuerst gesperrt — die Transaktion wird abgeschlossen, du erhältst deine FRC',
   'the deal will be cancelled as soon as the network confirms the payment': 'die Transaktion wird storniert, sobald das Netzwerk die Zahlung bestätigt',
   'cancel requested': 'Stornierung angefordert',
   'cancel queued — it will be sent as soon as the payment confirms': 'Stornierung in Warteschlange — sie wird gesendet, sobald das Netzwerk die Zahlung bestätigt',
@@ -1214,6 +1217,7 @@ const DE = {
 };
 
 const FR = {
+  'the seller locked first — the deal is completing, you will receive your FRC': "le vendeur a verrouillé en premier — l'opération se termine, vous recevrez vos FRC",
   'the deal will be cancelled as soon as the network confirms the payment': "l'opération sera annulée dès que le réseau confirmera le paiement",
   'cancel requested': 'annulation demandée',
   'cancel queued — it will be sent as soon as the payment confirms': 'annulation en file — elle partira dès que le réseau confirmera le paiement',
@@ -1678,6 +1682,7 @@ const FR = {
 };
 
 const PT = {
+  'the seller locked first — the deal is completing, you will receive your FRC': 'o vendedor bloqueou primeiro — a negociação está sendo concluída, você receberá seus FRC',
   'the deal will be cancelled as soon as the network confirms the payment': 'a negociação será cancelada assim que a rede confirmar o pagamento',
   'cancel requested': 'cancelamento solicitado',
   'cancel queued — it will be sent as soon as the payment confirms': 'cancelamento na fila — será enviado assim que a rede confirmar o pagamento',
@@ -2142,6 +2147,7 @@ const PT = {
 };
 
 const ZH = {
+  'the seller locked first — the deal is completing, you will receive your FRC': '卖方先锁定——交易正在完成，您将收到您的 FRC',
   'the deal will be cancelled as soon as the network confirms the payment': '网络确认付款后，交易将被取消',
   'cancel requested': '已请求取消',
   'cancel queued — it will be sent as soon as the payment confirms': '取消已排队——网络确认付款后即会发送',
