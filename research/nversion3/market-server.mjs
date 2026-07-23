@@ -1697,32 +1697,49 @@ const api = {
   // тающий демерреджем (это И ЕСТЬ рента); ценность V = present value залога. Релей — индекс/доска
   // (уникальность имён, резолв), как DEX-книга: цензурировать может, украсть нет (токен/залог ходят
   // подписями). Выкуп имени = ranged-тейк его токена существующим путём. См. docs/freiland-spec.md. ----
-  async landRegister({ name, ownerFrcPub, depTxid, depVout, resolve, offerId, sig }) {
+  async landRegister({ name, ownerFrcPub, depTxid, depVout, resolve, offerId, sig, nftTag, nftTxid, nftVout, selfValue }) {
     if (!btcAvail()) throw new Error('реестр недоступен: нет узла');
     if (!validLandName(name)) throw new Error('плохое имя (1–32: a-z 0-9 _ -, не по краям/подряд)');
     if (!/^[0-9a-f]{66}$/.test(ownerFrcPub || '')) throw new Error('плохой ключ владельца');
     if (typeof resolve !== 'string' || !/^(fc|fcrt|tf)1[a-z0-9]{20,90}$/i.test(resolve)) throw new Error('плохой адрес резолва');
     // ПОДПИСЬ владельца: только держатель ключа может занять имя (иначе можно было бы записать
-    // чужой ownerFrcPub). Сообщение фиксирует имя+резолв+залог, чтобы подпись нельзя было переклеить.
-    if (!landVerify(ownerFrcPub, `freiland:reg:${name}:${resolve}:${depTxid}:${depVout}`, sig))
+    // чужой ownerFrcPub). Сообщение фиксирует имя+резолв+залог(+NFT+V), чтобы подпись нельзя было переклеить.
+    const nftTagN = /^[0-9a-f]{40}$/.test(nftTag || '') ? nftTag : null;
+    const selfV = selfValue != null ? BigInt(selfValue) : null;   // самооценка V (цена продажи), кария
+    const nftMsg = nftTagN ? `:${nftTagN}:${nftTxid}:${nftVout}:${selfV}` : '';
+    if (!landVerify(ownerFrcPub, `freiland:reg:${name}:${resolve}:${depTxid}:${depVout}${nftMsg}`, sig))
       throw new Error('плохая подпись владельца');
     await catchUp();
     const u = utxos.get(`${depTxid}:${depVout}`);
     if (!u) throw new Error('залог не найден (нужен неистраченный FRC-выход)');
     if (u.assetTag !== null) throw new Error('залог должен быть FRC, не активом');
     // залог обязан быть монетой ВЛАДЕЛЬЦА (spk == его wpk), иначе можно занять имя под чужой монетой
-    if (u.spk !== frcWpkSpk(ownerFrcPub)) throw new Error('залог должен быть на адресе владельца');
+    const ownerSpk = frcWpkSpk(ownerFrcPub);
+    if (u.spk !== ownerSpk) throw new Error('залог должен быть на адресе владельца');
     const V = pvOf(u, indexedHeight);
     if (V < LAND_MIN_V) throw new Error(`залог мал: ценность ${Number(V) / 1e8} FRC < минимума ${Number(LAND_MIN_V) / 1e8}`);
+    // Model A NFT-владение (§9 спеки): если передан NFT — монета с этим токеном обязана лежать НА
+    // АДРЕСЕ ВЛАДЕЛЬЦА и нести токен = имя (utf8-hex). Самооценка V ≤ present value залога (обеспечена).
+    if (nftTagN) {
+      const nu = utxos.get(`${nftTxid}:${nftVout}`);
+      if (!nu) throw new Error('NFT-имя не найдено (неистраченный выход)');
+      if (nu.spk !== ownerSpk) throw new Error('NFT-имя должно быть на адресе владельца');
+      if (nu.assetTag !== nftTagN) throw new Error('NFT-имя: неверный актив');
+      const tokHex = Buffer.from(name, 'utf8').toString('hex');
+      if (!(nu.tokens ?? []).includes(tokHex)) throw new Error('NFT-имя: токен не соответствует имени');
+      if (selfV == null || selfV < LAND_MIN_V) throw new Error(`самооценка V мала: минимум ${Number(LAND_MIN_V) / 1e8} FRC`);
+      if (selfV > V) throw new Error(`залог недо-обеспечен: V ${Number(selfV) / 1e8} > present value залога ${Number(V) / 1e8} FRC`);
+    }
     // уникальность: имя занято, только если у текущей записи залог ЖИВ (не истрачен и V ≥ минимума)
     const cur = land.get(name);
     if (cur && cur.ownerFrcPub !== ownerFrcPub) {
       const cu = utxos.get(`${cur.depTxid}:${cur.depVout}`);
       if (cu && cu.assetTag === null && pvOf(cu, indexedHeight) >= LAND_MIN_V) throw new Error('имя занято');
     }
-    land.set(name, { name, ownerFrcPub, depTxid, depVout, resolve, offerId: offerId ?? null, postedAt: indexedHeight });
+    land.set(name, { name, ownerFrcPub, depTxid, depVout, resolve, offerId: offerId ?? null, postedAt: indexedHeight,
+      nftTag: nftTagN, nftTxid: nftTagN ? nftTxid : null, nftVout: nftTagN ? nftVout : null, selfValue: nftTagN ? String(selfV) : null });
     saveLand();
-    say(`Freiland: имя «${name}» зарегистрировано (ценность ${Number(V) / 1e8} FRC → ${resolve.slice(0, 12)}…)`);
+    say(`Freiland: имя «${name}» зарегистрировано (ценность ${Number(V) / 1e8} FRC${nftTagN ? `, цена выкупа ${Number(selfV) / 1e8}` : ''} → ${resolve.slice(0, 12)}…)`);
     return { ok: true, name, value: String(V) };
   },
   async landSetResolve({ name, ownerFrcPub, resolve, sig }) {
@@ -1734,23 +1751,26 @@ const api = {
     w.resolve = resolve; saveLand();
     return { ok: true };
   },
+  // buyable (Model A): NFT задан И его монета жива (не выкуплена) И оффер ещё открыт в книге
+  landRow(w) {
+    const u = utxos.get(`${w.depTxid}:${w.depVout}`);
+    const value = u && u.assetTag === null ? pvOf(u, indexedHeight) : 0n;
+    const nftLive = w.nftTag && !!utxos.get(`${w.nftTxid}:${w.nftVout}`);
+    const offerLive = w.offerId ? book.some(o => o.id === w.offerId && o.status === 'open') : false;
+    const buyable = !!(nftLive && offerLive && w.selfValue);
+    return { name: w.name, ownerFrcPub: w.ownerFrcPub, resolve: w.resolve, offerId: w.offerId,
+      value: String(value), lapsed: value < LAND_MIN_V,
+      nftTag: w.nftTag ?? null, price: w.selfValue ?? null, buyable };
+  },
   async landList() {
     await catchUp();
-    const out = [];
-    for (const w of land.values()) {
-      const u = utxos.get(`${w.depTxid}:${w.depVout}`);
-      const value = u && u.assetTag === null ? pvOf(u, indexedHeight) : 0n;
-      out.push({ name: w.name, ownerFrcPub: w.ownerFrcPub, resolve: w.resolve, offerId: w.offerId,
-        value: String(value), lapsed: value < LAND_MIN_V });
-    }
-    return { names: out, minV: String(LAND_MIN_V), height: indexedHeight };
+    return { names: [...land.values()].map(w => this.landRow(w)), minV: String(LAND_MIN_V), height: indexedHeight };
   },
   async landLookup({ name }) {
     const w = land.get(name); if (!w) return { name, found: false };
     await catchUp();
-    const u = utxos.get(`${w.depTxid}:${w.depVout}`);
-    const value = u && u.assetTag === null ? pvOf(u, indexedHeight) : 0n;
-    return { name, found: value >= LAND_MIN_V, resolve: w.resolve, ownerFrcPub: w.ownerFrcPub, offerId: w.offerId, value: String(value) };
+    const r = this.landRow(w);
+    return { name, found: BigInt(r.value) >= LAND_MIN_V, ...r };
   },
 };
 
