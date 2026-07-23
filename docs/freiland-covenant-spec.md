@@ -179,8 +179,37 @@ scriptPubKey = 51 20{nameHash(32)} 14{ownerHash160(20)} 08{floorV(8 LE)} OP_3
 - `DeriveAssetTag` (transaction.h:216): 28-байт-суффикс → host (assetTag null). Модель = консенсус.
 
 Вывод: ковенант **софтфорк-корректен** на witver 2 (энфорс новых нод: anyone-can-spend → только-по-
-ковенанту). HRBG-выходы чеканить только после активации. Следующее: стадия 2 — консенсус
-регтест-флаг + путь-A (форс-выкуп) в `tx_verify` (уже на выделенном регтесте, НЕ на живом сигнете).
+ковенанту). HRBG-выходы чеканить только после активации.
+
+## 7b. Стадия 2 (консенсус C++) — 3 инкремента СДЕЛАНО (2026-07-24)
+
+Всё в ИЗОЛИРОВАННОМ git-worktree `/root/fc-nv3-cov` (ветка `covenant-freiland`), отдельная сборка
+(`ENABLE_IPC=OFF`), живой сигнет-узел (`freicoind-nv3.service`, `Restart=always`) НЕ тронут.
+Каждый шаг собран (`test_bitcoin`, ccache) и юнит-тестами проверен, регрессия `asset_tests` зелёная.
+
+1. **Парсер** (`src/consensus/harberger.h`, коммит d1d2a1a): `ParseHarbergerOutput`/`IsHarbergerOutput`
+   — decode формата §3, зеркало JS. Тест `asset_tests/harberger_output_format`. Ноль правил.
+2. **Флаг активации** (2dad762): `Consensus::HARBERGER` (RuleSet бит 2) + `harberger_activation_time`
+   (time-based, как size-expansion) в `params.h`/`validation.h`/`chainparams.cpp`. Регтест — активен
+   с генезиса (0), main/testnet/signet — int64-max (не назначено). Инертен без пути-A.
+3. **Путь-A форс-выкуп** (5d4a0a6): в `CheckTxInputs` при `rules&HARBERGER` — спенд HRBG-входа требует
+   (1) payout ≥ V=asset_pv на `0014{owner}` и (2) преемник-HRBG для того же nameHash с value ≥ V.
+   Reasons `bad-txns-harberger-{unpaid,no-successor,multiple-inputs}`. Один HRBG-вход на tx пока.
+   Тест `asset_tests/harberger_forced_buy` (валид + недоплата + нет-преемника + недо-залог + флаг-off).
+
+### Осталось (следующий крупный сфокусированный кусок — НЕ автономно-впопыхах):
+- **Реестр имён** (уникальность по цепи): `NameRegistry` (nameHash→outpoint) как `AssetRegistry` —
+  член `Chainstate`, update на ConnectBlock, ОТКАТ на DisconnectBlock (реорг-safe), персист. Правило:
+  создать HRBG-выход для имени можно, если имя свободно ИЛИ в этом же tx тратится его текущий держатель.
+  Требует ФУНКЦИОНАЛЬНОГО теста (демон + регтест, connect/disconnect), не только юнита — stateful.
+- **Owner-path** (переоценка/долив/вывод): переоценка = «выкуп своего» через путь-A (payout себе);
+  вывод (release без преемника) — нужен owner-sig-механизм (аналог asset-authorizer approvals).
+- **multiple HRBG-входов на tx** (позиционный матч payout/преемник).
+- **Кошелёк** (JS): строить/распознавать HRBG-tx; релей → индексатор. **Функциональные e2e** на регтесте
+  (создать имя → форс-выкуп при офлайн-владельце → авто-сползание цены → floorV-протухание). **Аудит**.
+- Множество мест берут `GetActiveRules`; проверить, что `rules` реально доходит до `CheckTxInputs` во
+  ВСЕХ путях (mempool accept сейчас зовёт с `Consensus::NONE` — validation.cpp:920 — это ПОЛИСИ-путь,
+  но убедиться, что блок-валидация (2783) передаёт активные `rules`; иначе форс-выкуп не заэнфорсится).
 
 ## 8. Риски / открытые вопросы
 
