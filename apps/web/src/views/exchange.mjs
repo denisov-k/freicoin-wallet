@@ -1720,17 +1720,23 @@ export function renderExchange(el) {
 // Balance tab (nv3) — the holdings split into the same three classes as Issue/Exchange:
 // Currency (FRC + BTC + fungible currency assets), Tokens (token/ticket assets), Holdings (names).
 export function renderAssetBalance(el) {
-  el.innerHTML = `
+  // The three-class split (Currency/Tokens/Holdings) is an nv3 concept — tokens and Freiland names
+  // only exist there. On the other swap nets (mainnet/testnet) show the plain single balance table,
+  // else those nets sprout empty «Tokens»/«Holdings» sections. #curBalBody is the shared tbody so
+  // the provisional-balance painter (dashboard) targets one id on every net.
+  const nv3 = currentNet() === 'nv3';
+  el.innerHTML = nv3 ? `
     <div class="sub" style="font-size:12px;margin:0 0 2px">${tr('Currency')}</div>
     <table class="mkt"><tbody id="curBalBody">${skelRows(2)}</tbody></table>
     <div class="sub" style="font-size:12px;margin:10px 0 2px">${tr('Tokens')}</div>
     <table class="mkt"><tbody id="tokBalBody">${skelRows(1)}</tbody></table>
     <div class="sub" style="font-size:12px;margin:10px 0 2px">🗺️ ${tr('Holdings')} · V / ${tr('deposit')}</div>
     <table class="mkt"><tbody id="myNamesBody">${skelRows(1)}</tbody></table>
-    <div id="myNamesLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`;
+    <div id="myNamesLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`
+  : `<table class="mkt"><thead><tr><th>${tr('Asset')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="curBalBody">${skelRows(3)}</tbody></table>`;
   const f = $('#faucetBtn'); if (f) f.onclick = faucet;   // the button itself lives with the other Balance actions
   if (state) paintAssetBalance(); else mvRefresh();
-  paintMyNames();
+  if (nv3) paintMyNames();
 }
 function paintAssetBalance() {
   const cur = $('#curBalBody'), tok = $('#tokBalBody'); if (!cur || !state) return;

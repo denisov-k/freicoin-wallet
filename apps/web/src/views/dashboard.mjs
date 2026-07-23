@@ -58,7 +58,7 @@ export function paintBalance(s) {
     // FULL sync lands — on a restore that left the checkpoint preview's instant balance
     // invisible (status said "ok 2097 FRC", the table stayed a skeleton). Until market-view
     // has real rows, paint the provisional FRC total straight into the table.
-    const body = $('#assetBalBody');
+    const body = $('#curBalBody');
     // keep repainting while the table holds only skeletons or OUR provisional row (#provRow) —
     // never once market-view has painted real rows (its rewrite drops the marker). The sweep's
     // early partials (balance 0) and the preview race; the larger figure must not be clobbered
@@ -112,7 +112,7 @@ export async function renderBalance() {
   // Freimarkets (nv3): show per-asset holdings, not the plain FRC number. market-view owns the
   // table; the host-currency sync still drives the status.
   if (d.SWAP()) {
-    if (!$('#assetBalBody')) {
+    if (!$('#curBalBody')) {
       provBest = 0;   // fresh table (new session/network) — forget the previous wallet's figure
       $('#balance').innerHTML = `<div id="mktBal"></div>` + balActions();
       renderAssetBalance($('#mktBal'));   // per-asset table (+ dev faucet); the address lives in Receive
