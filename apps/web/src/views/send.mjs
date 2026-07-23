@@ -40,7 +40,7 @@ export function renderReceive() {
      <div class="row" id="newAddrRow"><button id="newAddr" class="ghost">${tr('New address')}</button></div>
      <div class="row" id="lnAmtBtnRow"><button id="lnAmtBtn" class="ghost">${tr('Request an amount')}</button></div></div>
      <div id="rcvLnAmt" class="stack" hidden>
-       <label class="numfield" id="lnAmtField">${tr('Amount')} (<span id="rcvAmtUnit">${tr('sats')}</span>)<input id="lnRcvAmt" type="text" inputmode="decimal"></label>
+       <label class="numfield" id="lnAmtField"><span>${tr('Amount')} (<span id="rcvAmtUnit">${tr('sats')}</span>)</span><input id="lnRcvAmt" type="text" inputmode="decimal"></label>
        <div class="row" id="lnGoRow"><button id="lnRcvGo">${tr('Create invoice')}</button></div>
        <div class="rrow" id="lnAmtSumRow" hidden><span>${tr('To receive')}</span><b id="lnAmtSum"></b></div>
        <div id="lnAmtQr" class="qr" style="margin:0 auto;height:220px;display:none"></div>
@@ -81,6 +81,7 @@ export function renderReceive() {
   $('#lnAmtBtn').onclick = () => {
     resetAmtScreen(); showAmtScreen(true);
     const u = $('#rcvAmtUnit'); if (u) u.textContent = amtMode() === 'ln' ? tr('sats') : amtMode() === 'btc' ? 'BTC' : 'FRC';
+    const g = $('#lnRcvGo'); if (g) g.textContent = amtMode() === 'ln' ? tr('Create invoice') : tr('Create QR');
     $('#lnRcvAmt').focus();
   };
   $('#lnAmtBack').onclick = () => showAmtScreen(false);
