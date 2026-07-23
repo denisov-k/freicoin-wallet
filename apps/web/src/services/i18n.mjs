@@ -2,7 +2,7 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
-  'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'встроенного Lightning-баланса нет — инвойс для любого внешнего LN-кошелька во вкладке «Внешний платёж»',
+  'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'в этом кошельке сейчас нечем заплатить — оплатите инвойс из любого Lightning-приложения на вкладке «Внешний платёж»',
   'requesting the invoice…': 'запрашиваем инвойс…',
   'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': 'мгновенно из встроенного баланса — без сетевой комиссии, комиссия маршрута обычно <1%',
   'Pay from this wallet': 'Оплатить из этого кошелька',
@@ -283,7 +283,7 @@ const RU = {
 };
 
 const ES = {
-  'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'sin saldo Lightning integrado — la factura para cualquier billetera LN externa está en «Pago externo»',
+  'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'no hay con qué pagar en esta billetera — paga la factura desde cualquier app Lightning en «Pago externo»',
   'requesting the invoice…': 'solicitando la factura…',
   'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': 'instantáneo desde el saldo integrado — sin comisión on-chain, la de ruta suele ser <1%',
   'Pay from this wallet': 'Pagar desde esta billetera',
@@ -744,7 +744,7 @@ const ES = {
 };
 
 const DE = {
-  'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'kein eingebautes Lightning-Guthaben — die Rechnung für externe LN-Wallets steht unter „Externe Zahlung“',
+  'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'in dieser Wallet ist gerade nichts zum Bezahlen — begleiche die Rechnung mit einer beliebigen Lightning-App unter „Externe Zahlung“',
   'requesting the invoice…': 'Rechnung wird angefordert…',
   'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': 'sofort aus dem eingebauten Guthaben — keine On-Chain-Gebühr, Routengebühr meist <1%',
   'Pay from this wallet': 'Aus dieser Wallet bezahlen',
@@ -1205,7 +1205,7 @@ const DE = {
 };
 
 const FR = {
-  'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'pas de solde Lightning intégré — la facture pour un portefeuille LN externe est sous « Paiement externe »',
+  'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'rien pour payer dans ce portefeuille — réglez la facture depuis n’importe quelle app Lightning via « Paiement externe »',
   'requesting the invoice…': 'demande de la facture…',
   'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': 'instantané depuis le solde intégré — pas de frais on-chain, frais de route généralement <1%',
   'Pay from this wallet': 'Payer depuis ce portefeuille',
@@ -1666,7 +1666,7 @@ const FR = {
 };
 
 const PT = {
-  'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'sem saldo Lightning embutido — a fatura para carteiras LN externas está em «Pagamento externo»',
+  'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'não há com que pagar nesta carteira — pague a fatura por qualquer app Lightning em «Pagamento externo»',
   'requesting the invoice…': 'solicitando a fatura…',
   'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': 'instantâneo do saldo embutido — sem taxa on-chain, taxa de rota geralmente <1%',
   'Pay from this wallet': 'Pagar desta carteira',
@@ -2127,7 +2127,7 @@ const PT = {
 };
 
 const ZH = {
-  'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': '无内置闪电余额——外部 LN 钱包的发票在“外部支付”选项卡',
+  'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': '此钱包当前无可用余额——请在“外部支付”中用任意闪电应用支付发票',
   'requesting the invoice…': '正在请求发票…',
   'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': '从内置余额即时支付——无链上费用，路由费通常 <1%',
   'Pay from this wallet': '用此钱包支付',
