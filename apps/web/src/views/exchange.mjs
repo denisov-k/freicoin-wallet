@@ -1230,7 +1230,9 @@ function renderP2pPay(m, rec) {
 // input keeps its (fill-independent) SIGHASH_BUNDLE signature; the taker signs its own inputs.
 // The taker pays `payout` in the want asset; the network fee is always in FRC (a separate coin
 // when the want asset isn't FRC, else taken from the FRC payout's surplus).
-async function fillRangedNow(offer, fillUnits) {
+// opts.fillSpk: pay the fill (+tokens) to this script instead of my main address — Freiland's
+// buy path lands the name-NFT straight on the buyer's LAND address (where landRegister expects it).
+async function fillRangedNow(offer, fillUnits, opts = null) {
   try {
     const d = offer.desc;
     if (!offer.give) throw new Error(tr('offer coin is gone'));
@@ -1281,7 +1283,7 @@ async function fillRangedNow(offer, fillUnits) {
     const vout = [
       { value: payout, scriptPubKey: d.payoutScript, assetTag: payoutTag },   // [payout] to maker
       { value: change, scriptPubKey: d.changeScript, assetTag: giveTag },     // [change] to maker
-      { value: fill, scriptPubKey: spks[0], assetTag: giveTag, ...(giveToks ? { tokens: giveToks } : {}) },   // fill (+tokens) to me
+      { value: fill, scriptPubKey: opts?.fillSpk ?? spks[0], assetTag: giveTag, ...(giveToks ? { tokens: giveToks } : {}) },   // fill (+tokens) to me
     ];
     const payChange = payPv - payout - (isFrcPayout ? fee : 0n);   // my want-asset change
     if (payChange > 0n) vout.push({ value: payChange, scriptPubKey: spks[0], assetTag: payoutTag });
@@ -1644,8 +1646,39 @@ async function openNamesModal() {
       ? `<div class="sub" style="font-size:12px;margin:4px 0">${tr('All names')} · ${tr('self-assessed price')}</div>` + live.map(n =>
           `<div class="rrow" style="font-size:13px">
              <span style="font-family:ui-monospace,monospace">${n.name}${mineSet.has(n.name) ? ' · ' + tr('yours') : ''}</span>
-             <b>${fmtFrc(n.value)} FRC</b></div>`).join('')
+             <span style="display:flex;gap:8px;align-items:center">
+               <b>${fmtFrc(n.buyable && n.price ? n.price : n.value)} FRC</b>
+               ${n.buyable && !mineSet.has(n.name) ? `<button class="nmBuy" data-n="${n.name}" data-p="${n.price}" style="font-size:12px;padding:2px 10px">${tr('Buy')}</button>` : ''}
+             </span></div>`).join('')
       : `<div class="sub" style="font-size:12px">${tr('no names registered yet')}</div>`;
+    mktBox.querySelectorAll('.nmBuy').forEach(b => b.onclick = () => buyIt(b.dataset.n, b.dataset.p));
+  }
+  // трастлесс-выкуп (шаг 5c): исполнить стоячий оффер владельца (NFT едет филлом ПРЯМО на мой
+  // land-адрес), затем adoptName — свой залог, свой оффер, перерегистрация на меня. Старому
+  // владельцу V уже упала оффером; его залог заберёт его собственный maybeResignLand.
+  async function buyIt(name, price) {
+    const priceFrc = Number(BigInt(price)) / 1e8;
+    const vNew = prompt(`${tr('Buy for')} ${fmtFrc(price)} FRC. ${tr('Your new self-assessed value (FRC)?')}`, String(Math.ceil(priceFrc)));
+    if (vNew == null) return;
+    const v = num(vNew);
+    if (!(v >= 100)) return toast(tr('minimum value is 100 FRC'), 'err');
+    try {
+      const look = await api('landLookup', { name });
+      if (!look.found || !look.buyable) throw new Error(tr('name is not buyable right now'));
+      const offer = state?.info?.book?.find(o => o.ranged && o.id === look.offerId && o.status === 'open');
+      if (!offer) { mvRefresh(); throw new Error(tr('offer not in the book yet — try again in a minute')); }
+      log(tr('buying the name…'));
+      // имя ходит только целиком: fill = весь номинал NFT-монеты (10^8 юнитов, см. NFT_UNITS)
+      const units = Number(BigInt(offer.desc.maxFill)) / scaleOf(offer.give.assetTag ?? null);
+      const ok = await fillRangedNow(offer, units, { fillSpk: L.landDepositSpk(name) });
+      if (!ok) { log(''); return; }
+      await L.adoptName({ name, valueFrc: v, progress: p => log(
+        p === 'lock' ? tr('locking the deposit…')
+        : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…')
+        : p === 'offer' ? tr('signing the standing sale offer…')
+        : tr('registered ✅')) });
+      toast(`${name}: ${tr('name is yours ✅')}`, 'ok'); paintAll();
+    } catch (e) { toast(e.message, 'err'); log(e.message); }
   }
   paintAll();
 }

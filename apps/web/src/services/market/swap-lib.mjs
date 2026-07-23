@@ -23,10 +23,10 @@ export const spendableAt = (u, L) => u.refheight <= L && !(u.coinbase && (L + 1 
 // a vin entry from an "txid:vout" outpoint string
 export const opIn = op => ({ prevout: { txid: rev(op.split(':')[0]), vout: +op.split(':')[1] }, scriptSig: '', sequence: 0xffffffff, witness: [] });
 
-// sign input i as a P2WPKH-in-P2WSH host spend (the wallet's own key from ctx.km[spk])
-export const signInput = (tx, i, spk, value, refheight, hashtype) => {
-  const node = ctx.km[spk];
-  const sec = node.priv.toString(16).padStart(64, '0');
+// sign input i as a P2WPKH-in-P2WSH host spend. Default key = the wallet's own (ctx.km[spk]);
+// `secKey` signs with an arbitrary key instead (Freiland's land-key sweeps its deposit coin).
+export const signInput = (tx, i, spk, value, refheight, hashtype, secKey = null) => {
+  const sec = secKey ?? ctx.km[spk].priv.toString(16).padStart(64, '0');
   const code = '21' + pubkeyCompressed(sec) + 'ac';
   const sh = segwitV0Sighash(tx, i, code, BigInt(value), BigInt(refheight), hashtype);
   tx.vin[i].witness = [signEcdsa(sec, sh) + hashtype.toString(16).padStart(2, '0'), '00' + code, ''];

@@ -1730,11 +1730,20 @@ const api = {
       if (selfV == null || selfV < LAND_MIN_V) throw new Error(`самооценка V мала: минимум ${Number(LAND_MIN_V) / 1e8} FRC`);
       if (selfV > V) throw new Error(`залог недо-обеспечен: V ${Number(selfV) / 1e8} > present value залога ${Number(V) / 1e8} FRC`);
     }
-    // уникальность: имя занято, только если у текущей записи залог ЖИВ (не истрачен и V ≥ минимума)
+    // уникальность/передача:
+    //  • Model A-запись (nftTag): владение = NFT-монета. Претендент обязан сам предъявить NFT —
+    //    проверки выше уже доказали, что она лежит на ЕГО адресе, а токен уникален (supply 1,
+    //    conservation: двух живых монет с одним токеном не бывает) ⇒ выкуп/переезд легитимен,
+    //    даже пока залог СТАРОГО владельца жив (тот заберёт его land-ключом сам).
+    //  • legacy-запись (без NFT): имя занято, пока залог текущей записи жив и V ≥ минимума.
     const cur = land.get(name);
     if (cur && cur.ownerFrcPub !== ownerFrcPub) {
-      const cu = utxos.get(`${cur.depTxid}:${cur.depVout}`);
-      if (cu && cu.assetTag === null && pvOf(cu, indexedHeight) >= LAND_MIN_V) throw new Error('имя занято');
+      if (cur.nftTag) {
+        if (!nftTagN || nftTagN !== cur.nftTag) throw new Error('имя занято (NFT-имя — предъявите его токен)');
+      } else {
+        const cu = utxos.get(`${cur.depTxid}:${cur.depVout}`);
+        if (cu && cu.assetTag === null && pvOf(cu, indexedHeight) >= LAND_MIN_V) throw new Error('имя занято');
+      }
     }
     land.set(name, { name, ownerFrcPub, depTxid, depVout, resolve, offerId: offerId ?? null, postedAt: indexedHeight,
       nftTag: nftTagN, nftTxid: nftTagN ? nftTxid : null, nftVout: nftTagN ? nftVout : null, selfValue: nftTagN ? String(selfV) : null });
