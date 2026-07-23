@@ -19,7 +19,7 @@ import { makeTokenReveal, parseTokenReveal, opReturnScript } from '../../core/nv
 import { tokenSetHash } from '../../core/asset-spk.mjs';
 import { assetPresentValue } from '../../core/assets.mjs';
 import { validLandName } from '../../core/freiland.mjs';
-import { pubkeyCompressed, signEcdsa } from '../../core/ecdsa.mjs';
+import { pubkeyCompressed, signEcdsa, verifyEcdsaPub } from '../../core/ecdsa.mjs';
 import { frcLeg, claimReceived } from '../../core/swap.mjs';
 import { htlcSpk, htlcLeaf } from '../../core/htlc.mjs';
 import { btcHtlcLeaf, btcHtlcSpk, btcHtlcAddress, btcHtlcRefund } from '../../core/btc.mjs';
@@ -735,6 +735,18 @@ function atomicWrite(file, data) {
 // rests on the encryption key, and the monotonic version defends against the relay itself).
 
 // ---- Freiland-реестр имён: имя → { владелец, залог-outpoint, резолв-адрес, оффер }. Персист как p2p.
+// FRC-wpk-spk по публичному ключу (тот же вывод, что и в кошельке: 0014 ‖ ripemd160(hash256(0x00 ‖ p2pk))).
+// Так релей проверяет, что залог — монета ИМЕННО владельца, а не чужая.
+const frcWpkSpk = pubHex => {
+  const pk = Buffer.from(pubHex, 'hex');
+  const p2pk = Buffer.concat([Buffer.from([0x21]), pk, Buffer.from([0xac])]);
+  const longid = sha256(sha256(Buffer.concat([Buffer.from([0x00]), p2pk])));
+  return '0014' + ripemd160(longid).toString('hex');
+};
+// каноничный хэш-сообщения для подписи владельца (анти-спуф landRegister/landSetResolve)
+const landMsgHash = str => sha256(Buffer.from(str, 'utf8')).toString('hex');
+// безопасная проверка: verifyEcdsaPub бросает на пустой/кривой DER — тут любой сбой = «неверно»
+const landVerify = (pub, str, sig) => { try { return verifyEcdsaPub(pub, landMsgHash(str), sig || ''); } catch { return false; } };
 const LAND_FILE = `${DATADIR}/land.json`;
 const LAND_MIN_V = BigInt(Math.round(Number(process.env.LAND_MIN_V ?? 100) * 1e8));   // минимум залога, кария (по умолч. 100 FRC)
 const land = new Map();
@@ -1693,15 +1705,21 @@ const api = {
   // тающий демерреджем (это И ЕСТЬ рента); ценность V = present value залога. Релей — индекс/доска
   // (уникальность имён, резолв), как DEX-книга: цензурировать может, украсть нет (токен/залог ходят
   // подписями). Выкуп имени = ranged-тейк его токена существующим путём. См. docs/freiland-spec.md. ----
-  async landRegister({ name, ownerFrcPub, depTxid, depVout, resolve, offerId }) {
+  async landRegister({ name, ownerFrcPub, depTxid, depVout, resolve, offerId, sig }) {
     if (!btcAvail()) throw new Error('реестр недоступен: нет узла');
     if (!validLandName(name)) throw new Error('плохое имя (1–32: a-z 0-9 _ -, не по краям/подряд)');
     if (!/^[0-9a-f]{66}$/.test(ownerFrcPub || '')) throw new Error('плохой ключ владельца');
     if (typeof resolve !== 'string' || !/^(fc|fcrt|tf)1[a-z0-9]{20,90}$/i.test(resolve)) throw new Error('плохой адрес резолва');
+    // ПОДПИСЬ владельца: только держатель ключа может занять имя (иначе можно было бы записать
+    // чужой ownerFrcPub). Сообщение фиксирует имя+резолв+залог, чтобы подпись нельзя было переклеить.
+    if (!landVerify(ownerFrcPub, `freiland:reg:${name}:${resolve}:${depTxid}:${depVout}`, sig))
+      throw new Error('плохая подпись владельца');
     await catchUp();
     const u = utxos.get(`${depTxid}:${depVout}`);
     if (!u) throw new Error('залог не найден (нужен неистраченный FRC-выход)');
     if (u.assetTag !== null) throw new Error('залог должен быть FRC, не активом');
+    // залог обязан быть монетой ВЛАДЕЛЬЦА (spk == его wpk), иначе можно занять имя под чужой монетой
+    if (u.spk !== frcWpkSpk(ownerFrcPub)) throw new Error('залог должен быть на адресе владельца');
     const V = pvOf(u, indexedHeight);
     if (V < LAND_MIN_V) throw new Error(`залог мал: ценность ${Number(V) / 1e8} FRC < минимума ${Number(LAND_MIN_V) / 1e8}`);
     // уникальность: имя занято, только если у текущей записи залог ЖИВ (не истрачен и V ≥ минимума)
@@ -1715,10 +1733,12 @@ const api = {
     say(`Freiland: имя «${name}» зарегистрировано (ценность ${Number(V) / 1e8} FRC → ${resolve.slice(0, 12)}…)`);
     return { ok: true, name, value: String(V) };
   },
-  async landSetResolve({ name, ownerFrcPub, resolve }) {
+  async landSetResolve({ name, ownerFrcPub, resolve, sig }) {
     const w = land.get(name); if (!w) throw new Error('нет такого имени');
     if (w.ownerFrcPub !== ownerFrcPub) throw new Error('имя не ваше');
     if (typeof resolve !== 'string' || !/^(fc|fcrt|tf)1[a-z0-9]{20,90}$/i.test(resolve)) throw new Error('плохой адрес резолва');
+    if (!landVerify(ownerFrcPub, `freiland:res:${name}:${resolve}`, sig))
+      throw new Error('плохая подпись владельца');
     w.resolve = resolve; saveLand();
     return { ok: true };
   },
