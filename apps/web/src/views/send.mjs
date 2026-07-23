@@ -63,7 +63,9 @@ export function renderReceive() {
       const qr = await QRCode.toDataURL(bolt11.toUpperCase(), { margin: 1, width: 220 });
       const b = $('#qrBox'); if (!b) return;   // модалку закрыли, пока узел стартовал
       b.className = 'qr'; b.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`;
-      const a = $('#addr'); if (a) a.textContent = bolt11;
+      // 300+ символов растягивают бокс на десяток строк — показываем как адрес, одной строкой;
+      // полный инвойс живёт в QR и в «Копировать»
+      const a = $('#addr'); if (a) a.textContent = bolt11.slice(0, 24) + '…' + bolt11.slice(-14);
       const cp = $('#copyAddr'); if (cp) { cp.disabled = false; cp.onclick = ev => copy(bolt11, ev.target); }
     } catch (err) { const a = $('#addr'); if (a) a.textContent = err.message; }
   };
@@ -86,7 +88,7 @@ export function renderReceive() {
       $('#lnAmtField').hidden = true; $('#lnGoRow').hidden = true;   // инвойс готов — форма уходит
       const sr = $('#lnAmtSumRow'); if (sr) { sr.hidden = false; $('#lnAmtSum').textContent = `${sats.toLocaleString(getLang())} ${tr('sats')}`; }
       const b = $('#lnAmtQr'); if (b) { b.style.display = ''; b.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`; }
-      const a = $('#lnAmtInv'); if (a) { a.style.display = ''; a.textContent = bolt11; }
+      const a = $('#lnAmtInv'); if (a) { a.style.display = ''; a.textContent = bolt11.slice(0, 24) + '…' + bolt11.slice(-14); }
       const cr = $('#lnAmtCopyRow'); if (cr) { cr.hidden = false; $('#lnAmtCopy').onclick = ev => copy(bolt11, ev.target); }
     } catch (err) { toast(err.message, 'err'); }
     e.target.disabled = false;
