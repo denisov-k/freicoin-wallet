@@ -1724,14 +1724,14 @@ export function renderAssetBalance(el) {
   // only exist there. On the other swap nets (mainnet/testnet) show the plain single balance table,
   // else those nets sprout empty «Tokens»/«Holdings» sections. #curBalBody is the shared tbody so
   // the provisional-balance painter (dashboard) targets one id on every net.
+  // nv3: the class name IS each table's first-column header (no separate label), the amount column
+  // keeps its «Quantity» header, and names show «Price / deposit» (self-assessed price / the deposit's
+  // present value — equal while rent is paid, the deposit trailing once it melts) instead of «V / залог».
   const nv3 = currentNet() === 'nv3';
   el.innerHTML = nv3 ? `
-    <div class="sub" style="font-size:12px;margin:0 0 2px">${tr('Currency')}</div>
-    <table class="mkt"><tbody id="curBalBody">${skelRows(2)}</tbody></table>
-    <div class="sub" style="font-size:12px;margin:10px 0 2px">${tr('Tokens')}</div>
-    <table class="mkt"><tbody id="tokBalBody">${skelRows(1)}</tbody></table>
-    <div class="sub" style="font-size:12px;margin:10px 0 2px">🗺️ ${tr('Holdings')} · V / ${tr('deposit')}</div>
-    <table class="mkt"><tbody id="myNamesBody">${skelRows(1)}</tbody></table>
+    <table class="mkt"><thead><tr><th>${tr('Currency')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="curBalBody">${skelRows(2)}</tbody></table>
+    <table class="mkt" style="margin-top:12px"><thead><tr><th>${tr('Tokens')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="tokBalBody">${skelRows(1)}</tbody></table>
+    <table class="mkt" style="margin-top:12px"><thead><tr><th>🗺️ ${tr('Holdings')}</th><th class="r">${tr('Price')} / ${tr('deposit')}</th><th></th></tr></thead><tbody id="myNamesBody">${skelRows(1)}</tbody></table>
     <div id="myNamesLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`
   : `<table class="mkt"><thead><tr><th>${tr('Asset')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="curBalBody">${skelRows(3)}</tbody></table>`;
   const f = $('#faucetBtn'); if (f) f.onclick = faucet;   // the button itself lives with the other Balance actions
