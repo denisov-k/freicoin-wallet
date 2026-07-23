@@ -183,7 +183,22 @@ export async function renderSend() {
   $('#reviewBtn').onclick = doReview;
   // ⚡: как только в поле адреса оказался bolt11 — сумма не нужна (она в инвойсе); подскажем
   $('#to').addEventListener('input', async () => {
-    const isLn = (await import('@/views/lightning.mjs')).looksLikeBolt11($('#to').value);
+    const raw = $('#to').value.trim();
+    // ПЛАТЁЖНЫЙ URI (freicoin:/bitcoin:…?amount=…) — то, что генерирует наш же «Запросить сумму»
+    // и любой BIP21-кошелёк: распаковываем в адрес, подставляем сумму и переключаем валюту.
+    const uri = /^(freicoin|bitcoin):([a-z0-9]+)(?:\?(.*))?$/i.exec(raw);
+    if (uri) {
+      const [, scheme, addr, query] = uri;
+      $('#to').value = addr;
+      const amount = new URLSearchParams(query || '').get('amount');
+      if (amount && Number(amount) > 0) $('#amt').value = amount;
+      const sel = $('#sendAsset');
+      const wantBtc = scheme.toLowerCase() === 'bitcoin';
+      if (sel && (sel.value === 'BTC') !== wantBtc) { sel.value = wantBtc ? 'BTC' : ''; sel.onchange?.(); if (amount && Number(amount) > 0) $('#amt').value = amount; }
+      if (sel?.value === 'BTC') updBtcFee(); else updFrcCheck();
+      return;
+    }
+    const isLn = (await import('@/views/lightning.mjs')).looksLikeBolt11(raw);
     const al = $('#amtLabel'); if (al) al.style.display = isLn ? 'none' : '';
     const sp = $('#btcSpeedRow'); if (sp && isLn) sp.hidden = true;
     if (isLn) { const av = $('#avail'); if (av) { av.style.display = ''; av.textContent = '⚡ ' + tr('Lightning invoice detected — the amount is inside it'); } setReview(true); }
