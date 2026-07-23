@@ -62,3 +62,8 @@ export function landStatus(depositNominal, refheight, height, minV) {
   const value = landValue(depositNominal, refheight, height);
   return { value, lapsed: value < BigInt(minV) };
 }
+
+// Допустимое имя слота (первый неймспейс — человекочитаемые имена): 1..32, строчные латиница/цифры
+// и разделители _ - , но не в начале/конце и не подряд. Токен-строка nv3 == это имя.
+const LAND_NAME_RE = /^(?!.*[_-]{2})[a-z0-9]([a-z0-9_-]{0,30}[a-z0-9])?$/;
+export const validLandName = name => typeof name === 'string' && LAND_NAME_RE.test(name);

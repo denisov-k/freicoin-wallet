@@ -4,7 +4,7 @@ import { check, finish } from './helpers.mjs';
 import { timeAdjustValue } from '../../../core/demurrage.mjs';
 import {
   BLOCKS_PER_YEAR, ANNUAL_RATE_PPM,
-  landValue, requiredDeposit, rentBetween, annualRent, topUpNominal, landStatus,
+  landValue, requiredDeposit, rentBetween, annualRent, topUpNominal, landStatus, validLandName,
 } from '../../../core/freiland.mjs';
 
 const U = 100_000_000n;   // 1 FRC в кария
@@ -53,5 +53,11 @@ check('requiredDeposit(0) бросает', (() => { try { requiredDeposit(0n); r
   // огромный distance → PV → 0 → истёк
   check('истекла: ценность < minV', landStatus(minV, 0, BLOCKS_PER_YEAR * 40, minV).lapsed === true);
 }
+
+// --- имя слота (первый неймспейс) ---
+for (const ok of ['a', 'alice', 'coffee', 'wörgl'.normalize && 'satoshi', 'x-1', 'a_b', 'name123', 'a'.repeat(32)])
+  if (ok) check(`имя ок: ${ok}`, validLandName(ok) === true);
+for (const bad of ['', 'A', 'Alice', '-x', 'x-', '_a', 'a__b', 'a--b', 'a b', 'привет', 'a'.repeat(33), 'x.y'])
+  check(`имя нет: ${JSON.stringify(bad)}`, validLandName(bad) === false);
 
 finish('freiland');

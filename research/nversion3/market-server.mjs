@@ -18,6 +18,7 @@ import { decodeAssetSpk } from '../../core/asset-spk.mjs';
 import { makeTokenReveal, parseTokenReveal, opReturnScript } from '../../core/nv3wire.mjs';
 import { tokenSetHash } from '../../core/asset-spk.mjs';
 import { assetPresentValue } from '../../core/assets.mjs';
+import { validLandName } from '../../core/freiland.mjs';
 import { pubkeyCompressed, signEcdsa } from '../../core/ecdsa.mjs';
 import { frcLeg, claimReceived } from '../../core/swap.mjs';
 import { htlcSpk, htlcLeaf } from '../../core/htlc.mjs';
@@ -732,6 +733,17 @@ function atomicWrite(file, data) {
 // a stale/revoked monitor is how a channel is lost to the counterparty's justice tx).
 // Keyed by (nodeId, key); nodeId is the client's LDK node pubkey (namespacing, not auth — ownership
 // rests on the encryption key, and the monotonic version defends against the relay itself).
+
+// ---- Freiland-реестр имён: имя → { владелец, залог-outpoint, резолв-адрес, оффер }. Персист как p2p.
+const LAND_FILE = `${DATADIR}/land.json`;
+const LAND_MIN_V = BigInt(Math.round(Number(process.env.LAND_MIN_V ?? 100) * 1e8));   // минимум залога, кария (по умолч. 100 FRC)
+const land = new Map();
+try { for (const w of JSON.parse(readFileSync(LAND_FILE, 'utf8'))) land.set(w.name, w); } catch { /* first run */ }
+let landSaveTimer = null;
+function saveLand() {
+  if (landSaveTimer) return;
+  landSaveTimer = setTimeout(() => { landSaveTimer = null; try { atomicWrite(LAND_FILE, JSON.stringify([...land.values()])); } catch {} }, 250);
+}
 
 const P2P_FILE = `${DATADIR}/market-p2p.json`;
 let p2pSaveTimer = null;
@@ -1677,6 +1689,57 @@ const api = {
 
   async name({ tag }) { return { name: assets.get(tag)?.name ?? null }; },
 
+  // ---- FREILAND: реестр имён (Гезеллев второй столп). Имя = уникальный nv3 токен; залог = FRC,
+  // тающий демерреджем (это И ЕСТЬ рента); ценность V = present value залога. Релей — индекс/доска
+  // (уникальность имён, резолв), как DEX-книга: цензурировать может, украсть нет (токен/залог ходят
+  // подписями). Выкуп имени = ranged-тейк его токена существующим путём. См. docs/freiland-spec.md. ----
+  async landRegister({ name, ownerFrcPub, depTxid, depVout, resolve, offerId }) {
+    if (!btcAvail()) throw new Error('реестр недоступен: нет узла');
+    if (!validLandName(name)) throw new Error('плохое имя (1–32: a-z 0-9 _ -, не по краям/подряд)');
+    if (!/^[0-9a-f]{66}$/.test(ownerFrcPub || '')) throw new Error('плохой ключ владельца');
+    if (typeof resolve !== 'string' || !/^(fc|fcrt|tf)1[a-z0-9]{20,90}$/i.test(resolve)) throw new Error('плохой адрес резолва');
+    await catchUp();
+    const u = utxos.get(`${depTxid}:${depVout}`);
+    if (!u) throw new Error('залог не найден (нужен неистраченный FRC-выход)');
+    if (u.assetTag !== null) throw new Error('залог должен быть FRC, не активом');
+    const V = pvOf(u, indexedHeight);
+    if (V < LAND_MIN_V) throw new Error(`залог мал: ценность ${Number(V) / 1e8} FRC < минимума ${Number(LAND_MIN_V) / 1e8}`);
+    // уникальность: имя занято, только если у текущей записи залог ЖИВ (не истрачен и V ≥ минимума)
+    const cur = land.get(name);
+    if (cur && cur.ownerFrcPub !== ownerFrcPub) {
+      const cu = utxos.get(`${cur.depTxid}:${cur.depVout}`);
+      if (cu && cu.assetTag === null && pvOf(cu, indexedHeight) >= LAND_MIN_V) throw new Error('имя занято');
+    }
+    land.set(name, { name, ownerFrcPub, depTxid, depVout, resolve, offerId: offerId ?? null, postedAt: indexedHeight });
+    saveLand();
+    say(`Freiland: имя «${name}» зарегистрировано (ценность ${Number(V) / 1e8} FRC → ${resolve.slice(0, 12)}…)`);
+    return { ok: true, name, value: String(V) };
+  },
+  async landSetResolve({ name, ownerFrcPub, resolve }) {
+    const w = land.get(name); if (!w) throw new Error('нет такого имени');
+    if (w.ownerFrcPub !== ownerFrcPub) throw new Error('имя не ваше');
+    if (typeof resolve !== 'string' || !/^(fc|fcrt|tf)1[a-z0-9]{20,90}$/i.test(resolve)) throw new Error('плохой адрес резолва');
+    w.resolve = resolve; saveLand();
+    return { ok: true };
+  },
+  async landList() {
+    await catchUp();
+    const out = [];
+    for (const w of land.values()) {
+      const u = utxos.get(`${w.depTxid}:${w.depVout}`);
+      const value = u && u.assetTag === null ? pvOf(u, indexedHeight) : 0n;
+      out.push({ name: w.name, ownerFrcPub: w.ownerFrcPub, resolve: w.resolve, offerId: w.offerId,
+        value: String(value), lapsed: value < LAND_MIN_V });
+    }
+    return { names: out, minV: String(LAND_MIN_V), height: indexedHeight };
+  },
+  async landLookup({ name }) {
+    const w = land.get(name); if (!w) return { name, found: false };
+    await catchUp();
+    const u = utxos.get(`${w.depTxid}:${w.depVout}`);
+    const value = u && u.assetTag === null ? pvOf(u, indexedHeight) : 0n;
+    return { name, found: value >= LAND_MIN_V, resolve: w.resolve, ownerFrcPub: w.ownerFrcPub, offerId: w.offerId, value: String(value) };
+  },
 };
 
 // ---- rate limiting: a token bucket per client IP ----
@@ -1704,7 +1767,7 @@ function flushPersist() {
 for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { flushPersist(); process.exit(0); });
 const WRITE_CALLS = new Set(['p2pPost', 'p2pPostB', 'p2pTake', 'p2pTakeB', 'p2pUntake', 'p2pCancel',
   'p2pFrcFunded', 'p2pFrcFundedB', 'p2pBtcFunded', 'p2pBtcFundedB', 'p2pBtcClaim', 'p2pBtcClaimB',
-  'p2pFrcClaimB', 'p2pFrcIntent', 'p2pDone', 'p2pDoneB', 'p2pCoopSign', 'tx', 'btcBroadcast', 'issue', 'faucet',
+  'p2pFrcClaimB', 'p2pFrcIntent', 'p2pDone', 'p2pDoneB', 'p2pCoopSign', 'landRegister', 'landSetResolve', 'tx', 'btcBroadcast', 'issue', 'faucet',
   'offer', 'cancel', 'resignRanged', 'pushSub', 'pushUnsub']);
 const buckets = new Map();   // ip → { read: {n, at}, write: {n, at} }
 setInterval(() => { const now = Date.now(); for (const [ip, b] of buckets) if (now - Math.max(b.read.at, b.write.at) > 300e3) buckets.delete(ip); }, 60e3).unref?.();
