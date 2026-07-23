@@ -110,7 +110,8 @@ export async function checkP2pRefunds() {
       } else {
         rf = refundGiven({ funding: { txid: funding.txid, vout: funding.vout, value: BigInt(live.value), refheight: Number(funding.refheight) }, leaf, cltv, ourKey, toSpk: env.spks()[0], fee: 10000n });
       }
-      await api('tx', { rawtx: rf.rawtx, kind: 'send' }); try { env.observe(rf.rawtx); } catch {}   // reflect it in the wallet's balance/activity now
+      try { await api('tx', { rawtx: rf.rawtx, kind: 'send' }); } catch (e) { if (!/already in utxo set|already known|already in mempool|txn-already/i.test(e.message)) throw e; }
+      try { env.observe(rf.rawtx); } catch {}   // reflect it in the wallet's balance/activity now
       env.dropP2p(rec.id);
       env.toast(`${rec.id}: ${tr(tag ? 'asset refunded' : 'FRC refunded')}`, 'ok'); env.mvRefresh();
     } catch (e) { /* too early, coin gone, or missing fee coin — retry next cycle */ }
@@ -338,8 +339,11 @@ async function driveP2pInner() {
           // a hist entry with the claim txid means this is a resurrected RE-broadcast (the claim is
           // still confirming and the relay's status lags a block) — don't repeat the «received» toast
           const reclaim = !!env.loadSwapHist?.().find(x => x.id === rec.id)?.frcTxid;
-          await api('tx', { rawtx: cF.rawtx, kind: 'send' }); try { env.observe(cF.rawtx); } catch {}   // reflect it in the wallet's balance/activity now
-          await api('p2pDone', { id: rec.id });
+          // клейм детерминирован (тот же R+входы → тот же txid): если он уже в мемпуле/подтверждён,
+          // ре-бродкаст падает «already in utxo set / already known» — это УСПЕХ, не ошибка.
+          try { await api('tx', { rawtx: cF.rawtx, kind: 'send' }); } catch (e) { if (!/already in utxo set|already known|already in mempool|txn-already/i.test(e.message)) throw e; }
+          try { env.observe(cF.rawtx); } catch {}   // reflect it in the wallet's balance/activity now
+          await api('p2pDone', { id: rec.id }).catch(() => {});
           env.addSwapHist({ id: rec.id, category: 'sale', assetTag: tag, frcAmount: w.frcAmount, btcAmount: w.btcAmount, btcTxid: null, btcFundTxid: rec.btcHtlc?.txid ?? null, frcTxid: cF.txid ?? null, time: Math.floor(Date.now() / 1000) });
           env.dropP2p(rec.id);
           if (!reclaim) env.toast(`${w.id}: ${tr(tag ? 'asset received ✅' : 'FRC received ✅')}`, 'ok');
@@ -404,7 +408,8 @@ async function driveP2pRev(rec, w, info) {
       }
       // resurrected re-broadcast of a still-confirming claim (see the forward-taker path) — no repeat toast
       const reclaim = !!env.loadSwapHist?.().find(x => x.id === rec.id)?.frcTxid;
-      await api('tx', { rawtx: cF.rawtx, kind: 'send' }); try { env.observe(cF.rawtx); } catch {}   // reflect it in the wallet's balance/activity now
+      try { await api('tx', { rawtx: cF.rawtx, kind: 'send' }); } catch (e) { if (!/already in utxo set|already known|already in mempool|txn-already/i.test(e.message)) throw e; }
+      try { env.observe(cF.rawtx); } catch {}   // reflect it in the wallet's balance/activity now
       env.addSwapHist({ id: rec.id, category: 'purchase', assetTag: tag, frcAmount: w.frcAmount, btcAmount: w.btcAmount, btcTxid: null, btcFundTxid: rec.btcHtlc?.txid ?? null, frcTxid: cF.txid ?? null, time: Math.floor(Date.now() / 1000) });
       if (rec.parent) env.dropP2p(rec.id); else env.putP2p({ ...rec, status: 'done' });
       if (!reclaim) env.toast(`${w.id}: ${tr(tag ? 'asset received ✅' : 'FRC received ✅')}`, 'ok');

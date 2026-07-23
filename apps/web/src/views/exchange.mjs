@@ -1653,9 +1653,9 @@ export function renderExchange(el) {
     <div id="offerChart"></div>
     <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" style="padding:14px 2px 4px;border-bottom:none">${skel(3)}</td></tr></tbody></table>
     <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>
-    <div class="row"><button id="openNames" class="ghost">🗺️ ${tr('Names (Freiland)')}</button></div>`;
+    ${currentNet() === 'nv3' ? `<div class="row"><button id="openNames" class="ghost">🗺️ ${tr('Names (Freiland)')}</button></div>` : ''}`;
   $('#openOffer').onclick = openOfferModal;
-  $('#openNames').onclick = openNamesModal;
+  { const nb = $('#openNames'); if (nb) nb.onclick = openNamesModal; }
   ['#fGive', '#fWant'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });
   if (state) paint(); else mvRefresh();
 }
