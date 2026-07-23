@@ -66,7 +66,7 @@ export function openIssueModal() {
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Issue asset')}</b><button id="issClose" class="icon">✕</button></div>
     <div class="seg" id="iMode">
-      <button data-m="a" class="on">${tr('Currency')}</button>
+      <button data-m="a" class="on">${tr('Currencies')}</button>
       <button data-m="t">${tr('Tokens')}</button>
       <button data-m="n">${tr('Holdings')}</button>
     </div>
