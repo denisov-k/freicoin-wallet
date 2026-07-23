@@ -2,6 +2,7 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'Copy address': 'Копировать адрес',
   'Create QR': 'Создать QR',
   'Request an amount': 'Запросить сумму',
   'To receive': 'К получению',
@@ -276,6 +277,7 @@ const RU = {
 };
 
 const ES = {
+  'Copy address': 'Copiar dirección',
   'Create QR': 'Crear QR',
   'Request an amount': 'Solicitar un importe',
   'To receive': 'A recibir',
@@ -730,6 +732,7 @@ const ES = {
 };
 
 const DE = {
+  'Copy address': 'Adresse kopieren',
   'Create QR': 'QR erstellen',
   'Request an amount': 'Betrag anfordern',
   'To receive': 'Zu erhalten',
@@ -1184,6 +1187,7 @@ const DE = {
 };
 
 const FR = {
+  'Copy address': "Copier l'adresse",
   'Create QR': 'Créer un QR',
   'Request an amount': 'Demander un montant',
   'To receive': 'À recevoir',
@@ -1638,6 +1642,7 @@ const FR = {
 };
 
 const PT = {
+  'Copy address': 'Copiar endereço',
   'Create QR': 'Criar QR',
   'Request an amount': 'Solicitar um valor',
   'To receive': 'A receber',
@@ -2092,6 +2097,7 @@ const PT = {
 };
 
 const ZH = {
+  'Copy address': '复制地址',
   'Create QR': '生成二维码',
   'Request an amount': '请求金额',
   'To receive': '待收款',

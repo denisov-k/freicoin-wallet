@@ -109,7 +109,11 @@ export function renderReceive() {
         if (mode === 'ln') { a.style.display = ''; a.textContent = copyText; a.style.fontSize = '13px'; a.style.lineHeight = '18px'; a.style.maxHeight = '84px'; a.style.overflowY = 'auto'; a.style.webkitTextSizeAdjust = '100%'; }
         else a.style.display = 'none';   // адрес не дублируем: он на главном экране, и QR несёт его сам
       }
-      const cr = $('#lnAmtCopyRow'); if (cr) { cr.hidden = false; $('#lnAmtCopy').onclick = ev => copy(copyText, ev.target); }
+      const cr = $('#lnAmtCopyRow'); if (cr) {
+        cr.hidden = false;
+        $('#lnAmtCopy').textContent = '⧉ ' + (mode === 'ln' ? tr('Copy invoice') : tr('Copy address'));   // строка скрыта — кнопка говорит, ЧТО копирует
+        $('#lnAmtCopy').onclick = ev => copy(copyText, ev.target);
+      }
     } catch (err) { toast(err.message, 'err'); }
     e.target.disabled = false;
   };
