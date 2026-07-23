@@ -1582,13 +1582,47 @@ export async function paintMyNames() {
     ? mine.map(n =>
         `<tr><td style="font-family:ui-monospace,monospace">${n.name}${n.lapsed ? ' ⚠' : ''}</td>
            <td class="r">${n.price ? fmtFrcN(n.price) : '—'} / ${n.value && n.value !== '0' ? fmtFrcN(n.value) : '—'} FRC</td>
-           <td class="act-cell" style="white-space:nowrap">
-             ${n.price ? `<button class="icon nmVal2" data-n="${n.name}" data-p="${n.price}" title="${tr('Top up / revalue')}">±</button>` : ''}
-             <button class="icon nmRes" data-n="${n.name}" data-r="${n.resolve || ''}" title="${tr('Point this name to which address?')}">✎</button>
-           </td></tr>`).join('')
+           <td class="act-cell"><button class="icon nmMng" data-n="${n.name}" data-r="${n.resolve || ''}" data-p="${n.price || ''}" title="${tr('Manage')}">⋯</button></td></tr>`).join('')
     : `<tr><td colspan="3" class="sub">${tr('no names yet — claim one in Issue → Holdings')}</td></tr>`;
-  box.querySelectorAll('.nmRes').forEach(b => b.onclick = () => editResolveName(b.dataset.n, b.dataset.r));
-  box.querySelectorAll('.nmVal2').forEach(b => b.onclick = () => revalueName(b.dataset.n, b.dataset.p));
+  box.querySelectorAll('.nmMng').forEach(b => b.onclick = () => openNameModal(b.dataset.n, b.dataset.r, b.dataset.p));
+}
+
+// Manage a name: ONE modal with both actions (revalue/top-up + repoint), replacing the two
+// per-row icon buttons and their browser prompt() dialogs.
+async function openNameModal(name, resolve, price) {
+  if ($('#modal')) return;
+  const L = await landMod();
+  const curV = price ? String(Number(BigInt(price)) / 1e8) : '';
+  const m = document.createElement('div'); m.id = 'modal';
+  m.innerHTML = `<div class="review">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>🗺️ ${name}</b><button id="nmX" class="icon">✕</button></div>
+    <label>${tr('Self-assessed value')} (FRC)<input id="nmMV" type="text" inputmode="decimal" value="${curV}"></label>
+    <button id="nmMReval">${tr('Top up / revalue')}</button>
+    <label>${tr('Points to address')}<input id="nmMRes" type="text" autocomplete="off" spellcheck="false" value="${resolve || ''}"></label>
+    <button id="nmMResBtn" class="ghost">${tr('Update address')}</button>
+    <div id="nmMLog" class="sub" style="font-size:12px;white-space:pre-line"></div></div>`;
+  document.body.appendChild(m);
+  armOverlay(m);
+  const log = t => { const el = $('#nmMLog'); if (el) el.textContent = t; };
+  q(m, '#nmX').onclick = () => closeOverlay(m);
+  q(m, '#nmMReval').onclick = async () => {
+    const nv = num($('#nmMV').value), rmin = await L.minValueFrc();
+    if (!(nv >= rmin)) return toast(`${tr('minimum value is')} ${rmin} FRC`, 'err');
+    const btn = $('#nmMReval'); btn.disabled = true;
+    try {
+      await L.revalueName({ name, valueFrc: nv, progress: p => log(
+        p === 'rebond' ? tr('rebonding the deposit…')
+        : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…')
+        : p === 'offer' ? tr('signing the standing sale offer…')
+        : tr('registered ✅')) });
+      toast(`${name}: ${tr('revalued ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
+    } catch (e) { toast(e.message, 'err'); log(e.message); btn.disabled = false; }
+  };
+  q(m, '#nmMResBtn').onclick = async () => {
+    const to = $('#nmMRes').value.trim(); if (!to || to === resolve) return;
+    try { await L.setResolve(name, to); toast(tr('resolve updated ✅'), 'ok'); $('#modal')?.remove(); paintMyNames(); }
+    catch (e) { toast(e.message, 'err'); log(e.message); }
+  };
 }
 
 // «Имена в продаже» (вкладка Биржа): доска Гарбергера — все живые имена + трастлесс-выкуп.
@@ -1608,34 +1642,7 @@ export async function paintNameMarket() {
   box.querySelectorAll('.nmBuy').forEach(b => b.onclick = () => buyName(b.dataset.n, b.dataset.p));
 }
 
-// резолв-адрес: подпись land-ключа → landSetResolve
-async function editResolveName(name, cur) {
-  const L = await landMod();
-  const next = prompt(tr('Point this name to which address?'), cur || '');
-  if (next == null) return;
-  const to = next.trim(); if (!to || to === cur) return;
-  try { await L.setResolve(name, to); toast(tr('resolve updated ✅'), 'ok'); paintMyNames(); }
-  catch (e) { toast(e.message, 'err'); }
-}
-
-// переоценка/долив (шаг 6): пересобрать залог под новую V, перевыставить оффер, перерегистрировать
-async function revalueName(name, curPrice) {
-  const L = await landMod();
-  const v = prompt(tr('New self-assessed value (FRC)?'), String(Number(BigInt(curPrice)) / 1e8));
-  if (v == null) return;
-  const nv = num(v);
-  const rmin = await L.minValueFrc();
-  if (!(nv >= rmin)) return toast(`${tr('minimum value is')} ${rmin} FRC`, 'err');
-  const log = t => nameLog('#myNamesLog', t);
-  try {
-    await L.revalueName({ name, valueFrc: nv, progress: p => log(
-      p === 'rebond' ? tr('rebonding the deposit…')
-      : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…')
-      : p === 'offer' ? tr('signing the standing sale offer…')
-      : tr('registered ✅')) });
-    log(''); toast(`${name}: ${tr('revalued ✅')}`, 'ok'); paintMyNames();
-  } catch (e) { toast(e.message, 'err'); log(e.message); }
-}
+// resolve + revalue moved into openNameModal (one modal, no browser prompt() dialogs)
 
 // трастлесс-выкуп (шаг 5c): исполнить стоячий оффер владельца (NFT едет филлом ПРЯМО на мой
 // land-адрес), затем adoptName — свой залог, свой оффер, перерегистрация на меня. Старому
@@ -1710,40 +1717,43 @@ export function renderExchange(el) {
   }
   if (state) paint(); else mvRefresh();
 }
-// per-asset balance table (FRC + user assets) — the wallet's Balance tab shows this on nv3
+// Balance tab (nv3) — the holdings split into the same three classes as Issue/Exchange:
+// Currency (FRC + BTC + fungible currency assets), Tokens (token/ticket assets), Holdings (names).
 export function renderAssetBalance(el) {
   el.innerHTML = `
-    <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="assetBalBody">${skelRows(3)}</tbody></table>
-    <div class="sub" style="font-size:12px;margin:10px 0 2px">🗺️ ${tr('My names')}</div>
-    <table class="mkt"><thead><tr><th>${tr('Name')}</th><th class="r">V / ${tr('deposit')}</th><th></th></tr></thead><tbody id="myNamesBody">${skelRows(1)}</tbody></table>
+    <div class="sub" style="font-size:12px;margin:0 0 2px">${tr('Currency')}</div>
+    <table class="mkt"><tbody id="curBalBody">${skelRows(2)}</tbody></table>
+    <div class="sub" style="font-size:12px;margin:10px 0 2px">${tr('Tokens')}</div>
+    <table class="mkt"><tbody id="tokBalBody">${skelRows(1)}</tbody></table>
+    <div class="sub" style="font-size:12px;margin:10px 0 2px">🗺️ ${tr('Holdings')} · V / ${tr('deposit')}</div>
+    <table class="mkt"><tbody id="myNamesBody">${skelRows(1)}</tbody></table>
     <div id="myNamesLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`;
   const f = $('#faucetBtn'); if (f) f.onclick = faucet;   // the button itself lives with the other Balance actions
   if (state) paintAssetBalance(); else mvRefresh();
   paintMyNames();
 }
 function paintAssetBalance() {
-  const body = $('#assetBalBody'); if (!body || !state) return;
+  const cur = $('#curBalBody'), tok = $('#tokBalBody'); if (!cur || !state) return;
   // a provisional mine (assets() still syncing) has NO coins — painting it would stamp 'FRC 0'
   // over the restore preview's real figure; keep the provisional/skeleton rows until real data
   if (state.mine?.provisional) return;
   const h = state.mine.height;
   const pvU = u => assetPresentValue(BigInt(u.value), h - u.refheight, rateOf(u.assetTag));
-  const byAsset = new Map();
-  for (const u of state.mine.utxos) { const k = u.assetTag ?? 'FRC'; const e = byAsset.get(k) ?? { nominal: 0n, pv: 0n }; e.nominal += BigInt(u.value); e.pv += pvU(u); byAsset.set(k, e); }
+  const byAsset = new Map(); const isTok = new Set();   // token asset ⇔ any held coin carries a token set
+  for (const u of state.mine.utxos) { const k = u.assetTag ?? 'FRC'; const e = byAsset.get(k) ?? { nominal: 0n, pv: 0n }; e.nominal += BigInt(u.value); e.pv += pvU(u); byAsset.set(k, e); if (u.tokenHash) isTok.add(k); }
   // credit the pending-send CHANGE (already present-valued) to FRC so the swap balance drops only by
   // what actually left the wallet — matching the plain balance card and activity, no double-debit.
   const pc = state.mine.pendingChange || 0n;
   if (pc) { const e = byAsset.get('FRC') ?? { nominal: 0n, pv: 0n }; e.nominal += pc; e.pv += pc; byAsset.set('FRC', e); }
   const amt = (tag, v) => tag === 'FRC' ? frc(v)
     : (Number(BigInt(v)) / scaleOf(tag)).toLocaleString(getLang(), { maximumFractionDigits: decimalsOf(tag) });
-  const rows = [...byAsset.entries()].map(([tag, e]) => {
-    // token-bearing assets show only their quantity here — the items and the send action live
-    // in the Send flow, not the balance table.
-    return `<tr><td${tag === 'FRC' ? '' : ` title="${tag}"`}>${assetName(tag === 'FRC' ? null : tag)}</td><td class="r">${amt(tag, e.pv)}</td></tr>`;
-  });
-  // BTC sits in the same table (held in-wallet on signet); the cell fills in when refreshBtc returns.
-  if (state.swap?.available) rows.push(`<tr><td>BTC</td><td class="r" id="btcBalCell">${mvBtc().balance != null ? btcToStr(mvBtc().balance) : '…'}</td></tr>`);
-  body.innerHTML = rows.join('') || `<tr><td colspan="2" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
+  const row = (tag, e) => `<tr><td${tag === 'FRC' ? '' : ` title="${tag}"`}>${assetName(tag === 'FRC' ? null : tag)}</td><td class="r">${amt(tag, e.pv)}</td></tr>`;
+  const curRows = [], tokRows = [];
+  for (const [tag, e] of byAsset) (isTok.has(tag) ? tokRows : curRows).push(row(tag, e));
+  // BTC is a currency (held in-wallet on signet); the cell fills in when refreshBtc returns.
+  if (state.swap?.available) curRows.push(`<tr><td>BTC</td><td class="r" id="btcBalCell">${mvBtc().balance != null ? btcToStr(mvBtc().balance) : '…'}</td></tr>`);
+  cur.innerHTML = curRows.join('') || `<tr><td colspan="2" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
+  if (tok) tok.innerHTML = tokRows.join('') || `<tr><td colspan="2" class="sub">${tr('no tokens')}</td></tr>`;
 }
 
 function paint() {
