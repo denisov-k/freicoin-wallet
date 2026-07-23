@@ -1231,7 +1231,11 @@ const api = {
     // a FRESH lock intent = the maker is broadcasting its lock right now — the cancel lost the race.
     // A stale intent (maker died between intent and lock) expires so the buyer isn't blocked forever.
     if (w.lockIntent && Date.now() - w.lockIntent < 10 * 60e3) throw new Error('продавец уже запирает FRC — сделка завершится');
-    if (!w.btcHtlc?.txid) throw new Error('оплата ещё не подтверждена');
+    // ОТМЕНА ВСЕГДА ВЫИГРЫВАЕТ ГОНКУ (без паузы): принимаем флаг уже на стадии подтверждения оплаты
+    // ('taken'), а не только после неё. Мейкер физически не может локнуться раньше btc_funded, а его
+    // p2pFrcIntent отказывает при cancelReq — значит флаг, поставленный сейчас, детерминированно
+    // блокирует будущий лок. Сам кооп-возврат (btcCoopSig) подпишется позже, когда оплата подтвердится.
+    if (w.status !== 'taken' && w.status !== 'btc_funded') throw new Error('оффер не на этой стадии');
     w.cancelReq = true; saveP2p();
     pushSwap(w, 'maker', 'Покупатель просит отмену — откройте кошелёк, чтобы подтвердить');
     say(`P2P ${id}: покупатель просит кооп-отмену BTC`);

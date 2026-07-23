@@ -1198,23 +1198,21 @@ function renderP2pPay(m, rec) {
       // haven't locked (server-enforced); if they have, the BTC comes home at the timeout instead.
       const w = await api('p2pList').then(l => l.swaps.find(s => s.id === rec.id)).catch(() => null);
       if (w?.frcHtlc?.txid || w?.frcPending) { toast(tr('seller already locked — BTC auto-refunds at the timeout'), 'warn'); return; }
-      // payment still confirming (relay hasn't accepted it — <2 confs): a coop cancel can't be FILED
-      // yet — queue it on the local record; driveP2p sends the request the moment the relay registers
-      // the payment (btc_funded), so the tap is never silently lost.
-      if (!w || w.status === 'taken' || !w.btcHtlc?.txid) {
-        putP2p({ ...rlocal, cancelWanted: true });
-        // мгновенно, не ждём тик поллинга: кнопка → «отмена запрошена» (блок), строка ниже — что будет
-        const pw = $('#pyWallet'); if (pw) { pw.textContent = tr('cancel requested'); pw.disabled = true; }
-        const st = $('#pyStatus'); if (st) st.textContent = tr('the deal will be cancelled as soon as the network confirms the payment');
-        const cx = q(m, '#pyCancel'); if (cx) cx.disabled = true;
-        toast(tr('payment is still confirming — the cancel will be requested automatically as soon as the network confirms it'), 'warn');
-        return;
-      }
+      // ОТМЕНА ВЫИГРЫВАЕТ ГОНКУ: ставим cancelReq у релея СРАЗУ (он принимает его уже на стадии
+      // подтверждения). Флаг детерминированно блокирует будущий лок мейкера — пауза не нужна.
+      // Мгновенный UI: кнопка → «отмена запрошена» (блок), строка ниже — что произойдёт.
+      const pw = $('#pyWallet'); if (pw) { pw.textContent = tr('cancel requested'); pw.disabled = true; }
+      const stx = $('#pyStatus'); if (stx) stx.textContent = tr('the deal will be cancelled as soon as the network confirms the payment');
+      const cx = q(m, '#pyCancel'); if (cx) cx.disabled = true;
       try {
         await api('p2pBtcCancelReq', { id: rec.id, takerFrcPub: pubkeyCompressed(p2pKey(rec.nonce, 'frc')) });
+        putP2p({ ...rlocal, cancelWanted: false });   // зафиксировано у релея — драйв завершит кооп-возврат
         toast(tr('cancel requested — waiting for the seller to authorize the refund'), 'ok');
-        // the drive (checkBtcRefunds) completes the coop refund once btcCoopSig lands, even if this closes
-      } catch (e) { toast(e.message, 'err'); }
+      } catch (e) {
+        // редкий отказ (мейкер запёрся в этот же миг) или сеть — локальный фолбэк с ретраем
+        putP2p({ ...rlocal, cancelWanted: true });
+        toast(e.message, 'warn');
+      }
       return;
     }
     // not paid yet: release the reservation right away (best-effort; zombie grace backs it up)
