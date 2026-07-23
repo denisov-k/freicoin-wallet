@@ -84,6 +84,7 @@ textarea { background:var(--card); border:1px solid var(--line); border-radius:1
 #modal { position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; padding:24px; }
 #modal .review { max-width:360px; width:100%; margin-top:0; box-shadow:0 12px 40px rgba(0,0,0,.4); }
 #modal .review p { margin:0; }   /* the flex gap IS the rhythm; UA margins double it unevenly */
+#modal .review .seg { margin:0; }   /* same: the .review flex gap spaces the switches; .seg's own 12px margin stacked on it (huge gap between two adjacent switches) */
 textarea.txt-ui { font-family:inherit; font-size:16px; line-height:1.4; }   /* mono is for seeds; lists read in the UI face */
 .stack { display:flex; flex-direction:column; gap:10px; }   /* mode sub-forms keep the card's own rhythm */
 .act { cursor:pointer; }
