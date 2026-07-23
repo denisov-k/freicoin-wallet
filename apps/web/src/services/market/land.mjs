@@ -18,6 +18,11 @@ export const landDepositSpk = name => frcWpkSpk(landOwnerPub(name));
 
 export { validLandName, annualRent };
 
+/** весь реестр: [{name, ownerFrcPub, resolve, value, lapsed}], + minV/height. Доска Гарбергера. */
+export async function listNames() {
+  try { return await api('landList'); } catch { return { names: [], minV: '0', height: 0 }; }
+}
+
 /** имя → адрес (или null). Основа резолва в «Отправить». */
 export async function resolveName(name) {
   if (!validLandName(name)) return null;

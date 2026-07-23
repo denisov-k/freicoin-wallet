@@ -1598,7 +1598,8 @@ async function openNamesModal() {
     <div class="rrow"><span>${tr('Rent (auto, demurrage)')}</span><b id="nmRent" class="sub">—</b></div>
     <button id="nmGo">${tr('Claim the name')}</button>
     <div id="nmLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
-    <div id="nmMine" style="margin-top:10px"></div></div>`;
+    <div id="nmMine" style="margin-top:10px"></div>
+    <div id="nmMarket" style="margin-top:10px"></div></div>`;
   document.body.appendChild(m);
   const stop = () => m.remove();
   m.onclick = e => { if (e.target === m) stop(); };
@@ -1630,17 +1631,47 @@ async function openNamesModal() {
     try {
       await L.registerName({ name, valueFrc: v, progress: p => log(
         p === 'lock' ? tr('locking the deposit…') : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…') : tr('registered ✅')) });
-      toast(`${name}: ${tr('name claimed ✅')}`, 'ok'); paintMine();
+      toast(`${name}: ${tr('name claimed ✅')}`, 'ok'); paintAll();
     } catch (e) { toast(e.message, 'err'); log(e.message); }
     go.disabled = false;
   };
-  async function paintMine() {
-    const box = $('#nmMine'); if (!box) return;
-    const mine = await L.myNames();
-    box.innerHTML = mine.length ? `<div class="sub" style="font-size:12px;margin-bottom:4px">${tr('My names')}</div>` + mine.map(n =>
-      `<div class="rrow" style="font-size:13px"><span style="font-family:ui-monospace,monospace">${n.name}${n.lapsed ? ' ⚠' : ''}</span><b>${n.value ? (Number(BigInt(n.value)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 2 }) + ' FRC' : '—'}</b></div>`).join('') : '';
+  const fmtFrc = v => (Number(BigInt(v)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 2 });
+  // резолв-адрес: чиним прямо в строке имени (подпись land-ключа → landSetResolve)
+  async function editResolve(name, cur) {
+    const next = prompt(tr('Point this name to which address?'), cur || '');
+    if (next == null) return;
+    const to = next.trim(); if (!to || to === cur) return;
+    try { await L.setResolve(name, to); toast(tr('resolve updated ✅'), 'ok'); paintAll(); }
+    catch (e) { toast(e.message, 'err'); }
   }
-  paintMine();
+  async function paintAll() {
+    const mineBox = $('#nmMine'), mktBox = $('#nmMarket'); if (!mineBox || !mktBox) return;
+    // одна выборка реестра: делим на «мои» и «рынок»
+    let all = [];
+    try { all = (await L.listNames()).names; } catch {}
+    const mineSet = new Set();
+    for (const n of all) { if (n.ownerFrcPub === L.landOwnerPub(n.name)) mineSet.add(n.name); }
+    const mine = all.filter(n => mineSet.has(n.name));
+    mineBox.innerHTML = mine.length
+      ? `<div class="sub" style="font-size:12px;margin-bottom:4px">${tr('My names')}</div>` + mine.map(n =>
+          `<div class="rrow" style="font-size:13px">
+             <span style="font-family:ui-monospace,monospace">${n.name}${n.lapsed ? ' ⚠' : ''}</span>
+             <span style="display:flex;gap:8px;align-items:center">
+               <b>${n.value && n.value !== '0' ? fmtFrc(n.value) + ' FRC' : '—'}</b>
+               <button class="icon nmRes" data-n="${n.name}" data-r="${n.resolve || ''}" title="${tr('Point this name to which address?')}">✎</button>
+             </span></div>`).join('')
+      : '';
+    mineBox.querySelectorAll('.nmRes').forEach(b => b.onclick = () => editResolve(b.dataset.n, b.dataset.r));
+    // рынок: все живые имена (мои помечены) с их самооценкой — доска Гарбергера, где живёт «выкуп»
+    const live = all.filter(n => !n.lapsed).sort((a, b) => Number(BigInt(b.value) - BigInt(a.value)));
+    mktBox.innerHTML = live.length
+      ? `<div class="sub" style="font-size:12px;margin:4px 0">${tr('All names')} · ${tr('self-assessed price')}</div>` + live.map(n =>
+          `<div class="rrow" style="font-size:13px">
+             <span style="font-family:ui-monospace,monospace">${n.name}${mineSet.has(n.name) ? ' · ' + tr('yours') : ''}</span>
+             <b>${fmtFrc(n.value)} FRC</b></div>`).join('')
+      : `<div class="sub" style="font-size:12px">${tr('no names registered yet')}</div>`;
+  }
+  paintAll();
 }
 
 export function renderExchange(el) {
