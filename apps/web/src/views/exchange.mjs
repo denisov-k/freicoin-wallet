@@ -172,6 +172,8 @@ async function doRefresh() {
     (info.assets || []).map(a => [a.tag, { shift: a.shift, interest: a.interest, name: a.name }])))); } catch {}
   if ($('#bookBody')) paint();                 // Exchange tab mounted → repaint the book
   if ($('#assetBalBody')) paintAssetBalance(); // Freimarkets Balance tab mounted → per-asset table
+  if ($('#nameMktBody')) paintNameMarket();    // Exchange tab → «Names for sale» board
+  if ($('#myNamesBody')) paintMyNames();       // Balance tab → «My names»
   maybeResignRanged();                                      // keep my ranged offers alive after partial fills
   if (currentNet() === 'nv3') import('@/services/market/land.mjs').then(L => L.maybeResignLand()).catch(() => {});   // keep my Freiland standing offers fresh (land-key signed)
   checkMySwaps();                                           // refund any of my LP swaps stalled past their timeout
@@ -1559,134 +1561,167 @@ function paintOfferChart() {
 }
 // FREILAND: реестр имён. Занять имя (залог на своём land-адресе → рента демерреджем → резолв),
 // «Мои имена». Механика в @/services/market/land.mjs; выкуп чужих имён — следующий шаг.
-async function openNamesModal() {
-  if ($('#modal')) return;
-  const L = await import('@/services/market/land.mjs');
-  const m = document.createElement('div'); m.id = 'modal';
-  m.innerHTML = `<div class="review">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>🗺️ ${tr('Names')} · Freiland</b><button id="nmClose" class="icon">✕</button></div>
-    <div class="sub" style="font-size:12px">${tr('claim a name — your deposit melts as rent; anyone can buy it at your self-assessed price')}</div>
-    <div class="sub" style="font-size:12px">${tr('to claim a new name, use Issue → Holdings')}</div>
-    <div id="nmLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
-    <div id="nmMine" style="margin-top:10px"></div>
-    <div id="nmMarket" style="margin-top:10px"></div></div>`;
-  document.body.appendChild(m);
-  const stop = () => m.remove();
-  m.onclick = e => { if (e.target === m) stop(); };
-  q(m, '#nmClose').onclick = stop;
-  const log = t => { const el = $('#nmLog'); if (el) el.textContent = t; };
-  // занятие нового имени переехало в «Выпуск» → 🗺️ Имя (issue.mjs): имя = тот же выпуск актива
-  const fmtFrc = v => (Number(BigInt(v)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 2 });
-  // резолв-адрес: чиним прямо в строке имени (подпись land-ключа → landSetResolve)
-  async function editResolve(name, cur) {
-    const next = prompt(tr('Point this name to which address?'), cur || '');
-    if (next == null) return;
-    const to = next.trim(); if (!to || to === cur) return;
-    try { await L.setResolve(name, to); toast(tr('resolve updated ✅'), 'ok'); paintAll(); }
-    catch (e) { toast(e.message, 'err'); }
-  }
-  async function paintAll() {
-    const mineBox = $('#nmMine'), mktBox = $('#nmMarket'); if (!mineBox || !mktBox) return;
-    // одна выборка реестра: делим на «мои» и «рынок»
-    let all = [];
-    try { all = (await L.listNames()).names; } catch {}
-    const mineSet = new Set();
-    for (const n of all) { if (n.ownerFrcPub === L.landOwnerPub(n.name)) mineSet.add(n.name); }
-    const mine = all.filter(n => mineSet.has(n.name));
-    mineBox.innerHTML = mine.length
-      ? `<div class="sub" style="font-size:12px;margin-bottom:4px">${tr('My names')} · V / ${tr('deposit')}</div>` + mine.map(n =>
-          `<div class="rrow" style="font-size:13px">
-             <span style="font-family:ui-monospace,monospace">${n.name}${n.lapsed ? ' ⚠' : ''}</span>
-             <span style="display:flex;gap:8px;align-items:center">
-               <b>${n.price ? fmtFrc(n.price) : '—'} / ${n.value && n.value !== '0' ? fmtFrc(n.value) : '—'} FRC</b>
-               ${n.price ? `<button class="icon nmVal2" data-n="${n.name}" data-p="${n.price}" title="${tr('Top up / revalue')}">±</button>` : ''}
-               <button class="icon nmRes" data-n="${n.name}" data-r="${n.resolve || ''}" title="${tr('Point this name to which address?')}">✎</button>
-             </span></div>`).join('')
-      : '';
-    mineBox.querySelectorAll('.nmRes').forEach(b => b.onclick = () => editResolve(b.dataset.n, b.dataset.r));
-    mineBox.querySelectorAll('.nmVal2').forEach(b => b.onclick = () => revalueIt(b.dataset.n, b.dataset.p));
-    // рынок: все живые имена (мои помечены) с их самооценкой — доска Гарбергера, где живёт «выкуп»
-    const live = all.filter(n => !n.lapsed).sort((a, b) => Number(BigInt(b.value) - BigInt(a.value)));
-    mktBox.innerHTML = live.length
-      ? `<div class="sub" style="font-size:12px;margin:4px 0">${tr('All names')} · ${tr('self-assessed price')}</div>` + live.map(n =>
-          `<div class="rrow" style="font-size:13px">
-             <span style="font-family:ui-monospace,monospace">${n.name}${mineSet.has(n.name) ? ' · ' + tr('yours') : ''}</span>
-             <span style="display:flex;gap:8px;align-items:center">
-               <b>${fmtFrc(n.buyable && n.price ? n.price : n.value)} FRC</b>
-               ${n.buyable && !mineSet.has(n.name) ? `<button class="nmBuy" data-n="${n.name}" data-p="${n.price}" style="font-size:12px;padding:2px 10px">${tr('Buy')}</button>` : ''}
-             </span></div>`).join('')
-      : `<div class="sub" style="font-size:12px">${tr('no names registered yet')}</div>`;
-    mktBox.querySelectorAll('.nmBuy').forEach(b => b.onclick = () => buyIt(b.dataset.n, b.dataset.p));
-  }
-  // переоценка/долив (шаг 6): пересобрать залог под новую V, перевыставить оффер, перерегистрировать
-  async function revalueIt(name, curPrice) {
-    const v = prompt(tr('New self-assessed value (FRC)?'), String(Number(BigInt(curPrice)) / 1e8));
-    if (v == null) return;
-    const nv = num(v);
-    const rmin = await L.minValueFrc();
-    if (!(nv >= rmin)) return toast(`${tr('minimum value is')} ${rmin} FRC`, 'err');
-    try {
-      await L.revalueName({ name, valueFrc: nv, progress: p => log(
-        p === 'rebond' ? tr('rebonding the deposit…')
-        : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…')
-        : p === 'offer' ? tr('signing the standing sale offer…')
-        : tr('registered ✅')) });
-      toast(`${name}: ${tr('revalued ✅')}`, 'ok'); paintAll();
-    } catch (e) { toast(e.message, 'err'); log(e.message); }
-  }
-  // трастлесс-выкуп (шаг 5c): исполнить стоячий оффер владельца (NFT едет филлом ПРЯМО на мой
-  // land-адрес), затем adoptName — свой залог, свой оффер, перерегистрация на меня. Старому
-  // владельцу V уже упала оффером; его залог заберёт его собственный maybeResignLand.
-  async function buyIt(name, price) {
-    const priceFrc = Number(BigInt(price)) / 1e8;
-    const vNew = prompt(`${tr('Buy for')} ${fmtFrc(price)} FRC. ${tr('Your new self-assessed value (FRC)?')}`, String(Math.ceil(priceFrc)));
-    if (vNew == null) return;
-    const v = num(vNew);
-    const bmin = await L.minValueFrc();
-    if (!(v >= bmin)) return toast(`${tr('minimum value is')} ${bmin} FRC`, 'err');
-    try {
-      const look = await api('landLookup', { name });
-      if (!look.found || !look.buyable) throw new Error(tr('name is not buyable right now'));
-      const offer = state?.info?.book?.find(o => o.ranged && o.id === look.offerId && o.status === 'open');
-      if (!offer) { mvRefresh(); throw new Error(tr('offer not in the book yet — try again in a minute')); }
-      log(tr('buying the name…'));
-      // имя ходит только целиком: fill = весь номинал NFT-монеты (10^8 юнитов, см. NFT_UNITS)
-      const units = Number(BigInt(offer.desc.maxFill)) / scaleOf(offer.give.assetTag ?? null);
-      const ok = await fillRangedNow(offer, units, { fillSpk: L.landDepositSpk(name) });
-      if (!ok) { log(''); return; }
-      await L.adoptName({ name, valueFrc: v, progress: p => log(
-        p === 'lock' ? tr('locking the deposit…')
-        : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…')
-        : p === 'offer' ? tr('signing the standing sale offer…')
-        : tr('registered ✅')) });
-      toast(`${name}: ${tr('name is yours ✅')}`, 'ok'); paintAll();
-    } catch (e) { toast(e.message, 'err'); log(e.message); }
-  }
-  paintAll();
+// ---- Freiland names surfaced INLINE (no modal): «My names» (manage) in the Balance tab,
+// «Names for sale» (browse + buy) in the Exchange. Both read the relay registry; actions sign
+// with the land-key via land.mjs. Claiming a name lives in Issue → Holdings.
+let _landMod = null;
+let _nameTags = new Set();   // asset tags of Freiland name-NFTs — excluded from the trading book (they belong to «Holdings»)
+const landMod = async () => (_landMod ??= await import('@/services/market/land.mjs'));
+const fmtFrcN = v => (Number(BigInt(v)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 2 });
+const nameLog = (sel, t) => { const el = $(sel); if (el) el.textContent = t; };
+
+// «Мои имена» (вкладка Баланс): управление — резолв ✎, переоценка/долив ±.
+export async function paintMyNames() {
+  const box = $('#myNamesBody'); if (!box) return;
+  const L = await landMod();
+  let all = []; try { all = (await L.listNames()).names; } catch {}
+  const mine = all.filter(n => n.ownerFrcPub === L.landOwnerPub(n.name));
+  box.innerHTML = mine.length
+    ? mine.map(n =>
+        `<div class="rrow" style="font-size:13px">
+           <span style="font-family:ui-monospace,monospace">${n.name}${n.lapsed ? ' ⚠' : ''}</span>
+           <span style="display:flex;gap:8px;align-items:center">
+             <b>${n.price ? fmtFrcN(n.price) : '—'} / ${n.value && n.value !== '0' ? fmtFrcN(n.value) : '—'} FRC</b>
+             ${n.price ? `<button class="icon nmVal2" data-n="${n.name}" data-p="${n.price}" title="${tr('Top up / revalue')}">±</button>` : ''}
+             <button class="icon nmRes" data-n="${n.name}" data-r="${n.resolve || ''}" title="${tr('Point this name to which address?')}">✎</button>
+           </span></div>`).join('')
+    : `<div class="sub" style="font-size:12px">${tr('no names yet — claim one in Issue → Holdings')}</div>`;
+  box.querySelectorAll('.nmRes').forEach(b => b.onclick = () => editResolveName(b.dataset.n, b.dataset.r));
+  box.querySelectorAll('.nmVal2').forEach(b => b.onclick = () => revalueName(b.dataset.n, b.dataset.p));
 }
 
+// «Имена в продаже» (вкладка Биржа): доска Гарбергера — все живые имена + трастлесс-выкуп.
+export async function paintNameMarket() {
+  const L = await landMod();
+  let all = []; try { all = (await L.listNames()).names; } catch {}
+  _nameTags = new Set(all.filter(n => n.nftTag).map(n => n.nftTag));   // keep the book's name-exclusion set fresh
+  const box = $('#nameMktBody'); if (!box) return;
+  const mineSet = new Set(all.filter(n => n.ownerFrcPub === L.landOwnerPub(n.name)).map(n => n.name));
+  const live = all.filter(n => !n.lapsed).sort((a, b) => Number(BigInt(b.value) - BigInt(a.value)));
+  box.innerHTML = live.length
+    ? live.map(n =>
+        `<div class="rrow" style="font-size:13px">
+           <span style="font-family:ui-monospace,monospace">${n.name}${mineSet.has(n.name) ? ' · ' + tr('yours') : ''}</span>
+           <span style="display:flex;gap:8px;align-items:center">
+             <b>${fmtFrcN(n.buyable && n.price ? n.price : n.value)} FRC</b>
+             ${n.buyable && !mineSet.has(n.name) ? `<button class="nmBuy" data-n="${n.name}" data-p="${n.price}" style="font-size:12px;padding:2px 10px">${tr('Buy')}</button>` : ''}
+           </span></div>`).join('')
+    : `<div class="sub" style="font-size:12px">${tr('no names registered yet')}</div>`;
+  box.querySelectorAll('.nmBuy').forEach(b => b.onclick = () => buyName(b.dataset.n, b.dataset.p));
+}
+
+// резолв-адрес: подпись land-ключа → landSetResolve
+async function editResolveName(name, cur) {
+  const L = await landMod();
+  const next = prompt(tr('Point this name to which address?'), cur || '');
+  if (next == null) return;
+  const to = next.trim(); if (!to || to === cur) return;
+  try { await L.setResolve(name, to); toast(tr('resolve updated ✅'), 'ok'); paintMyNames(); }
+  catch (e) { toast(e.message, 'err'); }
+}
+
+// переоценка/долив (шаг 6): пересобрать залог под новую V, перевыставить оффер, перерегистрировать
+async function revalueName(name, curPrice) {
+  const L = await landMod();
+  const v = prompt(tr('New self-assessed value (FRC)?'), String(Number(BigInt(curPrice)) / 1e8));
+  if (v == null) return;
+  const nv = num(v);
+  const rmin = await L.minValueFrc();
+  if (!(nv >= rmin)) return toast(`${tr('minimum value is')} ${rmin} FRC`, 'err');
+  const log = t => nameLog('#myNamesLog', t);
+  try {
+    await L.revalueName({ name, valueFrc: nv, progress: p => log(
+      p === 'rebond' ? tr('rebonding the deposit…')
+      : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…')
+      : p === 'offer' ? tr('signing the standing sale offer…')
+      : tr('registered ✅')) });
+    log(''); toast(`${name}: ${tr('revalued ✅')}`, 'ok'); paintMyNames();
+  } catch (e) { toast(e.message, 'err'); log(e.message); }
+}
+
+// трастлесс-выкуп (шаг 5c): исполнить стоячий оффер владельца (NFT едет филлом ПРЯМО на мой
+// land-адрес), затем adoptName — свой залог, свой оффер, перерегистрация на меня. Старому
+// владельцу V уже упала оффером; его залог заберёт его собственный maybeResignLand.
+async function buyName(name, price) {
+  const L = await landMod();
+  const priceFrc = Number(BigInt(price)) / 1e8;
+  const vNew = prompt(`${tr('Buy for')} ${fmtFrcN(price)} FRC. ${tr('Your new self-assessed value (FRC)?')}`, String(Math.ceil(priceFrc)));
+  if (vNew == null) return;
+  const v = num(vNew);
+  const bmin = await L.minValueFrc();
+  if (!(v >= bmin)) return toast(`${tr('minimum value is')} ${bmin} FRC`, 'err');
+  const log = t => nameLog('#nameMktLog', t);
+  try {
+    const look = await api('landLookup', { name });
+    if (!look.found || !look.buyable) throw new Error(tr('name is not buyable right now'));
+    const offer = state?.info?.book?.find(o => o.ranged && o.id === look.offerId && o.status === 'open');
+    if (!offer) { mvRefresh(); throw new Error(tr('offer not in the book yet — try again in a minute')); }
+    log(tr('buying the name…'));
+    // имя ходит только целиком: fill = весь номинал NFT-монеты (10^8 юнитов, см. NFT_UNITS)
+    const units = Number(BigInt(offer.desc.maxFill)) / scaleOf(offer.give.assetTag ?? null);
+    const ok = await fillRangedNow(offer, units, { fillSpk: L.landDepositSpk(name) });
+    if (!ok) { log(''); return; }
+    await L.adoptName({ name, valueFrc: v, progress: p => log(
+      p === 'lock' ? tr('locking the deposit…')
+      : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…')
+      : p === 'offer' ? tr('signing the standing sale offer…')
+      : tr('registered ✅')) });
+    log(''); toast(`${name}: ${tr('name is yours ✅')}`, 'ok'); paintNameMarket(); paintMyNames();
+  } catch (e) { toast(e.message, 'err'); log(e.message); }
+}
+
+// Биржа делится на три класса актива, как форма «Выпуск»: Валюта (FRC/валюты + BTC-свопы),
+// Токены (пользовательские токены/тикеты), Владения (Freiland-имена — доска + выкуп). Имена-NFT
+// исключены из книги (у них есть tokenHash — иначе попали бы в «Токены») и живут только в «Владениях».
+let mktClass = 'cur';   // 'cur' | 'tok' | 'hold'
 export function renderExchange(el) {
   const fopt = cachedFilterOpts();
+  const nv3 = currentNet() === 'nv3';
+  mktClass = 'cur';
   el.innerHTML = `
-    <div class="row">
-      <label>${tr('Selling')}<select id="fGive">${fopt}</select></label>
-      <label>${tr('Wants')}<select id="fWant">${fopt}</select></label>
+    ${nv3 ? `<div class="seg" id="mktClass">
+      <button data-c="cur" class="on">${tr('Currency')}</button>
+      <button data-c="tok">${tr('Tokens')}</button>
+      <button data-c="hold">${tr('Holdings')}</button>
+    </div>` : ''}
+    <div id="mktTrade">
+      <div class="row">
+        <label>${tr('Selling')}<select id="fGive">${fopt}</select></label>
+        <label>${tr('Wants')}<select id="fWant">${fopt}</select></label>
+      </div>
+      <div id="offerChart"></div>
+      <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" style="padding:14px 2px 4px;border-bottom:none">${skel(3)}</td></tr></tbody></table>
+      <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>
     </div>
-    <div id="offerChart"></div>
-    <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" style="padding:14px 2px 4px;border-bottom:none">${skel(3)}</td></tr></tbody></table>
-    <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>
-    ${currentNet() === 'nv3' ? `<div class="row"><button id="openNames" class="ghost">🗺️ ${tr('Names (Freiland)')}</button></div>` : ''}`;
+    ${nv3 ? `<div id="mktHold" hidden>
+      <div class="sub" style="font-size:12px;margin:2px 0">🗺️ ${tr('Names for sale')} · ${tr('self-assessed price')}. ${tr('to claim a new name, use Issue → Holdings')}</div>
+      <div id="nameMktBody">${skel(2)}</div>
+      <div id="nameMktLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
+    </div>` : ''}`;
   $('#openOffer').onclick = openOfferModal;
-  { const nb = $('#openNames'); if (nb) nb.onclick = openNamesModal; }
   ['#fGive', '#fWant'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });
+  if (nv3) {
+    el.querySelectorAll('#mktClass button').forEach((/** @type {HTMLButtonElement} */ b) => b.onclick = () => {
+      mktClass = b.dataset.c;
+      el.querySelectorAll('#mktClass button').forEach(x => x.classList.toggle('on', x === b));
+      $('#mktTrade').hidden = mktClass === 'hold';
+      $('#mktHold').hidden = mktClass !== 'hold';
+      if (mktClass === 'hold') paintNameMarket(); else paint();
+    });
+    paintNameMarket();   // populate the name-tag set (so the book can exclude name offers) + the board
+  }
   if (state) paint(); else mvRefresh();
 }
 // per-asset balance table (FRC + user assets) — the wallet's Balance tab shows this on nv3
 export function renderAssetBalance(el) {
   el.innerHTML = `
-    <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="assetBalBody">${skelRows(3)}</tbody></table>`;
+    <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="assetBalBody">${skelRows(3)}</tbody></table>
+    <div class="sub" style="font-size:12px;margin:10px 0 2px">🗺️ ${tr('My names')} · V / ${tr('deposit')}</div>
+    <div id="myNamesBody">${skel(1)}</div>
+    <div id="myNamesLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`;
   const f = $('#faucetBtn'); if (f) f.onclick = faucet;   // the button itself lives with the other Balance actions
   if (state) paintAssetBalance(); else mvRefresh();
+  paintMyNames();
 }
 function paintAssetBalance() {
   const body = $('#assetBalBody'); if (!body || !state) return;
@@ -1776,7 +1811,15 @@ function paint() {
       return `<tr class="${o.status !== 'open' ? 'filled' : ''}"><td>${o.id}</td><td>${give}</td>
         <td>${fmtA(o.want.assetTag ?? 'FRC', BigInt(o.want.value))}</td><td class="act-cell">${o.status}</td></tr>`;
     };
-    const filtered = state.info.book.filter(o => (!fg || giveOf(o) === fg) && (!fw || wantOf(o) === fw) && o.status === 'open').reverse();
+    // class segment (nv3): Валюта = non-token gives, Токены = token gives; name-NFTs never in the
+    // book (they live in «Holdings»). Non-nv3 stays 'cur' with no token/name assets anyway.
+    const clsOk = o => {
+      if (_nameTags.has(o.give?.assetTag)) return false;
+      if (mktClass === 'tok') return !!o.give?.tokenHash;
+      if (mktClass === 'hold') return false;
+      return !o.give?.tokenHash;   // 'cur'
+    };
+    const filtered = state.info.book.filter(o => clsOk(o) && (!fg || giveOf(o) === fg) && (!fw || wantOf(o) === fw) && o.status === 'open').reverse();
     // tickets sold individually (1-token whole offers) COLLAPSE to one row per
     // (asset, maker, price, want) — "N tickets · price each". Others render one-per-row.
     const isTicket = o => o.ranged && o.status === 'open' && o.give?.tokenHash && (o.give.tokens?.length === 1);
@@ -1805,7 +1848,7 @@ function paint() {
     const btcMatch = (!fg || fg === 'FRC') && (!fw || fw === 'BTC');
     let swapRows = '';
     const myP2p = new Map(loadP2p().map(r => [r.id, r]));
-    if (state.swap) {
+    if (state.swap && mktClass === 'cur') {   // BTC↔FRC swaps are currency — only in the «Currency» tab
       // P2P board offers (BOTH directions): open ones from OTHERS get a Buy button; mine/in-flight
       // show status. Reverse (sell-BTC) offers give BTC / want FRC — the mirror of the forward row.
       for (const o of [...(state.p2p?.swaps || [])].reverse()) {
