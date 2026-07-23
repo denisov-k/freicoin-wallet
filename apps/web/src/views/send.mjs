@@ -32,8 +32,8 @@ export function renderReceive() {
   openModal(tr('Receiving'),
     `<div id="rcvMain">`
     + (btcOn ? `<label>${tr('Currency')}<select id="rcvCur"><option value="FRC">FRC</option><option value="BTC">BTC</option></select></label>` : '')
-    // ⚡ — не валюта, а СПОСОБ получения: отдельный переключатель (вкл → QR инвойса вместо адреса)
-    + (lnOn ? `<label class="chk"><input type="checkbox" id="lnRcvChk">⚡ Lightning</label>` : '')
+    // ⚡ — способ получения BTC (у FRC сети Lightning нет): галка видна только при валюте BTC
+    + (lnOn ? `<label class="chk" id="lnRcvRow" hidden><input type="checkbox" id="lnRcvChk">⚡ Lightning</label>` : '')
     + `<div id="qrBox" class="qr skel" style="margin:0 auto;height:220px"></div>
      <div class="addr" id="addr"><div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div></div>
      <div class="row"><button id="copyAddr" class="ghost" disabled>⧉ ${tr('Copy')}</button></div>
@@ -109,8 +109,10 @@ export function renderReceive() {
     const cp = $('#copyAddr'); if (cp) { cp.disabled = false; cp.onclick = e => copy(addr, e.target); }
   };
   const cur = $('#rcvCur'); if (cur) cur.onchange = () => {
-    const chk = $('#lnRcvChk'); if (chk?.checked) chk.checked = false;   // выбор валюты = возврат к адресу
-    fill(cur.value === 'BTC');
+    const isBtc = cur.value === 'BTC';
+    const row = $('#lnRcvRow'); if (row) row.hidden = !isBtc;            // ⚡ существует только у BTC
+    const chk = $('#lnRcvChk'); if (chk?.checked) chk.checked = false;   // смена валюты = возврат к адресу
+    fill(isBtc);
   };
   const lnChk = $('#lnRcvChk'); if (lnChk) lnChk.onchange = () => lnChk.checked ? fillLn() : fill($('#rcvCur')?.value === 'BTC');
   // Fresh FRC address: bump the index + repaint at once, then grow the watch window off-frame.
