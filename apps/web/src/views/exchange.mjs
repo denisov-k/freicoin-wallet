@@ -1081,6 +1081,7 @@ function renderP2pPay(m, rec) {
       <label>${tr('HTLC address')}<div class="addr" style="user-select:all">${b.addr}</div></label>
     </div>
     ${rec.ln ? `<div id="pyLnPane" style="display:none">
+      <button id="pyLnSelf" style="display:none"></button>
       <p class="sub">${tr('Pay this invoice from any Lightning wallet — the swap continues in seconds, no on-chain fee.')}</p>
       <div id="pyLnQr" class="qr skel" style="margin:6px auto;height:200px;width:200px"></div>
       <div id="pyLnInv" class="addr" style="user-select:all;display:none"></div>
@@ -1129,6 +1130,18 @@ function renderP2pPay(m, rec) {
       if (!bolt11) { if (qr) { qr.className = ''; qr.textContent = tr('the seller did not issue an invoice — try another payment method'); } return; }
       if (inv) { inv.textContent = bolt11; inv.style.display = ''; }
       if (cp) { cp.style.display = ''; cp.onclick = e => copy(bolt11, e.target); }
+      // ФАЗА 2: у покупателя может быть свой ⚡-баланс прямо в кошельке — тогда QR не нужен,
+      // оплата в один тап. Успех двигает своп тем же путём (LND продавца удержит платёж → poll).
+      const selfBtn = $('#pyLnSelf'), lnBal = lnMod?.lnLast?.();
+      if (selfBtn && lnBal && lnBal.outSats >= Number(rec.btcAmount)) {
+        selfBtn.style.display = '';
+        selfBtn.textContent = `⚡ ${tr('Pay from this wallet')} (${Number(rec.btcAmount).toLocaleString(getLang())} ${tr('sats')})`;
+        selfBtn.onclick = async e => {
+          e.target.disabled = true; e.target.textContent = '⚡ ' + tr('payment started…');
+          try { await lnMod.lnPayBolt(bolt11); }
+          catch (err) { toast(err.message, 'err'); e.target.disabled = false; e.target.textContent = `⚡ ${tr('Pay from this wallet')} (${Number(rec.btcAmount).toLocaleString(getLang())} ${tr('sats')})`; }
+        };
+      }
       if (qr) { const img = await QRCode.toDataURL(bolt11.toUpperCase(), { margin: 1, width: 200 }); qr.className = 'qr'; qr.innerHTML = `<img src="${img}" alt="qr" style="width:100%;height:100%">`; }
     } catch (e) { const qr = $('#pyLnQr'); if (qr) { qr.className = ''; qr.textContent = e.message; } }
   };

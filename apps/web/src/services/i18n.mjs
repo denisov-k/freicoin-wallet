@@ -2,6 +2,7 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'Pay from this wallet': 'Оплатить из этого кошелька',
   'camera unavailable — check the site permission': 'камера недоступна — проверьте разрешение для сайта',
   'point the camera at a QR code': 'наведите камеру на QR-код',
   'Copy address': 'Копировать адрес',
@@ -279,6 +280,7 @@ const RU = {
 };
 
 const ES = {
+  'Pay from this wallet': 'Pagar desde esta billetera',
   'camera unavailable — check the site permission': 'cámara no disponible — revisa el permiso del sitio',
   'point the camera at a QR code': 'apunta la cámara al código QR',
   'Copy address': 'Copiar dirección',
@@ -736,6 +738,7 @@ const ES = {
 };
 
 const DE = {
+  'Pay from this wallet': 'Aus dieser Wallet bezahlen',
   'camera unavailable — check the site permission': 'Kamera nicht verfügbar — Website-Berechtigung prüfen',
   'point the camera at a QR code': 'richte die Kamera auf den QR-Code',
   'Copy address': 'Adresse kopieren',
@@ -1193,6 +1196,7 @@ const DE = {
 };
 
 const FR = {
+  'Pay from this wallet': 'Payer depuis ce portefeuille',
   'camera unavailable — check the site permission': 'caméra indisponible — vérifiez la permission du site',
   'point the camera at a QR code': 'pointez la caméra vers le code QR',
   'Copy address': "Copier l'adresse",
@@ -1650,6 +1654,7 @@ const FR = {
 };
 
 const PT = {
+  'Pay from this wallet': 'Pagar desta carteira',
   'camera unavailable — check the site permission': 'câmera indisponível — verifique a permissão do site',
   'point the camera at a QR code': 'aponte a câmera para o código QR',
   'Copy address': 'Copiar endereço',
@@ -2107,6 +2112,7 @@ const PT = {
 };
 
 const ZH = {
+  'Pay from this wallet': '用此钱包支付',
   'camera unavailable — check the site permission': '相机不可用——请检查网站权限',
   'point the camera at a QR code': '将相机对准二维码',
   'Copy address': '复制地址',
