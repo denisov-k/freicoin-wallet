@@ -1685,9 +1685,9 @@ export function renderExchange(el) {
   mktClass = 'cur';
   el.innerHTML = `
     ${nv3 ? `<div class="seg" id="mktClass">
-      <button data-c="cur" class="on">${tr('Currencies')}</button>
-      <button data-c="tok">${tr('Tokens')}</button>
-      <button data-c="hold">${tr('Holdings')}</button>
+      <button data-c="cur" class="on">${tr('Currency')}</button>
+      <button data-c="tok">${tr('Token')}</button>
+      <button data-c="hold">${tr('Holding')}</button>
     </div>` : ''}
     <div id="mktTrade">
       <div class="row">
@@ -1729,9 +1729,9 @@ export function renderAssetBalance(el) {
   // present value — equal while rent is paid, the deposit trailing once it melts) instead of «V / залог».
   const nv3 = currentNet() === 'nv3';
   el.innerHTML = nv3 ? `
-    <table class="mkt"><thead><tr><th>${tr('Currencies')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="curBalBody">${skelRows(2)}</tbody></table>
-    <table class="mkt" style="margin-top:12px"><thead><tr><th>${tr('Tokens')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="tokBalBody">${skelRows(1)}</tbody></table>
-    <table class="mkt" style="margin-top:12px"><thead><tr><th>${tr('Holdings')}</th><th class="r">${tr('Price')} / ${tr('deposit')}</th><th></th></tr></thead><tbody id="myNamesBody">${skelRows(1)}</tbody></table>
+    <table class="mkt"><thead><tr><th>${tr('Currency')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="curBalBody">${skelRows(2)}</tbody></table>
+    <table class="mkt" style="margin-top:12px"><thead><tr><th>${tr('Token')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="tokBalBody">${skelRows(1)}</tbody></table>
+    <table class="mkt" style="margin-top:12px"><thead><tr><th>${tr('Holding')}</th><th class="r">${tr('Price')} / ${tr('deposit')}</th><th></th></tr></thead><tbody id="myNamesBody">${skelRows(1)}</tbody></table>
     <div id="myNamesLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`
   : `<table class="mkt"><thead><tr><th>${tr('Asset')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="curBalBody">${skelRows(3)}</tbody></table>`;
   const f = $('#faucetBtn'); if (f) f.onclick = faucet;   // the button itself lives with the other Balance actions
