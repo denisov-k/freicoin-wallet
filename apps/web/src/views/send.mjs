@@ -30,7 +30,7 @@ export function renderReceive() {
   const btcOn = d.SWAP();
   const lnOn = d.curNet() === 'main';   // ⚡-приём: узел в кошельке (mainnet)
   openModal(tr('Receiving'),
-    `<div id="rcvMain">`
+    `<div id="rcvMain" class="stack">`
     + (btcOn ? `<label>${tr('Currency')}<select id="rcvCur"><option value="FRC">FRC</option><option value="BTC">BTC</option></select></label>` : '')
     // ⚡ — способ получения BTC (у FRC сети Lightning нет): галка видна только при валюте BTC
     + (lnOn ? `<label class="chk" id="lnRcvRow" hidden><input type="checkbox" id="lnRcvChk">⚡ Lightning</label>` : '')
