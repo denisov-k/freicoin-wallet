@@ -10,7 +10,7 @@ import { frcWpkSpk, validLandName, annualRent } from '@core/freiland.mjs';
 import { serializeTx } from '@core/tx.mjs';
 import { SIGHASH_ALL } from '@core/sighash.mjs';
 import { assetPresentValue } from '@core/assets.mjs';
-import { opIn, signInput, sendFrcToSpk, signRangedGive, signLadder, LADDER_SPAN } from '@/services/market/swap-lib.mjs';
+import { opIn, signInput, sendFrcToSpk, signRangedGive, signLadder, myCoinsOf, LADDER_SPAN } from '@/services/market/swap-lib.mjs';
 import { deriveAddress } from '@/services/wallet.mjs';
 import { loadLand, saveLand } from '@/services/storage.mjs';
 import { Buffer } from 'buffer';
@@ -121,11 +121,17 @@ async function bondAndRegister(name, V, resolve, progress) {
     }
     if (!seen) throw new Error('залог не подтвердился — попробуйте позже ещё раз');
   }
+  return offerAndRegister(name, V, resolve, depTxid, depVout, nft, h, progress);
+}
+
+// Финал любой (пере)регистрации: стоячий оффер по V (трастлесс-«всегда в продаже») + landRegister
+// с подписью, коммитящей резолв+залог+NFT+V (переклеить на чужой залог/цену нельзя). Ретраит,
+// пока релей не проиндексирует монеты. Общий для bondAndRegister и revalueName.
+async function offerAndRegister(name, V, resolve, depTxid, depVout, nft, h, progress) {
+  const pub = landOwnerPub(name), key = landKey(name), tag = landNftTag(name);
   const [nftTxid, nftVout] = [nft.outpoint.split(':')[0], +nft.outpoint.split(':')[1]];
-  // стоячий оффер: NFT ⇄ V FRC мне — это и есть трастлесс-«всегда в продаже»
   progress('offer');
   const offerId = await postLandOffer(name, V, nft, h);
-  // регистрация: подпись коммитит резолв+залог+NFT+V (переклеить на чужой залог/цену нельзя)
   const sig = landSign(key, `freiland:reg:${name}:${resolve}:${depTxid}:${depVout}:${tag}:${nftTxid}:${nftVout}:${V}`);
   let last;
   for (let i = 0; i < 60; i++) {
@@ -138,6 +144,51 @@ async function bondAndRegister(name, V, resolve, progress) {
     } catch (e) { last = e.message; if (!/не найден|не подтвержд/i.test(last)) throw e; await sleep(5000); }
   }
   throw new Error(last || 'реестр не принял регистрацию');
+}
+
+/** переоценка/долив (шаг 6 спеки): пересобрать залог под новую самооценку V′ ОДНИМ tx —
+ *  старый залог (land-ключ) + при нехватке монеты кошелька → свежий залог V′+неделя ренты
+ *  на land-адрес, излишек/сдача в кошелёк. Затем: снять старый оффер, выставить новый по V′,
+ *  перерегистрировать. Подъём V = «долив» (рента вперёд), спуск V = вернуть излишек себе.
+ *  @param {{name:string, valueFrc:number, progress?:(p:string)=>void}} o */
+export async function revalueName(o) {
+  const { name, valueFrc, progress = () => {} } = o;
+  const V = BigInt(Math.round(valueFrc * 1e8));
+  const rec = loadLand().find(x => x.name === name && x.nftTag);
+  if (!rec) throw new Error('имя не в этом кошельке');
+  const key = landKey(name), spk = landDepositSpk(name);
+  const r0 = await api('utxos', { spks: [spk] });
+  const nft = r0.utxos.find(u => u.assetTag === rec.nftTag && BigInt(u.value) > 0n);
+  if (!nft) throw new Error('NFT-имя не на land-адресе (имя продано?)');
+  const L = r0.height, need = V + annualRent(V) / 52n, fee = 10000n;
+  const dep = r0.utxos.find(u => u.outpoint === `${rec.depTxid}:${rec.depVout}`);
+  const pvAt = u => assetPresentValue(BigInt(u.value), L - u.refheight, { k: 20, interest: false });
+  progress('rebond');
+  const inputs = dep ? [dep] : [];
+  let S = dep ? pvAt(dep) : 0n;
+  if (S < need + fee) {
+    const wallet = ctx.state?.mine ? myCoinsOf(HOST_TAG, ctx.state.mine.height) : [];
+    for (const c of wallet) { inputs.push(c); S += c.pv; if (S >= need + fee) break; }
+    if (S < need + fee) throw new Error('не хватает FRC для нового залога');
+  }
+  const vout = [{ value: need, scriptPubKey: spk, assetTag: HOST_TAG }];
+  if (S - need - fee > 0n) vout.push({ value: S - need - fee, scriptPubKey: ctx.spks[0], assetTag: HOST_TAG });
+  const tx = { version: 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, nExpireTime: 0,
+    vin: inputs.map(u => opIn(u.outpoint)), vout };
+  inputs.forEach((u, i) => signInput(tx, i, u.spk, BigInt(u.value), u.refheight, SIGHASH_ALL, u.spk === spk ? key : null));
+  const { txid: depTxid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+  progress('confirm');
+  let seen = false, h = L;
+  for (let i = 0; i < 120 && !seen; i++) {
+    await sleep(5000);
+    const r = await api('utxos', { spks: [spk] }).catch(() => null);
+    if (r && r.utxos.some(u => u.outpoint === `${depTxid}:0`)) { seen = true; h = r.height; }
+  }
+  if (!seen) throw new Error('залог не подтвердился — попробуйте позже ещё раз');
+  // старый оффер по старой цене снять ДО нового (при подъёме V дешёвый оффер не должен висеть);
+  // окно «не купить» в секунды — если новый оффер не встанет, maybeResignLand перевыставит сам
+  if (rec.offerId != null) await api('cancel', { id: rec.offerId, makerSpk: spk }).catch(() => {});
+  return offerAndRegister(name, V, rec.resolve, depTxid, 0, nft, h, progress);
 }
 
 /** зарегистрировать СВОБОДНОЕ имя (Model A): выпустить NFT-имя на land-адрес → общий хвост

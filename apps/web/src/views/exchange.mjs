@@ -1631,15 +1631,17 @@ async function openNamesModal() {
     for (const n of all) { if (n.ownerFrcPub === L.landOwnerPub(n.name)) mineSet.add(n.name); }
     const mine = all.filter(n => mineSet.has(n.name));
     mineBox.innerHTML = mine.length
-      ? `<div class="sub" style="font-size:12px;margin-bottom:4px">${tr('My names')}</div>` + mine.map(n =>
+      ? `<div class="sub" style="font-size:12px;margin-bottom:4px">${tr('My names')} · V / ${tr('deposit')}</div>` + mine.map(n =>
           `<div class="rrow" style="font-size:13px">
              <span style="font-family:ui-monospace,monospace">${n.name}${n.lapsed ? ' ⚠' : ''}</span>
              <span style="display:flex;gap:8px;align-items:center">
-               <b>${n.value && n.value !== '0' ? fmtFrc(n.value) + ' FRC' : '—'}</b>
+               <b>${n.price ? fmtFrc(n.price) : '—'} / ${n.value && n.value !== '0' ? fmtFrc(n.value) : '—'} FRC</b>
+               ${n.price ? `<button class="icon nmVal2" data-n="${n.name}" data-p="${n.price}" title="${tr('Top up / revalue')}">±</button>` : ''}
                <button class="icon nmRes" data-n="${n.name}" data-r="${n.resolve || ''}" title="${tr('Point this name to which address?')}">✎</button>
              </span></div>`).join('')
       : '';
     mineBox.querySelectorAll('.nmRes').forEach(b => b.onclick = () => editResolve(b.dataset.n, b.dataset.r));
+    mineBox.querySelectorAll('.nmVal2').forEach(b => b.onclick = () => revalueIt(b.dataset.n, b.dataset.p));
     // рынок: все живые имена (мои помечены) с их самооценкой — доска Гарбергера, где живёт «выкуп»
     const live = all.filter(n => !n.lapsed).sort((a, b) => Number(BigInt(b.value) - BigInt(a.value)));
     mktBox.innerHTML = live.length
@@ -1652,6 +1654,21 @@ async function openNamesModal() {
              </span></div>`).join('')
       : `<div class="sub" style="font-size:12px">${tr('no names registered yet')}</div>`;
     mktBox.querySelectorAll('.nmBuy').forEach(b => b.onclick = () => buyIt(b.dataset.n, b.dataset.p));
+  }
+  // переоценка/долив (шаг 6): пересобрать залог под новую V, перевыставить оффер, перерегистрировать
+  async function revalueIt(name, curPrice) {
+    const v = prompt(tr('New self-assessed value (FRC)?'), String(Number(BigInt(curPrice)) / 1e8));
+    if (v == null) return;
+    const nv = num(v);
+    if (!(nv >= 100)) return toast(tr('minimum value is 100 FRC'), 'err');
+    try {
+      await L.revalueName({ name, valueFrc: nv, progress: p => log(
+        p === 'rebond' ? tr('rebonding the deposit…')
+        : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…')
+        : p === 'offer' ? tr('signing the standing sale offer…')
+        : tr('registered ✅')) });
+      toast(`${name}: ${tr('revalued ✅')}`, 'ok'); paintAll();
+    } catch (e) { toast(e.message, 'err'); log(e.message); }
   }
   // трастлесс-выкуп (шаг 5c): исполнить стоячий оффер владельца (NFT едет филлом ПРЯМО на мой
   // land-адрес), затем adoptName — свой залог, свой оффер, перерегистрация на меня. Старому
