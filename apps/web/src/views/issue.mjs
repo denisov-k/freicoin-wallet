@@ -64,13 +64,13 @@ export function openIssueModal() {
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Issue asset')}</b><button id="issClose" class="icon">✕</button></div>
-    <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="${tr('e.g. labor-hours')}"></label>
     <div class="seg" id="iMode">
       <button data-m="a" class="on">${tr('Currency')}</button>
       <button data-m="t">${tr('Tokens')}</button>
       <button data-m="n">${tr('Holdings')}</button>
     </div>
     <p class="sub" id="iModeHint" style="font-size:12px">${tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.')}</p>
+    <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="${tr('e.g. labor-hours')}"></label>
     <div id="iFungible" class="stack">
       <div class="row">
         <label>${tr('Type')}<select id="iKind"><option value="c">${tr('constant')}</option><option value="d">${tr('melts')}</option><option value="i">${tr('grows')}</option></select></label>
