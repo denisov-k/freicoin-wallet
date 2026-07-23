@@ -105,7 +105,10 @@ export function renderReceive() {
       $('#lnAmtField').hidden = true; $('#lnGoRow').hidden = true;   // запрос готов — форма уходит
       const sr = $('#lnAmtSumRow'); if (sr) { sr.hidden = false; $('#lnAmtSum').textContent = sumText; }
       const b = $('#lnAmtQr'); if (b) { b.style.display = ''; b.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`; }
-      const a = $('#lnAmtInv'); if (a) { a.style.display = ''; a.textContent = copyText; a.style.fontSize = '13px'; a.style.lineHeight = '18px'; a.style.maxHeight = '84px'; a.style.overflowY = 'auto'; a.style.webkitTextSizeAdjust = '100%'; }
+      const a = $('#lnAmtInv'); if (a) {
+        if (mode === 'ln') { a.style.display = ''; a.textContent = copyText; a.style.fontSize = '13px'; a.style.lineHeight = '18px'; a.style.maxHeight = '84px'; a.style.overflowY = 'auto'; a.style.webkitTextSizeAdjust = '100%'; }
+        else a.style.display = 'none';   // адрес не дублируем: он на главном экране, и QR несёт его сам
+      }
       const cr = $('#lnAmtCopyRow'); if (cr) { cr.hidden = false; $('#lnAmtCopy').onclick = ev => copy(copyText, ev.target); }
     } catch (err) { toast(err.message, 'err'); }
     e.target.disabled = false;
