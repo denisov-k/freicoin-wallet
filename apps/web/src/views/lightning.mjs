@@ -22,6 +22,7 @@ export const lnLast = () => last;
 
 async function refreshStatus() {
   try { const s = await lnStatus(); last = s.running ? s : null; } catch { last = null; }
+  globalThis.__fwLnSats = last?.outSats ?? 0;   // строки баланса берут отсюда (btcRowHtml)
   document.dispatchEvent(new CustomEvent('fw-ln-status'));   // строки баланса перерисуются
 }
 

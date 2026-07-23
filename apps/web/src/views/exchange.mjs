@@ -24,7 +24,7 @@ import { loadMySwaps, putMySwap, dropMySwap, loadP2p, putP2p, dropP2p, addBtcNon
 import { refreshPushSubs } from '@/services/push.mjs';
 import { api, ctx, p2pKey, HOST_TAG, decimalsOf, scaleOf, assetName, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND, VB_HTLC_FUND } from '@/state/market-ctx.mjs';
 import { opIn, signInput, committedOutpoints, myCoinsOf, freeFrcKria, sendFrcToSpk, hostFeeCoin, lockAssetToHtlc } from '@/services/market/swap-lib.mjs';
-import { btcHrp, btcAcctAddr, btcFundHtlc, btcToStr, refreshBtc,
+import { btcHrp, btcAcctAddr, btcFundHtlc, btcToStr, btcRowHtml, refreshBtc,
   mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvBtcMax, initBtcAccount, btcResetAcct } from '@/services/market/btc-account.mjs';
 import { recoverBtcNonces, mvBtcHistory, initActivity, resetRecovery } from '@/services/market/activity.mjs';
 import { driveP2p, checkP2pRefunds, checkBtcRefunds, initDrive } from '@/services/market/swap-drive.mjs';
@@ -1682,9 +1682,8 @@ function paintAssetBalance() {
     return `<tr><td${tag === 'FRC' ? '' : ` title="${tag}"`}>${assetName(tag === 'FRC' ? null : tag)}</td><td class="r">${amt(tag, e.pv)}</td></tr>`;
   });
   // BTC sits in the same table (held in-wallet on signet); the cell fills in when refreshBtc returns.
-  if (state.swap?.available) rows.push(`<tr><td>BTC</td><td class="r" id="btcBalCell">${mvBtc().balance != null ? btcToStr(mvBtc().balance) : '…'}</td></tr>`);
-  // ⚡-счёт (LDK-узел в кошельке): строка появляется, когда узел запущен (только mainnet)
-  { const ln = lnMod?.lnLast?.(); if (ln) rows.push(`<tr><td>⚡ Lightning</td><td class="r">${ln.outSats.toLocaleString(getLang())} ${tr('sats')}</td></tr>`); }
+  // Единая сумма on-chain + ⚡ (Lightning — не отдельный актив, а те же BTC в канале).
+  if (state.swap?.available) rows.push(`<tr><td>BTC</td><td class="r" id="btcBalCell">${mvBtc().balance != null ? btcRowHtml(mvBtc().balance) : '…'}</td></tr>`);
   body.innerHTML = rows.join('') || `<tr><td colspan="2" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
 }
 

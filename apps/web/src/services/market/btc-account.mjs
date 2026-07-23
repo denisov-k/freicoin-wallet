@@ -53,6 +53,14 @@ export function btcResetAcct() { btcAcct = null; }
 // live refresh overwrites it with the spendable account.
 const btcBalKey = () => 'fw_btc_bal:' + currentNet();
 export const btcToStr = sats => (Number(BigInt(sats)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 });
+// ⚡-сатоши из канала встроенного LN-узла (кэш кладёт lightning.mjs; глобал вместо импорта —
+// иначе цикл lightning→btc-account→lightning). Строки баланса показывают BTC ЕДИНОЙ суммой
+// (on-chain + ⚡) с пометкой, сколько из неё в канале: Lightning — не отдельный актив.
+export const lnSats = () => Number(globalThis.__fwLnSats ?? 0);
+export const btcRowHtml = onchainSats => {
+  const ln = lnSats(), total = BigInt(onchainSats ?? 0) + BigInt(ln);
+  return btcToStr(total) + (ln > 0 ? ` <span class="sub" style="font-size:11px">⚡${ln.toLocaleString(getLang())}</span>` : '');
+};
 
 // One-time MIGRATION: sweep whatever sits on the legacy (custom-derivation) account address onto
 // the BIP84 address, so "restore from phrase in any wallet" holds for the whole balance. Internal
@@ -91,7 +99,7 @@ export async function refreshBtc() {
   sweepLegacy(btcAcct.utxos).catch(() => {});   // migrate legacy-address coins to the BIP84 account
   // headless-safe: the DOM only exists in the browser; the bot funds BTC HTLCs from the same account
   // but has no #btcBalCell to paint.
-  if (typeof document !== 'undefined') { const cell = document.querySelector('#btcBalCell'); if (cell) cell.textContent = btcToStr(btcAcct.balance); }   // BTC row in the assets table
+  if (typeof document !== 'undefined') { const cell = document.querySelector('#btcBalCell'); if (cell) cell.innerHTML = btcRowHtml(btcAcct.balance); }   // BTC row = on-chain + ⚡ единой суммой
 }
 
 // fund a BTC HTLC from the account (swap plumbing): pick coins, sign locally, broadcast, and remember

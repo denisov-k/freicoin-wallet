@@ -6,7 +6,7 @@
 import { $, store, fmt, fmtBal, skel, copy } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
-import { mvBtc, refreshBtc, btcToStr } from '@/services/market/btc-account.mjs';
+import { mvBtc, refreshBtc, btcToStr, btcRowHtml } from '@/services/market/btc-account.mjs';
 import { loadFeeTxids } from '@/services/storage.mjs';
 import { renderAssetBalance, mvRefresh, mvRelayAssets, mvBtcHistory } from '@/views/exchange.mjs';
 import { openIssueModal } from '@/views/issue.mjs';
@@ -52,24 +52,9 @@ function wireBalActions() {
   // баланс строкой в активах, приём в «Получить», оплата в «Отправить», канал в настройках
   if (d.curNet() === 'main') import('@/views/lightning.mjs').then(mod => mod.maybeAutoStartLn()).catch(() => {});
 }
-// ⚡-строка баланса: из синхронного кэша статуса (модуль lightning может быть ещё не загружен —
-// тогда строки просто нет; появится после автозапуска по событию fw-ln-status)
-let lnMod = null;
-import('@/views/lightning.mjs').then(m => { lnMod = m; }).catch(() => {});
-const lnRow = () => {
-  const s = lnMod?.lnLast?.();
-  return s ? `<tr><td>⚡ Lightning</td><td class="r">${s.outSats.toLocaleString(getLang())} ${tr('sats')}</td></tr>` : '';
-};
-// точечное обновление строки в таблице активов (не трогаем остальной рендер)
+// ⚡-статус изменился → перерисовать ячейку BTC (единая сумма on-chain + канал)
 document.addEventListener('fw-ln-status', () => {
-  try {
-    const body = $('#assetBalBody'); if (!body) return;
-    const ex = [...body.querySelectorAll('tr')].find(r => r.textContent.includes('⚡'));
-    const html = lnRow();
-    if (ex && html) ex.outerHTML = html;
-    else if (!ex && html) body.insertAdjacentHTML('beforeend', html);
-    else if (ex && !html) ex.remove();
-  } catch {}
+  try { const cell = $('#btcBalCell'); const b = mvBtc(); if (cell && b.balance != null) cell.innerHTML = btcRowHtml(b.balance); } catch {}
 });
 
 export function paintBalance(s) {
@@ -100,8 +85,7 @@ export function paintBalance(s) {
       if (provBest > 0) {
         const b = mvBtc();
         const rows = [`<tr><td>FRC</td><td class="r">${provBest.toLocaleString(getLang(), { maximumFractionDigits: 8 })}</td></tr>`];
-        if (b.balance != null) rows.push(`<tr><td>BTC</td><td class="r">${btcToStr(b.balance)}</td></tr>`);   // relay-backed, needs no chain sync
-        if (lnRow()) rows.push(lnRow());   // ⚡-счёт (LDK-узел), когда запущен
+        if (b.balance != null) rows.push(`<tr><td>BTC</td><td class="r" id="btcBalCell">${btcRowHtml(b.balance)}</td></tr>`);   // on-chain + ⚡ единой суммой
         body.innerHTML = rows.join('') + `<tr id="provRow" hidden></tr>`;
       }
     }
