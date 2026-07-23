@@ -144,9 +144,10 @@ export function renderReceive() {
 export async function renderSend() {
   d.setPending(null);
   // Currency picker shows whenever there's more than FRC to send: assets (nv3 only) and/or BTC
-  // (any swap-enabled net, incl. mainnet). Without this, a BTC-holding mainnet wallet could
-  // receive BTC but had no way to send it.
-  const btcOn = d.SWAP() && mvBtc().available;
+  // (any swap-enabled net, incl. mainnet). Gate by NETWORK, not mvBtc().available — на раннем
+  // открытии стейт свопа ещё не доехал с реле, и селектор молча пропадал (та же гонка, что была
+  // в «Получении»).
+  const btcOn = d.SWAP();
   const showCur = d.MKT() || btcOn;
   openModal(tr('Send'),
     `<div id="sendForm" class="stack">
@@ -226,7 +227,7 @@ export async function renderSend() {
     const sel = $('#sendAsset'); if (!sel) return;
     const btc = mvBtc();
     sel.innerHTML = `<option value="">FRC</option>` + list.map(a => `<option value="${a.tag}" data-qty="${a.qty}" data-dec="${a.decimals}">${a.name} (${a.qty.toLocaleString(getLang())})</option>`).join('')
-      + (btc.available ? `<option value="BTC">BTC</option>` : '');
+      + `<option value="BTC">BTC</option>`;
     sel.onchange = () => {
       const v = sel.value, isBtc = v === 'BTC', isFrc = !v, dec = +(sel.selectedOptions[0]?.dataset.dec || 0);
       $('#amtLabel').firstChild.textContent = isFrc ? tr('Amount (FRC)') : isBtc ? tr('Amount (BTC)') : tr('Quantity');
