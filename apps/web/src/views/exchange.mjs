@@ -171,7 +171,7 @@ async function doRefresh() {
   if (infoRaw) try { localStorage.setItem(lsKey('fw_reldefs'), JSON.stringify(Object.fromEntries(
     (info.assets || []).map(a => [a.tag, { shift: a.shift, interest: a.interest, name: a.name }])))); } catch {}
   if ($('#bookBody')) paint();                 // Exchange tab mounted → repaint the book
-  if ($('#assetBalBody')) paintAssetBalance(); // Freimarkets Balance tab mounted → per-asset table
+  if ($('#curBalBody')) paintAssetBalance();   // Freimarkets Balance tab mounted → per-class asset tables
   if ($('#nameMktBody')) paintNameMarket();    // Exchange tab → «Names for sale» board
   if ($('#myNamesBody')) paintMyNames();       // Balance tab → «My names»
   maybeResignRanged();                                      // keep my ranged offers alive after partial fills
