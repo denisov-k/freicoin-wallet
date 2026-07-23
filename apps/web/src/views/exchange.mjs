@@ -1159,6 +1159,10 @@ function renderP2pPay(m, rec) {
         setTimeout(() => m.remove(), 1800); mvRefresh(); return;
       }
       const pw = $('#pyWallet');
+      // ОТМЕНА В ОЧЕРЕДИ: нажал «Отменить», пока оплата подтверждалась — драйв отправит запрос сам,
+      // как только сеть подтвердит. Показываем явно, иначе кажется, что тап пропал (драйв снимает
+      // cancelWanted, как только продавец запирает FRC — тогда строка исчезает сама).
+      if (st) st.textContent = rlocal.cancelWanted ? tr('cancel queued — it will be sent as soon as the payment confirms') : '';
       if (w.status === 'taken') {
         // paid, but the relay won't accept the funding until it has 2 BTC confirmations — the seller
         // physically CAN'T lock yet. Show the network-confirmation progress, not "awaiting the seller".
@@ -1195,6 +1199,7 @@ function renderP2pPay(m, rec) {
       // the payment (btc_funded), so the tap is never silently lost.
       if (!w || w.status === 'taken' || !w.btcHtlc?.txid) {
         putP2p({ ...rlocal, cancelWanted: true });
+        const st = $('#pyStatus'); if (st) st.textContent = tr('cancel queued — it will be sent as soon as the payment confirms');   // мгновенно, не ждём тик
         toast(tr('payment is still confirming — the cancel will be requested automatically as soon as the network confirms it'), 'warn');
         return;
       }

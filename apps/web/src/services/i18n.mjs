@@ -2,6 +2,7 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'cancel queued — it will be sent as soon as the payment confirms': 'отмена запрошена — уйдёт, как только сеть подтвердит оплату',
   'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'в этом кошельке сейчас нечем заплатить — оплатите инвойс из любого Lightning-приложения на вкладке «Внешний платёж»',
   'requesting the invoice…': 'запрашиваем инвойс…',
   'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': 'мгновенно из встроенного баланса — без сетевой комиссии, комиссия маршрута обычно <1%',
@@ -283,6 +284,7 @@ const RU = {
 };
 
 const ES = {
+  'cancel queued — it will be sent as soon as the payment confirms': 'cancelación en cola — se enviará en cuanto la red confirme el pago',
   'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'no hay con qué pagar en esta billetera — paga la factura desde cualquier app Lightning en «Pago externo»',
   'requesting the invoice…': 'solicitando la factura…',
   'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': 'instantáneo desde el saldo integrado — sin comisión on-chain, la de ruta suele ser <1%',
@@ -744,6 +746,7 @@ const ES = {
 };
 
 const DE = {
+  'cancel queued — it will be sent as soon as the payment confirms': 'Stornierung in Warteschlange — sie wird gesendet, sobald das Netzwerk die Zahlung bestätigt',
   'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'in dieser Wallet ist gerade nichts zum Bezahlen — begleiche die Rechnung mit einer beliebigen Lightning-App unter „Externe Zahlung“',
   'requesting the invoice…': 'Rechnung wird angefordert…',
   'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': 'sofort aus dem eingebauten Guthaben — keine On-Chain-Gebühr, Routengebühr meist <1%',
@@ -1205,6 +1208,7 @@ const DE = {
 };
 
 const FR = {
+  'cancel queued — it will be sent as soon as the payment confirms': 'annulation en file — elle partira dès que le réseau confirmera le paiement',
   'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'rien pour payer dans ce portefeuille — réglez la facture depuis n’importe quelle app Lightning via « Paiement externe »',
   'requesting the invoice…': 'demande de la facture…',
   'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': 'instantané depuis le solde intégré — pas de frais on-chain, frais de route généralement <1%',
@@ -1666,6 +1670,7 @@ const FR = {
 };
 
 const PT = {
+  'cancel queued — it will be sent as soon as the payment confirms': 'cancelamento na fila — será enviado assim que a rede confirmar o pagamento',
   'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'não há com que pagar nesta carteira — pague a fatura por qualquer app Lightning em «Pagamento externo»',
   'requesting the invoice…': 'solicitando a fatura…',
   'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': 'instantâneo do saldo embutido — sem taxa on-chain, taxa de rota geralmente <1%',
@@ -2127,6 +2132,7 @@ const PT = {
 };
 
 const ZH = {
+  'cancel queued — it will be sent as soon as the payment confirms': '取消已排队——网络确认付款后即会发送',
   'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': '此钱包当前无可用余额——请在“外部支付”中用任意闪电应用支付发票',
   'requesting the invoice…': '正在请求发票…',
   'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': '从内置余额即时支付——无链上费用，路由费通常 <1%',

@@ -49,8 +49,10 @@ button:disabled { opacity:.6; cursor:default; }
 #msg { padding:0 20px 16px; font-size:13px; min-height:20px; } .ok{color:var(--ok);} .err{color:var(--err);}
 textarea { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; color:var(--fg); font:16px ui-monospace,monospace; width:100%; resize:vertical; }
 #toast::first-letter, #avail::first-letter { text-transform:uppercase; }
-#toast { position:fixed; left:50%; bottom:24px; transform:translate(-50%,20px); max-width:420px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 16px; font-size:13px; opacity:0; pointer-events:none; transition:.25s; box-shadow:0 8px 30px rgba(0,0,0,.3); z-index:110; }   /* above #modal (100): toasts answer modal actions */
-#toast.show { opacity:1; transform:translate(-50%,0); } #toast.err { color:var(--err); } #toast.ok { color:var(--ok); }
+/* left/right + margin:auto — НЕ left:50%: fixed без width даёт shrink-to-fit по остатку справа
+   (≈половина экрана), из-за чего длинный тост сжимался в узкий столбик */
+#toast { position:fixed; left:16px; right:16px; bottom:24px; margin:0 auto; transform:translateY(20px); width:fit-content; max-width:min(420px,calc(100% - 32px)); background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 16px; font-size:13px; opacity:0; pointer-events:none; transition:.25s; box-shadow:0 8px 30px rgba(0,0,0,.3); z-index:110; }   /* above #modal (100): toasts answer modal actions */
+#toast.show { opacity:1; transform:translateY(0); } #toast.err { color:var(--err); } #toast.ok { color:var(--ok); }
 .skel, .skel-line { background:linear-gradient(90deg,var(--card),var(--line),var(--card)); background-size:200% 100%; animation:sh 1.2s infinite; border-radius:8px; height:44px; }
 .skel + .skel { margin-top:12px; }   /* stacked placeholders keep the list's breathing room (flex gap doesn't reach into #actList) */
 .skel-line { height:40px; width:60%; margin-bottom:6px; }
