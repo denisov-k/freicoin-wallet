@@ -1067,7 +1067,7 @@ function renderP2pPay(m, rec) {
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Buy')} ${assetName(rcvTag)}</b><button id="pyClose" class="icon">✕</button></div>
     <div class="sub" style="margin:-4px 0 0;font-size:13px">${tr('Order')} ${rec.id}</div>
     <div class="sub" id="pyTtl" style="margin:0 0 8px;font-size:13px"></div>
-    ${(hasWallet || rec.ln) ? `<div class="seg" id="paySeg">${hasWallet ? `<button data-pay="wallet" class="on">${tr('From wallet')}</button>` : ''}<button data-pay="ext"${hasWallet ? '' : ' class="on"'}>${tr('External payment')}</button>${rec.ln ? `<button data-pay="ln">⚡ Lightning</button>` : ''}</div>` : ''}
+    ${(hasWallet || rec.ln) ? `<div class="seg" id="paySeg">${hasWallet ? `<button data-pay="wallet" class="on">${tr('From wallet')}</button>` : ''}<button data-pay="ext"${hasWallet ? '' : ' class="on"'}>${tr('External payment')}</button></div>` : ''}
     <div class="rrow" id="pyBalRow"${hasWallet ? '' : ' style="display:none"'}><span>${tr('Available')}</span><b id="pyBal" class="sub">${tr('checking balance…')}</b></div>
     <div class="rrow"><span>${tr('Cost')}</span><b>${btc8(amt)} BTC</b></div>
     <div class="rrow" id="pyFeeRow"${hasWallet ? '' : ' style="display:none"'}><span>${tr('Network fee')}</span><b id="pyFee"></b></div>
@@ -1076,12 +1076,15 @@ function renderP2pPay(m, rec) {
     <div id="pyWalletPane"${hasWallet ? '' : ' style="display:none"'}>
       <button id="pyWallet" style="width:100%" disabled>${tr('Pay')}</button>
     </div>
+    <div id="pyLnWalletPane" style="display:none">
+      <p class="sub">⚡ ${tr('instant from the built-in balance — no on-chain fee, the route fee is usually <1%')}</p>
+      <button id="pyLnWallet" style="width:100%" disabled>⚡ ${tr('Pay')}</button>
+    </div>
     <div id="pyExtPane"${hasWallet ? ' style="display:none"' : ''}>
       <p class="sub">${tr('Send exactly this amount from any Bitcoin wallet to the address. The swap continues automatically once the payment is seen.')}</p>
       <label>${tr('HTLC address')}<div class="addr" style="user-select:all">${b.addr}</div></label>
     </div>
     ${rec.ln ? `<div id="pyLnPane" style="display:none">
-      <button id="pyLnSelf" style="display:none"></button>
       <p class="sub">${tr('Pay this invoice from any Lightning wallet — the swap continues in seconds, no on-chain fee.')}</p>
       <div id="pyLnQr" class="qr skel" style="margin:6px auto;height:200px;width:200px"></div>
       <div id="pyLnInv" class="addr" style="user-select:all;display:none"></div>
@@ -1116,7 +1119,8 @@ function renderP2pPay(m, rec) {
   // LIGHTNING: ask the seller (their LND) for a hold invoice under THIS swap's H, show the bolt11
   // + QR; the buyer pays from any LN wallet and the existing poll flips to "confirming receipt" the
   // moment the seller's node holds the payment (relay: lnPaid → status btc_funded). Requested once.
-  let lnAsked = false;
+  let lnAsked = false, lnBolt11 = null;
+  let updLnWalletBtn = () => {};   // назначается ниже (после объявления paying)
   const requestLnInvoice = async () => {
     if (lnAsked) return; lnAsked = true;
     try {
@@ -1128,42 +1132,40 @@ function renderP2pPay(m, rec) {
       }
       const qr = $('#pyLnQr'), inv = $('#pyLnInv'), cp = $('#pyLnCopy');
       if (!bolt11) { if (qr) { qr.className = ''; qr.textContent = tr('the seller did not issue an invoice — try another payment method'); } return; }
+      lnBolt11 = bolt11; updLnWalletBtn();
       if (inv) { inv.textContent = bolt11; inv.style.display = ''; }
       if (cp) { cp.style.display = ''; cp.onclick = e => copy(bolt11, e.target); }
-      // ФАЗА 2: у покупателя может быть свой ⚡-баланс прямо в кошельке — тогда QR не нужен,
-      // оплата в один тап. Успех двигает своп тем же путём (LND продавца удержит платёж → poll).
-      const selfBtn = $('#pyLnSelf'), lnBal = lnMod?.lnLast?.();
-      if (selfBtn && lnBal && lnBal.outSats >= Number(rec.btcAmount)) {
-        selfBtn.style.display = '';
-        selfBtn.textContent = `⚡ ${tr('Pay from this wallet')} (${Number(rec.btcAmount).toLocaleString(getLang())} ${tr('sats')})`;
-        selfBtn.onclick = async e => {
-          e.target.disabled = true; e.target.textContent = '⚡ ' + tr('payment started…');
-          try { await lnMod.lnPayBolt(bolt11); }
-          catch (err) { toast(err.message, 'err'); e.target.disabled = false; e.target.textContent = `⚡ ${tr('Pay from this wallet')} (${Number(rec.btcAmount).toLocaleString(getLang())} ${tr('sats')})`; }
-        };
-      }
       if (qr) { const img = await QRCode.toDataURL(bolt11.toUpperCase(), { margin: 1, width: 200 }); qr.className = 'qr'; qr.innerHTML = `<img src="${img}" alt="qr" style="width:100%;height:100%">`; }
     } catch (e) { const qr = $('#pyLnQr'); if (qr) { qr.className = ''; qr.textContent = e.message; } }
   };
   const seg = $('#paySeg');
+  const show = (sel, on) => { const el = $(sel); if (el) el.style.display = on ? '' : 'none'; };
+  // «Из кошелька» ПО УМОЛЧАНИЮ платит по ⚡ (мгновенно, без сетевой комиссии), когда оффер
+  // ln и встроенного баланса хватает; иначе — прежний on-chain путь. «Внешний платёж» —
+  // выбор плательщика: ⚡-инвойс и on-chain адрес показываются вместе.
+  const lnWalletReady = () => !!rec.ln && (lnMod?.lnLast?.()?.outSats ?? 0) >= Number(rec.btcAmount);
+  const applyMode = mode => {
+    const lnW = mode === 'wallet' && lnWalletReady();
+    show('#pyWalletPane', mode === 'wallet' && !lnW);
+    show('#pyLnWalletPane', lnW);
+    show('#pyBalRow', mode === 'wallet' && !lnW);
+    // fee + fee-inclusive total are OUR wallet's on-chain economics — ⚡/external pay their own way
+    show('#pyFeeRow', mode === 'wallet' && !lnW);
+    show('#pyTotalRow', mode === 'wallet' && !lnW);
+    show('#pyExtPane', mode === 'ext');
+    show('#pyLnPane', mode === 'ext' && !!rec.ln);
+    if (lnW || (mode === 'ext' && rec.ln)) requestLnInvoice();
+    if (lnW) updLnWalletBtn();
+  };
   if (seg) seg.querySelectorAll('button').forEach(sb => sb.onclick = () => {
     seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === sb));
-    const mode = sb.dataset.pay;   // wallet | ext | ln
-    const show = (sel, on) => { const el = $(sel); if (el) el.style.display = on ? '' : 'none'; };
-    show('#pyWalletPane', mode === 'wallet');
-    show('#pyBalRow', mode === 'wallet');
-    // fee + fee-inclusive total are OUR wallet's economics — external/LN pay their own way
-    show('#pyFeeRow', mode === 'wallet');
-    show('#pyTotalRow', mode === 'wallet');
-    show('#pyExtPane', mode === 'ext');
-    show('#pyLnPane', mode === 'ln');
-    if (mode === 'ln') requestLnInvoice();
+    applyMode(sb.dataset.pay);
   });
   // pay the HTLC straight from the in-wallet BTC account (one tap); auto-detect finishes the swap
   let paying = false;
   // once paid, the payment-method chooser (#paySeg) and the wallet-balance line (#pyBalRow) are moot —
   // hide them so the window shows only the amount, the confirmation status and Cancel.
-  const hidePayInputs = () => { for (const s of ['#paySeg', '#pyBalRow', '#pyFeeRow', '#pyTotalRow', '#pyExtPane', '#pyLnPane']) { const el = $(s); if (el) el.style.display = 'none'; } };
+  const hidePayInputs = () => { for (const s of ['#paySeg', '#pyBalRow', '#pyFeeRow', '#pyTotalRow', '#pyExtPane', '#pyLnPane', '#pyLnWalletPane']) { const el = $(s); if (el) el.style.display = 'none'; } };
   // once the seller's lock is CONFIRMED (frc_funded+) the claim is running and a cancel can do
   // nothing (the relay refuses coop-sign, and the claim reveals R anyway) — drop the button
   const hideCancel = () => { const c = q(m, '#pyCancel'); if (c) c.style.display = 'none'; };
@@ -1183,6 +1185,20 @@ function renderP2pPay(m, rec) {
     }
     hidePayInputs();
   }
+  updLnWalletBtn = () => {
+    const btn = $('#pyLnWallet'); if (!btn || paying) return;
+    if (lnBolt11) { btn.disabled = false; btn.textContent = `⚡ ${tr('Pay')} ${Number(rec.btcAmount).toLocaleString(getLang())} ${tr('sats')}`; }
+    else { btn.disabled = true; btn.textContent = '⚡ ' + tr('requesting the invoice…'); }
+  };
+  { const b0 = $('#pyLnWallet'); if (b0) b0.onclick = async () => {
+    if (!lnBolt11 || paying) return;
+    const btn = $('#pyLnWallet');
+    paying = true; btn.disabled = true; btn.textContent = '⚡ ' + tr('payment started…');
+    try { await lnMod.lnPayBolt(lnBolt11); ttlDeadline = null; paintTtl(); }
+    catch (e) { toast(e.message, 'err'); paying = false; updLnWalletBtn(); }
+  }; }
+  // стартовый режим: по умолчанию «Из кошелька» (⚡-первый), если уже не оплачено
+  if (!paying && seg) applyMode(hasWallet ? 'wallet' : 'ext');
   const payFromWallet = async () => {
     const pw = $('#pyWallet'); if (!pw) return;
     paying = true; pw.disabled = true; pw.textContent = tr('confirming payment on the network');

@@ -2,6 +2,8 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'requesting the invoice…': 'запрашиваем инвойс…',
+  'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': 'мгновенно из встроенного баланса — без сетевой комиссии, комиссия маршрута обычно <1%',
   'Pay from this wallet': 'Оплатить из этого кошелька',
   'camera unavailable — check the site permission': 'камера недоступна — проверьте разрешение для сайта',
   'point the camera at a QR code': 'наведите камеру на QR-код',
@@ -280,6 +282,8 @@ const RU = {
 };
 
 const ES = {
+  'requesting the invoice…': 'solicitando la factura…',
+  'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': 'instantáneo desde el saldo integrado — sin comisión on-chain, la de ruta suele ser <1%',
   'Pay from this wallet': 'Pagar desde esta billetera',
   'camera unavailable — check the site permission': 'cámara no disponible — revisa el permiso del sitio',
   'point the camera at a QR code': 'apunta la cámara al código QR',
@@ -738,6 +742,8 @@ const ES = {
 };
 
 const DE = {
+  'requesting the invoice…': 'Rechnung wird angefordert…',
+  'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': 'sofort aus dem eingebauten Guthaben — keine On-Chain-Gebühr, Routengebühr meist <1%',
   'Pay from this wallet': 'Aus dieser Wallet bezahlen',
   'camera unavailable — check the site permission': 'Kamera nicht verfügbar — Website-Berechtigung prüfen',
   'point the camera at a QR code': 'richte die Kamera auf den QR-Code',
@@ -1196,6 +1202,8 @@ const DE = {
 };
 
 const FR = {
+  'requesting the invoice…': 'demande de la facture…',
+  'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': 'instantané depuis le solde intégré — pas de frais on-chain, frais de route généralement <1%',
   'Pay from this wallet': 'Payer depuis ce portefeuille',
   'camera unavailable — check the site permission': 'caméra indisponible — vérifiez la permission du site',
   'point the camera at a QR code': 'pointez la caméra vers le code QR',
@@ -1654,6 +1662,8 @@ const FR = {
 };
 
 const PT = {
+  'requesting the invoice…': 'solicitando a fatura…',
+  'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': 'instantâneo do saldo embutido — sem taxa on-chain, taxa de rota geralmente <1%',
   'Pay from this wallet': 'Pagar desta carteira',
   'camera unavailable — check the site permission': 'câmera indisponível — verifique a permissão do site',
   'point the camera at a QR code': 'aponte a câmera para o código QR',
@@ -2112,6 +2122,8 @@ const PT = {
 };
 
 const ZH = {
+  'requesting the invoice…': '正在请求发票…',
+  'instant from the built-in balance — no on-chain fee, the route fee is usually <1%': '从内置余额即时支付——无链上费用，路由费通常 <1%',
   'Pay from this wallet': '用此钱包支付',
   'camera unavailable — check the site permission': '相机不可用——请检查网站权限',
   'point the camera at a QR code': '将相机对准二维码',
