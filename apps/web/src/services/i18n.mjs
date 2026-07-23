@@ -2,6 +2,8 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'camera unavailable — check the site permission': 'камера недоступна — проверьте разрешение для сайта',
+  'point the camera at a QR code': 'наведите камеру на QR-код',
   'Copy address': 'Копировать адрес',
   'Create QR': 'Создать QR',
   'Request an amount': 'Запросить сумму',
@@ -277,6 +279,8 @@ const RU = {
 };
 
 const ES = {
+  'camera unavailable — check the site permission': 'cámara no disponible — revisa el permiso del sitio',
+  'point the camera at a QR code': 'apunta la cámara al código QR',
   'Copy address': 'Copiar dirección',
   'Create QR': 'Crear QR',
   'Request an amount': 'Solicitar un importe',
@@ -732,6 +736,8 @@ const ES = {
 };
 
 const DE = {
+  'camera unavailable — check the site permission': 'Kamera nicht verfügbar — Website-Berechtigung prüfen',
+  'point the camera at a QR code': 'richte die Kamera auf den QR-Code',
   'Copy address': 'Adresse kopieren',
   'Create QR': 'QR erstellen',
   'Request an amount': 'Betrag anfordern',
@@ -1187,6 +1193,8 @@ const DE = {
 };
 
 const FR = {
+  'camera unavailable — check the site permission': 'caméra indisponible — vérifiez la permission du site',
+  'point the camera at a QR code': 'pointez la caméra vers le code QR',
   'Copy address': "Copier l'adresse",
   'Create QR': 'Créer un QR',
   'Request an amount': 'Demander un montant',
@@ -1642,6 +1650,8 @@ const FR = {
 };
 
 const PT = {
+  'camera unavailable — check the site permission': 'câmera indisponível — verifique a permissão do site',
+  'point the camera at a QR code': 'aponte a câmera para o código QR',
   'Copy address': 'Copiar endereço',
   'Create QR': 'Criar QR',
   'Request an amount': 'Solicitar um valor',
@@ -2097,6 +2107,8 @@ const PT = {
 };
 
 const ZH = {
+  'camera unavailable — check the site permission': '相机不可用——请检查网站权限',
+  'point the camera at a QR code': '将相机对准二维码',
   'Copy address': '复制地址',
   'Create QR': '生成二维码',
   'Request an amount': '请求金额',

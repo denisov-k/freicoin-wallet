@@ -152,7 +152,7 @@ export async function renderSend() {
     `<div id="sendForm" class="stack">
      <div class="sub" id="avail">${tr('available…')}</div>
      ${showCur ? `<label>${d.MKT() ? tr('Asset') : tr('Currency')}<select id="sendAsset"><option value="">FRC</option></select></label>` : ''}
-     <label>${tr('To address')}<input id="to" placeholder="fc1…" autocomplete="off"></label>
+     <label>${tr('To address')}<div class="amtrow"><input id="to" placeholder="fc1…" autocomplete="off"><button id="scanBtn" class="ghost" type="button" title="QR">📷</button></div></label>
      <label id="amtLabel">${tr('Amount (FRC)')}<div class="amtrow"><input id="amt" type="number" step="0.00000001" min="0" placeholder="0.0"><button id="maxBtn" class="ghost">${tr('Max')}</button></div></label>
      <div class="stack" id="btcSpeedRow" hidden>
        <label>${tr('Speed')}<select id="btcSpeed"><option value="eco">${tr('Economy (cheaper)')}</option><option value="fast">${tr('Fast (next block)')}</option></select></label>
@@ -182,6 +182,15 @@ export async function renderSend() {
   };
   $('#reviewBtn').onclick = doReview;
   // ⚡: как только в поле адреса оказался bolt11 — сумма не нужна (она в инвойсе); подскажем
+  // сканер: распознанный текст идёт в поле адреса ЧЕРЕЗ обычный input-разбор — URI распакуется,
+  // bolt11 включит ⚡-режим, голый адрес останется адресом. Один вход для всех форматов.
+  $('#scanBtn').onclick = async () => {
+    const text = await (await import('@/components/qr-scan.mjs')).scanQr();
+    if (!text) return;
+    const to = $('#to'); if (!to) return;
+    to.value = text.trim();
+    to.dispatchEvent(new Event('input'));
+  };
   $('#to').addEventListener('input', async () => {
     const raw = $('#to').value.trim();
     // ПЛАТЁЖНЫЙ URI (freicoin:/bitcoin:…?amount=…) — то, что генерирует наш же «Запросить сумму»
