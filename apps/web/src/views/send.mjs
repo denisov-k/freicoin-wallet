@@ -30,48 +30,61 @@ export function renderReceive() {
   const btcOn = d.SWAP();
   const lnOn = d.curNet() === 'main';   // ⚡-приём: узел в кошельке (mainnet)
   openModal(tr('Receiving'),
-    (btcOn ? `<label>${tr('Currency')}<select id="rcvCur"><option value="FRC">FRC</option><option value="BTC">BTC</option></select></label>` : '')
-    // ⚡ — не валюта, а СПОСОБ получения: отдельный переключатель (вкл → сумма-инвойс вместо адреса)
+    `<div id="rcvMain">`
+    + (btcOn ? `<label>${tr('Currency')}<select id="rcvCur"><option value="FRC">FRC</option><option value="BTC">BTC</option></select></label>` : '')
+    // ⚡ — не валюта, а СПОСОБ получения: отдельный переключатель (вкл → QR инвойса вместо адреса)
     + (lnOn ? `<label class="chk"><input type="checkbox" id="lnRcvChk">⚡ Lightning</label>` : '')
-    + `<div id="lnAmtRow" hidden><label class="numfield">${tr('Amount')} (${tr('sats')})<input id="lnRcvAmt" type="text" inputmode="numeric"></label>
-       <div class="row"><button id="lnRcvGo">${tr('Create invoice')}</button></div></div>
-     <div id="qrBox" class="qr skel" style="margin:0 auto;height:220px"></div>
+    + `<div id="qrBox" class="qr skel" style="margin:0 auto;height:220px"></div>
      <div class="addr" id="addr"><div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div></div>
      <div class="row"><button id="copyAddr" class="ghost" disabled>⧉ ${tr('Copy')}</button></div>
      <div class="row" id="newAddrRow"><button id="newAddr" class="ghost">${tr('New address')}</button></div>
-     <div class="row" id="lnAmtBtnRow" hidden><button id="lnAmtBtn" class="ghost">${tr('Invoice with an amount')}</button></div>`);
-  // рендер готового инвойса в те же qrBox/addr/copy, что и у адресов
-  const showInvoice = async bolt11 => {
-    const qr = await QRCode.toDataURL(bolt11.toUpperCase(), { margin: 1, width: 220 });
-    const b = $('#qrBox'); if (!b) return;   // модалку закрыли, пока узел стартовал
-    b.className = 'qr'; b.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`;
-    const a = $('#addr'); if (a) a.textContent = bolt11;
-    const cp = $('#copyAddr'); if (cp) { cp.disabled = false; cp.onclick = ev => copy(bolt11, ev.target); }
-  };
+     <div class="row" id="lnAmtBtnRow" hidden><button id="lnAmtBtn" class="ghost">${tr('Invoice with an amount')}</button></div></div>
+     <div id="rcvLnAmt" class="stack" hidden>
+       <label class="numfield">${tr('Amount')} (${tr('sats')})<input id="lnRcvAmt" type="text" inputmode="numeric"></label>
+       <div class="row"><button id="lnRcvGo">${tr('Create invoice')}</button></div>
+       <div id="lnAmtQr" class="qr" style="margin:0 auto;height:220px;display:none"></div>
+       <div class="addr" id="lnAmtInv" style="display:none"></div>
+       <div class="row" id="lnAmtCopyRow" hidden><button id="lnAmtCopy" class="ghost">⧉ ${tr('Copy')}</button></div>
+       <div class="row"><button id="lnAmtBack" class="ghost">${tr('Back')}</button></div>
+     </div>`);
+  // ---- два экрана модалки: основной (QR адреса/инвойса) ↔ «инвойс с суммой» ----
+  const showAmtScreen = on => { $('#rcvMain').hidden = on; $('#rcvLnAmt').hidden = !on; };
   // ⚡ ВКЛ: та же форма, что у адресов — СРАЗУ QR (инвойс без суммы: плательщик вводит её сам,
-  // это Lightning-аналог статического адреса). Инвойс с конкретной суммой — отдельной кнопкой.
+  // это Lightning-аналог статического адреса). Инвойс с конкретной суммой — отдельный экран.
   const fillLn = async () => {
-    $('#newAddrRow').hidden = true; $('#lnAmtBtnRow').hidden = false; $('#lnAmtRow').hidden = true;
+    $('#newAddrRow').hidden = true; $('#lnAmtBtnRow').hidden = false;
     const cs = $('#rcvCur'); if (cs) cs.disabled = true;   // инвойс — это сатоши; валюта не участвует
     const box0 = $('#qrBox'); if (box0) { box0.className = 'qr skel'; box0.innerHTML = ''; }
     const a0 = $('#addr'); if (a0) a0.innerHTML = `<div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div>`;
     $('#copyAddr').disabled = true;
-    try { await showInvoice(await (await import('@/views/lightning.mjs')).lnMakeInvoice()); }
-    catch (err) { const a = $('#addr'); if (a) a.textContent = err.message; }
-    $('#lnAmtBtn').onclick = () => { const r = $('#lnAmtRow'); r.hidden = !r.hidden; };
-    $('#lnRcvGo').onclick = async e => {
-      e.target.disabled = true;
-      try {
-        const sats = Math.round(Number($('#lnRcvAmt').value)); if (!(sats > 0)) throw new Error(tr('bad amount'));
-        await showInvoice(await (await import('@/views/lightning.mjs')).lnMakeInvoice(sats));
-        $('#lnAmtRow').hidden = true;
-      } catch (err) { toast(err.message, 'err'); }
-      e.target.disabled = false;
-    };
+    try {
+      const bolt11 = await (await import('@/views/lightning.mjs')).lnMakeInvoice();
+      const qr = await QRCode.toDataURL(bolt11.toUpperCase(), { margin: 1, width: 220 });
+      const b = $('#qrBox'); if (!b) return;   // модалку закрыли, пока узел стартовал
+      b.className = 'qr'; b.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`;
+      const a = $('#addr'); if (a) a.textContent = bolt11;
+      const cp = $('#copyAddr'); if (cp) { cp.disabled = false; cp.onclick = ev => copy(bolt11, ev.target); }
+    } catch (err) { const a = $('#addr'); if (a) a.textContent = err.message; }
+  };
+  // экран «инвойс с суммой»: свой QR/строка/копирование, «Назад» возвращает к основному
+  $('#lnAmtBtn').onclick = () => { showAmtScreen(true); $('#lnRcvAmt').focus(); };
+  $('#lnAmtBack').onclick = () => showAmtScreen(false);
+  $('#lnRcvGo').onclick = async e => {
+    e.target.disabled = true;
+    try {
+      const sats = Math.round(Number($('#lnRcvAmt').value)); if (!(sats > 0)) throw new Error(tr('bad amount'));
+      const bolt11 = await (await import('@/views/lightning.mjs')).lnMakeInvoice(sats);
+      const qr = await QRCode.toDataURL(bolt11.toUpperCase(), { margin: 1, width: 220 });
+      const b = $('#lnAmtQr'); if (b) { b.style.display = ''; b.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`; }
+      const a = $('#lnAmtInv'); if (a) { a.style.display = ''; a.textContent = bolt11; }
+      const cr = $('#lnAmtCopyRow'); if (cr) { cr.hidden = false; $('#lnAmtCopy').onclick = ev => copy(bolt11, ev.target); }
+    } catch (err) { toast(err.message, 'err'); }
+    e.target.disabled = false;
   };
   // FRC = a fresh HD address; BTC = the single (fixed) account address, so "New address" hides for BTC.
   const fill = async isBtc => {
-    $('#lnAmtRow').hidden = true; const lb = $('#lnAmtBtnRow'); if (lb) lb.hidden = true;
+    const lb = $('#lnAmtBtnRow'); if (lb) lb.hidden = true;
+    showAmtScreen(false);
     const cs = $('#rcvCur'); if (cs) cs.disabled = false;
     const box0 = $('#qrBox'); if (box0) { box0.className = 'qr skel'; box0.innerHTML = ''; }
     const a0 = $('#addr'); if (a0) a0.innerHTML = `<div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div>`;
