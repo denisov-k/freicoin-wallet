@@ -2,6 +2,9 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'not enough Lightning capacity': 'не хватает Lightning-ёмкости',
+  'it confirms on-chain (~30 min), then pay the invoice again': 'канал подтверждается on-chain (~30 мин), затем оплатите инвойс ещё раз',
+  'not enough BTC to open a channel': 'не хватает BTC для открытия канала',
   '⚡ channel is ready': '⚡ канал готов',
   '⚡ payment received': '⚡ платёж получен',
   '⚡ payment sent': '⚡ платёж отправлен',
@@ -255,6 +258,9 @@ const RU = {
 };
 
 const ES = {
+  'not enough Lightning capacity': 'capacidad Lightning insuficiente',
+  'it confirms on-chain (~30 min), then pay the invoice again': 'el canal se confirma on-chain (~30 min); luego paga la factura de nuevo',
+  'not enough BTC to open a channel': 'BTC insuficiente para abrir un canal',
   '⚡ channel is ready': '⚡ canal listo',
   '⚡ payment received': '⚡ pago recibido',
   '⚡ payment sent': '⚡ pago enviado',
@@ -688,6 +694,9 @@ const ES = {
 };
 
 const DE = {
+  'not enough Lightning capacity': 'nicht genug Lightning-Kapazität',
+  'it confirms on-chain (~30 min), then pay the invoice again': 'der Kanal bestätigt on-chain (~30 Min), danach die Rechnung erneut bezahlen',
+  'not enough BTC to open a channel': 'nicht genug BTC für einen Kanal',
   '⚡ channel is ready': '⚡ Kanal bereit',
   '⚡ payment received': '⚡ Zahlung empfangen',
   '⚡ payment sent': '⚡ Zahlung gesendet',
@@ -1121,6 +1130,9 @@ const DE = {
 };
 
 const FR = {
+  'not enough Lightning capacity': 'capacité Lightning insuffisante',
+  'it confirms on-chain (~30 min), then pay the invoice again': 'le canal se confirme on-chain (~30 min), puis payez la facture à nouveau',
+  'not enough BTC to open a channel': 'pas assez de BTC pour ouvrir un canal',
   '⚡ channel is ready': '⚡ canal prêt',
   '⚡ payment received': '⚡ paiement reçu',
   '⚡ payment sent': '⚡ paiement envoyé',
@@ -1554,6 +1566,9 @@ const FR = {
 };
 
 const PT = {
+  'not enough Lightning capacity': 'capacidade Lightning insuficiente',
+  'it confirms on-chain (~30 min), then pay the invoice again': 'o canal confirma on-chain (~30 min); depois pague a fatura novamente',
+  'not enough BTC to open a channel': 'BTC insuficiente para abrir um canal',
   '⚡ channel is ready': '⚡ canal pronto',
   '⚡ payment received': '⚡ pagamento recebido',
   '⚡ payment sent': '⚡ pagamento enviado',
@@ -1987,6 +2002,9 @@ const PT = {
 };
 
 const ZH = {
+  'not enough Lightning capacity': '闪电容量不足',
+  'it confirms on-chain (~30 min), then pay the invoice again': '通道需链上确认（约 30 分钟），之后请再次支付发票',
+  'not enough BTC to open a channel': 'BTC 不足以开通道',
   '⚡ channel is ready': '⚡ 通道就绪',
   '⚡ payment received': '⚡ 已收到付款',
   '⚡ payment sent': '⚡ 付款已发送',

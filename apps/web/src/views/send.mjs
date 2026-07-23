@@ -5,6 +5,7 @@
 import { $, copy, short, fmt, frc } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
 import { openModal, closeOverlay } from '@/components/modal.mjs';
+import { btcToStr } from '@/services/market/btc-account.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import QRCode from 'qrcode';
 import { deriveAddress, isValidAddress, addrToSpk, buildSignedTx } from '@/services/wallet.mjs';
@@ -198,6 +199,33 @@ async function doReviewLn(raw) {
   try { dec = (await import('@core/bolt11.mjs')).decodeBolt11(raw); } catch (e) { return toast(e.message, 'err'); }
   if (dec.sats == null) return toast(tr('invoice must carry an exact amount'), 'err');
   if ((dec.timestamp + dec.expiry) * 1000 < Date.now() + 60e3) return toast(tr('invoice expires too soon — set expiry to 2h+'), 'err');
+  // Канал открывается ЗДЕСЬ — в момент, когда его не хватает (а не из настроек): если исходящей
+  // ⚡-ёмкости меньше суммы, ревью предлагает открыть канал из BTC-счёта прямо по месту.
+  const st = ln.lnLast();
+  if (!st || st.outSats < Number(dec.sats)) {
+    const btcBal = mvBtc().balance != null ? BigInt(mvBtc().balance) : 0n;
+    const chanSats = Math.max(100000, Math.ceil(Number(dec.sats) * 1.3));   // запас на комиссии/резерв
+    const canFund = btcBal >= BigInt(chanSats + 2000);
+    showReview(
+      `<div class="rrow"><span>${tr('Amount')}</span><b>${dec.sats.toLocaleString(getLang())} ${tr('sats')}</b></div>
+       <div class="rrow"><span>⚡</span><b class="sub">${tr('not enough Lightning capacity')} (${(st?.outSats ?? 0).toLocaleString(getLang())} ${tr('sats')})</b></div>
+       ${canFund
+        ? `<div class="sub" style="font-size:12px">${tr('open a channel to the exchange LSP, funded from your in-wallet BTC')} — ${chanSats.toLocaleString(getLang())} ${tr('sats')}. ${tr('it confirms on-chain (~30 min), then pay the invoice again')}</div>
+           <div class="row"><button id="lnOpenGo">${tr('Open channel')}</button><button id="backBtn" class="ghost">${tr('Back')}</button></div>`
+        : `<div class="sub" style="font-size:12px">${tr('not enough BTC to open a channel')} (${tr('BTC balance')}: ${btcToStr(btcBal)})</div>
+           <div class="row"><button id="backBtn" class="ghost">${tr('Back')}</button></div>`}`);
+    $('#backBtn').onclick = showForm;
+    const go = $('#lnOpenGo');
+    if (go) go.onclick = async e => {
+      e.target.disabled = true;
+      try {
+        await ln.lnOpenChannelSats(chanSats);
+        showReview(`<div class="ok">⚡ ${tr('channel requested — the funding transaction is being built…')}</div><div class="sub">${tr('it confirms on-chain (~30 min), then pay the invoice again')}</div><button id="doneBtn">${tr('Done')}</button>`);
+        $('#doneBtn').onclick = () => { const m = document.querySelector('#modal'); if (m) closeOverlay(m); };
+      } catch (err) { toast(err.message, 'err'); e.target.disabled = false; }
+    };
+    return;
+  }
   showReview(
     `<div class="rrow"><span>${tr('To')}</span><b>⚡ ${short(dec.paymentHash)}</b></div>
      <div class="rrow"><span>${tr('Amount')}</span><b>${dec.sats.toLocaleString(getLang())} ${tr('sats')}</b></div>
