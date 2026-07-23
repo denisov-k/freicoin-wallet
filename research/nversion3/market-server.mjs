@@ -18,7 +18,7 @@ import { decodeAssetSpk } from '../../core/asset-spk.mjs';
 import { makeTokenReveal, parseTokenReveal, opReturnScript } from '../../core/nv3wire.mjs';
 import { tokenSetHash } from '../../core/asset-spk.mjs';
 import { assetPresentValue } from '../../core/assets.mjs';
-import { validLandName } from '../../core/freiland.mjs';
+import { validLandName, frcWpkSpk } from '../../core/freiland.mjs';
 import { pubkeyCompressed, signEcdsa, verifyEcdsaPub } from '../../core/ecdsa.mjs';
 import { frcLeg, claimReceived } from '../../core/swap.mjs';
 import { htlcSpk, htlcLeaf } from '../../core/htlc.mjs';
@@ -735,14 +735,6 @@ function atomicWrite(file, data) {
 // rests on the encryption key, and the monotonic version defends against the relay itself).
 
 // ---- Freiland-реестр имён: имя → { владелец, залог-outpoint, резолв-адрес, оффер }. Персист как p2p.
-// FRC-wpk-spk по публичному ключу (тот же вывод, что и в кошельке: 0014 ‖ ripemd160(hash256(0x00 ‖ p2pk))).
-// Так релей проверяет, что залог — монета ИМЕННО владельца, а не чужая.
-const frcWpkSpk = pubHex => {
-  const pk = Buffer.from(pubHex, 'hex');
-  const p2pk = Buffer.concat([Buffer.from([0x21]), pk, Buffer.from([0xac])]);
-  const longid = sha256(sha256(Buffer.concat([Buffer.from([0x00]), p2pk])));
-  return '0014' + ripemd160(longid).toString('hex');
-};
 // каноничный хэш-сообщения для подписи владельца (анти-спуф landRegister/landSetResolve)
 const landMsgHash = str => sha256(Buffer.from(str, 'utf8')).toString('hex');
 // безопасная проверка: verifyEcdsaPub бросает на пустой/кривой DER — тут любой сбой = «неверно»

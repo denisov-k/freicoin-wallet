@@ -24,6 +24,12 @@ export const saveP2pLocal = a => { try { localStorage.setItem(lsKey(P2P_LS), JSO
 export const putP2p = rec => { const a = loadP2p().filter(x => x.id !== rec.id); a.push(rec); saveP2pLocal(a); };
 export const dropP2p = id => saveP2pLocal(loadP2p().filter(x => x.id !== id));
 
+// ---- Freiland names I registered (name → resolve, deposit outpoint). Local mirror of the relay
+// registry so "My names" paints instantly; the relay is authoritative for current value/status. ----
+const LAND_LS = 'fw_land';
+export const loadLand = () => { try { return JSON.parse(localStorage.getItem(lsKey(LAND_LS)) || '[]'); } catch { return []; } };
+export const saveLand = a => { try { localStorage.setItem(lsKey(LAND_LS), JSON.stringify(a)); } catch {} };
+
 // ---- per-swap BTC address nonces. A completed swap's record is dropped (which would lose the nonce
 // and orphan its per-swap BTC address); this book keeps every nonce so proceeds/refunds stay visible
 // AND spendable forever. ----

@@ -10,6 +10,15 @@
 // Держатель при регистрации/доливе запирает nominal == желаемую V в текущей высоте (distance 0,
 // свежие монеты стоят номинал), а landValue показывает, во что это превратилось позже.
 import { timeAdjustValue } from './demurrage.mjs';
+import { sha256d, ripemd160 } from './crypto.mjs';
+
+// FRC wpk-spk по компресс.-публичному ключу (то же, что wpkProgramHex кошелька): 0014 ‖
+// ripemd160(HASH256(0x00 ‖ 0x21 pk 0xac)). Общий для релея (проверка залога) и кошелька (адрес залога).
+export function frcWpkSpk(pubHex) {
+  const pk = Buffer.from(pubHex, 'hex');
+  const p2pk = Buffer.concat([Buffer.from([0x21]), pk, Buffer.from([0xac])]);
+  return '0014' + ripemd160(sha256d(Buffer.concat([Buffer.from([0x00]), p2pk]))).toString('hex');
+}
 
 // Консенсус-канон: демерредж-«год» = 52 560 блоков (600 с × 52 560 = ровно 365 дней). Совпадает
 // с вектором ядра {v:1e8, d:52560, e:95111038}. НЕ 365.25 — берём ту же длину, что и консенсус.

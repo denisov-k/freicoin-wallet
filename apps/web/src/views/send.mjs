@@ -118,7 +118,8 @@ export async function renderSend() {
     `<div id="sendForm" class="stack">
      <div class="sub" id="avail">${tr('available…')}</div>
      ${showCur ? `<label>${d.MKT() ? tr('Asset') : tr('Currency')}<select id="sendAsset"><option value="">FRC</option></select></label>` : ''}
-     <label>${tr('To address')}<div class="amtrow"><input id="to" placeholder="fc1…" autocomplete="off"><button id="scanBtn" class="ghost" type="button" title="QR">📷</button></div></label>
+     <label>${tr('To address')}<div class="amtrow"><input id="to" placeholder="${d.MKT() ? tr('fc1… or a name') : 'fc1…'}" autocomplete="off"><button id="scanBtn" class="ghost" type="button" title="QR">📷</button></div></label>
+     <div class="sub" id="toResolve" style="font-size:12px;margin-top:-4px"></div>
      <label id="amtLabel">${tr('Amount (FRC)')}<div class="amtrow"><input id="amt" type="number" step="0.00000001" min="0" placeholder="0.0"><button id="maxBtn" class="ghost">${tr('Max')}</button></div></label>
      <div class="stack" id="btcSpeedRow" hidden>
        <label>${tr('Speed')}<select id="btcSpeed"><option value="eco">${tr('Economy (cheaper)')}</option><option value="fast">${tr('Fast (next block)')}</option></select></label>
@@ -156,10 +157,11 @@ export async function renderSend() {
     to.value = text.trim();
     to.dispatchEvent(new Event('input'));
   };
+  // FREILAND-РЕЗОЛВ: ввёл имя вместо адреса → показываем «→ fc1q… (name)»; на отправке имя
+  // разворачивается в адрес (см. doReview). Дебаунс, чтобы не дёргать релей на каждый символ.
+  let resolvedName = null, resolveT = null;
   $('#to').addEventListener('input', async () => {
     const raw = $('#to').value.trim();
-    // ПЛАТЁЖНЫЙ URI (freicoin:/bitcoin:…?amount=…) — то, что генерирует наш же «Запросить сумму»
-    // и любой BIP21-кошелёк: распаковываем в адрес, подставляем сумму и переключаем валюту.
     const uri = /^(freicoin|bitcoin):([a-z0-9]+)(?:\?(.*))?$/i.exec(raw);
     if (uri) {
       const [, scheme, addr, query] = uri;
@@ -170,7 +172,21 @@ export async function renderSend() {
       const wantBtc = scheme.toLowerCase() === 'bitcoin';
       if (sel && (sel.value === 'BTC') !== wantBtc) { sel.value = wantBtc ? 'BTC' : ''; sel.onchange?.(); if (amount && Number(amount) > 0) $('#amt').value = amount; }
       if (sel?.value === 'BTC') updBtcFee(); else updFrcCheck();
+      return;
     }
+    resolvedName = null;
+    const el = $('#toResolve'); if (el) { el.textContent = ''; el.style.color = ''; }
+    clearTimeout(resolveT);
+    // имя — только для FRC на mainnet-цепи со свопами (nv3), и только когда это не адрес
+    const { validLandName } = await import('@/services/market/land.mjs');
+    if (!d.MKT() || $('#sendAsset')?.value === 'BTC' || !validLandName(raw)) return;
+    resolveT = setTimeout(async () => {
+      const addr = await (await import('@/services/market/land.mjs')).resolveName(raw);
+      if ($('#to').value.trim() !== raw) return;   // поле уже изменилось
+      const el2 = $('#toResolve'); if (!el2) return;
+      if (addr) { resolvedName = { name: raw, addr }; el2.textContent = `→ ${addr.slice(0, 18)}… (${raw})`; el2.style.color = 'var(--ok, #2e7d32)'; }
+      else { el2.textContent = tr('name not found'); el2.style.color = 'var(--sub)'; }
+    }, 400);
   });
   // Max dispatches on the selected currency: asset → its whole quantity; FRC → balance − fee.
   let sendBal = null;
@@ -238,7 +254,12 @@ async function doReview() {
   // A spend must build on VERIFIED chain state; during a first sync/restore that state is still
   // minutes away — say so instead of silently awaiting (the button looked frozen).
   if (!d.cacheReady()) { toast(tr('chain still syncing — sending unlocks once it is verified'), 'warn'); return; }
-  const to = $('#to').value.trim(), amt = parseFloat($('#amt').value);
+  let to = $('#to').value.trim(); const amt = parseFloat($('#amt').value);
+  // FREILAND: имя вместо адреса → развернуть в адрес авторитетно (не полагаясь на подсказку из поля)
+  if (d.MKT() && !isValidAddress(to)) {
+    const { validLandName, resolveName } = await import('@/services/market/land.mjs');
+    if (validLandName(to)) { const a = await resolveName(to); if (a) to = a; else return toast(tr('name not found'), 'err'); }
+  }
   if (!isValidAddress(to)) return toast(tr('invalid Freicoin address'), 'err');
   const assetTag = $('#sendAsset')?.value || null;
   // Token asset (Freimarkets): the set travels whole — amount is not a choice, the coin is.

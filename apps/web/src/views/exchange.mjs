@@ -1583,6 +1583,66 @@ function paintOfferChart() {
     </div>`;
   if (el._src !== html) { el.innerHTML = html; el._src = html; el.style.cursor = 'pointer'; el.onclick = openTradeHistory; }
 }
+// FREILAND: реестр имён. Занять имя (залог на своём land-адресе → рента демерреджем → резолв),
+// «Мои имена». Механика в @/services/market/land.mjs; выкуп чужих имён — следующий шаг.
+async function openNamesModal() {
+  if ($('#modal')) return;
+  const L = await import('@/services/market/land.mjs');
+  const m = document.createElement('div'); m.id = 'modal';
+  m.innerHTML = `<div class="review">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>🗺️ ${tr('Names')} · Freiland</b><button id="nmClose" class="icon">✕</button></div>
+    <div class="sub" style="font-size:12px">${tr('claim a name — your deposit melts as rent; anyone can buy it at your self-assessed price')}</div>
+    <label class="numfield">${tr('Name')}<input id="nmName" type="text" autocomplete="off" spellcheck="false" placeholder="alice"></label>
+    <div class="sub" id="nmAvail" style="font-size:12px"></div>
+    <label class="numfield">${tr('Self-assessed value')} (FRC)<input id="nmVal" type="text" inputmode="decimal" placeholder="100+"></label>
+    <div class="rrow"><span>${tr('Rent (auto, demurrage)')}</span><b id="nmRent" class="sub">—</b></div>
+    <button id="nmGo">${tr('Claim the name')}</button>
+    <div id="nmLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
+    <div id="nmMine" style="margin-top:10px"></div></div>`;
+  document.body.appendChild(m);
+  const stop = () => m.remove();
+  m.onclick = e => { if (e.target === m) stop(); };
+  q(m, '#nmClose').onclick = stop;
+  const log = t => { const el = $('#nmLog'); if (el) el.textContent = t; };
+  // живая проверка доступности имени
+  let availT = null;
+  q(m, '#nmName').oninput = () => {
+    const el = $('#nmAvail'); if (el) { el.textContent = ''; el.style.color = ''; }
+    clearTimeout(availT);
+    const name = q(m, '#nmName').value.trim();
+    if (!name) return;
+    if (!L.validLandName(name)) { if (el) { el.textContent = tr('bad name (1–32: a-z 0-9 _ -)'); el.style.color = 'var(--err)'; } return; }
+    availT = setTimeout(async () => {
+      const addr = await L.resolveName(name); if (q(m, '#nmName').value.trim() !== name) return;
+      if (el) { el.textContent = addr ? tr('name taken') : tr('available'); el.style.color = addr ? 'var(--err)' : 'var(--ok)'; }
+    }, 400);
+  };
+  // рента = годовой демерредж заявленной ценности
+  q(m, '#nmVal').oninput = () => {
+    const v = num($('#nmVal').value) || 0; const el = $('#nmRent');
+    if (el) el.textContent = v > 0 ? `≈ ${(Number(L.annualRent(BigInt(Math.round(v * 1e8)))) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 2 })} FRC/${tr('yr')}` : '—';
+  };
+  q(m, '#nmGo').onclick = async () => {
+    const name = $('#nmName').value.trim(), v = num($('#nmVal').value);
+    if (!L.validLandName(name)) return toast(tr('bad name'), 'err');
+    if (!(v >= 100)) return toast(tr('minimum value is 100 FRC'), 'err');
+    const go = $('#nmGo'); go.disabled = true;
+    try {
+      await L.registerName({ name, valueFrc: v, progress: p => log(
+        p === 'lock' ? tr('locking the deposit…') : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…') : tr('registered ✅')) });
+      toast(`${name}: ${tr('name claimed ✅')}`, 'ok'); paintMine();
+    } catch (e) { toast(e.message, 'err'); log(e.message); }
+    go.disabled = false;
+  };
+  async function paintMine() {
+    const box = $('#nmMine'); if (!box) return;
+    const mine = await L.myNames();
+    box.innerHTML = mine.length ? `<div class="sub" style="font-size:12px;margin-bottom:4px">${tr('My names')}</div>` + mine.map(n =>
+      `<div class="rrow" style="font-size:13px"><span style="font-family:ui-monospace,monospace">${n.name}${n.lapsed ? ' ⚠' : ''}</span><b>${n.value ? (Number(BigInt(n.value)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 2 }) + ' FRC' : '—'}</b></div>`).join('') : '';
+  }
+  paintMine();
+}
+
 export function renderExchange(el) {
   const fopt = cachedFilterOpts();
   el.innerHTML = `
@@ -1592,8 +1652,10 @@ export function renderExchange(el) {
     </div>
     <div id="offerChart"></div>
     <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" style="padding:14px 2px 4px;border-bottom:none">${skel(3)}</td></tr></tbody></table>
-    <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>`;
+    <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>
+    <div class="row"><button id="openNames" class="ghost">🗺️ ${tr('Names (Freiland)')}</button></div>`;
   $('#openOffer').onclick = openOfferModal;
+  $('#openNames').onclick = openNamesModal;
   ['#fGive', '#fWant'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });
   if (state) paint(); else mvRefresh();
 }
