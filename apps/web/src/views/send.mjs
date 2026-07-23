@@ -38,9 +38,9 @@ export function renderReceive() {
      <div class="addr" id="addr"><div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div></div>
      <div class="row"><button id="copyAddr" class="ghost" disabled>⧉ ${tr('Copy')}</button></div>
      <div class="row" id="newAddrRow"><button id="newAddr" class="ghost">${tr('New address')}</button></div>
-     <div class="row" id="lnAmtBtnRow" hidden><button id="lnAmtBtn" class="ghost">${tr('Invoice with an amount')}</button></div></div>
+     <div class="row" id="lnAmtBtnRow"><button id="lnAmtBtn" class="ghost">${tr('Request an amount')}</button></div></div>
      <div id="rcvLnAmt" class="stack" hidden>
-       <label class="numfield" id="lnAmtField">${tr('Amount')} (${tr('sats')})<input id="lnRcvAmt" type="text" inputmode="numeric"></label>
+       <label class="numfield" id="lnAmtField">${tr('Amount')} (<span id="rcvAmtUnit">${tr('sats')}</span>)<input id="lnRcvAmt" type="text" inputmode="decimal"></label>
        <div class="row" id="lnGoRow"><button id="lnRcvGo">${tr('Create invoice')}</button></div>
        <div class="rrow" id="lnAmtSumRow" hidden><span>${tr('To receive')}</span><b id="lnAmtSum"></b></div>
        <div id="lnAmtQr" class="qr" style="margin:0 auto;height:220px;display:none"></div>
@@ -53,7 +53,7 @@ export function renderReceive() {
   // ⚡ ВКЛ: та же форма, что у адресов — СРАЗУ QR (инвойс без суммы: плательщик вводит её сам,
   // это Lightning-аналог статического адреса). Инвойс с конкретной суммой — отдельный экран.
   const fillLn = async () => {
-    $('#newAddrRow').hidden = true; $('#lnAmtBtnRow').hidden = false;
+    $('#newAddrRow').hidden = true;
     const box0 = $('#qrBox'); if (box0) { box0.className = 'qr skel'; box0.innerHTML = ''; }
     const a0 = $('#addr'); if (a0) a0.innerHTML = `<div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div>`;
     $('#copyAddr').disabled = true;
@@ -75,25 +75,42 @@ export function renderReceive() {
     const a = $('#lnAmtInv'); if (a) { a.style.display = 'none'; a.textContent = ''; }
     const cr = $('#lnAmtCopyRow'); if (cr) cr.hidden = true;
   };
-  $('#lnAmtBtn').onclick = () => { resetAmtScreen(); showAmtScreen(true); $('#lnRcvAmt').focus(); };
+  // режим экрана: ⚡-инвойс (сатоши) или BIP21-URI для on-chain (bitcoin:/freicoin: с amount —
+  // кошелёк плательщика подставит сумму сам; строка под QR — голый адрес для копирования)
+  const amtMode = () => $('#lnRcvChk')?.checked ? 'ln' : ($('#rcvCur')?.value === 'BTC' ? 'btc' : 'frc');
+  $('#lnAmtBtn').onclick = () => {
+    resetAmtScreen(); showAmtScreen(true);
+    const u = $('#rcvAmtUnit'); if (u) u.textContent = amtMode() === 'ln' ? tr('sats') : amtMode() === 'btc' ? 'BTC' : 'FRC';
+    $('#lnRcvAmt').focus();
+  };
   $('#lnAmtBack').onclick = () => showAmtScreen(false);
   $('#lnRcvGo').onclick = async e => {
     e.target.disabled = true;
     try {
-      const sats = Math.round(Number($('#lnRcvAmt').value)); if (!(sats > 0)) throw new Error(tr('bad amount'));
-      const bolt11 = await (await import('@/views/lightning.mjs')).lnMakeInvoice(sats);
-      const qr = await QRCode.toDataURL(bolt11.toUpperCase(), { margin: 1, width: 220 });
-      $('#lnAmtField').hidden = true; $('#lnGoRow').hidden = true;   // инвойс готов — форма уходит
-      const sr = $('#lnAmtSumRow'); if (sr) { sr.hidden = false; $('#lnAmtSum').textContent = `${sats.toLocaleString(getLang())} ${tr('sats')}`; }
+      const mode = amtMode();
+      let qrText, copyText, sumText;
+      if (mode === 'ln') {
+        const sats = Math.round(Number($('#lnRcvAmt').value)); if (!(sats > 0)) throw new Error(tr('bad amount'));
+        const bolt11 = await (await import('@/views/lightning.mjs')).lnMakeInvoice(sats);
+        qrText = bolt11.toUpperCase(); copyText = bolt11; sumText = `${sats.toLocaleString(getLang())} ${tr('sats')}`;
+      } else {
+        const amt = Number($('#lnRcvAmt').value); if (!(amt > 0)) throw new Error(tr('bad amount'));
+        const amtStr = amt.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
+        const addr = mode === 'btc' ? mvBtcAddress() : deriveAddress(d.hexSeed(), d.recvIndex(), 0);
+        qrText = `${mode === 'btc' ? 'bitcoin' : 'freicoin'}:${addr}?amount=${amtStr}`;
+        copyText = addr; sumText = `${amtStr} ${mode === 'btc' ? 'BTC' : 'FRC'}`;
+      }
+      const qr = await QRCode.toDataURL(qrText, { margin: 1, width: 220 });
+      $('#lnAmtField').hidden = true; $('#lnGoRow').hidden = true;   // запрос готов — форма уходит
+      const sr = $('#lnAmtSumRow'); if (sr) { sr.hidden = false; $('#lnAmtSum').textContent = sumText; }
       const b = $('#lnAmtQr'); if (b) { b.style.display = ''; b.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`; }
-      const a = $('#lnAmtInv'); if (a) { a.style.display = ''; a.textContent = bolt11; a.style.fontSize = '13px'; a.style.lineHeight = '18px'; a.style.maxHeight = '84px'; a.style.overflowY = 'auto'; a.style.webkitTextSizeAdjust = '100%'; }
-      const cr = $('#lnAmtCopyRow'); if (cr) { cr.hidden = false; $('#lnAmtCopy').onclick = ev => copy(bolt11, ev.target); }
+      const a = $('#lnAmtInv'); if (a) { a.style.display = ''; a.textContent = copyText; a.style.fontSize = '13px'; a.style.lineHeight = '18px'; a.style.maxHeight = '84px'; a.style.overflowY = 'auto'; a.style.webkitTextSizeAdjust = '100%'; }
+      const cr = $('#lnAmtCopyRow'); if (cr) { cr.hidden = false; $('#lnAmtCopy').onclick = ev => copy(copyText, ev.target); }
     } catch (err) { toast(err.message, 'err'); }
     e.target.disabled = false;
   };
   // FRC = a fresh HD address; BTC = the single (fixed) account address, so "New address" hides for BTC.
   const fill = async isBtc => {
-    const lb = $('#lnAmtBtnRow'); if (lb) lb.hidden = true;
     showAmtScreen(false);
     const box0 = $('#qrBox'); if (box0) { box0.className = 'qr skel'; box0.innerHTML = ''; }
     const a0 = $('#addr'); if (a0) { a0.innerHTML = `<div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div>`; a0.style.maxHeight = ''; a0.style.overflowY = ''; a0.style.lineHeight = ''; a0.style.fontSize = ''; }

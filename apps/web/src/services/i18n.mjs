@@ -2,6 +2,7 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'Request an amount': 'Запросить сумму',
   'To receive': 'К получению',
   'Invoice with an amount': 'Инвойс с суммой',
   'network fee': 'сетевая комиссия',
@@ -274,6 +275,7 @@ const RU = {
 };
 
 const ES = {
+  'Request an amount': 'Solicitar un importe',
   'To receive': 'A recibir',
   'Invoice with an amount': 'Factura con importe',
   'network fee': 'comisión de red',
@@ -726,6 +728,7 @@ const ES = {
 };
 
 const DE = {
+  'Request an amount': 'Betrag anfordern',
   'To receive': 'Zu erhalten',
   'Invoice with an amount': 'Rechnung mit Betrag',
   'network fee': 'Netzwerkgebühr',
@@ -1178,6 +1181,7 @@ const DE = {
 };
 
 const FR = {
+  'Request an amount': 'Demander un montant',
   'To receive': 'À recevoir',
   'Invoice with an amount': 'Facture avec montant',
   'network fee': 'frais de réseau',
@@ -1630,6 +1634,7 @@ const FR = {
 };
 
 const PT = {
+  'Request an amount': 'Solicitar um valor',
   'To receive': 'A receber',
   'Invoice with an amount': 'Fatura com valor',
   'network fee': 'taxa de rede',
@@ -2082,6 +2087,7 @@ const PT = {
 };
 
 const ZH = {
+  'Request an amount': '请求金额',
   'To receive': '待收款',
   'Invoice with an amount': '带金额的发票',
   'network fee': '网络费',
