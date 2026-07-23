@@ -63,9 +63,8 @@ export function renderReceive() {
       const qr = await QRCode.toDataURL(bolt11.toUpperCase(), { margin: 1, width: 220 });
       const b = $('#qrBox'); if (!b) return;   // модалку закрыли, пока узел стартовал
       b.className = 'qr'; b.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`;
-      // 300+ символов растягивают бокс на десяток строк — показываем как адрес, одной строкой;
-      // полный инвойс живёт в QR и в «Копировать»
-      const a = $('#addr'); if (a) a.textContent = bolt11.slice(0, 24) + '…' + bolt11.slice(-14);
+      // полный инвойс (300+ символов), но бокс компактный: ~3 строки и внутренний скролл
+      const a = $('#addr'); if (a) { a.textContent = bolt11; a.style.maxHeight = '3.9em'; a.style.overflowY = 'auto'; }
       const cp = $('#copyAddr'); if (cp) { cp.disabled = false; cp.onclick = ev => copy(bolt11, ev.target); }
     } catch (err) { const a = $('#addr'); if (a) a.textContent = err.message; }
   };
@@ -88,7 +87,7 @@ export function renderReceive() {
       $('#lnAmtField').hidden = true; $('#lnGoRow').hidden = true;   // инвойс готов — форма уходит
       const sr = $('#lnAmtSumRow'); if (sr) { sr.hidden = false; $('#lnAmtSum').textContent = `${sats.toLocaleString(getLang())} ${tr('sats')}`; }
       const b = $('#lnAmtQr'); if (b) { b.style.display = ''; b.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`; }
-      const a = $('#lnAmtInv'); if (a) { a.style.display = ''; a.textContent = bolt11.slice(0, 24) + '…' + bolt11.slice(-14); }
+      const a = $('#lnAmtInv'); if (a) { a.style.display = ''; a.textContent = bolt11; a.style.maxHeight = '3.9em'; a.style.overflowY = 'auto'; }
       const cr = $('#lnAmtCopyRow'); if (cr) { cr.hidden = false; $('#lnAmtCopy').onclick = ev => copy(bolt11, ev.target); }
     } catch (err) { toast(err.message, 'err'); }
     e.target.disabled = false;
@@ -99,7 +98,7 @@ export function renderReceive() {
     showAmtScreen(false);
     const cs = $('#rcvCur'); if (cs) cs.disabled = false;
     const box0 = $('#qrBox'); if (box0) { box0.className = 'qr skel'; box0.innerHTML = ''; }
-    const a0 = $('#addr'); if (a0) a0.innerHTML = `<div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div>`;
+    const a0 = $('#addr'); if (a0) { a0.innerHTML = `<div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div>`; a0.style.maxHeight = ''; a0.style.overflowY = ''; }
     const cp0 = $('#copyAddr'); if (cp0) cp0.disabled = true;
     const nr = $('#newAddrRow'); if (nr) nr.hidden = isBtc;
     const t0 = performance.now();
