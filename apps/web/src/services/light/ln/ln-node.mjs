@@ -184,11 +184,13 @@ export class LnNode {
     this._pendingFunding = null;
   }
 
-  /** обычный инвойс (получить сатоши) или hold-инвойс под ВНЕШНИЙ H (атомарный своп) */
+  /** обычный инвойс (получить сатоши; sats=null — БЕЗ суммы, плательщик вводит сам — аналог
+   *  статического адреса) или hold-инвойс под ВНЕШНИЙ H (атомарный своп) */
   createInvoice(sats, memo = '', hashHex = null) {
     const descRes = ldk.Description.constructor_new(memo);
     const desc = ldk.Bolt11InvoiceDescription.constructor_direct(descRes.res ?? descRes);
-    const res = this.chanMgr.create_bolt11_invoice(ldk.Option_u64Z.constructor_some(BigInt(sats) * 1000n), desc,
+    const res = this.chanMgr.create_bolt11_invoice(
+      sats != null ? ldk.Option_u64Z.constructor_some(BigInt(sats) * 1000n) : ldk.Option_u64Z.constructor_none(), desc,
       ldk.Option_u32Z.constructor_some(3600), ldk.Option_u16Z.constructor_none(),
       hashHex ? ldk.Option_ThirtyTwoBytesZ.constructor_some(Buffer.from(hashHex, 'hex')) : ldk.Option_ThirtyTwoBytesZ.constructor_none());
     if (!res.is_ok()) throw new Error('invoice creation failed');

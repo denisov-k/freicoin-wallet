@@ -56,7 +56,7 @@ const CALLS = {
     if (!node) return { running: false };
     return { running: true, nodeId: node.nodeId, ...node.balance() };
   },
-  invoice({ sats, memo, hashHex }) { return { bolt11: node.createInvoice(sats, memo || '', hashHex || null) }; },
+  invoice({ sats, memo, hashHex }) { return { bolt11: node.createInvoice(sats ?? null, memo || '', hashHex || null) }; },
   pay({ bolt11 }) { return { hash: node.payInvoice(bolt11) }; },
   claim({ preimageHex }) { node.claimFunds(preimageHex); return {}; },
   openChannel({ peerNodeId, sats }) { node.openChannel(peerNodeId ?? this._lsp.nodeId, sats); return {}; },

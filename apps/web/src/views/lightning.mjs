@@ -63,7 +63,7 @@ export async function ensureLnNode() {
 }
 
 /** инвойс на приём (вкладка «Получить») */
-export async function lnMakeInvoice(sats) { await ensureLnNode(); return (await lnInvoice(sats, 'freicoin.ru wallet')).bolt11; }
+export async function lnMakeInvoice(sats = null) { await ensureLnNode(); return (await lnInvoice(sats, 'freicoin.ru wallet')).bolt11; }
 /** оплата вставленного bolt11 (вкладка «Отправить») */
 export async function lnPayBolt(bolt11) { await ensureLnNode(); return lnPayBolt11(bolt11.trim().replace(/^lightning:/i, '')); }
 /** открыть канал к LSP из BTC-счёта (настройки) */
