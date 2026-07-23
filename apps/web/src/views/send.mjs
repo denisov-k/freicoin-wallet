@@ -205,16 +205,24 @@ async function doReviewLn(raw) {
   if (!st || st.outSats < Number(dec.sats)) {
     const btcBal = mvBtc().balance != null ? BigInt(mvBtc().balance) : 0n;
     const chanSats = Math.max(100000, Math.ceil(Number(dec.sats) * 1.3));   // запас на комиссии/резерв
-    const canFund = btcBal >= BigInt(chanSats + 2000);
+    const canChan = btcBal >= BigInt(chanSats + 2000);
+    const canSub = btcBal >= BigInt(Math.ceil(Number(dec.sats) * 1.01) + 1000);   // ~сумма+сервис+сеть
     showReview(
       `<div class="rrow"><span>${tr('Amount')}</span><b>${dec.sats.toLocaleString(getLang())} ${tr('sats')}</b></div>
        <div class="rrow"><span>⚡</span><b class="sub">${tr('not enough Lightning capacity')} (${(st?.outSats ?? 0).toLocaleString(getLang())} ${tr('sats')})</b></div>
-       ${canFund
-        ? `<div class="sub" style="font-size:12px">${tr('enable instant payments: move')} ${chanSats.toLocaleString(getLang())} ${tr('sats')} ${tr('from your BTC into the ⚡ balance')}. ${tr('it takes ~30 min once, then pay the invoice again')}</div>
-           <div class="row"><button id="lnOpenGo">${tr('Enable ⚡ payments')}</button><button id="backBtn" class="ghost">${tr('Back')}</button></div>`
-        : `<div class="sub" style="font-size:12px">${tr('not enough BTC to enable ⚡ payments')} (${tr('BTC balance')}: ${btcToStr(btcBal)})</div>
-           <div class="row"><button id="backBtn" class="ghost">${tr('Back')}</button></div>`}`);
+       ${canSub ? `<div class="sub" style="font-size:12px">${tr('pay via the exchange: the bot pays the invoice, your BTC covers it on-chain')} (~0.3% + ${tr('network fee')}, ~10–30 ${tr('min')})</div>
+         <div class="row"><button id="lnSubGo">${tr('Pay via exchange')}</button></div>` : ''}
+       ${canChan ? `<div class="sub" style="font-size:12px">${tr('enable instant payments: move')} ${chanSats.toLocaleString(getLang())} ${tr('sats')} ${tr('from your BTC into the ⚡ balance')}. ${tr('it takes ~30 min once, then pay the invoice again')}</div>
+         <div class="row"><button id="lnOpenGo" class="ghost">${tr('Enable ⚡ payments')}</button></div>` : ''}
+       ${!canSub && !canChan ? `<div class="sub" style="font-size:12px">${tr('not enough BTC')} (${tr('BTC balance')}: ${btcToStr(btcBal)})</div>` : ''}
+       <div class="row"><button id="backBtn" class="ghost">${tr('Back')}</button></div>`);
     $('#backBtn').onclick = showForm;
+    const sub = $('#lnSubGo');
+    if (sub) sub.onclick = async e => {
+      e.target.disabled = true;
+      try { await paySubmarine(raw, dec); }
+      catch (err) { toast(err.message, 'err'); e.target.disabled = false; }
+    };
     const go = $('#lnOpenGo');
     if (go) go.onclick = async e => {
       e.target.disabled = true;
@@ -241,6 +249,40 @@ async function doReviewLn(raw) {
       $('#doneBtn').onclick = () => { const m = document.querySelector('#modal'); if (m) closeOverlay(m); };
     } catch (err) { toast(err.message, 'err'); e.target.disabled = false; }
   };
+}
+
+// СУБМАРИН: бот платит инвойс по ⚡, мы атомарно компенсируем on-chain. Реле выдаёт условия
+// (its HTLC под hash ИНВОЙСА), мы ПЕРЕСОБИРАЕМ лист локально и сверяем — подмена ключа/суммы
+// невозможна. Возврат при неоплате — по таймлоку, тем же свипером, что у обычных свопов.
+async function paySubmarine(raw, dec) {
+  const { api, p2pKey, ctx } = await import('@/state/market-ctx.mjs');
+  const { btcHtlcLeaf, btcHtlcAddress } = await import('@core/btc.mjs');
+  const { pubkeyCompressed } = await import('@core/ecdsa.mjs');
+  const { sha256 } = await import('@core/crypto.mjs');
+  const { putP2p, addBtcNonce } = await import('@/services/storage.mjs');
+  const { btcFundHtlc, btcHrp } = await import('@/services/market/btc-account.mjs');
+  const { Buffer } = await import('buffer');
+  const inv = raw.trim().toLowerCase().replace(/^lightning:/, '');
+  const nonce = sha256(Buffer.from(ctx.seed + 'fw-sub:' + dec.paymentHash, 'utf8')).toString('hex').slice(0, 16);
+  const refundPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
+  const r = await api('lnSubCreate', { invoice: inv, refundPub });
+  // локальная пересборка листа: hash из НАШЕГО декода, ключ возврата НАШ — реле не может подсунуть чужое
+  const leaf = btcHtlcLeaf({ paymentHash: dec.paymentHash, claimPub: r.botPub, refundPub, cltv: r.cltv });
+  if (leaf !== r.leaf) throw new Error('HTLC mismatch');
+  const addr = btcHtlcAddress(leaf, btcHrp());
+  if (addr !== r.addr) throw new Error('HTLC address mismatch');
+  const on = BigInt(r.onchainSats);
+  if (on > BigInt(Math.ceil(Number(dec.sats) * 1.01) + 2000)) throw new Error(tr('exchange fee too high'));   // санити против жадного реле
+  addBtcNonce(nonce);
+  const fund = await btcFundHtlc(addr, on);
+  putP2p({ id: r.id, role: 'taker', dir: 'lnsub', nonce, status: 'sub_wait', paymentHash: dec.paymentHash,
+    btcAmount: String(dec.sats), btcHtlc: { addr, leaf, cltv: r.cltv, txid: fund.txid, vout: fund.vout ?? 0, value: String(on) } });
+  await api('lnSubFunded', { id: r.id, txid: fund.txid, vout: fund.vout ?? 0 }).catch(() => {});   // мало конфирмов — драйв дошлёт
+  $('#to').value = ''; $('#amt').value = '';
+  showReview(`<div class="ok">⚡ ${tr('sent to the exchange')}</div>
+    <div class="sub">${tr('the invoice will be paid right after one confirmation (~10–30 min); if anything goes wrong the BTC auto-refunds')}</div>
+    <button id="doneBtn">${tr('Done')}</button>`);
+  $('#doneBtn').onclick = () => { const m = document.querySelector('#modal'); if (m) closeOverlay(m); };
 }
 
 async function doReview() {

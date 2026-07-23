@@ -45,11 +45,11 @@ if (process.env.RELAY) setRelayOverride('main', process.env.RELAY.replace(/\/+$/
 const { derivePath, ckdPriv, wpkProgramHex } = await import('@core/hd.mjs');
 const { pubkeyCompressed } = await import('@core/ecdsa.mjs');
 const { sha256, hash160 } = await import('@core/crypto.mjs');
-const { btcAddress } = await import('@core/btc.mjs');
+const { btcAddress, btcHtlcClaim, btcP2wpkhSpk } = await import('@core/btc.mjs');
 const { freeFrcKria } = await import('@/services/market/swap-lib.mjs');
 const { loadP2p, putP2p, dropP2p, addBtcNonce } = await import('@/services/storage.mjs');
 const { driveP2p, checkP2pRefunds, checkBtcRefunds, initDrive } = await import('@/services/market/swap-drive.mjs');
-const { refreshBtc, btcAcctAddr, mvBtc, initBtcAccount } = await import('@/services/market/btc-account.mjs');
+const { refreshBtc, btcAcctAddr, btcAcctPub, mvBtc, initBtcAccount } = await import('@/services/market/btc-account.mjs');
 
 // ---- bot wallet: own seed, the wallet's EXACT derivation. The coin type follows the network
 // (mainnet = m/84'/0'/0'); hardcoding coin 1 (nv3) here made the bot ADVERTISE the coin-0 address
@@ -310,6 +310,49 @@ async function strategy() {
 const minPieceK = s => s.minFill ? BigInt(s.minFill)
   : (BigInt(Math.round(Number(ctx.state.p2p?.minSwap ?? 741))) * BigInt(s.frcAmount) + BigInt(s.btcAmount) - 1n) / BigInt(s.btcAmount);
 
+// ---- СУБМАРИН-ДРАЙВЕР: оплата чужих LN-инвойсов из on-chain локов пользователей ----
+// Ключ клейма — детерминированный из сида (BOT_SUB_PUB на релее = его pubkey). Краш-барьер —
+// НА РЕЛЕЕ (lnSubPaying до оплаты); после рестарта исход добивается через ListPayments,
+// повторная оплата исключена. Клейм идёт на BTC-счёт бота — так LN-баланс конвертируется
+// обратно в on-chain (⚡-покупки FRC пополняют LN, субмарины сливают — круг замыкается).
+const subKey = () => sha256(Buffer.from(seed + 'fw-lnsub-key', 'utf8')).toString('hex');
+export const subPub = () => pubkeyCompressed(subKey());
+async function driveSubs() {
+  if (!lnd) return;
+  const subs = (ctx.state.p2p?.swaps || []).filter(s => s.dir === 'lnsub');
+  for (const w of subs) {
+    try {
+      if (w.status === 'paying') {                       // рестарт посреди оплаты: сперва исход
+        const fp = await lnd.findPayment(w.paymentHash);
+        if (fp.status === 'SUCCEEDED' && fp.preimageHex) { await api('lnSubPaid', { id: w.id, preimage: fp.preimageHex }); continue; }
+        if (fp.status === 'IN_FLIGHT') continue;         // ждём терминального исхода
+        // FAILED или записи нет вовсе (оплата не стартовала) → безопасно платить ниже
+      }
+      if (w.status === 'funded' || w.status === 'paying') {
+        // инвойс глазами СВОЕГО узла + маржа таймлока против худшего in-flight (cltv_limit 144)
+        const d = await lnd.decodePayReq(w.lnPayout);
+        if (d.paymentHash !== w.paymentHash) { log(`sub ${w.id}: hash mismatch — skip`); continue; }
+        if (String(d.sats) !== String(w.btcAmount)) { log(`sub ${w.id}: amount mismatch — skip`); continue; }
+        if ((d.timestamp + d.expiry) * 1000 < Date.now() + 120e3) { log(`sub ${w.id}: invoice expired — skip`); continue; }
+        const bh = Number(ctx.state.p2p?.btcHeight ?? 0);
+        if (w.btcHtlc.cltv - bh < 168) { log(`sub ${w.id}: timelock margin too thin — skip`); continue; }
+        if (w.status !== 'paying') await api('lnSubPaying', { id: w.id });
+        const pay = await lnd.payInvoice({ payreq: w.lnPayout, feeLimitSat: Math.max(15, Math.ceil(Number(w.btcAmount) * 0.01)), cltvLimit: 144 });
+        await api('lnSubPaid', { id: w.id, preimage: pay.preimageHex });
+        log(`sub ${w.id}: ⚡ paid ${w.btcAmount} sat`);
+      }
+      if (w.status === 'paid' && w.preimage && w.btcHtlc?.txid && !loadP2p().some(r => r.id === w.id && r.status === 'claimed')) {
+        const b = w.btcHtlc;
+        const cB = btcHtlcClaim({ prevTxid: b.txid, vout: b.vout ?? 0, valueSats: BigInt(b.value), leafHex: b.leaf,
+          preimage: w.preimage, claimKey: subKey(), toSpk: btcP2wpkhSpk(btcAcctPub()), fee: 400n });
+        await api('btcBroadcast', { rawtx: cB.rawtx });
+        putP2p({ id: w.id, role: 'maker', dir: 'lnsub', status: 'claimed', nonce: '' });
+        log(`sub ${w.id}: claimed onchain ${b.value} sat → ${cB.txid.slice(0, 12)}…`);
+      }
+    } catch (e) { log(`sub ${w.id}:`, String(e.message).slice(0, 100)); }
+  }
+}
+
 // ---- main loop ----
 let wantRefresh = false, tick = 0;
 log(`market-bot up — relay ${process.env.RELAY || 'default :5183'}, spread ${SPREAD * 100}%, dry=${DRY}`);
@@ -319,6 +362,7 @@ for (;;) {
     await driveP2p();          // maker duties: verify+lock FRC, claim BTC, heartbeat, coop-cancel
     await checkP2pRefunds();   // sweep my stalled FRC locks home after T1
     await checkBtcRefunds();   // (no-op for a pure maker, harmless)
+    await driveSubs();         // субмарины: оплата LN-инвойсов из on-chain локов
     if (tick % 5 === 0) {      // strategy on every 5th tick (~5 min)
       await strategy();
       await refreshBtc().catch(() => {});

@@ -2,6 +2,14 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'network fee': 'сетевая комиссия',
+  'pay via the exchange: the bot pays the invoice, your BTC covers it on-chain': 'оплатить через обмен: бот платит инвойс, ваши BTC покрывают его on-chain',
+  'Pay via exchange': 'Оплатить через обмен',
+  'exchange fee too high': 'комиссия обмена подозрительно велика',
+  'sent to the exchange': 'отправлено в обмен',
+  'the invoice will be paid right after one confirmation (~10–30 min); if anything goes wrong the BTC auto-refunds': 'инвойс будет оплачен сразу после одного подтверждения (~10–30 мин); если что-то пойдёт не так — BTC вернутся автоматически',
+  '⚡ invoice paid via the exchange': '⚡ инвойс оплачен через обмен',
+  'min': 'мин',
   'enable instant payments: move': 'включить мгновенные платежи: перевести',
   'from your BTC into the ⚡ balance': 'из ваших BTC в ⚡-баланс',
   'it takes ~30 min once, then pay the invoice again': 'это займёт ~30 мин один раз, затем оплатите инвойс ещё раз',
@@ -264,6 +272,14 @@ const RU = {
 };
 
 const ES = {
+  'network fee': 'comisión de red',
+  'pay via the exchange: the bot pays the invoice, your BTC covers it on-chain': 'pagar vía exchange: el bot paga la factura y tus BTC la cubren on-chain',
+  'Pay via exchange': 'Pagar vía exchange',
+  'exchange fee too high': 'comisión del exchange sospechosamente alta',
+  'sent to the exchange': 'enviado al exchange',
+  'the invoice will be paid right after one confirmation (~10–30 min); if anything goes wrong the BTC auto-refunds': 'la factura se pagará tras una confirmación (~10–30 min); si algo falla, los BTC se devuelven automáticamente',
+  '⚡ invoice paid via the exchange': '⚡ factura pagada vía exchange',
+  'min': 'min',
   'enable instant payments: move': 'activar pagos instantáneos: mover',
   'from your BTC into the ⚡ balance': 'de tus BTC al saldo ⚡',
   'it takes ~30 min once, then pay the invoice again': 'tarda ~30 min una sola vez; luego paga la factura de nuevo',
@@ -706,6 +722,14 @@ const ES = {
 };
 
 const DE = {
+  'network fee': 'Netzwerkgebühr',
+  'pay via the exchange: the bot pays the invoice, your BTC covers it on-chain': 'über die Börse zahlen: der Bot zahlt die Rechnung, dein BTC deckt sie on-chain',
+  'Pay via exchange': 'Über die Börse zahlen',
+  'exchange fee too high': 'Börsengebühr verdächtig hoch',
+  'sent to the exchange': 'an die Börse gesendet',
+  'the invoice will be paid right after one confirmation (~10–30 min); if anything goes wrong the BTC auto-refunds': 'die Rechnung wird nach einer Bestätigung bezahlt (~10–30 Min); falls etwas schiefgeht, kommt das BTC automatisch zurück',
+  '⚡ invoice paid via the exchange': '⚡ Rechnung über die Börse bezahlt',
+  'min': 'Min',
   'enable instant payments: move': 'Sofortzahlungen aktivieren: verschiebe',
   'from your BTC into the ⚡ balance': 'von deinem BTC ins ⚡-Guthaben',
   'it takes ~30 min once, then pay the invoice again': 'dauert einmalig ~30 Min, danach die Rechnung erneut bezahlen',
@@ -1148,6 +1172,14 @@ const DE = {
 };
 
 const FR = {
+  'network fee': 'frais de réseau',
+  'pay via the exchange: the bot pays the invoice, your BTC covers it on-chain': "payer via l'échange : le bot paie la facture, vos BTC la couvrent on-chain",
+  'Pay via exchange': "Payer via l'échange",
+  'exchange fee too high': "frais d'échange anormalement élevés",
+  'sent to the exchange': "envoyé à l'échange",
+  'the invoice will be paid right after one confirmation (~10–30 min); if anything goes wrong the BTC auto-refunds': 'la facture sera payée après une confirmation (~10–30 min) ; en cas de problème, les BTC reviennent automatiquement',
+  '⚡ invoice paid via the exchange': "⚡ facture payée via l'échange",
+  'min': 'min',
   'enable instant payments: move': 'activer les paiements instantanés : déplacer',
   'from your BTC into the ⚡ balance': 'de vos BTC vers le solde ⚡',
   'it takes ~30 min once, then pay the invoice again': 'cela prend ~30 min une seule fois, puis payez la facture à nouveau',
@@ -1590,6 +1622,14 @@ const FR = {
 };
 
 const PT = {
+  'network fee': 'taxa de rede',
+  'pay via the exchange: the bot pays the invoice, your BTC covers it on-chain': 'pagar via exchange: o bot paga a fatura e seus BTC a cobrem on-chain',
+  'Pay via exchange': 'Pagar via exchange',
+  'exchange fee too high': 'taxa do exchange suspeitamente alta',
+  'sent to the exchange': 'enviado ao exchange',
+  'the invoice will be paid right after one confirmation (~10–30 min); if anything goes wrong the BTC auto-refunds': 'a fatura será paga após uma confirmação (~10–30 min); se algo der errado, os BTC voltam automaticamente',
+  '⚡ invoice paid via the exchange': '⚡ fatura paga via exchange',
+  'min': 'min',
   'enable instant payments: move': 'ativar pagamentos instantâneos: mover',
   'from your BTC into the ⚡ balance': 'dos seus BTC para o saldo ⚡',
   'it takes ~30 min once, then pay the invoice again': 'leva ~30 min uma única vez; depois pague a fatura novamente',
@@ -2032,6 +2072,14 @@ const PT = {
 };
 
 const ZH = {
+  'network fee': '网络费',
+  'pay via the exchange: the bot pays the invoice, your BTC covers it on-chain': '通过交易所支付：机器人支付发票，您的 BTC 在链上抵付',
+  'Pay via exchange': '通过交易所支付',
+  'exchange fee too high': '交易所费用异常偏高',
+  'sent to the exchange': '已发送至交易所',
+  'the invoice will be paid right after one confirmation (~10–30 min); if anything goes wrong the BTC auto-refunds': '发票将在一次确认后立即支付（约 10–30 分钟）；如有问题，BTC 将自动退回',
+  '⚡ invoice paid via the exchange': '⚡ 发票已通过交易所支付',
+  'min': '分钟',
   'enable instant payments: move': '启用即时支付：将',
   'from your BTC into the ⚡ balance': '从您的 BTC 转入 ⚡ 余额',
   'it takes ~30 min once, then pay the invoice again': '一次性约需 30 分钟，之后请再次支付发票',

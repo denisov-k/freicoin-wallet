@@ -219,6 +219,20 @@ async function driveP2pInner() {
         if (!rec.funding?.txid && !rec.btcHtlc?.txid) env.dropP2p(rec.id);
         continue;
       }
+      // СУБМАРИН (пользовательская сторона): дослать отчёт о фандинге (реле принимает его лишь
+      // после подтверждения) и отпраздновать оплату; возврат по таймлоку делает checkBtcRefunds
+      // на общих основаниях (запись shape-совместима: role taker + btcHtlc с leaf/cltv).
+      if (rec.dir === 'lnsub') {
+        if (w?.preimage || w?.status === 'paid') {
+          env.addSwapHist({ id: rec.id, category: 'send', assetTag: null, frcAmount: '0', btcAmount: rec.btcAmount, btcTxid: 'ln', frcTxid: null, time: Math.floor(Date.now() / 1000) });
+          env.dropP2p(rec.id);
+          env.toast(`${rec.id}: ${tr('⚡ invoice paid via the exchange')}`, 'ok'); env.refreshBtc(); env.mvRefresh();
+        } else if (rec.status === 'sub_wait' && rec.btcHtlc?.txid) {
+          try { await api('lnSubFunded', { id: rec.id, txid: rec.btcHtlc.txid, vout: rec.btcHtlc.vout ?? 0 }); env.putP2p({ ...rec, status: 'sub_funded' }); }
+          catch { /* ещё нет подтверждения — дошлём на следующем тике */ }
+        }
+        continue;
+      }
       if (rec.dir === 'sellBtc') { await driveP2pRev(rec, w, info); if (w.status === 'done') env.dropP2p(rec.id); continue; }
       if (rec.role === 'maker') {
         // ---- LIGHTNING leg (optional env hooks — the headless bot wires them; a browser maker
