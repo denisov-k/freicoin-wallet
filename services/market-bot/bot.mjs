@@ -45,11 +45,11 @@ if (process.env.RELAY) setRelayOverride('main', process.env.RELAY.replace(/\/+$/
 const { derivePath, ckdPriv, wpkProgramHex } = await import('@core/hd.mjs');
 const { pubkeyCompressed } = await import('@core/ecdsa.mjs');
 const { sha256, hash160 } = await import('@core/crypto.mjs');
-const { btcAddress, btcHtlcClaim, btcP2wpkhSpk } = await import('@core/btc.mjs');
+const { btcAddress } = await import('@core/btc.mjs');
 const { freeFrcKria } = await import('@/services/market/swap-lib.mjs');
 const { loadP2p, putP2p, dropP2p, addBtcNonce } = await import('@/services/storage.mjs');
 const { driveP2p, checkP2pRefunds, checkBtcRefunds, initDrive } = await import('@/services/market/swap-drive.mjs');
-const { refreshBtc, btcAcctAddr, btcAcctPub, mvBtc, initBtcAccount } = await import('@/services/market/btc-account.mjs');
+const { refreshBtc, btcAcctAddr, mvBtc, initBtcAccount } = await import('@/services/market/btc-account.mjs');
 
 // ---- bot wallet: own seed, the wallet's EXACT derivation. The coin type follows the network
 // (mainnet = m/84'/0'/0'); hardcoding coin 1 (nv3) here made the bot ADVERTISE the coin-0 address
@@ -74,28 +74,7 @@ const { deriveAddress } = await import('@/services/wallet.mjs');
 log('bot FRC address:', deriveAddress(seed, 0, 0));
 
 const { browserSwapEnv } = await import('@/services/market/swap-env.mjs');
-// ---- Lightning (optional): LND_REST + LND_MACAROON (+LND_TLS) switch the LN leg on. The bot's
-// own node issues hold invoices under the swap's H, so the BTC side becomes instant and ~free;
-// without the env vars every LN branch in the drive is dormant and offers post without the flag.
-let lnd = null;
-if (process.env.LND_REST && process.env.LND_MACAROON) {
-  const { lndRest } = await import('./lnd-rest.mjs');
-  lnd = lndRest({ url: process.env.LND_REST, macaroonPath: process.env.LND_MACAROON, tlsCertPath: process.env.LND_TLS });
-  const i = await lnd.getInfo().catch(e => { log('LND unavailable:', e.message); return null; });
-  if (i) log(`LND connected: ${i.pubkey.slice(0, 16)}… height ${i.blockHeight}`); else lnd = null;
-}
-const lnHooks = lnd ? {
-  lnAddHold: ({ hashHex, sats }) => lnd.addHoldInvoice({ hashHex, sats, memo: 'Freimarkets swap', expiry: 1800, cltvExpiry: 144 }),
-  lnLookup: h => lnd.lookupInvoice(h),
-  lnSettle: r => lnd.settleInvoice(r),
-  lnCancel: h => lnd.cancelInvoice(h),
-  // sell-сторона (LN-выплата продавцу FRC): разбор его инвойса, оплата, добивание исхода после
-  // рестарта. Роутинг-комиссия — из кармана бота (входит в спред): max(15 сат, 1%).
-  lnDecode: payreq => lnd.decodePayReq(payreq),
-  lnPay: ({ payreq, sats }) => lnd.payInvoice({ payreq, feeLimitSat: Math.max(15, Math.ceil(Number(sats) * 0.01)), cltvLimit: 144 }),
-  lnFindPay: h => lnd.findPayment(h),
-} : {};
-initDrive({ ...browserSwapEnv({ toast: (m, kind) => log(`[${kind || 'info'}]`, m), mvRefresh: () => { wantRefresh = true; }, observe: () => {} }), ...lnHooks });
+initDrive(browserSwapEnv({ toast: (m, kind) => log(`[${kind || 'info'}]`, m), mvRefresh: () => { wantRefresh = true; }, observe: () => {} }));
 initBtcAccount(() => {});   // no browser-side nonce recovery needed: the bot's records never leave BOT_DIR
 
 // ---- local FRC node (trusted — it's ours): height + UTXOs via scantxoutset ----
@@ -180,7 +159,7 @@ async function postOffer(frcK, satPerFrc) {
   const partial = minFill < frcK;
   if (!partial) minFill = frcK;
   const r = await api('p2pPost', { frcAmount: String(frcK), btcAmount: String(btcSats), makerFrcPub: frcPub, makerBtcPub: btcPub,
-    makerBtcAddr: myBtcAddr, ...(lnd ? { ln: true } : {}), ...(partial ? { partial: true, minFill: String(minFill), maxFill: String(frcK) } : {}) });
+    makerBtcAddr: myBtcAddr, ...(partial ? { partial: true, minFill: String(minFill), maxFill: String(frcK) } : {}) });
   addBtcNonce(nonce);
   putP2p({ id: r.id, role: 'maker', nonce, status: 'open', partial, assetTag: null, frcAmount: String(frcK), btcAmount: String(btcSats) });
   log(`posted ${r.id}: sell ${Number(frcK) / 1e8} FRC @ ${satPerFrc.toFixed(2)} sat/FRC (total ${btcSats} sat, ${partial ? 'minFill ' + Number(minFill) / 1e8 + ' FRC' : 'whole-only'})`);
@@ -197,7 +176,7 @@ async function cancelOffer(rec) {
   else dropP2p(rec.id);
 }
 
-async function postBid(btcSats, satPerFrc, lnOnly = false) {
+async function postBid(btcSats, satPerFrc) {
   const frcK = BigInt(Math.round(Number(btcSats) / satPerFrc * 1e8));
   const nonce = sha256(Buffer.from(seed + 'fw-p2p-nonce:B:' + frcK + ':' + btcSats + ':' + ctx.state.mine.height, 'utf8')).toString('hex').slice(0, 16);
   const frcPub = pubkeyCompressed(p2pKey(nonce, 'frc')), btcPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
@@ -209,7 +188,7 @@ async function postBid(btcSats, satPerFrc, lnOnly = false) {
   const partial = minFill < btcSats;
   if (!partial) minFill = btcSats;
   const r = await api('p2pPostB', { frcAmount: String(frcK), btcAmount: String(btcSats), makerFrcPub: frcPub, makerBtcPub: btcPub,
-    makerFrcAddr: deriveAddress(seed, 0, 0), ...(lnd ? { ln: true } : {}), ...(lnOnly ? { lnOnly: true } : {}), ...(partial ? { partial: true, minFill: String(minFill), maxFill: String(btcSats) } : {}) });
+    makerFrcAddr: deriveAddress(seed, 0, 0), ...(partial ? { partial: true, minFill: String(minFill), maxFill: String(btcSats) } : {}) });
   addBtcNonce(nonce);
   putP2p({ id: r.id, role: 'maker', dir: 'sellBtc', nonce, status: 'open', partial, assetTag: null, frcAmount: String(frcK), btcAmount: String(btcSats) });
   log(`posted ${r.id}: BUY ${Number(frcK) / 1e8} FRC @ ${satPerFrc.toFixed(2)} sat/FRC (pay ${btcSats} sat, ${partial ? 'minFill ' + minFill + ' sat' : 'whole-only'})`);
@@ -222,19 +201,12 @@ async function manageBid(price, live) {
   if (b.balance == null) return;
   const bidRate = price * (1 - SPREAD_BID);
   let free = BigInt(b.balance) - BTC_RESERVE; if (free < 0n) free = 0n;
-  // LN-выплаты платятся из КАНАЛЬНОГО баланса, on-chain тейки — из он-чейн счёта. Бид сайзим по
-  // большей из ёмкостей; если он-чейн не тянет даже минимальный тейк — оффер выплачивает ТОЛЬКО
-  // по ⚡ (lnOnly), и реле не даст взять его без инвойса. 2% удерживаем под роутинг-комиссии.
-  let lnFree = 0n;
-  if (lnd) { try { lnFree = (await lnd.channelBalance()) * 98n / 100n; } catch { lnFree = 0n; } }
-  const lnOnly = !!lnd && free < MIN_BID && lnFree >= MIN_BID;
-  if (lnOnly) free = lnFree; else if (lnd && lnFree > free) free = lnFree;
   const target = free > MAX_BID ? MAX_BID : free;
   const mine = myBids().filter(r => live.some(x => x.id === r.id && x.status === 'open' && (x.kind === 'offer' || x.dir === 'sellBtc')));
   if (!mine.length) {
     if (target < MIN_BID) return;   // empty/small float — the side idles silently
-    if (DRY) { log(`DRY: would bid ${target} sat @ ${bidRate.toFixed(2)} sat/FRC${lnOnly ? ' (⚡ only)' : ''}`); return; }
-    return postBid(target, bidRate, lnOnly);
+    if (DRY) { log(`DRY: would bid ${target} sat @ ${bidRate.toFixed(2)} sat/FRC`); return; }
+    return postBid(target, bidRate);
   }
   const rec = mine[0], x = live.find(o => o.id === rec.id);
   const offerRate = Number(BigInt(x.btcAmount)) / Number(BigInt(x.frcAmount)) * 1e8;
@@ -244,13 +216,11 @@ async function manageBid(price, live) {
   const shrunk = target < (remaining * 2n) / 3n && remaining - target >= MIN_BID;
   const minPiece = x.minFill ? BigInt(x.minFill) : MIN_BID;
   const dustRemainder = remaining < BigInt(x.btcAmount) && remaining < minPiece;
-  // репост и при смене LN-профиля: LND поднялся после постинга, или lnOnly перестал соответствовать
-  const lnUpgrade = (!!lnd && !x.ln) || (!!x.lnOnly !== lnOnly);
-  if (drift > REPRICE || dustRemainder || grown || shrunk || lnUpgrade) {
-    log(`repost bid ${rec.id}: drift ${(drift * 100).toFixed(1)}%, remaining ${remaining} sat, target ${target} sat${shrunk ? ' (shrink)' : lnUpgrade ? ' (ln profile)' : ''}`);
+  if (drift > REPRICE || dustRemainder || grown || shrunk) {
+    log(`repost bid ${rec.id}: drift ${(drift * 100).toFixed(1)}%, remaining ${remaining} sat, target ${target} sat${shrunk ? ' (shrink)' : ''}`);
     if (DRY) return;
     await cancelOffer(rec);
-    if (target >= MIN_BID) await postBid(target, bidRate, lnOnly);
+    if (target >= MIN_BID) await postBid(target, bidRate);
   }
 }
 
@@ -296,9 +266,8 @@ async function strategy() {
   // the two bands from oscillating.
   const shrunk = target < (remaining * 2n) / 3n && remaining - target >= floorK;
   // LND came up after this offer was posted: repost so it advertises the ⚡ leg (ln flag is set at post time)
-  const lnUpgrade = !!lnd && !s.ln;
-  if (drift > REPRICE || dustRemainder || grown || shrunk || lnUpgrade) {
-    log(`repost ${rec.id}: drift ${(drift * 100).toFixed(1)}%, remaining ${Number(remaining) / 1e8} FRC, target ${Number(target) / 1e8}${shrunk ? ' (shrink)' : lnUpgrade ? ' (ln upgrade)' : ''}`);
+  if (drift > REPRICE || dustRemainder || grown || shrunk) {
+    log(`repost ${rec.id}: drift ${(drift * 100).toFixed(1)}%, remaining ${Number(remaining) / 1e8} FRC, target ${Number(target) / 1e8}${shrunk ? ' (shrink)' : ''}`);
     if (!DRY) {
       await cancelOffer(rec);
       if (target >= floorK) await postOffer(target, ask);
@@ -310,49 +279,6 @@ async function strategy() {
 const minPieceK = s => s.minFill ? BigInt(s.minFill)
   : (BigInt(Math.round(Number(ctx.state.p2p?.minSwap ?? 741))) * BigInt(s.frcAmount) + BigInt(s.btcAmount) - 1n) / BigInt(s.btcAmount);
 
-// ---- СУБМАРИН-ДРАЙВЕР: оплата чужих LN-инвойсов из on-chain локов пользователей ----
-// Ключ клейма — детерминированный из сида (BOT_SUB_PUB на релее = его pubkey). Краш-барьер —
-// НА РЕЛЕЕ (lnSubPaying до оплаты); после рестарта исход добивается через ListPayments,
-// повторная оплата исключена. Клейм идёт на BTC-счёт бота — так LN-баланс конвертируется
-// обратно в on-chain (⚡-покупки FRC пополняют LN, субмарины сливают — круг замыкается).
-const subKey = () => sha256(Buffer.from(seed + 'fw-lnsub-key', 'utf8')).toString('hex');
-export const subPub = () => pubkeyCompressed(subKey());
-async function driveSubs() {
-  if (!lnd) return;
-  const subs = (ctx.state.p2p?.swaps || []).filter(s => s.dir === 'lnsub');
-  for (const w of subs) {
-    try {
-      if (w.status === 'paying') {                       // рестарт посреди оплаты: сперва исход
-        const fp = await lnd.findPayment(w.paymentHash);
-        if (fp.status === 'SUCCEEDED' && fp.preimageHex) { await api('lnSubPaid', { id: w.id, preimage: fp.preimageHex }); continue; }
-        if (fp.status === 'IN_FLIGHT') continue;         // ждём терминального исхода
-        // FAILED или записи нет вовсе (оплата не стартовала) → безопасно платить ниже
-      }
-      if (w.status === 'funded' || w.status === 'paying') {
-        // инвойс глазами СВОЕГО узла + маржа таймлока против худшего in-flight (cltv_limit 144)
-        const d = await lnd.decodePayReq(w.lnPayout);
-        if (d.paymentHash !== w.paymentHash) { log(`sub ${w.id}: hash mismatch — skip`); continue; }
-        if (String(d.sats) !== String(w.btcAmount)) { log(`sub ${w.id}: amount mismatch — skip`); continue; }
-        if ((d.timestamp + d.expiry) * 1000 < Date.now() + 120e3) { log(`sub ${w.id}: invoice expired — skip`); continue; }
-        const bh = Number(ctx.state.p2p?.btcHeight ?? 0);
-        if (w.btcHtlc.cltv - bh < 168) { log(`sub ${w.id}: timelock margin too thin — skip`); continue; }
-        if (w.status !== 'paying') await api('lnSubPaying', { id: w.id });
-        const pay = await lnd.payInvoice({ payreq: w.lnPayout, feeLimitSat: Math.max(15, Math.ceil(Number(w.btcAmount) * 0.01)), cltvLimit: 144 });
-        await api('lnSubPaid', { id: w.id, preimage: pay.preimageHex });
-        log(`sub ${w.id}: ⚡ paid ${w.btcAmount} sat`);
-      }
-      if (w.status === 'paid' && w.preimage && w.btcHtlc?.txid && !loadP2p().some(r => r.id === w.id && r.status === 'claimed')) {
-        const b = w.btcHtlc;
-        const cB = btcHtlcClaim({ prevTxid: b.txid, vout: b.vout ?? 0, valueSats: BigInt(b.value), leafHex: b.leaf,
-          preimage: w.preimage, claimKey: subKey(), toSpk: btcP2wpkhSpk(btcAcctPub()), fee: 400n });
-        await api('btcBroadcast', { rawtx: cB.rawtx });
-        putP2p({ id: w.id, role: 'maker', dir: 'lnsub', status: 'claimed', nonce: '' });
-        log(`sub ${w.id}: claimed onchain ${b.value} sat → ${cB.txid.slice(0, 12)}…`);
-      }
-    } catch (e) { log(`sub ${w.id}:`, String(e.message).slice(0, 100)); }
-  }
-}
-
 // ---- main loop ----
 let wantRefresh = false, tick = 0;
 log(`market-bot up — relay ${process.env.RELAY || 'default :5183'}, spread ${SPREAD * 100}%, dry=${DRY}`);
@@ -362,7 +288,6 @@ for (;;) {
     await driveP2p();          // maker duties: verify+lock FRC, claim BTC, heartbeat, coop-cancel
     await checkP2pRefunds();   // sweep my stalled FRC locks home after T1
     await checkBtcRefunds();   // (no-op for a pure maker, harmless)
-    await driveSubs();         // субмарины: оплата LN-инвойсов из on-chain локов
     if (tick % 5 === 0) {      // strategy on every 5th tick (~5 min)
       await strategy();
       await refreshBtc().catch(() => {});

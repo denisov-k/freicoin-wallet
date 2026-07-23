@@ -28,12 +28,9 @@ export function renderReceive() {
   // Селектор валюты гейтится по СЕТИ (не по mvBtc().available: при первом открытии стейт свопа
   // ещё не доехал, и селектор молча пропадал).
   const btcOn = d.SWAP();
-  const lnOn = d.curNet() === 'main';   // ⚡-приём: узел в кошельке (mainnet)
   openModal(tr('Receiving'),
     `<div id="rcvMain" class="stack">`
     + (btcOn ? `<label>${tr('Currency')}<select id="rcvCur"><option value="FRC">FRC</option><option value="BTC">BTC</option></select></label>` : '')
-    // ⚡ — способ получения BTC (у FRC сети Lightning нет): галка видна только при валюте BTC
-    + (lnOn ? `<label class="chk" id="lnRcvRow" hidden><input type="checkbox" id="lnRcvChk">⚡ Lightning</label>` : '')
     + `<div id="qrBox" class="qr skel" style="margin:0 auto;height:220px"></div>
      <div class="addr" id="addr"><div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div></div>
      <div class="row"><button id="copyAddr" class="ghost" disabled>⧉ ${tr('Copy')}</button></div>
@@ -41,33 +38,16 @@ export function renderReceive() {
      <div class="row" id="lnAmtBtnRow"><button id="lnAmtBtn" class="ghost">${tr('Request an amount')}</button></div></div>
      <div id="rcvLnAmt" class="stack" hidden>
        <label class="numfield" id="lnAmtField"><span>${tr('Amount')} (<span id="rcvAmtUnit">${tr('sats')}</span>)</span><input id="lnRcvAmt" type="text" inputmode="decimal"></label>
-       <div class="row" id="lnGoRow"><button id="lnRcvGo">${tr('Create invoice')}</button></div>
+       <div class="row" id="lnGoRow"><button id="lnRcvGo">${tr('Create QR')}</button></div>
        <div class="rrow" id="lnAmtSumRow" hidden><span>${tr('To receive')}</span><b id="lnAmtSum"></b></div>
        <div id="lnAmtQr" class="qr" style="margin:0 auto;height:220px;display:none"></div>
        <div class="addr" id="lnAmtInv" style="display:none"></div>
        <div class="row" id="lnAmtCopyRow" hidden><button id="lnAmtCopy" class="ghost">⧉ ${tr('Copy')}</button></div>
        <div class="row"><button id="lnAmtBack" class="ghost">${tr('Back')}</button></div>
      </div>`);
-  // ---- два экрана модалки: основной (QR адреса/инвойса) ↔ «инвойс с суммой» ----
+  // ---- два экрана модалки: основной (QR адреса) ↔ «запросить сумму» (BIP21-URI) ----
   const showAmtScreen = on => { $('#rcvMain').hidden = on; $('#rcvLnAmt').hidden = !on; };
-  // ⚡ ВКЛ: та же форма, что у адресов — СРАЗУ QR (инвойс без суммы: плательщик вводит её сам,
-  // это Lightning-аналог статического адреса). Инвойс с конкретной суммой — отдельный экран.
-  const fillLn = async () => {
-    $('#newAddrRow').hidden = true;
-    const box0 = $('#qrBox'); if (box0) { box0.className = 'qr skel'; box0.innerHTML = ''; }
-    const a0 = $('#addr'); if (a0) a0.innerHTML = `<div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div>`;
-    $('#copyAddr').disabled = true;
-    try {
-      const bolt11 = await (await import('@/views/lightning.mjs')).lnMakeInvoice();
-      const qr = await QRCode.toDataURL(bolt11.toUpperCase(), { margin: 1, width: 220 });
-      const b = $('#qrBox'); if (!b) return;   // модалку закрыли, пока узел стартовал
-      b.className = 'qr'; b.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`;
-      // полный инвойс (300+ символов), но бокс компактный: ~3 строки и внутренний скролл
-      const a = $('#addr'); if (a) { a.textContent = bolt11; a.style.fontSize = '13px'; a.style.lineHeight = '18px'; a.style.maxHeight = '84px'; a.style.overflowY = 'auto'; a.style.webkitTextSizeAdjust = '100%'; }
-      const cp = $('#copyAddr'); if (cp) { cp.disabled = false; cp.onclick = ev => copy(bolt11, ev.target); }
-    } catch (err) { const a = $('#addr'); if (a) a.textContent = err.message; }
-  };
-  // экран «инвойс с суммой»: форма → (создан) → только QR/строка/копирование; «Назад» сбрасывает
+  // экран «запросить сумму»: форма → (создан) → только QR/строка/копирование; «Назад» сбрасывает
   const resetAmtScreen = () => {
     $('#lnAmtField').hidden = false; $('#lnGoRow').hidden = false; $('#lnRcvAmt').value = '';
     const sr = $('#lnAmtSumRow'); if (sr) sr.hidden = true;
@@ -75,13 +55,11 @@ export function renderReceive() {
     const a = $('#lnAmtInv'); if (a) { a.style.display = 'none'; a.textContent = ''; }
     const cr = $('#lnAmtCopyRow'); if (cr) cr.hidden = true;
   };
-  // режим экрана: ⚡-инвойс (сатоши) или BIP21-URI для on-chain (bitcoin:/freicoin: с amount —
-  // кошелёк плательщика подставит сумму сам; строка под QR — голый адрес для копирования)
-  const amtMode = () => $('#lnRcvChk')?.checked ? 'ln' : ($('#rcvCur')?.value === 'BTC' ? 'btc' : 'frc');
+  // режим экрана: BIP21-URI (bitcoin:/freicoin: с amount — кошелёк плательщика подставит сумму сам)
+  const amtMode = () => $('#rcvCur')?.value === 'BTC' ? 'btc' : 'frc';
   $('#lnAmtBtn').onclick = () => {
     resetAmtScreen(); showAmtScreen(true);
-    const u = $('#rcvAmtUnit'); if (u) u.textContent = amtMode() === 'ln' ? tr('sats') : amtMode() === 'btc' ? 'BTC' : 'FRC';
-    const g = $('#lnRcvGo'); if (g) g.textContent = amtMode() === 'ln' ? tr('Create invoice') : tr('Create QR');
+    const u = $('#rcvAmtUnit'); if (u) u.textContent = amtMode() === 'btc' ? 'BTC' : 'FRC';
     $('#lnRcvAmt').focus();
   };
   $('#lnAmtBack').onclick = () => showAmtScreen(false);
@@ -89,18 +67,11 @@ export function renderReceive() {
     e.target.disabled = true;
     try {
       const mode = amtMode();
-      let qrText, copyText, sumText;
-      if (mode === 'ln') {
-        const sats = Math.round(Number($('#lnRcvAmt').value)); if (!(sats > 0)) throw new Error(tr('bad amount'));
-        const bolt11 = await (await import('@/views/lightning.mjs')).lnMakeInvoice(sats);
-        qrText = bolt11.toUpperCase(); copyText = bolt11; sumText = `${sats.toLocaleString(getLang())} ${tr('sats')}`;
-      } else {
-        const amt = Number($('#lnRcvAmt').value); if (!(amt > 0)) throw new Error(tr('bad amount'));
-        const amtStr = amt.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
-        const addr = mode === 'btc' ? mvBtcAddress() : deriveAddress(d.hexSeed(), d.recvIndex(), 0);
-        qrText = `${mode === 'btc' ? 'bitcoin' : 'freicoin'}:${addr}?amount=${amtStr}`;
-        copyText = qrText; sumText = `${amtStr} ${mode === 'btc' ? 'BTC' : 'FRC'}`;
-      }
+      const amt = Number($('#lnRcvAmt').value); if (!(amt > 0)) throw new Error(tr('bad amount'));
+      const amtStr = amt.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
+      const addr = mode === 'btc' ? mvBtcAddress() : deriveAddress(d.hexSeed(), d.recvIndex(), 0);
+      const qrText = `${mode === 'btc' ? 'bitcoin' : 'freicoin'}:${addr}?amount=${amtStr}`;
+      const copyText = qrText, sumText = `${amtStr} ${mode === 'btc' ? 'BTC' : 'FRC'}`;
       const qr = await QRCode.toDataURL(qrText, { margin: 1, width: 220 });
       $('#lnAmtField').hidden = true; $('#lnGoRow').hidden = true;   // запрос готов — форма уходит
       const sr = $('#lnAmtSumRow'); if (sr) { sr.hidden = false; $('#lnAmtSum').textContent = sumText; }
@@ -129,13 +100,7 @@ export function renderReceive() {
     $('#addr').textContent = addr;
     const cp = $('#copyAddr'); if (cp) { cp.disabled = false; cp.onclick = e => copy(addr, e.target); }
   };
-  const cur = $('#rcvCur'); if (cur) cur.onchange = () => {
-    const isBtc = cur.value === 'BTC';
-    const row = $('#lnRcvRow'); if (row) row.hidden = !isBtc;            // ⚡ существует только у BTC
-    const chk = $('#lnRcvChk'); if (chk?.checked) chk.checked = false;   // смена валюты = возврат к адресу
-    fill(isBtc);
-  };
-  const lnChk = $('#lnRcvChk'); if (lnChk) lnChk.onchange = () => lnChk.checked ? fillLn() : fill($('#rcvCur')?.value === 'BTC');
+  const cur = $('#rcvCur'); if (cur) cur.onchange = () => fill(cur.value === 'BTC');
   // Fresh FRC address: bump the index + repaint at once, then grow the watch window off-frame.
   $('#newAddr').onclick = () => { d.bumpRecv(); fill(false); d.growWatchAfterNewAddr(); };
   fill(false);
@@ -182,9 +147,8 @@ export async function renderSend() {
     else setReview(true);
   };
   $('#reviewBtn').onclick = doReview;
-  // ⚡: как только в поле адреса оказался bolt11 — сумма не нужна (она в инвойсе); подскажем
-  // сканер: распознанный текст идёт в поле адреса ЧЕРЕЗ обычный input-разбор — URI распакуется,
-  // bolt11 включит ⚡-режим, голый адрес останется адресом. Один вход для всех форматов.
+  // сканер: распознанный текст идёт в поле адреса ЧЕРЕЗ обычный input-разбор — платёжный URI
+  // распакуется (адрес+сумма+валюта), голый адрес останется адресом. Один вход для всех форматов.
   $('#scanBtn').onclick = async () => {
     const text = await (await import('@/components/qr-scan.mjs')).scanQr();
     if (!text) return;
@@ -206,12 +170,7 @@ export async function renderSend() {
       const wantBtc = scheme.toLowerCase() === 'bitcoin';
       if (sel && (sel.value === 'BTC') !== wantBtc) { sel.value = wantBtc ? 'BTC' : ''; sel.onchange?.(); if (amount && Number(amount) > 0) $('#amt').value = amount; }
       if (sel?.value === 'BTC') updBtcFee(); else updFrcCheck();
-      return;
     }
-    const isLn = (await import('@/views/lightning.mjs')).looksLikeBolt11(raw);
-    const al = $('#amtLabel'); if (al) al.style.display = isLn ? 'none' : '';
-    const sp = $('#btcSpeedRow'); if (sp && isLn) sp.hidden = true;
-    if (isLn) { const av = $('#avail'); if (av) { av.style.display = ''; av.textContent = '⚡ ' + tr('Lightning invoice detected — the amount is inside it'); } setReview(true); }
   });
   // Max dispatches on the selected currency: asset → its whole quantity; FRC → balance − fee.
   let sendBal = null;
@@ -274,102 +233,7 @@ function successScreen(txid, extraToast) {
   toast(tr('broadcast ✓'));
   if (extraToast) toast(extraToast, 'ok');
 }
-// ⚡: вставленный bolt11-инвойс в поле адреса — это и есть выбор способа оплаты (никаких
-// отдельных вкладок): сумма зашита в инвойсе, комиссия — по маршруту (обычно < 1%).
-async function doReviewLn(raw) {
-  const ln = await import('@/views/lightning.mjs');
-  let dec;
-  try { dec = (await import('@core/bolt11.mjs')).decodeBolt11(raw); } catch (e) { return toast(e.message, 'err'); }
-  if (dec.sats == null) return toast(tr('invoice must carry an exact amount'), 'err');
-  if ((dec.timestamp + dec.expiry) * 1000 < Date.now() + 60e3) return toast(tr('invoice expires too soon — set expiry to 2h+'), 'err');
-  // Канал открывается ЗДЕСЬ — в момент, когда его не хватает (а не из настроек): если исходящей
-  // ⚡-ёмкости меньше суммы, ревью предлагает открыть канал из BTC-счёта прямо по месту.
-  const st = ln.lnLast();
-  if (!st || st.outSats < Number(dec.sats)) {
-    const btcBal = mvBtc().balance != null ? BigInt(mvBtc().balance) : 0n;
-    const chanSats = Math.max(100000, Math.ceil(Number(dec.sats) * 1.3));   // запас на комиссии/резерв
-    const canChan = btcBal >= BigInt(chanSats + 2000);
-    const canSub = btcBal >= BigInt(Math.ceil(Number(dec.sats) * 1.01) + 1000);   // ~сумма+сервис+сеть
-    showReview(
-      `<div class="rrow"><span>${tr('Amount')}</span><b>${dec.sats.toLocaleString(getLang())} ${tr('sats')}</b></div>
-       <div class="rrow"><span>⚡</span><b class="sub">${tr('not enough Lightning capacity')} (${(st?.outSats ?? 0).toLocaleString(getLang())} ${tr('sats')})</b></div>
-       ${canSub ? `<div class="sub" style="font-size:12px">${tr('pay via the exchange: the bot pays the invoice, your BTC covers it on-chain')} (~0.3% + ${tr('network fee')}, ~10–30 ${tr('min')})</div>
-         <div class="row"><button id="lnSubGo">${tr('Pay via exchange')}</button></div>` : ''}
-       ${canChan ? `<div class="sub" style="font-size:12px">${tr('enable instant payments: move')} ${chanSats.toLocaleString(getLang())} ${tr('sats')} ${tr('from your BTC into the ⚡ balance')}. ${tr('it takes ~30 min once, then pay the invoice again')}</div>
-         <div class="row"><button id="lnOpenGo" class="ghost">${tr('Enable ⚡ payments')}</button></div>` : ''}
-       ${!canSub && !canChan ? `<div class="sub" style="font-size:12px">${tr('not enough BTC')} (${tr('BTC balance')}: ${btcToStr(btcBal)})</div>` : ''}
-       <div class="row"><button id="backBtn" class="ghost">${tr('Back')}</button></div>`);
-    $('#backBtn').onclick = showForm;
-    const sub = $('#lnSubGo');
-    if (sub) sub.onclick = async e => {
-      e.target.disabled = true;
-      try { await paySubmarine(raw, dec); }
-      catch (err) { toast(err.message, 'err'); e.target.disabled = false; }
-    };
-    const go = $('#lnOpenGo');
-    if (go) go.onclick = async e => {
-      e.target.disabled = true;
-      try {
-        await ln.lnOpenChannelSats(chanSats);
-        showReview(`<div class="ok">⚡ ${tr('setting up instant payments…')}</div><div class="sub">${tr('it takes ~30 min once, then pay the invoice again')}</div><button id="doneBtn">${tr('Done')}</button>`);
-        $('#doneBtn').onclick = () => { const m = document.querySelector('#modal'); if (m) closeOverlay(m); };
-      } catch (err) { toast(err.message, 'err'); e.target.disabled = false; }
-    };
-    return;
-  }
-  showReview(
-    `<div class="rrow"><span>${tr('To')}</span><b>⚡ ${short(dec.paymentHash)}</b></div>
-     <div class="rrow"><span>${tr('Amount')}</span><b>${dec.sats.toLocaleString(getLang())} ${tr('sats')}</b></div>
-     <div class="rrow"><span>${tr('Fee')}</span><b class="sub">${tr('by route, usually <1%')}</b></div>
-     <div class="row"><button id="lnConfirm">${tr('Pay')} ⚡</button><button id="backBtn" class="ghost">${tr('Back')}</button></div>`);
-  $('#backBtn').onclick = showForm;
-  $('#lnConfirm').onclick = async e => {
-    e.target.disabled = true;
-    try {
-      await ln.lnPayBolt(raw);
-      $('#to').value = ''; $('#amt').value = '';
-      showReview(`<div class="ok">⚡ ${tr('payment started…')}</div><div class="sub">${tr('the result will pop up as a notification')}</div><button id="doneBtn">${tr('Done')}</button>`);
-      $('#doneBtn').onclick = () => { const m = document.querySelector('#modal'); if (m) closeOverlay(m); };
-    } catch (err) { toast(err.message, 'err'); e.target.disabled = false; }
-  };
-}
-
-// СУБМАРИН: бот платит инвойс по ⚡, мы атомарно компенсируем on-chain. Реле выдаёт условия
-// (its HTLC под hash ИНВОЙСА), мы ПЕРЕСОБИРАЕМ лист локально и сверяем — подмена ключа/суммы
-// невозможна. Возврат при неоплате — по таймлоку, тем же свипером, что у обычных свопов.
-async function paySubmarine(raw, dec) {
-  const { api, p2pKey, ctx } = await import('@/state/market-ctx.mjs');
-  const { btcHtlcLeaf, btcHtlcAddress } = await import('@core/btc.mjs');
-  const { pubkeyCompressed } = await import('@core/ecdsa.mjs');
-  const { sha256 } = await import('@core/crypto.mjs');
-  const { putP2p, addBtcNonce } = await import('@/services/storage.mjs');
-  const { btcFundHtlc, btcHrp } = await import('@/services/market/btc-account.mjs');
-  const { Buffer } = await import('buffer');
-  const inv = raw.trim().toLowerCase().replace(/^lightning:/, '');
-  const nonce = sha256(Buffer.from(ctx.seed + 'fw-sub:' + dec.paymentHash, 'utf8')).toString('hex').slice(0, 16);
-  const refundPub = pubkeyCompressed(p2pKey(nonce, 'btc'));
-  const r = await api('lnSubCreate', { invoice: inv, refundPub });
-  // локальная пересборка листа: hash из НАШЕГО декода, ключ возврата НАШ — реле не может подсунуть чужое
-  const leaf = btcHtlcLeaf({ paymentHash: dec.paymentHash, claimPub: r.botPub, refundPub, cltv: r.cltv });
-  if (leaf !== r.leaf) throw new Error('HTLC mismatch');
-  const addr = btcHtlcAddress(leaf, btcHrp());
-  if (addr !== r.addr) throw new Error('HTLC address mismatch');
-  const on = BigInt(r.onchainSats);
-  if (on > BigInt(Math.ceil(Number(dec.sats) * 1.01) + 2000)) throw new Error(tr('exchange fee too high'));   // санити против жадного реле
-  addBtcNonce(nonce);
-  const fund = await btcFundHtlc(addr, on);
-  putP2p({ id: r.id, role: 'taker', dir: 'lnsub', nonce, status: 'sub_wait', paymentHash: dec.paymentHash,
-    btcAmount: String(dec.sats), btcHtlc: { addr, leaf, cltv: r.cltv, txid: fund.txid, vout: fund.vout ?? 0, value: String(on) } });
-  await api('lnSubFunded', { id: r.id, txid: fund.txid, vout: fund.vout ?? 0 }).catch(() => {});   // мало конфирмов — драйв дошлёт
-  $('#to').value = ''; $('#amt').value = '';
-  showReview(`<div class="ok">⚡ ${tr('sent to the exchange')}</div>
-    <div class="sub">${tr('the invoice will be paid right after one confirmation (~10–30 min); if anything goes wrong the BTC auto-refunds')}</div>
-    <button id="doneBtn">${tr('Done')}</button>`);
-  $('#doneBtn').onclick = () => { const m = document.querySelector('#modal'); if (m) closeOverlay(m); };
-}
-
 async function doReview() {
-  { const raw = $('#to').value.trim(); const ln = await import('@/views/lightning.mjs'); if (ln.looksLikeBolt11(raw)) return doReviewLn(raw); }
   if ($('#sendAsset')?.value === 'BTC') return doReviewBtc();
   // A spend must build on VERIFIED chain state; during a first sync/restore that state is still
   // minutes away — say so instead of silently awaiting (the button looked frozen).

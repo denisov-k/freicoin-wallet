@@ -6,7 +6,7 @@
 import { $, store, fmt, fmtBal, skel, copy } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
-import { mvBtc, refreshBtc, btcToStr, btcRowHtml } from '@/services/market/btc-account.mjs';
+import { mvBtc, refreshBtc, btcToStr } from '@/services/market/btc-account.mjs';
 import { loadFeeTxids } from '@/services/storage.mjs';
 import { renderAssetBalance, mvRefresh, mvRelayAssets, mvBtcHistory } from '@/views/exchange.mjs';
 import { openIssueModal } from '@/views/issue.mjs';
@@ -48,14 +48,7 @@ function wireBalActions() {
   const r = $('#rcvBtn'); if (r) r.onclick = () => renderReceive();
   const s = $('#sndBtn'); if (s) s.onclick = () => renderSend();
   const i = $('#issBtn'); if (i) i.onclick = openIssueModal;
-  // ⚡-узел (LDK в кошельке, только mainnet) поднимается сам — отдельного UI у него нет:
-  // баланс строкой в активах, приём в «Получить», оплата в «Отправить», канал в настройках
-  if (d.curNet() === 'main') import('@/views/lightning.mjs').then(mod => mod.maybeAutoStartLn()).catch(() => {});
 }
-// ⚡-статус изменился → перерисовать ячейку BTC (единая сумма on-chain + канал)
-document.addEventListener('fw-ln-status', () => {
-  try { const cell = $('#btcBalCell'); const b = mvBtc(); if (cell && b.balance != null) cell.innerHTML = btcRowHtml(b.balance); } catch {}
-});
 
 export function paintBalance(s) {
   if (!s.stale) d.setStatus('ok', '', s.tipHeight);
@@ -85,7 +78,7 @@ export function paintBalance(s) {
       if (provBest > 0) {
         const b = mvBtc();
         const rows = [`<tr><td>FRC</td><td class="r">${provBest.toLocaleString(getLang(), { maximumFractionDigits: 8 })}</td></tr>`];
-        if (b.balance != null) rows.push(`<tr><td>BTC</td><td class="r" id="btcBalCell">${btcRowHtml(b.balance)}</td></tr>`);   // on-chain + ⚡ единой суммой
+        if (b.balance != null) rows.push(`<tr><td>BTC</td><td class="r" id="btcBalCell">${btcToStr(b.balance)}</td></tr>`);   // relay-backed, needs no chain sync
         body.innerHTML = rows.join('') + `<tr id="provRow" hidden></tr>`;
       }
     }

@@ -53,14 +53,6 @@ export function btcResetAcct() { btcAcct = null; }
 // live refresh overwrites it with the spendable account.
 const btcBalKey = () => 'fw_btc_bal:' + currentNet();
 export const btcToStr = sats => (Number(BigInt(sats)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 });
-// ⚡-сатоши из канала встроенного LN-узла (кэш кладёт lightning.mjs; глобал вместо импорта —
-// иначе цикл lightning→btc-account→lightning). Строки баланса показывают BTC ЕДИНОЙ суммой
-// (on-chain + ⚡) с пометкой, сколько из неё в канале: Lightning — не отдельный актив.
-export const lnSats = () => Number(globalThis.__fwLnSats ?? 0);
-export const btcRowHtml = onchainSats => {
-  const ln = lnSats(), total = BigInt(onchainSats ?? 0) + BigInt(ln);
-  return btcToStr(total) + (ln > 0 ? ` <span class="sub" style="font-size:11px">⚡${ln.toLocaleString(getLang())}</span>` : '');
-};
 
 // One-time MIGRATION: sweep whatever sits on the legacy (custom-derivation) account address onto
 // the BIP84 address, so "restore from phrase in any wallet" holds for the whole balance. Internal
@@ -99,7 +91,7 @@ export async function refreshBtc() {
   sweepLegacy(btcAcct.utxos).catch(() => {});   // migrate legacy-address coins to the BIP84 account
   // headless-safe: the DOM only exists in the browser; the bot funds BTC HTLCs from the same account
   // but has no #btcBalCell to paint.
-  if (typeof document !== 'undefined') { const cell = document.querySelector('#btcBalCell'); if (cell) cell.innerHTML = btcRowHtml(btcAcct.balance); }   // BTC row = on-chain + ⚡ единой суммой
+  if (typeof document !== 'undefined') { const cell = document.querySelector('#btcBalCell'); if (cell) cell.textContent = btcToStr(btcAcct.balance); }   // BTC row in the assets table
 }
 
 // fund a BTC HTLC from the account (swap plumbing): pick coins, sign locally, broadcast, and remember
@@ -122,25 +114,6 @@ export async function btcFundHtlc(toAddr, sats) {
   await api('btcBroadcast', { rawtx });
   addFundTxid(txid);   // swap plumbing — Activity hides it even if the swap record is later dropped
   return { txid, vout: 0, value: String(amount) };
-}
-
-// Собрать и подписать транзакцию НА СКРИПТ, но НЕ бродкастить — для funding-tx LN-канала:
-// LDK обязан сам публиковать её после обмена подписями (преждевременный бродкаст = потеря денег,
-// у контрагента ещё нет commitment-подписи). txid нужен LDK заранее — он в channel_point.
-export async function btcBuildTx(toSpkHex, sats) {
-  const amount = BigInt(sats), fee = btcFeeFor(VB_HTLC_FUND);
-  const ring = btcKeyring();
-  const acct = await api('btcAccount', { addresses: Object.keys(ring) });
-  const coins = [...acct.utxos].filter(c => ring[c.address]).sort((a, b) => Number(BigInt(b.value) - BigInt(a.value)));
-  const picked = []; let S = 0n;
-  for (const c of coins) { picked.push(c); S += BigInt(c.value); if (S >= amount + fee) break; }
-  if (S < amount + fee) throw new Error(tr('not enough BTC'));
-  const outputs = [{ spk: toSpkHex, value: amount }], change = S - amount - fee;
-  if (change > 546n) outputs.push({ spk: btcP2wpkhSpk(btcAcctPub()), value: change });
-  const inputs = picked.map(c => ({ prevTxid: c.txid, vout: c.vout, valueSats: BigInt(c.value), key: ring[c.address] }));
-  const { rawtx, txid } = btcP2wpkhSend({ inputs, outputs });
-  addFundTxid(txid);   // plumbing канала — Activity не показывает как обычный send
-  return { rawtx, txid, vout: 0, value: String(amount) };
 }
 
 // The wallet's BTC keys as importable WIFs — the escape hatch that keeps "non-custodial" honest:
