@@ -68,7 +68,7 @@ export function openIssueModal() {
     <div class="seg" id="iMode">
       <button data-m="a" class="on">${tr('Currency')}</button>
       <button data-m="t">${tr('Tokens')}</button>
-      <button data-m="n">🗺️ Freiland</button>
+      <button data-m="n">${tr('Holdings')}</button>
     </div>
     <p class="sub" id="iModeHint" style="font-size:12px">${tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.')}</p>
     <div id="iFungible" class="stack">
@@ -116,7 +116,7 @@ export function openIssueModal() {
     $('#iModeHint').textContent = mode === 't'
       ? tr('Unique named items — tickets, memberships, keys. They do not melt, travel whole on one coin, and names must not repeat.')
       : mode === 'n'
-        ? tr('claim a name — your deposit melts as rent; anyone can buy it at your self-assessed price')
+        ? tr('🗺️ Freiland — a name held from the community: your deposit melts as rent, and anyone can buy it at your self-assessed price.')
         : tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.');
     if (mode === 'n') $('#iName').dispatchEvent(new Event('input'));   // сразу проверить занятость
   });
