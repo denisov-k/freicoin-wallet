@@ -70,6 +70,11 @@ export function openIssueModal() {
       <button data-m="t">${tr('Tokens')}</button>
       <button data-m="n">${tr('Holdings')}</button>
     </div>
+    <div class="seg" id="iLandKind" hidden>
+      <button data-k="name" class="on">${tr('name (human-readable)')}</button>
+      <button data-k="ticker" disabled title="${tr('coming soon')}">${tr('ticker')}</button>
+      <button data-k="plot" disabled title="${tr('coming soon')}">${tr('plot')}</button>
+    </div>
     <p class="sub" id="iModeHint" style="font-size:12px">${tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.')}</p>
     <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="${tr('e.g. labor-hours')}"></label>
     <div id="iFungible" class="stack">
@@ -88,11 +93,6 @@ export function openIssueModal() {
       <label>${tr('Unique items (tokens)')}<textarea id="iToks" class="txt-ui" rows="4" placeholder="${tr('one per line')}"></textarea></label>
     </div>
     <div id="iLandBox" class="stack" hidden>
-      <div class="seg" id="iLandKind">
-        <button data-k="name" class="on">${tr('name (human-readable)')}</button>
-        <button data-k="ticker" disabled title="${tr('coming soon')}">${tr('ticker')}</button>
-        <button data-k="plot" disabled title="${tr('coming soon')}">${tr('plot')}</button>
-      </div>
       <div class="sub" id="iAvail" style="font-size:12px"></div>
       <label>${tr('Self-assessed value')} (FRC)<input id="iVal" type="text" inputmode="decimal" placeholder="0.01+"></label>
       <div class="rrow"><span>${tr('Rent (auto, demurrage)')}</span><b id="iRent" class="sub">—</b></div>
@@ -110,6 +110,7 @@ export function openIssueModal() {
     $('#iFungible').hidden = mode !== 'a';
     $('#iTokensBox').hidden = mode !== 't';
     $('#iLandBox').hidden = mode !== 'n';
+    $('#iLandKind').hidden = mode !== 'n';   // под-переключатель Имя/Тикер/Участок — сразу под классом
     const nameInp = /** @type {HTMLInputElement} */ ($('#iName'));
     nameInp.maxLength = mode === 'n' ? 32 : 24;   // land-имена до 32
     nameInp.placeholder = mode === 'n' ? 'alice' : tr('e.g. labor-hours');
