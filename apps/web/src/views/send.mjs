@@ -24,10 +24,14 @@ export function paintSendAvail(st, approx) {
 
 export function renderReceive() {
   // Open in a loading state (shimmering QR + address placeholders), then fill in.
-  const btcOn = d.SWAP() && mvBtc().available;
+  // Селектор валюты гейтится по СЕТИ (не по mvBtc().available: при первом открытии стейт свопа
+  // ещё не доехал, и селектор молча пропадал).
+  const btcOn = d.SWAP();
   const lnOn = d.curNet() === 'main';   // ⚡-приём: узел в кошельке (mainnet)
   openModal(tr('Receiving'),
-    (btcOn ? `<label>${tr('Currency')}<select id="rcvCur"><option value="FRC">FRC</option><option value="BTC">BTC</option>${lnOn ? '<option value="LN">⚡ Lightning</option>' : ''}</select></label>` : '')
+    (btcOn ? `<label>${tr('Currency')}<select id="rcvCur"><option value="FRC">FRC</option><option value="BTC">BTC</option></select></label>` : '')
+    // ⚡ — не валюта, а СПОСОБ получения: отдельный переключатель (вкл → сумма-инвойс вместо адреса)
+    + (lnOn ? `<label class="chk"><input type="checkbox" id="lnRcvChk">⚡ Lightning</label>` : '')
     + `<div id="lnAmtRow" hidden><label class="numfield">${tr('Amount')} (${tr('sats')})<input id="lnRcvAmt" type="text" inputmode="numeric"></label>
        <div class="row"><button id="lnRcvGo">${tr('Create invoice')}</button></div></div>
      <div id="qrBox" class="qr skel" style="margin:0 auto;height:220px"></div>
@@ -37,6 +41,7 @@ export function renderReceive() {
   // ⚡: сумма → инвойс встроенного узла → QR в тот же qrBox, копирование той же кнопкой
   const fillLn = () => {
     $('#lnAmtRow').hidden = false; $('#newAddrRow').hidden = true;
+    const cs = $('#rcvCur'); if (cs) cs.disabled = true;   // инвойс — это сатоши; валюта не участвует
     const box = $('#qrBox'); box.className = 'qr'; box.innerHTML = '';
     $('#addr').textContent = tr('enter the amount and create an invoice');
     $('#copyAddr').disabled = true;
@@ -56,6 +61,7 @@ export function renderReceive() {
   // FRC = a fresh HD address; BTC = the single (fixed) account address, so "New address" hides for BTC.
   const fill = async isBtc => {
     $('#lnAmtRow').hidden = true;
+    const cs = $('#rcvCur'); if (cs) cs.disabled = false;
     const box0 = $('#qrBox'); if (box0) { box0.className = 'qr skel'; box0.innerHTML = ''; }
     const a0 = $('#addr'); if (a0) a0.innerHTML = `<div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div>`;
     const cp0 = $('#copyAddr'); if (cp0) cp0.disabled = true;
@@ -69,7 +75,8 @@ export function renderReceive() {
     $('#addr').textContent = addr;
     const cp = $('#copyAddr'); if (cp) { cp.disabled = false; cp.onclick = e => copy(addr, e.target); }
   };
-  const cur = $('#rcvCur'); if (cur) cur.onchange = () => cur.value === 'LN' ? fillLn() : fill(cur.value === 'BTC');
+  const cur = $('#rcvCur'); if (cur) cur.onchange = () => fill(cur.value === 'BTC');
+  const lnChk = $('#lnRcvChk'); if (lnChk) lnChk.onchange = () => lnChk.checked ? fillLn() : fill($('#rcvCur')?.value === 'BTC');
   // Fresh FRC address: bump the index + repaint at once, then grow the watch window off-frame.
   $('#newAddr').onclick = () => { d.bumpRecv(); fill(false); d.growWatchAfterNewAddr(); };
   fill(false);
