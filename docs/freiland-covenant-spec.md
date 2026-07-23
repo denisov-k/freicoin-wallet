@@ -80,21 +80,24 @@ _Минус:_ атомарный биндинг ДВУХ выходов — са
 
 ## 3. Ковенант-выход: что коммитит scriptPubKey (под вариант A)
 
-Формат — тот же extension-output-суффикс, что у ассетов (`asset-spk.mjs`: base-программа +
-data-пуши + завершающий version-опкод OP_0..OP_16; OP_1=fungible, OP_2=asset+tokens). Harberger =
-**новая версия OP_3 (HRBG)** на HOST-FRC-выходе (assetTag=null):
+**ИСПРАВЛЕНО фазой 2 (см. §7a): не v0-base, а НОВАЯ witness-версия.** v0-base (`0014{hash}`)
+энфорсится старой нодой (MAST-корень) ⇒ форс-выкуп без подписи там = ХАРД-форк. Неизвестная
+witness-версия — anyone-can-spend для старых нод ⇒ энфорс новых только ужесточает = СОФТфорк.
+HRBG = **witness-версия 2** (внешний байт OP_1=0x51), extension-суффикс несёт ковенант, OP_3-маркер:
 ```
-scriptPubKey = <base 0014{hash20}> <push nameHash(32)> <push ownerHash160(20)> <push floorV(8 LE)> OP_3
+scriptPubKey = 51 20{nameHash(32)} 14{ownerHash160(20)} 08{floorV(8 LE)} OP_3
+               ^witver-2  ^программа=nameHash  ^суффикс: owner + floorV      ^HRBG-маркер
 ```
 Коммитит:
-- **`nameHash`** (32) — sha256 имени; ключ консенсус-реестра `nameHash → outpoint` (уникальность).
-- **`ownerHash160`** (20) — куда идёт V при форс-выкупе (P2WPKH-выплата владельцу: `0014{owner}`).
-- **`floorV`** (8, кария) — dust-пол по Гезеллю ([[one-unit-coin-freeze]]); ниже него имя «протухло»,
-  берётся за floorV кем угодно, резолв гаснет. Per-имя ⇒ развязка «вход-порог vs протухание».
+- **`nameHash`** (32, в программе witver-2) — sha256 имени; ключ консенсус-реестра `nameHash→outpoint`.
+- **`ownerHash160`** (20, суффикс) — куда идёт V при форс-выкупе (`0014{owner}`).
+- **`floorV`** (8, кария, суффикс) — dust-пол по Гезеллю ([[one-unit-coin-freeze]]); ниже — «протухло»,
+  берётся за floorV кем угодно. Per-имя ⇒ развязка «вход-порог vs протухание».
 
-Сумма выхода (`value`) = залог (host FRC); `asset_pv(value, dist)` = текущая цена V. Отдельного
-поля V нет — он ВЫВОДИТСЯ из value (в этом суть). До активации софтфорка OP_3-суффикс старым нодам
-= обычный witness-выход (base-программа), т.е. anyone-can-spend по base — soft-fork-совместимо.
+Сумма выхода (`value`) = залог (host FRC; `DeriveAssetTag`: 28-байт-суффикс → assetTag null);
+`asset_pv(value, dist)` = текущая цена V (отдельного поля V нет — выводится из value). До активации
+софтфорка HRBG-выход старым нодам = **anyone-can-spend** (witver 2 неизвестна) — soft-fork-корректно;
+**поэтому HRBG-выходы чеканить ТОЛЬКО после активации** (до неё их кто угодно потратит).
 
 ## 4. Пути траты (консенсус, расширение ranged-логики §2 tx_verify)
 
@@ -144,22 +147,27 @@ scriptPubKey = <base 0014{hash20}> <push nameHash(32)> <push ownerHash160(20)> <
 6. **Аудит** (консенсус-код — высшая ставка; отдельный adversarial-проход, ср.
    [[security-audit-2026-07-16]]) → активация.
 
-## 7a. Стадия 1 — СДЕЛАНО (2026-07-23)
+## 7a. Стадии 1-2(аналитика) — СДЕЛАНО (2026-07-23)
 
-Формат OP_3 (HRBG) формализован в JS-модели: `core/asset-spk.mjs` (`encodeHarbergerSpk` +
-`decodeAssetSpk` ветка version 3), тест `apps/web/test/harberger.test.mjs` (27 проверок, зелёный).
-Байты: `base ‖ push nameHash(32) ‖ push owner(20) ‖ push floorV(8 LE) ‖ OP_3`.
+Формат OP_3 (HRBG) в JS-модели: `core/asset-spk.mjs` (`encodeHarbergerSpk` + `decodeAssetSpk`
+ветка version 3), тест `apps/web/test/harberger.test.mjs` (28 проверок, зелёный). Байты — см. §3
+(witness v2 + суффикс).
 
-**Проверено против C++:** `DeriveAssetTag` (`primitives/transaction.h:216`) видит 60-байтовый
-OP_3-суффикс как HOST (60 ≠ 20/52 ⇒ assetTag null) — старая нода примет HRBG-выход как обычную
-host-FRC-монету, extension-output софтфорк-механизм уже это даёт. JS-модель = поведение консенсуса.
+**КРИТ-ВОПРОС АВТОРИЗАЦИИ РАЗРЕШЁН** (чтение `interpreter.cpp`, `script.cpp`, `policy.h`):
+- Форс-выкуп без подписи = *ослабление*; софтфорк только *ужесточает*. Значит HRBG-выход обязан
+  быть anyone-can-spend для старых нод.
+- **v0-base `0014{hash}` НЕ подходит:** witver 0 — MAST-корень, `VerifyWitnessProgram` требует
+  раскрыть удовлетворяющий скрипт ⇒ base энфорсится ⇒ форс-выкуп там = ХАРД-форк. (Так исправлен
+  формат фазы 1.)
+- **Неизвестная witness-версия ПОДХОДИТ:** `VerifyWitnessProgram` (interpreter.cpp:2413-2418) для
+  witver≥2 → `return true` «for future softfork compatibility» = anyone-can-spend. Флаг
+  `DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM` — в `STANDARD_`, НЕ в `MANDATORY_` (policy.h:114/132),
+  т.е. политика релея, не консенсус. Заняты v0 (MAST) и v1 (Taproot); **HRBG = witver 2** (OP_1).
+- `DeriveAssetTag` (transaction.h:216): 28-байт-суффикс → host (assetTag null). Модель = консенсус.
 
-**КЛЮЧЕВОЙ ОТКРЫТЫЙ ВОПРОС ФАЗЫ 2 (авторизация спенда).** Форс-выкуп без подписи владельца =
-*ослабление* правил; софтфорк умеет только *ужесточать* (new-valid ⊄ old-valid). Значит до
-активации HRBG-выход обязан быть для СТАРЫХ нод **anyone-can-spend** (тогда энфорс новых нод —
-только ужесточение: «anyone-can-spend → только по ковенанту»). Надо ТОЧНО установить, как nv3
-трактует witness-программу вида `0014{hash}{extension-suffix}` без подписи: аноним-спенд или
-CHECKSIG-по-base. От этого зависит вся модель активации. Разобрать до любого C++ в `tx_verify`.
+Вывод: ковенант **софтфорк-корректен** на witver 2 (энфорс новых нод: anyone-can-spend → только-по-
+ковенанту). HRBG-выходы чеканить только после активации. Следующее: стадия 2 — консенсус
+регтест-флаг + путь-A (форс-выкуп) в `tx_verify` (уже на выделенном регтесте, НЕ на живом сигнете).
 
 ## 8. Риски / открытые вопросы
 

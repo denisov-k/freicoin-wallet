@@ -46,17 +46,26 @@ const dataPush = hex => (hex.length / 2).toString(16).padStart(2, '0') + hex;   
 const le8 = v => { let b = BigInt(v), s = ''; for (let i = 0; i < 8; i++) { s += Number(b & 0xffn).toString(16).padStart(2, '0'); b >>= 8n; } return s; };
 const unLe8 = bytes => { let v = 0n; for (let i = 7; i >= 0; i--) v = (v << 8n) | BigInt(bytes[i]); return v; };
 
-/** Append the Harberger covenant SUFFIX (variant A) to a base HOST witness program.
- *  base is a plain host program (e.g. 0014{hash20}); the coin stays host FRC (its value = the
- *  melting deposit, its asset_pv = the current forced-sale price V). Commits the registry key
- *  (nameHash), the forced-sale payout target (ownerHash160 → 0014{owner}), and the Gesell dust
- *  floor (floorV, kria). Mirror the C++ extension-suffix walk; version OP_3 marks it as HRBG. */
-export function encodeHarbergerSpk(baseSpkHex, nameHashHex, ownerHash160Hex, floorV) {
+// Outer witness version for HRBG outputs. Phase-2 analysis (freiland-covenant-spec.md §7a) found
+// that a v0 base (0014{hash}) is ENFORCED by old nodes (a MAST root) — a no-owner-sig forced buy
+// there would be a HARD fork. An UNKNOWN witness version, by contrast, is anyone-can-spend on old
+// nodes (VerifyWitnessProgram returns true for softfork compat; DISCOURAGE is policy, not consensus),
+// so covenant enforcement only TIGHTENS — a proper soft fork. v0/v1 are taken (MAST/Taproot); HRBG
+// uses witness version 2 (outer byte OP_1 = 0x51). Only mint HRBG outputs AFTER activation (before
+// it, they are anyone-can-spend — never fund them early).
+const HRBG_WITVER_BYTE = '51';   // OP_1 → witness version 2
+
+/** Build a Freiland Harberger covenant output (variant A). HOST-FRC output on witness version 2:
+ *    51 20{nameHash} 14{ownerHash160} 08{floorV LE} OP_3
+ *  program = nameHash (the registry key / name commitment); suffix = owner (forced-sale payout
+ *  target, 0014{owner}) + floorV (Gesell dust floor, kria) + OP_3 marker. Value = the melting
+ *  deposit (host FRC); asset_pv(value) = the current forced-sale price V. */
+export function encodeHarbergerSpk(nameHashHex, ownerHash160Hex, floorV) {
   if (!/^[0-9a-f]{64}$/.test(nameHashHex)) throw new Error('nameHash must be 32 bytes');
   if (!/^[0-9a-f]{40}$/.test(ownerHash160Hex)) throw new Error('ownerHash160 must be 20 bytes');
   const f = BigInt(floorV);
   if (f < 0n || f > 0xffffffffffffffffn) throw new Error('floorV out of range');
-  return baseSpkHex + dataPush(nameHashHex) + dataPush(ownerHash160Hex) + dataPush(le8(f)) + opN(HARBERGER_V);
+  return HRBG_WITVER_BYTE + dataPush(nameHashHex) + dataPush(ownerHash160Hex) + dataPush(le8(f)) + opN(HARBERGER_V);
 }
 
 /** Append the asset extension SUFFIX (§XI: data pushes + trailing version opcode) to a base
@@ -118,12 +127,12 @@ export function decodeAssetSpk(spkHex) {
     } else return null;
   }
   if (version === null || pos !== b.length) return null;
-  // Harberger covenant (OP_3, variant A): HOST output — the suffix is nameHash(32)‖owner(20)‖floorV(8),
-  // NOT an asset tag. The version opcode discriminates; assetTag stays null (value is host FRC).
+  // Harberger covenant (OP_3, variant A): HOST output on witness version 2 (base = 51 20{nameHash}).
+  // program = nameHash (registry key); suffix = owner(20)+floorV(8). assetTag stays null (host FRC).
   if (version === HARBERGER_V) {
-    if (data.length !== 60) return null;
+    if (data.length !== 28 || base.length !== 68 || !base.startsWith(HRBG_WITVER_BYTE + '20')) return null;
     return { baseSpk: base, assetTag: null, tokenHash: null, version,
-      harberger: { nameHash: bytesToHex(data.slice(0, 32)), owner: bytesToHex(data.slice(32, 52)), floorV: unLe8(data.slice(52, 60)) } };
+      harberger: { nameHash: base.slice(4), owner: bytesToHex(data.slice(0, 20)), floorV: unLe8(data.slice(20, 28)) } };
   }
   if (data.length !== 20 && data.length !== 52) return null;   // tag | tag++tokenHash
   return { baseSpk: base, assetTag: bytesToHex(data.slice(0, 20)), tokenHash: data.length === 52 ? bytesToHex(data.slice(20)) : null, version };
