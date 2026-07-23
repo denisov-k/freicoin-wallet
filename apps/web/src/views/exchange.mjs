@@ -1578,14 +1578,13 @@ export async function paintMyNames() {
   const mine = all.filter(n => n.ownerFrcPub === L.landOwnerPub(n.name));
   box.innerHTML = mine.length
     ? mine.map(n =>
-        `<div class="rrow" style="font-size:13px">
-           <span style="font-family:ui-monospace,monospace">${n.name}${n.lapsed ? ' ⚠' : ''}</span>
-           <span style="display:flex;gap:8px;align-items:center">
-             <b>${n.price ? fmtFrcN(n.price) : '—'} / ${n.value && n.value !== '0' ? fmtFrcN(n.value) : '—'} FRC</b>
+        `<tr><td style="font-family:ui-monospace,monospace">${n.name}${n.lapsed ? ' ⚠' : ''}</td>
+           <td class="r">${n.price ? fmtFrcN(n.price) : '—'} / ${n.value && n.value !== '0' ? fmtFrcN(n.value) : '—'} FRC</td>
+           <td class="act-cell" style="white-space:nowrap">
              ${n.price ? `<button class="icon nmVal2" data-n="${n.name}" data-p="${n.price}" title="${tr('Top up / revalue')}">±</button>` : ''}
              <button class="icon nmRes" data-n="${n.name}" data-r="${n.resolve || ''}" title="${tr('Point this name to which address?')}">✎</button>
-           </span></div>`).join('')
-    : `<div class="sub" style="font-size:12px">${tr('no names yet — claim one in Issue → Holdings')}</div>`;
+           </td></tr>`).join('')
+    : `<tr><td colspan="3" class="sub">${tr('no names yet — claim one in Issue → Holdings')}</td></tr>`;
   box.querySelectorAll('.nmRes').forEach(b => b.onclick = () => editResolveName(b.dataset.n, b.dataset.r));
   box.querySelectorAll('.nmVal2').forEach(b => b.onclick = () => revalueName(b.dataset.n, b.dataset.p));
 }
@@ -1600,13 +1599,10 @@ export async function paintNameMarket() {
   const live = all.filter(n => !n.lapsed).sort((a, b) => Number(BigInt(b.value) - BigInt(a.value)));
   box.innerHTML = live.length
     ? live.map(n =>
-        `<div class="rrow" style="font-size:13px">
-           <span style="font-family:ui-monospace,monospace">${n.name}${mineSet.has(n.name) ? ' · ' + tr('yours') : ''}</span>
-           <span style="display:flex;gap:8px;align-items:center">
-             <b>${fmtFrcN(n.buyable && n.price ? n.price : n.value)} FRC</b>
-             ${n.buyable && !mineSet.has(n.name) ? `<button class="nmBuy" data-n="${n.name}" data-p="${n.price}" style="font-size:12px;padding:2px 10px">${tr('Buy')}</button>` : ''}
-           </span></div>`).join('')
-    : `<div class="sub" style="font-size:12px">${tr('no names registered yet')}</div>`;
+        `<tr><td style="font-family:ui-monospace,monospace">${n.name}${mineSet.has(n.name) ? ' · ' + tr('yours') : ''}</td>
+           <td class="r">${fmtFrcN(n.buyable && n.price ? n.price : n.value)} FRC</td>
+           <td class="act-cell">${n.buyable && !mineSet.has(n.name) ? `<button class="nmBuy" data-n="${n.name}" data-p="${n.price}">${tr('Buy')}</button>` : ''}</td></tr>`).join('')
+    : `<tr><td colspan="3" class="sub">${tr('no names registered yet')}</td></tr>`;
   box.querySelectorAll('.nmBuy').forEach(b => b.onclick = () => buyName(b.dataset.n, b.dataset.p));
 }
 
@@ -1694,8 +1690,8 @@ export function renderExchange(el) {
       <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>
     </div>
     ${nv3 ? `<div id="mktHold" hidden>
-      <div class="sub" style="font-size:12px;margin:2px 0">🗺️ ${tr('Names for sale')} · ${tr('self-assessed price')}. ${tr('to claim a new name, use Issue → Holdings')}</div>
-      <div id="nameMktBody">${skel(2)}</div>
+      <div class="sub" style="font-size:12px;margin:2px 0">🗺️ ${tr('Names for sale')}. ${tr('to claim a new name, use Issue → Holdings')}</div>
+      <table class="mkt"><thead><tr><th>${tr('Name')}</th><th class="r">${tr('Price')}</th><th></th></tr></thead><tbody id="nameMktBody">${skelRows(2)}</tbody></table>
       <div id="nameMktLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
     </div>` : ''}`;
   $('#openOffer').onclick = openOfferModal;
@@ -1716,8 +1712,8 @@ export function renderExchange(el) {
 export function renderAssetBalance(el) {
   el.innerHTML = `
     <table class="mkt"><thead><tr><th>${tr('Asset')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="assetBalBody">${skelRows(3)}</tbody></table>
-    <div class="sub" style="font-size:12px;margin:10px 0 2px">🗺️ ${tr('My names')} · V / ${tr('deposit')}</div>
-    <div id="myNamesBody">${skel(1)}</div>
+    <div class="sub" style="font-size:12px;margin:10px 0 2px">🗺️ ${tr('My names')}</div>
+    <table class="mkt"><thead><tr><th>${tr('Name')}</th><th class="r">V / ${tr('deposit')}</th><th></th></tr></thead><tbody id="myNamesBody">${skelRows(1)}</tbody></table>
     <div id="myNamesLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`;
   const f = $('#faucetBtn'); if (f) f.onclick = faucet;   // the button itself lives with the other Balance actions
   if (state) paintAssetBalance(); else mvRefresh();

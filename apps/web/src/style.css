@@ -25,6 +25,12 @@ nav button.active { background:var(--card); color:var(--fg); }
 .seg button { flex:1; background:none !important; border:0; color:var(--sub) !important; padding:8px !important; border-radius:8px; font-size:14px !important; font-weight:500 !important; cursor:pointer; }
 .seg button.on { background:var(--card) !important; color:var(--fg) !important; }
 .seg button:disabled { opacity:.45; cursor:default; }
+/* the Exchange section already spaces children with its flex gap — drop the .seg's own 12px margin
+   (would stack to ~26px under the class switch), and give the show/hide panes the same 14px rhythm
+   their children lost when wrapped (plain divs have no gap). [hidden] override keeps the toggle. */
+#exchange .seg { margin:0; }
+#mktTrade, #mktHold { display:flex; flex-direction:column; gap:14px; }
+#mktTrade[hidden], #mktHold[hidden] { display:none; }
 main { flex:1; min-height:0; overflow-y:auto; padding:24px 20px; } section { display:flex; flex-direction:column; gap:14px; }
 main, #actList { scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
 main::-webkit-scrollbar, #actList::-webkit-scrollbar { width:6px; }
