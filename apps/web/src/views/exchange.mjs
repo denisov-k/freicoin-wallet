@@ -1566,11 +1566,7 @@ async function openNamesModal() {
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>🗺️ ${tr('Names')} · Freiland</b><button id="nmClose" class="icon">✕</button></div>
     <div class="sub" style="font-size:12px">${tr('claim a name — your deposit melts as rent; anyone can buy it at your self-assessed price')}</div>
-    <label class="numfield">${tr('Name')}<input id="nmName" type="text" autocomplete="off" spellcheck="false" placeholder="alice"></label>
-    <div class="sub" id="nmAvail" style="font-size:12px"></div>
-    <label class="numfield">${tr('Self-assessed value')} (FRC)<input id="nmVal" type="text" inputmode="decimal" placeholder="100+"></label>
-    <div class="rrow"><span>${tr('Rent (auto, demurrage)')}</span><b id="nmRent" class="sub">—</b></div>
-    <button id="nmGo">${tr('Claim the name')}</button>
+    <div class="sub" style="font-size:12px">${tr('to claim a new name, use Issue → 🗺️ Name')}</div>
     <div id="nmLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
     <div id="nmMine" style="margin-top:10px"></div>
     <div id="nmMarket" style="margin-top:10px"></div></div>`;
@@ -1579,40 +1575,7 @@ async function openNamesModal() {
   m.onclick = e => { if (e.target === m) stop(); };
   q(m, '#nmClose').onclick = stop;
   const log = t => { const el = $('#nmLog'); if (el) el.textContent = t; };
-  // живая проверка доступности имени
-  let availT = null;
-  q(m, '#nmName').oninput = () => {
-    const el = $('#nmAvail'); if (el) { el.textContent = ''; el.style.color = ''; }
-    clearTimeout(availT);
-    const name = q(m, '#nmName').value.trim();
-    if (!name) return;
-    if (!L.validLandName(name)) { if (el) { el.textContent = tr('bad name (1–32: a-z 0-9 _ -)'); el.style.color = 'var(--err)'; } return; }
-    availT = setTimeout(async () => {
-      const addr = await L.resolveName(name); if (q(m, '#nmName').value.trim() !== name) return;
-      if (el) { el.textContent = addr ? tr('name taken') : tr('available'); el.style.color = addr ? 'var(--err)' : 'var(--ok)'; }
-    }, 400);
-  };
-  // рента = годовой демерредж заявленной ценности
-  q(m, '#nmVal').oninput = () => {
-    const v = num($('#nmVal').value) || 0; const el = $('#nmRent');
-    if (el) el.textContent = v > 0 ? `≈ ${(Number(L.annualRent(BigInt(Math.round(v * 1e8)))) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 2 })} FRC/${tr('yr')}` : '—';
-  };
-  q(m, '#nmGo').onclick = async () => {
-    const name = $('#nmName').value.trim(), v = num($('#nmVal').value);
-    if (!L.validLandName(name)) return toast(tr('bad name'), 'err');
-    if (!(v >= 100)) return toast(tr('minimum value is 100 FRC'), 'err');
-    const go = $('#nmGo'); go.disabled = true;
-    try {
-      await L.registerName({ name, valueFrc: v, progress: p => log(
-        p === 'mint' ? tr('minting the name token…')
-        : p === 'lock' ? tr('locking the deposit…')
-        : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…')
-        : p === 'offer' ? tr('signing the standing sale offer…')
-        : tr('registered ✅')) });
-      toast(`${name}: ${tr('name claimed ✅')}`, 'ok'); paintAll();
-    } catch (e) { toast(e.message, 'err'); log(e.message); }
-    go.disabled = false;
-  };
+  // занятие нового имени переехало в «Выпуск» → 🗺️ Имя (issue.mjs): имя = тот же выпуск актива
   const fmtFrc = v => (Number(BigInt(v)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 2 });
   // резолв-адрес: чиним прямо в строке имени (подпись land-ключа → landSetResolve)
   async function editResolve(name, cur) {
