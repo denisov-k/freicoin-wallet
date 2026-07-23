@@ -1477,7 +1477,9 @@ const fmtA = (tag, v) => tag === 'FRC' ? frc(v) + ' FRC'
 // paint() refines them once state loads (drops BTC if no node, adds newly-seen assets).
 function cachedFilterOpts() {
   let defs = {}; try { defs = JSON.parse(localStorage.getItem('fw_reldefs') || '{}'); } catch {}
-  const assetOpts = Object.entries(defs).map(([tag, d]) => `<option value="${tag}">${d.name || tag.slice(0, 8) + '…'}</option>`).join('');
+  // pre-sync placeholder: drop Freiland names (land:…); paint() replaces this with class-aware opts
+  const assetOpts = Object.entries(defs).filter(([, d]) => !(d.name || '').startsWith('land:'))
+    .map(([tag, d]) => `<option value="${tag}">${d.name || tag.slice(0, 8) + '…'}</option>`).join('');
   return `<option value="">${tr('all')}</option><optgroup label="${tr('Currency')}"><option value="FRC">FRC</option><option value="BTC">BTC</option></optgroup>`
     + (assetOpts ? `<optgroup label="${tr('Assets')}">${assetOpts}</optgroup>` : '');
 }
@@ -1601,7 +1603,7 @@ export async function paintNameMarket() {
     ? live.map(n =>
         `<tr><td style="font-family:ui-monospace,monospace">${n.name}${mineSet.has(n.name) ? ' · ' + tr('yours') : ''}</td>
            <td class="r">${fmtFrcN(n.buyable && n.price ? n.price : n.value)} FRC</td>
-           <td class="act-cell">${n.buyable && !mineSet.has(n.name) ? `<button class="nmBuy" data-n="${n.name}" data-p="${n.price}">${tr('Buy')}</button>` : ''}</td></tr>`).join('')
+           <td class="act-cell">${n.buyable && !mineSet.has(n.name) ? `<button class="nmBuy rbtn" data-n="${n.name}" data-p="${n.price}" title="${tr('Buy')}" aria-label="${tr('Buy')}">${SVG.buy}</button>` : ''}</td></tr>`).join('')
     : `<tr><td colspan="3" class="sub">${tr('no names registered yet')}</td></tr>`;
   box.querySelectorAll('.nmBuy').forEach(b => b.onclick = () => buyName(b.dataset.n, b.dataset.p));
 }
@@ -1757,26 +1759,37 @@ function paint() {
     byAsset.set(k, e);
   }
 
-  // grouped asset options (used by the offer form and the filters): the currencies (FRC + BTC) in a
-  // Currency group, user-issued assets in an Assets group.
-  const assetOpts = state.info.assets.map(a => `<option value="${a.tag}">${assetName(a.tag)}</option>`).join('');
+  // Freiland name-NFTs never trade here (they live in «Holdings») — drop them from every selector,
+  // by their tag (from the names board) or their «land:…» name (fallback before the board loads).
+  const tradable = a => !_nameTags.has(a.tag) && !(a.name || '').startsWith('land:');
   const btcCur = state.swap?.available ? '<option value="BTC">BTC</option>' : '';   // BTC is a currency here, not a separate group
-  const grouped = curOpt => `<optgroup label="${tr('Currency')}">${curOpt}${btcCur}</optgroup>`
-    + (assetOpts ? `<optgroup label="${tr('Assets')}">${assetOpts}</optgroup>` : '');
 
-  // "I sell": the assets I hold + BTC. NO balance in the option label — the selected balance shows
-  // in the form (paintOfferAvail); everything is toppable externally, so a fixed label misleads.
+  // OFFER FORM: "I sell" = the assets I hold (minus names); "I want" = any tradable asset.
   const sellOpt = k => `<option value="${k}">${assetName(k === 'FRC' ? null : k)}</option>`;
-  const frcHeld = byAsset.get('FRC'), heldAssets = [...byAsset.entries()].filter(([k]) => k !== 'FRC');
+  const frcHeld = byAsset.get('FRC'), heldAssets = [...byAsset.entries()].filter(([k]) => k !== 'FRC' && !_nameTags.has(k));
   const sellCur = (frcHeld ? sellOpt('FRC') : '') + btcCur;
   setOptions('#rAsset', ((sellCur ? `<optgroup label="${tr('Currency')}">${sellCur}</optgroup>` : '')
     + (heldAssets.length ? `<optgroup label="${tr('Assets')}">${heldAssets.map(([k]) => sellOpt(k)).join('')}</optgroup>` : ''))
     || `<option value="">${tr('no coins yet')}</option>`);
-  setOptions('#rWant', grouped('<option value="FRC">FRC</option>'));
+  const wantAssetOpts = state.info.assets.filter(tradable).map(a => `<option value="${a.tag}">${assetName(a.tag)}</option>`).join('');
+  setOptions('#rWant', `<optgroup label="${tr('Currency')}"><option value="FRC">FRC</option>${btcCur}</optgroup>`
+    + (wantAssetOpts ? `<optgroup label="${tr('Assets')}">${wantAssetOpts}</optgroup>` : ''));
   paintOfferAvail();   // reflect the selected sell asset's available balance in the form
 
-  // order-book filters (grouped the same way — BTC lives in Currency; 'all' stays ungrouped at the top)
-  const fopt = `<option value="">${tr('all')}</option>` + grouped('<option value="FRC">FRC</option>');
+  // FILTERS are CLASS-AWARE: they list only assets actually present in the CURRENT segment's OPEN
+  // offers (names excluded) — so «Currency» never shows tokens, «Tokens» never shows currencies, and
+  // idle issued assets with no live offer don't clutter the list. BTC (a swap, not a book offer)
+  // is added to the Currency group explicitly.
+  const giveTagOf = o => o.give ? (o.give.assetTag ?? 'FRC') : '';
+  const wantTagOf = o => o.ranged ? ((o.desc.payoutAsset && o.desc.payoutAsset !== HOST_TAG) ? o.desc.payoutAsset : 'FRC') : (o.want?.assetTag ?? 'FRC');
+  const classOf = o => _nameTags.has(o.give?.assetTag) ? null : (o.give?.tokenHash ? 'tok' : 'cur');
+  const inClass = new Set();
+  for (const o of state.info.book) if (o.status === 'open' && classOf(o) === mktClass) { inClass.add(giveTagOf(o)); inClass.add(wantTagOf(o)); }
+  const fAssetTags = [...inClass].filter(t => t !== 'FRC');
+  const showBtc = mktClass === 'cur' && state.swap?.available;
+  const fopt = `<option value="">${tr('all')}</option>`
+    + `<optgroup label="${tr('Currency')}"><option value="FRC">FRC</option>${showBtc ? '<option value="BTC">BTC</option>' : ''}</optgroup>`
+    + (fAssetTags.length ? `<optgroup label="${tr('Assets')}">${fAssetTags.map(t => `<option value="${t}">${assetName(t)}</option>`).join('')}</optgroup>` : '');
   setOptions('#fGive', fopt); setOptions('#fWant', fopt);
 
   // skip repainting the book while a fill amount is being typed into it (else the 15s refresh
