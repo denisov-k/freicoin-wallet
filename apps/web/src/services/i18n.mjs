@@ -2,6 +2,7 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'To receive': 'К получению',
   'Invoice with an amount': 'Инвойс с суммой',
   'network fee': 'сетевая комиссия',
   'pay via the exchange: the bot pays the invoice, your BTC covers it on-chain': 'оплатить через обмен: бот платит инвойс, ваши BTC покрывают его on-chain',
@@ -273,6 +274,7 @@ const RU = {
 };
 
 const ES = {
+  'To receive': 'A recibir',
   'Invoice with an amount': 'Factura con importe',
   'network fee': 'comisión de red',
   'pay via the exchange: the bot pays the invoice, your BTC covers it on-chain': 'pagar vía exchange: el bot paga la factura y tus BTC la cubren on-chain',
@@ -724,6 +726,7 @@ const ES = {
 };
 
 const DE = {
+  'To receive': 'Zu erhalten',
   'Invoice with an amount': 'Rechnung mit Betrag',
   'network fee': 'Netzwerkgebühr',
   'pay via the exchange: the bot pays the invoice, your BTC covers it on-chain': 'über die Börse zahlen: der Bot zahlt die Rechnung, dein BTC deckt sie on-chain',
@@ -1175,6 +1178,7 @@ const DE = {
 };
 
 const FR = {
+  'To receive': 'À recevoir',
   'Invoice with an amount': 'Facture avec montant',
   'network fee': 'frais de réseau',
   'pay via the exchange: the bot pays the invoice, your BTC covers it on-chain': "payer via l'échange : le bot paie la facture, vos BTC la couvrent on-chain",
@@ -1626,6 +1630,7 @@ const FR = {
 };
 
 const PT = {
+  'To receive': 'A receber',
   'Invoice with an amount': 'Fatura com valor',
   'network fee': 'taxa de rede',
   'pay via the exchange: the bot pays the invoice, your BTC covers it on-chain': 'pagar via exchange: o bot paga a fatura e seus BTC a cobrem on-chain',
@@ -2077,6 +2082,7 @@ const PT = {
 };
 
 const ZH = {
+  'To receive': '待收款',
   'Invoice with an amount': '带金额的发票',
   'network fee': '网络费',
   'pay via the exchange: the bot pays the invoice, your BTC covers it on-chain': '通过交易所支付：机器人支付发票，您的 BTC 在链上抵付',

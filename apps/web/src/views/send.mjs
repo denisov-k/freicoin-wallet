@@ -42,6 +42,7 @@ export function renderReceive() {
      <div id="rcvLnAmt" class="stack" hidden>
        <label class="numfield" id="lnAmtField">${tr('Amount')} (${tr('sats')})<input id="lnRcvAmt" type="text" inputmode="numeric"></label>
        <div class="row" id="lnGoRow"><button id="lnRcvGo">${tr('Create invoice')}</button></div>
+       <div class="rrow" id="lnAmtSumRow" hidden><span>${tr('To receive')}</span><b id="lnAmtSum"></b></div>
        <div id="lnAmtQr" class="qr" style="margin:0 auto;height:220px;display:none"></div>
        <div class="addr" id="lnAmtInv" style="display:none"></div>
        <div class="row" id="lnAmtCopyRow" hidden><button id="lnAmtCopy" class="ghost">⧉ ${tr('Copy')}</button></div>
@@ -69,6 +70,7 @@ export function renderReceive() {
   // экран «инвойс с суммой»: форма → (создан) → только QR/строка/копирование; «Назад» сбрасывает
   const resetAmtScreen = () => {
     $('#lnAmtField').hidden = false; $('#lnGoRow').hidden = false; $('#lnRcvAmt').value = '';
+    const sr = $('#lnAmtSumRow'); if (sr) sr.hidden = true;
     const b = $('#lnAmtQr'); if (b) { b.style.display = 'none'; b.innerHTML = ''; }
     const a = $('#lnAmtInv'); if (a) { a.style.display = 'none'; a.textContent = ''; }
     const cr = $('#lnAmtCopyRow'); if (cr) cr.hidden = true;
@@ -82,6 +84,7 @@ export function renderReceive() {
       const bolt11 = await (await import('@/views/lightning.mjs')).lnMakeInvoice(sats);
       const qr = await QRCode.toDataURL(bolt11.toUpperCase(), { margin: 1, width: 220 });
       $('#lnAmtField').hidden = true; $('#lnGoRow').hidden = true;   // инвойс готов — форма уходит
+      const sr = $('#lnAmtSumRow'); if (sr) { sr.hidden = false; $('#lnAmtSum').textContent = `${sats.toLocaleString(getLang())} ${tr('sats')}`; }
       const b = $('#lnAmtQr'); if (b) { b.style.display = ''; b.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`; }
       const a = $('#lnAmtInv'); if (a) { a.style.display = ''; a.textContent = bolt11; }
       const cr = $('#lnAmtCopyRow'); if (cr) { cr.hidden = false; $('#lnAmtCopy').onclick = ev => copy(bolt11, ev.target); }
