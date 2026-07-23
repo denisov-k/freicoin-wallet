@@ -18,15 +18,15 @@ const lspWsUrl = () => (location.protocol === 'https:' ? 'wss' : 'ws') + '://' +
 
 let wired = false;
 
-// Автозапуск: после первого ручного включения кошелёк помнит выбор и поднимает узел сам при
-// каждом входе. Это не только UX — при живом канале узел ОБЯЗАН следить за цепью (пропущенный
-// revoked-commitment контрагента = потеря денег; VSS-бэкап спасает состояние, но глаза на
-// цепи должны быть открыты, пока кошелёк открыт).
-const AUTO_KEY = 'fw_ln_auto:main';
+// Автозапуск БЕЗ кнопки: кошелёк разблокирован на mainnet → узел поднимается сам, в фоне,
+// с небольшой задержкой (не толкаемся с первичной синхронизацией за канал). Wasm-ассет (14,5МБ)
+// хэширован и кэшируется браузером — качается один раз. При живом канале узел ОБЯЗАН следить
+// за цепью, пока кошелёк открыт (пропущенный revoked-commitment = потеря денег), так что
+// автозапуск — это ещё и правильная безопасность, а не только UX.
 export function maybeAutoStartLn() {
   try {
-    if (localStorage.getItem(AUTO_KEY) !== '1' || lnRunning() || !ctx.seed) return;
-    ensureNode().catch(() => {});   // тихо, в фоне; модалка покажет живой статус, когда её откроют
+    if (lnRunning() || !ctx.seed) return;
+    setTimeout(() => { if (!lnRunning() && ctx.seed) ensureNode().catch(() => {}); }, 4000);
   } catch {}
 }
 
@@ -46,9 +46,7 @@ async function ensureNode() {
     for (const ev of ['channelReady', 'paymentClaimed', 'paymentSent', 'paymentFailed']) lnOn(ev, () => paintSoon());
     lnOn('log', m => logLine(String(m)));
   }
-  const r = await lnStart({ seedBytes, net: 'btcmain', apiBase: location.origin + '/api-main', lspWsUrl: lspWsUrl(), lspNodeId: LSP_NODE_ID, anchor: { hash: st.tipHash, height: st.tip } });
-  try { localStorage.setItem(AUTO_KEY, '1'); } catch {}   // выбор сделан — дальше поднимаемся сами
-  return r;
+  return lnStart({ seedBytes, net: 'btcmain', apiBase: location.origin + '/api-main', lspWsUrl: lspWsUrl(), lspNodeId: LSP_NODE_ID, anchor: { hash: st.tipHash, height: st.tip } });
 }
 
 const logLine = m => { const el = $('#lnLog'); if (el) { el.textContent = (m + '\n' + el.textContent).slice(0, 2000); } };
@@ -58,12 +56,11 @@ async function paintStatus() {
   const el = $('#lnStat'); if (!el) return;
   try {
     const s = await lnStatus();
-    if (!s.running) { el.innerHTML = `<span class="sub">${tr('node is off')}</span>`; return; }
+    if (!s.running) { el.innerHTML = `<span class="sub">${tr('node is starting…')}</span>`; return; }
     el.innerHTML = `<div class="rrow"><span>${tr('can send')}</span><b>${s.outSats.toLocaleString()} ${tr('sats')}</b></div>
       <div class="rrow"><span>${tr('can receive')}</span><b>${s.inSats.toLocaleString()} ${tr('sats')}</b></div>
       <div class="rrow"><span>${tr('channels')}</span><b>${s.ready}/${s.channels}</b></div>`;
     const forms = $('#lnForms'); if (forms) forms.style.display = 'block';
-    const btn = $('#lnEnable'); if (btn) btn.style.display = 'none';
   } catch (e) { el.textContent = e.message; }
 }
 
@@ -73,8 +70,7 @@ export function openLnModal() {
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>⚡ Lightning</b><button id="lnClose" class="icon">✕</button></div>
     <div class="sub" style="font-size:12px">${tr('a full Lightning node inside your wallet: keys from your phrase, encrypted channel backups on the relay, non-custodial')}</div>
-    <div id="lnStat" style="margin:8px 0"><span class="sub">${tr('node is off')}</span></div>
-    <button id="lnEnable">${tr('Enable ⚡ node')}</button>
+    <div id="lnStat" style="margin:8px 0"><span class="sub">${tr('node is starting…')}</span></div>
     <div id="lnForms" style="display:none">
       <div class="seg" style="margin:6px 0">
         <button data-ln="recv" class="on">${tr('Receive')}</button>
@@ -109,11 +105,11 @@ export function openLnModal() {
     $('#lnPayPane').style.display = b.dataset.ln === 'pay' ? 'block' : 'none';
     $('#lnChanPane').style.display = b.dataset.ln === 'chan' ? 'block' : 'none';
   };
-  q(m, '#lnEnable').onclick = async e => {
-    e.target.disabled = true; e.target.textContent = tr('starting… (downloading the node, ~24 MB once)');
+  // узел стартует сам (автозапуск из дашборда); открытая модалка лишь подстраховывает и ждёт
+  (async () => {
     try { await ensureNode(); await paintStatus(); }
-    catch (err) { logLine(err.message); e.target.disabled = false; e.target.textContent = tr('Enable ⚡ node'); }
-  };
+    catch (err) { const el = $('#lnStat'); if (el) el.textContent = err.message; logLine(err.message); }
+  })();
   q(m, '#lnRGo').onclick = async () => {
     try {
       const sats = Math.round(Number($('#lnRAmt').value)); if (!(sats > 0)) throw new Error(tr('bad amount'));
@@ -133,5 +129,4 @@ export function openLnModal() {
       await lnOpenChannel(sats); logLine(tr('channel requested — the funding transaction is being built…'));
     } catch (e) { logLine(e.message); }
   };
-  if (lnRunning()) paintStatus();
 }

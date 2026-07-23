@@ -2,6 +2,7 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'node is starting…': 'узел запускается…',
   // --- LN in-wallet node (phase 2) ---
   'relay chain feed is not ready': 'чейн-фид реле ещё не готов',
   'node is off': 'узел выключен',
@@ -246,6 +247,7 @@ const RU = {
 };
 
 const ES = {
+  'node is starting…': 'el nodo está iniciando…',
   // --- LN in-wallet node (phase 2) ---
   'relay chain feed is not ready': 'el feed de cadena del relay aún no está listo',
   'node is off': 'nodo apagado',
@@ -670,6 +672,7 @@ const ES = {
 };
 
 const DE = {
+  'node is starting…': 'Node startet…',
   // --- LN in-wallet node (phase 2) ---
   'relay chain feed is not ready': 'der Chain-Feed des Relays ist noch nicht bereit',
   'node is off': 'Node ist aus',
@@ -1094,6 +1097,7 @@ const DE = {
 };
 
 const FR = {
+  'node is starting…': 'le nœud démarre…',
   // --- LN in-wallet node (phase 2) ---
   'relay chain feed is not ready': "le flux de chaîne du relais n'est pas encore prêt",
   'node is off': 'nœud éteint',
@@ -1518,6 +1522,7 @@ const FR = {
 };
 
 const PT = {
+  'node is starting…': 'o nó está iniciando…',
   // --- LN in-wallet node (phase 2) ---
   'relay chain feed is not ready': 'o feed de cadeia do relay ainda não está pronto',
   'node is off': 'nó desligado',
@@ -1942,6 +1947,7 @@ const PT = {
 };
 
 const ZH = {
+  'node is starting…': '节点启动中…',
   // --- LN in-wallet node (phase 2) ---
   'relay chain feed is not ready': '中继链馈送尚未就绪',
   'node is off': '节点已关闭',
