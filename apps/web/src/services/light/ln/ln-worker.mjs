@@ -6,13 +6,21 @@
 // секрет воркер наружу не отдаёт.
 import wasmUrl from 'lightningdevkit/liblightningjs.wasm?url';
 
-let node = null, vss = null, tickTimer = null;
+let node = null, vss = null, tickTimer = null, initP = null;
 const post = m => self.postMessage(m);
 const emit = (event, data) => post({ event, data });
+// ГОНКА ЗАПУСКА: воркер уже есть, а LDK ещё грузит wasm — любой вызов до конца init видел
+// node=null («null is not an object»). Все вызовы ждут initP; init идемпотентен.
+const ready = async () => { if (!node && initP) await initP; if (!node) throw new Error('узел ещё запускается'); };
 
 const CALLS = {
-  async init({ seedBytes, net, apiBase, lspWsUrl, lspNodeId, anchor, fromHeight }) {
+  async init(args) {
     if (node) return { nodeId: node.nodeId };
+    if (initP) return initP;
+    initP = this._init(args);
+    try { return await initP; } catch (e) { initP = null; throw e; }   // провал → можно повторить
+  },
+  async _init({ seedBytes, net, apiBase, lspWsUrl, lspNodeId, anchor, fromHeight }) {
     const ldk = await import('lightningdevkit');
     await ldk.initializeWasmFromBinary(new Uint8Array(await (await fetch(wasmUrl)).arrayBuffer()));
     const { LnNode } = await import('./ln-node.mjs');
@@ -56,12 +64,12 @@ const CALLS = {
     if (!node) return { running: false };
     return { running: true, nodeId: node.nodeId, ...node.balance() };
   },
-  invoice({ sats, memo, hashHex }) { return { bolt11: node.createInvoice(sats ?? null, memo || '', hashHex || null) }; },
-  pay({ bolt11 }) { return { hash: node.payInvoice(bolt11) }; },
-  claim({ preimageHex }) { node.claimFunds(preimageHex); return {}; },
-  openChannel({ peerNodeId, sats }) { node.openChannel(peerNodeId ?? this._lsp.nodeId, sats); return {}; },
-  fundingComplete({ rawtxHex }) { node.fundingComplete(rawtxHex); return {}; },
-  async flush() { await node.flushManager(); return {}; },
+  async invoice({ sats, memo, hashHex }) { await ready(); return { bolt11: node.createInvoice(sats ?? null, memo || '', hashHex || null) }; },
+  async pay({ bolt11 }) { await ready(); return { hash: node.payInvoice(bolt11) }; },
+  async claim({ preimageHex }) { await ready(); node.claimFunds(preimageHex); return {}; },
+  async openChannel({ peerNodeId, sats }) { await ready(); node.openChannel(peerNodeId ?? this._lsp.nodeId, sats); return {}; },
+  async fundingComplete({ rawtxHex }) { await ready(); node.fundingComplete(rawtxHex); return {}; },
+  async flush() { await ready(); await node.flushManager(); return {}; },
 };
 
 self.onmessage = async ev => {
