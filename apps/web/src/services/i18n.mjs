@@ -2,6 +2,12 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'enable instant payments: move': 'включить мгновенные платежи: перевести',
+  'from your BTC into the ⚡ balance': 'из ваших BTC в ⚡-баланс',
+  'it takes ~30 min once, then pay the invoice again': 'это займёт ~30 мин один раз, затем оплатите инвойс ещё раз',
+  'Enable ⚡ payments': 'Включить ⚡-платежи',
+  'not enough BTC to enable ⚡ payments': 'не хватает BTC для включения ⚡-платежей',
+  'setting up instant payments…': 'настраиваем мгновенные платежи…',
   'not enough Lightning capacity': 'не хватает Lightning-ёмкости',
   'it confirms on-chain (~30 min), then pay the invoice again': 'канал подтверждается on-chain (~30 мин), затем оплатите инвойс ещё раз',
   'not enough BTC to open a channel': 'не хватает BTC для открытия канала',
@@ -258,6 +264,12 @@ const RU = {
 };
 
 const ES = {
+  'enable instant payments: move': 'activar pagos instantáneos: mover',
+  'from your BTC into the ⚡ balance': 'de tus BTC al saldo ⚡',
+  'it takes ~30 min once, then pay the invoice again': 'tarda ~30 min una sola vez; luego paga la factura de nuevo',
+  'Enable ⚡ payments': 'Activar pagos ⚡',
+  'not enough BTC to enable ⚡ payments': 'BTC insuficiente para activar pagos ⚡',
+  'setting up instant payments…': 'configurando pagos instantáneos…',
   'not enough Lightning capacity': 'capacidad Lightning insuficiente',
   'it confirms on-chain (~30 min), then pay the invoice again': 'el canal se confirma on-chain (~30 min); luego paga la factura de nuevo',
   'not enough BTC to open a channel': 'BTC insuficiente para abrir un canal',
@@ -694,6 +706,12 @@ const ES = {
 };
 
 const DE = {
+  'enable instant payments: move': 'Sofortzahlungen aktivieren: verschiebe',
+  'from your BTC into the ⚡ balance': 'von deinem BTC ins ⚡-Guthaben',
+  'it takes ~30 min once, then pay the invoice again': 'dauert einmalig ~30 Min, danach die Rechnung erneut bezahlen',
+  'Enable ⚡ payments': '⚡-Zahlungen aktivieren',
+  'not enough BTC to enable ⚡ payments': 'nicht genug BTC für ⚡-Zahlungen',
+  'setting up instant payments…': 'Sofortzahlungen werden eingerichtet…',
   'not enough Lightning capacity': 'nicht genug Lightning-Kapazität',
   'it confirms on-chain (~30 min), then pay the invoice again': 'der Kanal bestätigt on-chain (~30 Min), danach die Rechnung erneut bezahlen',
   'not enough BTC to open a channel': 'nicht genug BTC für einen Kanal',
@@ -1130,6 +1148,12 @@ const DE = {
 };
 
 const FR = {
+  'enable instant payments: move': 'activer les paiements instantanés : déplacer',
+  'from your BTC into the ⚡ balance': 'de vos BTC vers le solde ⚡',
+  'it takes ~30 min once, then pay the invoice again': 'cela prend ~30 min une seule fois, puis payez la facture à nouveau',
+  'Enable ⚡ payments': 'Activer les paiements ⚡',
+  'not enough BTC to enable ⚡ payments': 'pas assez de BTC pour activer les paiements ⚡',
+  'setting up instant payments…': 'configuration des paiements instantanés…',
   'not enough Lightning capacity': 'capacité Lightning insuffisante',
   'it confirms on-chain (~30 min), then pay the invoice again': 'le canal se confirme on-chain (~30 min), puis payez la facture à nouveau',
   'not enough BTC to open a channel': 'pas assez de BTC pour ouvrir un canal',
@@ -1566,6 +1590,12 @@ const FR = {
 };
 
 const PT = {
+  'enable instant payments: move': 'ativar pagamentos instantâneos: mover',
+  'from your BTC into the ⚡ balance': 'dos seus BTC para o saldo ⚡',
+  'it takes ~30 min once, then pay the invoice again': 'leva ~30 min uma única vez; depois pague a fatura novamente',
+  'Enable ⚡ payments': 'Ativar pagamentos ⚡',
+  'not enough BTC to enable ⚡ payments': 'BTC insuficiente para ativar pagamentos ⚡',
+  'setting up instant payments…': 'configurando pagamentos instantâneos…',
   'not enough Lightning capacity': 'capacidade Lightning insuficiente',
   'it confirms on-chain (~30 min), then pay the invoice again': 'o canal confirma on-chain (~30 min); depois pague a fatura novamente',
   'not enough BTC to open a channel': 'BTC insuficiente para abrir um canal',
@@ -2002,6 +2032,12 @@ const PT = {
 };
 
 const ZH = {
+  'enable instant payments: move': '启用即时支付：将',
+  'from your BTC into the ⚡ balance': '从您的 BTC 转入 ⚡ 余额',
+  'it takes ~30 min once, then pay the invoice again': '一次性约需 30 分钟，之后请再次支付发票',
+  'Enable ⚡ payments': '启用 ⚡ 支付',
+  'not enough BTC to enable ⚡ payments': 'BTC 不足，无法启用 ⚡ 支付',
+  'setting up instant payments…': '正在设置即时支付…',
   'not enough Lightning capacity': '闪电容量不足',
   'it confirms on-chain (~30 min), then pay the invoice again': '通道需链上确认（约 30 分钟），之后请再次支付发票',
   'not enough BTC to open a channel': 'BTC 不足以开通道',

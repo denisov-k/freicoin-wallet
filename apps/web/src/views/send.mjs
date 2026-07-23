@@ -210,9 +210,9 @@ async function doReviewLn(raw) {
       `<div class="rrow"><span>${tr('Amount')}</span><b>${dec.sats.toLocaleString(getLang())} ${tr('sats')}</b></div>
        <div class="rrow"><span>⚡</span><b class="sub">${tr('not enough Lightning capacity')} (${(st?.outSats ?? 0).toLocaleString(getLang())} ${tr('sats')})</b></div>
        ${canFund
-        ? `<div class="sub" style="font-size:12px">${tr('open a channel to the exchange LSP, funded from your in-wallet BTC')} — ${chanSats.toLocaleString(getLang())} ${tr('sats')}. ${tr('it confirms on-chain (~30 min), then pay the invoice again')}</div>
-           <div class="row"><button id="lnOpenGo">${tr('Open channel')}</button><button id="backBtn" class="ghost">${tr('Back')}</button></div>`
-        : `<div class="sub" style="font-size:12px">${tr('not enough BTC to open a channel')} (${tr('BTC balance')}: ${btcToStr(btcBal)})</div>
+        ? `<div class="sub" style="font-size:12px">${tr('enable instant payments: move')} ${chanSats.toLocaleString(getLang())} ${tr('sats')} ${tr('from your BTC into the ⚡ balance')}. ${tr('it takes ~30 min once, then pay the invoice again')}</div>
+           <div class="row"><button id="lnOpenGo">${tr('Enable ⚡ payments')}</button><button id="backBtn" class="ghost">${tr('Back')}</button></div>`
+        : `<div class="sub" style="font-size:12px">${tr('not enough BTC to enable ⚡ payments')} (${tr('BTC balance')}: ${btcToStr(btcBal)})</div>
            <div class="row"><button id="backBtn" class="ghost">${tr('Back')}</button></div>`}`);
     $('#backBtn').onclick = showForm;
     const go = $('#lnOpenGo');
@@ -220,7 +220,7 @@ async function doReviewLn(raw) {
       e.target.disabled = true;
       try {
         await ln.lnOpenChannelSats(chanSats);
-        showReview(`<div class="ok">⚡ ${tr('channel requested — the funding transaction is being built…')}</div><div class="sub">${tr('it confirms on-chain (~30 min), then pay the invoice again')}</div><button id="doneBtn">${tr('Done')}</button>`);
+        showReview(`<div class="ok">⚡ ${tr('setting up instant payments…')}</div><div class="sub">${tr('it takes ~30 min once, then pay the invoice again')}</div><button id="doneBtn">${tr('Done')}</button>`);
         $('#doneBtn').onclick = () => { const m = document.querySelector('#modal'); if (m) closeOverlay(m); };
       } catch (err) { toast(err.message, 'err'); e.target.disabled = false; }
     };
