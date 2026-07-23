@@ -50,7 +50,7 @@ const R = randomBytes(32), H = createHash('sha256').update(R).digest('hex');
 let claimed = false, ready = false, funding = null;
 node.on.channelReady = () => { ready = true; node.flushManager().catch(() => {}); };
 node.on.paymentClaimable = hash => { if (hash === H) { console.log('  held → claim_funds(R)'); node.claimFunds(R.toString('hex')); } };
-node.on.paymentClaimed = () => { claimed = true; };
+node.on.paymentClaimed = h => { if (h === H) claimed = true; };   // реплей из VSS-стейта не считается
 node.on.fundingReady = (tmpId, spkHex, sats) => { funding = { spkHex, sats }; };
 
 await node.start();

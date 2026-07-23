@@ -40,7 +40,7 @@ const CALLS = {
       log: (...a) => emit('log', a.join(' ')),
     });
     node.on.channelReady = () => emit('channelReady', node.balance());
-    node.on.paymentClaimable = (hash, sats) => { node.claimFunds; emit('paymentClaimable', { hash, sats }); };
+    node.on.paymentClaimable = (hash, sats, autoClaimed) => emit('paymentClaimable', { hash, sats, autoClaimed });
     node.on.paymentClaimed = hash => emit('paymentClaimed', { hash });
     node.on.paymentSent = hash => emit('paymentSent', { hash });
     node.on.paymentFailed = hash => emit('paymentFailed', { hash });

@@ -129,7 +129,19 @@ export class LnNode {
 
   _handleEvent(e) {
     if (e instanceof ldk.Event_ChannelReady) { this.log('ChannelReady'); this.on.channelReady(); }
-    else if (e instanceof ldk.Event_PaymentClaimable) this.on.paymentClaimable(Buffer.from(e.payment_hash).toString('hex'), Number(e.amount_msat) / 1000);
+    else if (e instanceof ldk.Event_PaymentClaimable) {
+      // ОБЫЧНЫЙ инвойс LDK может заклеймить сам (preimage лежит в purpose) — клеймим сразу.
+      // Hold-инвойс под внешний H остаётся ВИСЕТЬ (preimage там None) — его судьба решается
+      // свопом: claimFunds(R) придёт от хозяина. Это и есть атомарная механика фазы 2.
+      let auto = null;
+      try {
+        const p = e.purpose;
+        if (p instanceof ldk.PaymentPurpose_Bolt11InvoicePayment && p.payment_preimage instanceof ldk.Option_ThirtyTwoBytesZ_Some)
+          auto = p.payment_preimage.some;
+      } catch {}
+      if (auto) this.chanMgr.claim_funds(auto);
+      this.on.paymentClaimable(Buffer.from(e.payment_hash).toString('hex'), Number(e.amount_msat) / 1000, !!auto);
+    }
     else if (e instanceof ldk.Event_PaymentClaimed) this.on.paymentClaimed(Buffer.from(e.payment_hash).toString('hex'));
     else if (e instanceof ldk.Event_PaymentSent) this.on.paymentSent(Buffer.from(e.payment_hash).toString('hex'));
     else if (e instanceof ldk.Event_PaymentFailed) this.on.paymentFailed(Buffer.from(e.payment_hash ?? []).toString('hex'));

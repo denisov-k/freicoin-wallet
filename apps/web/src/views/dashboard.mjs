@@ -50,7 +50,11 @@ function wireBalActions() {
   const r = $('#rcvBtn'); if (r) r.onclick = () => renderReceive();
   const s = $('#sndBtn'); if (s) s.onclick = () => renderSend();
   const i = $('#issBtn'); if (i) i.onclick = openIssueModal;
-  const l = $('#lnBtn'); if (l) l.onclick = async () => (await import('@/views/lightning.mjs')).openLnModal();
+  const l = $('#lnBtn'); if (l) {
+    l.onclick = async () => (await import('@/views/lightning.mjs')).openLnModal();
+    // включённый ранее ⚡-узел поднимается сам: при живом канале за цепью нужно следить всегда
+    import('@/views/lightning.mjs').then(mod => mod.maybeAutoStartLn()).catch(() => {});
+  }
 }
 export function paintBalance(s) {
   if (!s.stale) d.setStatus('ok', '', s.tipHeight);

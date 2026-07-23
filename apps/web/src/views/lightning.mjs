@@ -18,6 +18,18 @@ const lspWsUrl = () => (location.protocol === 'https:' ? 'wss' : 'ws') + '://' +
 
 let wired = false;
 
+// Автозапуск: после первого ручного включения кошелёк помнит выбор и поднимает узел сам при
+// каждом входе. Это не только UX — при живом канале узел ОБЯЗАН следить за цепью (пропущенный
+// revoked-commitment контрагента = потеря денег; VSS-бэкап спасает состояние, но глаза на
+// цепи должны быть открыты, пока кошелёк открыт).
+const AUTO_KEY = 'fw_ln_auto:main';
+export function maybeAutoStartLn() {
+  try {
+    if (localStorage.getItem(AUTO_KEY) !== '1' || lnRunning() || !ctx.seed) return;
+    ensureNode().catch(() => {});   // тихо, в фоне; модалка покажет живой статус, когда её откроют
+  } catch {}
+}
+
 async function ensureNode() {
   if (lnRunning()) return lnStatus();
   const st = await api('btcFeedStatus');
@@ -34,7 +46,9 @@ async function ensureNode() {
     for (const ev of ['channelReady', 'paymentClaimed', 'paymentSent', 'paymentFailed']) lnOn(ev, () => paintSoon());
     lnOn('log', m => logLine(String(m)));
   }
-  return lnStart({ seedBytes, net: 'btcmain', apiBase: location.origin + '/api-main', lspWsUrl: lspWsUrl(), lspNodeId: LSP_NODE_ID, anchor: { hash: st.tipHash, height: st.tip } });
+  const r = await lnStart({ seedBytes, net: 'btcmain', apiBase: location.origin + '/api-main', lspWsUrl: lspWsUrl(), lspNodeId: LSP_NODE_ID, anchor: { hash: st.tipHash, height: st.tip } });
+  try { localStorage.setItem(AUTO_KEY, '1'); } catch {}   // выбор сделан — дальше поднимаемся сами
+  return r;
 }
 
 const logLine = m => { const el = $('#lnLog'); if (el) { el.textContent = (m + '\n' + el.textContent).slice(0, 2000); } };
