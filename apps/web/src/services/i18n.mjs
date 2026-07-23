@@ -2,6 +2,14 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  '⚡ channel is ready': '⚡ канал готов',
+  '⚡ payment received': '⚡ платёж получен',
+  '⚡ payment sent': '⚡ платёж отправлен',
+  '⚡ payment failed': '⚡ платёж не прошёл',
+  'by route, usually <1%': 'по маршруту, обычно <1%',
+  'the result will pop up as a notification': 'итог придёт уведомлением',
+  'Lightning invoice detected — the amount is inside it': 'распознан Lightning-инвойс — сумма внутри него',
+  'enter the amount and create an invoice': 'введите сумму и создайте инвойс',
   'node is starting…': 'узел запускается…',
   // --- LN in-wallet node (phase 2) ---
   'relay chain feed is not ready': 'чейн-фид реле ещё не готов',
@@ -247,6 +255,14 @@ const RU = {
 };
 
 const ES = {
+  '⚡ channel is ready': '⚡ canal listo',
+  '⚡ payment received': '⚡ pago recibido',
+  '⚡ payment sent': '⚡ pago enviado',
+  '⚡ payment failed': '⚡ pago fallido',
+  'by route, usually <1%': 'según la ruta, normalmente <1%',
+  'the result will pop up as a notification': 'el resultado llegará como notificación',
+  'Lightning invoice detected — the amount is inside it': 'factura Lightning detectada — el importe va dentro',
+  'enter the amount and create an invoice': 'introduce el importe y crea una factura',
   'node is starting…': 'el nodo está iniciando…',
   // --- LN in-wallet node (phase 2) ---
   'relay chain feed is not ready': 'el feed de cadena del relay aún no está listo',
@@ -672,6 +688,14 @@ const ES = {
 };
 
 const DE = {
+  '⚡ channel is ready': '⚡ Kanal bereit',
+  '⚡ payment received': '⚡ Zahlung empfangen',
+  '⚡ payment sent': '⚡ Zahlung gesendet',
+  '⚡ payment failed': '⚡ Zahlung fehlgeschlagen',
+  'by route, usually <1%': 'je nach Route, meist <1%',
+  'the result will pop up as a notification': 'das Ergebnis kommt als Benachrichtigung',
+  'Lightning invoice detected — the amount is inside it': 'Lightning-Rechnung erkannt — der Betrag steckt darin',
+  'enter the amount and create an invoice': 'Betrag eingeben und Rechnung erstellen',
   'node is starting…': 'Node startet…',
   // --- LN in-wallet node (phase 2) ---
   'relay chain feed is not ready': 'der Chain-Feed des Relays ist noch nicht bereit',
@@ -1097,6 +1121,14 @@ const DE = {
 };
 
 const FR = {
+  '⚡ channel is ready': '⚡ canal prêt',
+  '⚡ payment received': '⚡ paiement reçu',
+  '⚡ payment sent': '⚡ paiement envoyé',
+  '⚡ payment failed': '⚡ paiement échoué',
+  'by route, usually <1%': 'selon la route, généralement <1%',
+  'the result will pop up as a notification': 'le résultat arrivera en notification',
+  'Lightning invoice detected — the amount is inside it': 'facture Lightning détectée — le montant est dedans',
+  'enter the amount and create an invoice': 'saisissez le montant et créez une facture',
   'node is starting…': 'le nœud démarre…',
   // --- LN in-wallet node (phase 2) ---
   'relay chain feed is not ready': "le flux de chaîne du relais n'est pas encore prêt",
@@ -1522,6 +1554,14 @@ const FR = {
 };
 
 const PT = {
+  '⚡ channel is ready': '⚡ canal pronto',
+  '⚡ payment received': '⚡ pagamento recebido',
+  '⚡ payment sent': '⚡ pagamento enviado',
+  '⚡ payment failed': '⚡ pagamento falhou',
+  'by route, usually <1%': 'pela rota, geralmente <1%',
+  'the result will pop up as a notification': 'o resultado chegará como notificação',
+  'Lightning invoice detected — the amount is inside it': 'fatura Lightning detectada — o valor está nela',
+  'enter the amount and create an invoice': 'digite o valor e crie uma fatura',
   'node is starting…': 'o nó está iniciando…',
   // --- LN in-wallet node (phase 2) ---
   'relay chain feed is not ready': 'o feed de cadeia do relay ainda não está pronto',
@@ -1947,6 +1987,14 @@ const PT = {
 };
 
 const ZH = {
+  '⚡ channel is ready': '⚡ 通道就绪',
+  '⚡ payment received': '⚡ 已收到付款',
+  '⚡ payment sent': '⚡ 付款已发送',
+  '⚡ payment failed': '⚡ 付款失败',
+  'by route, usually <1%': '按路由计，通常 <1%',
+  'the result will pop up as a notification': '结果将以通知形式出现',
+  'Lightning invoice detected — the amount is inside it': '检测到闪电发票——金额已包含在内',
+  'enter the amount and create an invoice': '输入金额并创建发票',
   'node is starting…': '节点启动中…',
   // --- LN in-wallet node (phase 2) ---
   'relay chain feed is not ready': '中继链馈送尚未就绪',

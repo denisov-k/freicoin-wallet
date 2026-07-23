@@ -18,6 +18,8 @@ import { paymentHashOf } from '@core/htlc.mjs';
 import { btcHtlcClaim, btcAddress } from '@core/btc.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import QRCode from 'qrcode';
+// ⚡-сервис подгружается лениво (его нет вне mainnet); lnMod?.lnLast?.() — синхронный кэш статуса
+let lnMod = null; import('@/views/lightning.mjs').then(m => { lnMod = m; }).catch(() => {});
 import { loadMySwaps, putMySwap, dropMySwap, loadP2p, putP2p, dropP2p, addBtcNonce, addFeeTxid, lsKey } from '@/services/storage.mjs';
 import { refreshPushSubs } from '@/services/push.mjs';
 import { api, ctx, p2pKey, HOST_TAG, decimalsOf, scaleOf, assetName, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND, VB_HTLC_FUND } from '@/state/market-ctx.mjs';
@@ -1681,6 +1683,8 @@ function paintAssetBalance() {
   });
   // BTC sits in the same table (held in-wallet on signet); the cell fills in when refreshBtc returns.
   if (state.swap?.available) rows.push(`<tr><td>BTC</td><td class="r" id="btcBalCell">${mvBtc().balance != null ? btcToStr(mvBtc().balance) : '…'}</td></tr>`);
+  // ⚡-счёт (LDK-узел в кошельке): строка появляется, когда узел запущен (только mainnet)
+  { const ln = lnMod?.lnLast?.(); if (ln) rows.push(`<tr><td>⚡ Lightning</td><td class="r">${ln.outSats.toLocaleString(getLang())} ${tr('sats')}</td></tr>`); }
   body.innerHTML = rows.join('') || `<tr><td colspan="2" class="sub">${tr('empty — tap Faucet')}</td></tr>`;
 }
 

@@ -30,6 +30,10 @@ export function renderSettings() {
      <div class="row">${vault
         ? `<button id="lockBtn" class="ghost">${tr('🔓 Lock')}</button><button id="chgBtn" class="ghost">${tr('Change passphrase')}</button>`
         : `<button id="secBtn" class="ghost">${tr('🔒 Secure with passphrase')}</button>`}</div>
+     ${d.curNet() === 'main' ? `<div class="stack" style="margin-top:8px"><b>⚡ Lightning</b>
+       <div class="sub" id="lnSetStat" style="font-size:12px">${tr('node is starting…')}</div>
+       <div class="sub" style="font-size:12px">${tr('open a channel to the exchange LSP, funded from your in-wallet BTC')}</div>
+       <div class="row"><input id="lnSetAmt" type="text" inputmode="numeric" placeholder="100000+ ${tr('sats')}" style="flex:1"><button id="lnSetOpen" class="ghost">${tr('Open channel')}</button></div></div>` : ''}
      <div class="row"><button id="outBtn" class="ghost">${tr('Log out of wallet')}</button></div>
      <p class="sub" style="font-size:12px">${tr('Open source')} — <a href="https://github.com/denisov-k/freicoin-wallet" target="_blank" rel="noopener">github.com/denisov-k/freicoin-wallet</a> · <a href="https://github.com/denisov-k/freicoin-wallet/blob/master/docs/REPRODUCIBLE.md" target="_blank" rel="noopener">${tr('verify this build')}</a></p>`;
   $('#langSel').onchange = () => { setLang($('#langSel').value); d.renderApp(); };   // applies immediately, re-renders all
@@ -91,6 +95,26 @@ export function renderSettings() {
   $('#copySeed').onclick = e => copy(s, e.target);
   if (vault) { $('#lockBtn').onclick = d.lock; $('#chgBtn').onclick = () => d.passForm(tr('Change passphrase'), pw => d.secure(d.secret(), pw, true)); }
   else $('#secBtn').onclick = () => d.passForm(tr('Set a passphrase'), pw => d.secure(s, pw, false));
+  // ⚡: статус узла + открытие канала (funding-tx соберётся из BTC-счёта, бродкастит LDK)
+  if ($('#lnSetOpen')) (async () => {
+    const ln = await import('@/views/lightning.mjs');
+    const paint = () => {
+      const el = $('#lnSetStat'); if (!el) return;
+      const s = ln.lnLast();
+      el.textContent = s ? `${tr('can send')} ${s.outSats.toLocaleString()} ${tr('sats')} · ${tr('can receive')} ${s.inSats.toLocaleString()} · ${tr('channels')} ${s.ready}/${s.channels}` : tr('node is starting…');
+    };
+    paint(); document.addEventListener('fw-ln-status', paint);
+    $('#lnSetOpen').onclick = async e => {
+      e.target.disabled = true;
+      try {
+        const sats = Math.round(Number($('#lnSetAmt').value));
+        if (!(sats >= 100000)) throw new Error(tr('minimum channel is 100000 sats'));
+        await ln.lnOpenChannelSats(sats);
+        toast(tr('channel requested — the funding transaction is being built…'), 'ok');
+      } catch (err) { toast(err.message, 'err'); }
+      e.target.disabled = false;
+    };
+  })();
   $('#outBtn').onclick = () => {
     const m = document.createElement('div'); m.id = 'modal';
     m.innerHTML = `<div class="review">

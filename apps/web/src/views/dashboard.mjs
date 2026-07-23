@@ -43,19 +43,35 @@ export const setBtcLegs = btc => { btcActLegs = btc.legs; btcActHide = new Set(b
 // ---- balance card ----
 const balActions = () => `<div class="row" style="margin-top:12px"><button id="rcvBtn">${tr('Receive')}</button><button id="sndBtn">${tr('Send')}</button></div>`
   + (d.MKT() ? `<div class="row"><button id="issBtn" class="ghost">${tr('Issue asset')}</button></div>
-              <div class="row"><button id="faucetBtn" class="ghost">${tr('Faucet (+1 FRC)')}</button></div>` : '')
-  // ⚡-счёт (LDK-узел в кошельке) — только mainnet: фид/LSP живут на прод-реле
-  + (d.curNet() === 'main' ? `<div class="row"><button id="lnBtn" class="ghost">⚡ Lightning</button></div>` : '');
+              <div class="row"><button id="faucetBtn" class="ghost">${tr('Faucet (+1 FRC)')}</button></div>` : '');
 function wireBalActions() {
   const r = $('#rcvBtn'); if (r) r.onclick = () => renderReceive();
   const s = $('#sndBtn'); if (s) s.onclick = () => renderSend();
   const i = $('#issBtn'); if (i) i.onclick = openIssueModal;
-  const l = $('#lnBtn'); if (l) {
-    l.onclick = async () => (await import('@/views/lightning.mjs')).openLnModal();
-    // включённый ранее ⚡-узел поднимается сам: при живом канале за цепью нужно следить всегда
-    import('@/views/lightning.mjs').then(mod => mod.maybeAutoStartLn()).catch(() => {});
-  }
+  // ⚡-узел (LDK в кошельке, только mainnet) поднимается сам — отдельного UI у него нет:
+  // баланс строкой в активах, приём в «Получить», оплата в «Отправить», канал в настройках
+  if (d.curNet() === 'main') import('@/views/lightning.mjs').then(mod => mod.maybeAutoStartLn()).catch(() => {});
 }
+// ⚡-строка баланса: из синхронного кэша статуса (модуль lightning может быть ещё не загружен —
+// тогда строки просто нет; появится после автозапуска по событию fw-ln-status)
+let lnMod = null;
+import('@/views/lightning.mjs').then(m => { lnMod = m; }).catch(() => {});
+const lnRow = () => {
+  const s = lnMod?.lnLast?.();
+  return s ? `<tr><td>⚡ Lightning</td><td class="r">${s.outSats.toLocaleString(getLang())} ${tr('sats')}</td></tr>` : '';
+};
+// точечное обновление строки в таблице активов (не трогаем остальной рендер)
+document.addEventListener('fw-ln-status', () => {
+  try {
+    const body = $('#assetBalBody'); if (!body) return;
+    const ex = [...body.querySelectorAll('tr')].find(r => r.textContent.includes('⚡'));
+    const html = lnRow();
+    if (ex && html) ex.outerHTML = html;
+    else if (!ex && html) body.insertAdjacentHTML('beforeend', html);
+    else if (ex && !html) ex.remove();
+  } catch {}
+});
+
 export function paintBalance(s) {
   if (!s.stale) d.setStatus('ok', '', s.tipHeight);
   else d.setStatus('sync', undefined, s.tipHeight);
@@ -85,6 +101,7 @@ export function paintBalance(s) {
         const b = mvBtc();
         const rows = [`<tr><td>FRC</td><td class="r">${provBest.toLocaleString(getLang(), { maximumFractionDigits: 8 })}</td></tr>`];
         if (b.balance != null) rows.push(`<tr><td>BTC</td><td class="r">${btcToStr(b.balance)}</td></tr>`);   // relay-backed, needs no chain sync
+        if (lnRow()) rows.push(lnRow());   // ⚡-счёт (LDK-узел), когда запущен
         body.innerHTML = rows.join('') + `<tr id="provRow" hidden></tr>`;
       }
     }

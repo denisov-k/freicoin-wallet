@@ -25,14 +25,37 @@ export function paintSendAvail(st, approx) {
 export function renderReceive() {
   // Open in a loading state (shimmering QR + address placeholders), then fill in.
   const btcOn = d.SWAP() && mvBtc().available;
+  const lnOn = d.curNet() === 'main';   // ⚡-приём: узел в кошельке (mainnet)
   openModal(tr('Receiving'),
-    (btcOn ? `<label>${tr('Currency')}<select id="rcvCur"><option value="FRC">FRC</option><option value="BTC">BTC</option></select></label>` : '')
-    + `<div id="qrBox" class="qr skel" style="margin:0 auto;height:220px"></div>
+    (btcOn ? `<label>${tr('Currency')}<select id="rcvCur"><option value="FRC">FRC</option><option value="BTC">BTC</option>${lnOn ? '<option value="LN">⚡ Lightning</option>' : ''}</select></label>` : '')
+    + `<div id="lnAmtRow" hidden><label class="numfield">${tr('Amount')} (${tr('sats')})<input id="lnRcvAmt" type="text" inputmode="numeric"></label>
+       <div class="row"><button id="lnRcvGo">${tr('Create invoice')}</button></div></div>
+     <div id="qrBox" class="qr skel" style="margin:0 auto;height:220px"></div>
      <div class="addr" id="addr"><div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div></div>
      <div class="row"><button id="copyAddr" class="ghost" disabled>⧉ ${tr('Copy')}</button></div>
      <div class="row" id="newAddrRow"><button id="newAddr" class="ghost">${tr('New address')}</button></div>`);
+  // ⚡: сумма → инвойс встроенного узла → QR в тот же qrBox, копирование той же кнопкой
+  const fillLn = () => {
+    $('#lnAmtRow').hidden = false; $('#newAddrRow').hidden = true;
+    const box = $('#qrBox'); box.className = 'qr'; box.innerHTML = '';
+    $('#addr').textContent = tr('enter the amount and create an invoice');
+    $('#copyAddr').disabled = true;
+    $('#lnRcvGo').onclick = async e => {
+      e.target.disabled = true;
+      try {
+        const sats = Math.round(Number($('#lnRcvAmt').value)); if (!(sats > 0)) throw new Error(tr('bad amount'));
+        const bolt11 = await (await import('@/views/lightning.mjs')).lnMakeInvoice(sats);
+        const qr = await QRCode.toDataURL(bolt11.toUpperCase(), { margin: 1, width: 220 });
+        const b = $('#qrBox'); if (b) { b.className = 'qr'; b.innerHTML = `<img src="${qr}" alt="qr" style="width:100%;height:100%">`; }
+        const a = $('#addr'); if (a) a.textContent = bolt11;
+        const cp = $('#copyAddr'); if (cp) { cp.disabled = false; cp.onclick = ev => copy(bolt11, ev.target); }
+      } catch (err) { toast(err.message, 'err'); }
+      e.target.disabled = false;
+    };
+  };
   // FRC = a fresh HD address; BTC = the single (fixed) account address, so "New address" hides for BTC.
   const fill = async isBtc => {
+    $('#lnAmtRow').hidden = true;
     const box0 = $('#qrBox'); if (box0) { box0.className = 'qr skel'; box0.innerHTML = ''; }
     const a0 = $('#addr'); if (a0) a0.innerHTML = `<div class="skel-line" style="height:14px;width:85%;margin:3px auto"></div>`;
     const cp0 = $('#copyAddr'); if (cp0) cp0.disabled = true;
@@ -46,7 +69,7 @@ export function renderReceive() {
     $('#addr').textContent = addr;
     const cp = $('#copyAddr'); if (cp) { cp.disabled = false; cp.onclick = e => copy(addr, e.target); }
   };
-  const cur = $('#rcvCur'); if (cur) cur.onchange = () => fill(cur.value === 'BTC');
+  const cur = $('#rcvCur'); if (cur) cur.onchange = () => cur.value === 'LN' ? fillLn() : fill(cur.value === 'BTC');
   // Fresh FRC address: bump the index + repaint at once, then grow the watch window off-frame.
   $('#newAddr').onclick = () => { d.bumpRecv(); fill(false); d.growWatchAfterNewAddr(); };
   fill(false);
@@ -92,6 +115,13 @@ export async function renderSend() {
     else setReview(true);
   };
   $('#reviewBtn').onclick = doReview;
+  // ⚡: как только в поле адреса оказался bolt11 — сумма не нужна (она в инвойсе); подскажем
+  $('#to').addEventListener('input', async () => {
+    const isLn = (await import('@/views/lightning.mjs')).looksLikeBolt11($('#to').value);
+    const al = $('#amtLabel'); if (al) al.style.display = isLn ? 'none' : '';
+    const sp = $('#btcSpeedRow'); if (sp && isLn) sp.hidden = true;
+    if (isLn) { const av = $('#avail'); if (av) { av.style.display = ''; av.textContent = '⚡ ' + tr('Lightning invoice detected — the amount is inside it'); } setReview(true); }
+  });
   // Max dispatches on the selected currency: asset → its whole quantity; FRC → balance − fee.
   let sendBal = null;
   $('#maxBtn').onclick = async () => {
@@ -153,7 +183,33 @@ function successScreen(txid, extraToast) {
   toast(tr('broadcast ✓'));
   if (extraToast) toast(extraToast, 'ok');
 }
+// ⚡: вставленный bolt11-инвойс в поле адреса — это и есть выбор способа оплаты (никаких
+// отдельных вкладок): сумма зашита в инвойсе, комиссия — по маршруту (обычно < 1%).
+async function doReviewLn(raw) {
+  const ln = await import('@/views/lightning.mjs');
+  let dec;
+  try { dec = (await import('@core/bolt11.mjs')).decodeBolt11(raw); } catch (e) { return toast(e.message, 'err'); }
+  if (dec.sats == null) return toast(tr('invoice must carry an exact amount'), 'err');
+  if ((dec.timestamp + dec.expiry) * 1000 < Date.now() + 60e3) return toast(tr('invoice expires too soon — set expiry to 2h+'), 'err');
+  showReview(
+    `<div class="rrow"><span>${tr('To')}</span><b>⚡ ${short(dec.paymentHash)}</b></div>
+     <div class="rrow"><span>${tr('Amount')}</span><b>${dec.sats.toLocaleString(getLang())} ${tr('sats')}</b></div>
+     <div class="rrow"><span>${tr('Fee')}</span><b class="sub">${tr('by route, usually <1%')}</b></div>
+     <div class="row"><button id="lnConfirm">${tr('Pay')} ⚡</button><button id="backBtn" class="ghost">${tr('Back')}</button></div>`);
+  $('#backBtn').onclick = showForm;
+  $('#lnConfirm').onclick = async e => {
+    e.target.disabled = true;
+    try {
+      await ln.lnPayBolt(raw);
+      $('#to').value = ''; $('#amt').value = '';
+      showReview(`<div class="ok">⚡ ${tr('payment started…')}</div><div class="sub">${tr('the result will pop up as a notification')}</div><button id="doneBtn">${tr('Done')}</button>`);
+      $('#doneBtn').onclick = () => { const m = document.querySelector('#modal'); if (m) closeOverlay(m); };
+    } catch (err) { toast(err.message, 'err'); e.target.disabled = false; }
+  };
+}
+
 async function doReview() {
+  { const raw = $('#to').value.trim(); const ln = await import('@/views/lightning.mjs'); if (ln.looksLikeBolt11(raw)) return doReviewLn(raw); }
   if ($('#sendAsset')?.value === 'BTC') return doReviewBtc();
   // A spend must build on VERIFIED chain state; during a first sync/restore that state is still
   // minutes away — say so instead of silently awaiting (the button looked frozen).
