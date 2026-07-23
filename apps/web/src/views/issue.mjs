@@ -68,7 +68,7 @@ export function openIssueModal() {
     <div class="seg" id="iMode">
       <button data-m="a" class="on">${tr('Currency')}</button>
       <button data-m="t">${tr('Tokens')}</button>
-      <button data-m="n">🗺️ ${tr('Name')}</button>
+      <button data-m="n">🗺️ Freiland</button>
     </div>
     <p class="sub" id="iModeHint" style="font-size:12px">${tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.')}</p>
     <div id="iFungible" class="stack">
@@ -87,6 +87,7 @@ export function openIssueModal() {
       <label>${tr('Unique items (tokens)')}<textarea id="iToks" class="txt-ui" rows="4" placeholder="${tr('one per line')}"></textarea></label>
     </div>
     <div id="iLandBox" class="stack" hidden>
+      <label>${tr('Type')}<select id="iLandKind"><option value="name">${tr('name (human-readable)')}</option></select></label>
       <div class="sub" id="iAvail" style="font-size:12px"></div>
       <label>${tr('Self-assessed value')} (FRC)<input id="iVal" type="text" inputmode="decimal" placeholder="100+"></label>
       <div class="rrow"><span>${tr('Rent (auto, demurrage)')}</span><b id="iRent" class="sub">—</b></div>
@@ -104,7 +105,9 @@ export function openIssueModal() {
     $('#iFungible').hidden = mode !== 'a';
     $('#iTokensBox').hidden = mode !== 't';
     $('#iLandBox').hidden = mode !== 'n';
-    /** @type {HTMLInputElement} */ ($('#iName')).maxLength = mode === 'n' ? 32 : 24;   // land-имена до 32
+    const nameInp = /** @type {HTMLInputElement} */ ($('#iName'));
+    nameInp.maxLength = mode === 'n' ? 32 : 24;   // land-имена до 32
+    nameInp.placeholder = mode === 'n' ? 'alice' : tr('e.g. labor-hours');
     $('#issueBtn').textContent = mode === 'n' ? tr('Claim the name') : tr('Issue asset');
     $('#iModeHint').textContent = mode === 't'
       ? tr('Unique named items — tickets, memberships, keys. They do not melt, travel whole on one coin, and names must not repeat.')

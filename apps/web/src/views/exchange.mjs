@@ -1566,7 +1566,7 @@ async function openNamesModal() {
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>🗺️ ${tr('Names')} · Freiland</b><button id="nmClose" class="icon">✕</button></div>
     <div class="sub" style="font-size:12px">${tr('claim a name — your deposit melts as rent; anyone can buy it at your self-assessed price')}</div>
-    <div class="sub" style="font-size:12px">${tr('to claim a new name, use Issue → 🗺️ Name')}</div>
+    <div class="sub" style="font-size:12px">${tr('to claim a new name, use Issue → 🗺️ Freiland')}</div>
     <div id="nmLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
     <div id="nmMine" style="margin-top:10px"></div>
     <div id="nmMarket" style="margin-top:10px"></div></div>`;
