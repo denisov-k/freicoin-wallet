@@ -2,6 +2,8 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'the deal will be cancelled as soon as the network confirms the payment': 'сделка отменится, как только сеть подтвердит оплату',
+  'cancel requested': 'отмена запрошена',
   'cancel queued — it will be sent as soon as the payment confirms': 'отмена запрошена — уйдёт, как только сеть подтвердит оплату',
   'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'в этом кошельке сейчас нечем заплатить — оплатите инвойс из любого Lightning-приложения на вкладке «Внешний платёж»',
   'requesting the invoice…': 'запрашиваем инвойс…',
@@ -284,6 +286,8 @@ const RU = {
 };
 
 const ES = {
+  'the deal will be cancelled as soon as the network confirms the payment': 'la operación se cancelará en cuanto la red confirme el pago',
+  'cancel requested': 'cancelación solicitada',
   'cancel queued — it will be sent as soon as the payment confirms': 'cancelación en cola — se enviará en cuanto la red confirme el pago',
   'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'no hay con qué pagar en esta billetera — paga la factura desde cualquier app Lightning en «Pago externo»',
   'requesting the invoice…': 'solicitando la factura…',
@@ -746,6 +750,8 @@ const ES = {
 };
 
 const DE = {
+  'the deal will be cancelled as soon as the network confirms the payment': 'die Transaktion wird storniert, sobald das Netzwerk die Zahlung bestätigt',
+  'cancel requested': 'Stornierung angefordert',
   'cancel queued — it will be sent as soon as the payment confirms': 'Stornierung in Warteschlange — sie wird gesendet, sobald das Netzwerk die Zahlung bestätigt',
   'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'in dieser Wallet ist gerade nichts zum Bezahlen — begleiche die Rechnung mit einer beliebigen Lightning-App unter „Externe Zahlung“',
   'requesting the invoice…': 'Rechnung wird angefordert…',
@@ -1208,6 +1214,8 @@ const DE = {
 };
 
 const FR = {
+  'the deal will be cancelled as soon as the network confirms the payment': "l'opération sera annulée dès que le réseau confirmera le paiement",
+  'cancel requested': 'annulation demandée',
   'cancel queued — it will be sent as soon as the payment confirms': 'annulation en file — elle partira dès que le réseau confirmera le paiement',
   'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'rien pour payer dans ce portefeuille — réglez la facture depuis n’importe quelle app Lightning via « Paiement externe »',
   'requesting the invoice…': 'demande de la facture…',
@@ -1670,6 +1678,8 @@ const FR = {
 };
 
 const PT = {
+  'the deal will be cancelled as soon as the network confirms the payment': 'a negociação será cancelada assim que a rede confirmar o pagamento',
+  'cancel requested': 'cancelamento solicitado',
   'cancel queued — it will be sent as soon as the payment confirms': 'cancelamento na fila — será enviado assim que a rede confirmar o pagamento',
   'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': 'não há com que pagar nesta carteira — pague a fatura por qualquer app Lightning em «Pagamento externo»',
   'requesting the invoice…': 'solicitando a fatura…',
@@ -2132,6 +2142,8 @@ const PT = {
 };
 
 const ZH = {
+  'the deal will be cancelled as soon as the network confirms the payment': '网络确认付款后，交易将被取消',
+  'cancel requested': '已请求取消',
   'cancel queued — it will be sent as soon as the payment confirms': '取消已排队——网络确认付款后即会发送',
   'no built-in Lightning balance — the invoice for any external LN wallet is under “External payment”': '此钱包当前无可用余额——请在“外部支付”中用任意闪电应用支付发票',
   'requesting the invoice…': '正在请求发票…',

@@ -1160,21 +1160,25 @@ function renderP2pPay(m, rec) {
       }
       const pw = $('#pyWallet');
       // ОТМЕНА В ОЧЕРЕДИ: нажал «Отменить», пока оплата подтверждалась — драйв отправит запрос сам,
-      // как только сеть подтвердит. Показываем явно, иначе кажется, что тап пропал (драйв снимает
-      // cancelWanted, как только продавец запирает FRC — тогда строка исчезает сама).
-      if (st) st.textContent = rlocal.cancelWanted ? tr('cancel queued — it will be sent as soon as the payment confirms') : '';
+      // как только сеть подтвердит. Кнопка становится «отмена запрошена» и блокируется, строкой ниже
+      // — что произойдёт (драйв снимает cancelWanted, когда продавец запрёт FRC → всё вернётся в норму).
+      const canceling = !!rlocal.cancelWanted;
+      if (canceling) { const cx = q(m, '#pyCancel'); if (cx) cx.disabled = true; if (st) st.textContent = tr('the deal will be cancelled as soon as the network confirms the payment'); }
+      else if (st) st.textContent = '';
       if (w.status === 'taken') {
         // paid, but the relay won't accept the funding until it has 2 BTC confirmations — the seller
         // physically CAN'T lock yet. Show the network-confirmation progress, not "awaiting the seller".
         if (pw && rlocal.btcHtlc?.txid) {
-          let confs = null;
-          try { confs = ((await api('btcAccount', { addresses: [b.addr] })).utxos || []).find(u => u.txid === rlocal.btcHtlc.txid)?.confirmations; } catch {}
-          pw.textContent = confs != null ? `${tr('confirming payment on the network')} (${Math.min(confs, 2)}/2)` : tr('confirming payment on the network');
+          if (canceling) { pw.textContent = tr('cancel requested'); pw.disabled = true; }
+          else {
+            let confs = null;
+            try { confs = ((await api('btcAccount', { addresses: [b.addr] })).utxos || []).find(u => u.txid === rlocal.btcHtlc.txid)?.confirmations; } catch {}
+            pw.textContent = confs != null ? `${tr('confirming payment on the network')} (${Math.min(confs, 2)}/2)` : tr('confirming payment on the network');
+          }
         }
-      } else if (w.status === 'btc_funded') {                 // payment accepted (incl. LN held) — seller's lock isn't in a block yet
+      } else if (w.status === 'btc_funded') {                 // payment accepted — seller's lock isn't in a block yet
         if (!paidSeen) { paidSeen = true; putP2p({ ...rlocal, status: 'btc_funded' }); hidePayInputs(); mvRefresh(); }
-        if (pw) pw.textContent = `${tr('confirming receipt')} (0/1)`;
-        if (st && rlocal.ln && !rlocal.btcHtlc?.txid) st.textContent = `${tr('confirming receipt')} (0/1)`;   // LN: the pay button is hidden, surface progress in the status line
+        if (pw) { pw.textContent = canceling ? tr('cancel requested') : `${tr('confirming receipt')} (0/1)`; pw.disabled = true; }
       } else {                                                // seller's lock CONFIRMED (frc_funded/…) — I'm claiming the FRC now
         if (!paidSeen) { paidSeen = true; putP2p({ ...rlocal, status: 'btc_funded' }); hidePayInputs(); mvRefresh(); }
         if (pw) pw.textContent = `${tr('confirming receipt')} (1/1)`;
@@ -1199,7 +1203,10 @@ function renderP2pPay(m, rec) {
       // the payment (btc_funded), so the tap is never silently lost.
       if (!w || w.status === 'taken' || !w.btcHtlc?.txid) {
         putP2p({ ...rlocal, cancelWanted: true });
-        const st = $('#pyStatus'); if (st) st.textContent = tr('cancel queued — it will be sent as soon as the payment confirms');   // мгновенно, не ждём тик
+        // мгновенно, не ждём тик поллинга: кнопка → «отмена запрошена» (блок), строка ниже — что будет
+        const pw = $('#pyWallet'); if (pw) { pw.textContent = tr('cancel requested'); pw.disabled = true; }
+        const st = $('#pyStatus'); if (st) st.textContent = tr('the deal will be cancelled as soon as the network confirms the payment');
+        const cx = q(m, '#pyCancel'); if (cx) cx.disabled = true;
         toast(tr('payment is still confirming — the cancel will be requested automatically as soon as the network confirms it'), 'warn');
         return;
       }
