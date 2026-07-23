@@ -7,7 +7,7 @@ import { deriveAddress, currentNet, addrToSpk } from '@/services/wallet.mjs';
 import { NETWORKS } from '@/state/network-params.mjs';
 import { derivePath, ckdPriv, wpkProgramHex } from '@core/hd.mjs';
 import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
-import { segwitV0Sighash, rangedSighash, SIGHASH_ALL, SIGHASH_BUNDLE } from '@core/sighash.mjs';
+import { segwitV0Sighash, SIGHASH_ALL } from '@core/sighash.mjs';
 import { serializeTx, NV3_TX_VERSION } from '@core/tx.mjs';
 import { assetPresentValue } from '@core/assets.mjs';
 import { makeTokenReveal, opReturnScript } from '@core/nv3wire.mjs';
@@ -20,7 +20,7 @@ import QRCode from 'qrcode';
 import { loadMySwaps, putMySwap, dropMySwap, loadP2p, putP2p, dropP2p, addBtcNonce, addFeeTxid, lsKey } from '@/services/storage.mjs';
 import { refreshPushSubs } from '@/services/push.mjs';
 import { api, ctx, p2pKey, HOST_TAG, decimalsOf, scaleOf, assetName, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND, VB_HTLC_FUND } from '@/state/market-ctx.mjs';
-import { opIn, signInput, committedOutpoints, myCoinsOf, freeFrcKria, sendFrcToSpk, hostFeeCoin, lockAssetToHtlc } from '@/services/market/swap-lib.mjs';
+import { opIn, signInput, committedOutpoints, myCoinsOf, freeFrcKria, sendFrcToSpk, hostFeeCoin, lockAssetToHtlc, signRangedGive, signLadder, LADDER_SPAN } from '@/services/market/swap-lib.mjs';
 import { btcHrp, btcAcctAddr, btcFundHtlc, btcToStr, refreshBtc,
   mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvBtcMax, initBtcAccount, btcResetAcct } from '@/services/market/btc-account.mjs';
 import { recoverBtcNonces, mvBtcHistory, initActivity, resetRecovery } from '@/services/market/activity.mjs';
@@ -173,6 +173,7 @@ async function doRefresh() {
   if ($('#bookBody')) paint();                 // Exchange tab mounted → repaint the book
   if ($('#assetBalBody')) paintAssetBalance(); // Freimarkets Balance tab mounted → per-asset table
   maybeResignRanged();                                      // keep my ranged offers alive after partial fills
+  if (currentNet() === 'nv3') import('@/services/market/land.mjs').then(L => L.maybeResignLand()).catch(() => {});   // keep my Freiland standing offers fresh (land-key signed)
   checkMySwaps();                                           // refund any of my LP swaps stalled past their timeout
   checkP2pRefunds();                                        // auto-refund a P2P HTLC I locked once its CLTV passes
   recoverOrphanBtcHtlcs().then(checkBtcRefunds).catch(() => {}); // rebuild any orphaned BTC HTLC record (lost swap), then sweep it home
@@ -194,17 +195,8 @@ async function faucet() { try { await api('faucet', { address: myAddress }); toa
 // remainder returns as change, which the maker re-signs to keep trading. Any direction: give and
 // want are any two DIFFERENT assets (FRC↔asset, asset↔asset). Amounts are in each asset's own
 // units via scaleOf() (FRC = 1e8 kria/unit; user assets = 1 kria/unit).
-// sign a ranged give input over the descriptor (SIGHASH_BUNDLE ⇒ the digest commits the
-// descriptor, not the fill — one signature serves every admissible fill).
-function signRangedGive(desc, giveOp, coin, L) {
-  const node = km[coin.spk];
-  const sec = node.priv.toString(16).padStart(64, '0');
-  const code = '21' + pubkeyCompressed(sec) + 'ac';
-  const give = { prevout: { txid: rev(giveOp.split(':')[0]), vout: +giveOp.split(':')[1] }, sequence: 0xffffffff };
-  const HT = SIGHASH_ALL | SIGHASH_BUNDLE;
-  const dg = rangedSighash({ vin: [give], desc, nExpireTime: desc.nExpireTime ?? 0 }, 0, code, BigInt(coin.value), BigInt(coin.refheight), { lockHeight: L, hashtype: HT });
-  return [signEcdsa(sec, dg) + HT.toString(16).padStart(2, '0'), '00' + code, ''];
-}
+// signRangedGive / signLadder / LADDER_* moved to mv-swap-lib.mjs (shared with Freiland,
+// which signs a name-NFT offer with its LAND key — the optional `sec` parameter there).
 
 // committedOutpoints / freeFrcKria / myCoinsOf moved to mv-swap-lib.mjs (shared with the drive)
 
@@ -376,26 +368,6 @@ async function prepareGiveCoin(giveTag, Q, L, coins) {
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'consolidate' });
   addFeeTxid(txid);   // net-zero self-spend — Activity labels it "exchange fee", not a send
   return { outpoint: `${txid}:0`, spk: changeSpk, value: Q, refheight: L, L };
-}
-
-// Pre-signed offer LADDER: one rung every LADDER_STEP blocks out to LADDER_SPAN (~24h at
-// 20s blocks); desc.nExpireTime = the last rung, so the offer dies where the signatures end.
-// An OFFLINE maker's offer stays fillable until then (first fill only — the remainder is a
-// new coin no pre-signed rung can cover; the maker re-ladders it when back online). While
-// online, maybeResignRanged still tops the ladder up with a tip rung for 1-block freshness.
-const LADDER_STEP = 10, LADDER_SPAN = 4320;
-// Rungs sit on the ABSOLUTE grid (heights divisible by LADDER_STEP) plus one rung at the
-// exact posting height: two offers' ladders then share heights, which is what lets a matcher
-// splice them into ONE tx (both ranged signatures must commit the same lock_height).
-async function signLadder(desc, coin, giveOutpoint, fromL, toL) {
-  const rungs = [fromL];
-  for (let Li = Math.floor(fromL / LADDER_STEP + 1) * LADDER_STEP; Li <= toL; Li += LADDER_STEP) rungs.push(Li);
-  const ladder = [];
-  for (let i = 0; i < rungs.length; i++) {
-    ladder.push({ lockHeight: rungs[i], witness: signRangedGive(desc, giveOutpoint, coin, rungs[i]) });
-    if (i % 32 === 31) await new Promise(r => setTimeout(r));   // yield — keep the UI alive
-  }
-  return ladder;
 }
 
 async function postRangedOffer() {
@@ -1630,7 +1602,11 @@ async function openNamesModal() {
     const go = $('#nmGo'); go.disabled = true;
     try {
       await L.registerName({ name, valueFrc: v, progress: p => log(
-        p === 'lock' ? tr('locking the deposit…') : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…') : tr('registered ✅')) });
+        p === 'mint' ? tr('minting the name token…')
+        : p === 'lock' ? tr('locking the deposit…')
+        : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…')
+        : p === 'offer' ? tr('signing the standing sale offer…')
+        : tr('registered ✅')) });
       toast(`${name}: ${tr('name claimed ✅')}`, 'ok'); paintAll();
     } catch (e) { toast(e.message, 'err'); log(e.message); }
     go.disabled = false;

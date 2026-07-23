@@ -4,7 +4,7 @@
 import { ctx, api, HOST_TAG, rateOf, isNv3Net } from '@/state/market-ctx.mjs';
 import { assetPresentValue } from '@core/assets.mjs';
 import { serializeTx, NV3_TX_VERSION } from '@core/tx.mjs';
-import { segwitV0Sighash, SIGHASH_ALL } from '@core/sighash.mjs';
+import { segwitV0Sighash, rangedSighash, SIGHASH_ALL, SIGHASH_BUNDLE } from '@core/sighash.mjs';
 import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
 import { tr } from '@/services/i18n.mjs';
 
@@ -93,6 +93,40 @@ export function hostFeeCoin(L, need, reserved = committedOutpoints()) {
   return { txid, vout: +vout, value: BigInt(c.value), refheight: c.refheight, spk: c.spk,
     pv: assetPresentValue(BigInt(c.value), L - c.refheight, { k: 20, interest: false }),
     key: sec, script: '21' + pubkeyCompressed(sec) + 'ac', changeSpk: ctx.spks[0] };
+}
+
+// ---- ranged-offer signing (DEX phase 2b), shared by the exchange view and Freiland ----
+// The maker signs a DESCRIPTOR (price ratio + fill bounds) over one give coin with
+// SIGHASH_ALL|SIGHASH_BUNDLE: the digest commits the descriptor, not the fill, so one signature
+// serves every admissible fill. `sec` lets a NON-wallet key sign (Freiland's land-key owns the
+// name-NFT coin); omitted, the wallet's own key for coin.spk is used (the exchange paths).
+export function signRangedGive(desc, giveOp, coin, L, sec = null) {
+  const s = sec ?? ctx.km[coin.spk].priv.toString(16).padStart(64, '0');
+  const code = '21' + pubkeyCompressed(s) + 'ac';
+  const give = { prevout: { txid: rev(giveOp.split(':')[0]), vout: +giveOp.split(':')[1] }, sequence: 0xffffffff };
+  const HT = SIGHASH_ALL | SIGHASH_BUNDLE;
+  const dg = rangedSighash({ vin: [give], desc, nExpireTime: desc.nExpireTime ?? 0 }, 0, code, BigInt(coin.value), BigInt(coin.refheight), { lockHeight: L, hashtype: HT });
+  return [signEcdsa(s, dg) + HT.toString(16).padStart(2, '0'), '00' + code, ''];
+}
+
+// Pre-signed offer LADDER: one rung every LADDER_STEP blocks out to LADDER_SPAN (~24h at
+// 20s blocks); desc.nExpireTime = the last rung, so the offer dies where the signatures end.
+// An OFFLINE maker's offer stays fillable until then (first fill only — the remainder is a
+// new coin no pre-signed rung can cover; the maker re-ladders it when back online). While
+// online, maybeResignRanged still tops the ladder up with a tip rung for 1-block freshness.
+export const LADDER_STEP = 10, LADDER_SPAN = 4320;
+// Rungs sit on the ABSOLUTE grid (heights divisible by LADDER_STEP) plus one rung at the
+// exact posting height: two offers' ladders then share heights, which is what lets a matcher
+// splice them into ONE tx (both ranged signatures must commit the same lock_height).
+export async function signLadder(desc, coin, giveOutpoint, fromL, toL, sec = null) {
+  const rungs = [fromL];
+  for (let Li = Math.floor(fromL / LADDER_STEP + 1) * LADDER_STEP; Li <= toL; Li += LADDER_STEP) rungs.push(Li);
+  const ladder = [];
+  for (let i = 0; i < rungs.length; i++) {
+    ladder.push({ lockHeight: rungs[i], witness: signRangedGive(desc, giveOutpoint, coin, rungs[i], sec) });
+    if (i % 32 === 31) await new Promise(r => setTimeout(r));   // yield — keep the UI alive
+  }
+  return ladder;
 }
 
 // lock exactly `amount` base units of `tag` into the HTLC spk. Like mvSendAsset but paying an HTLC
