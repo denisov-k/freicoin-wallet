@@ -35,10 +35,29 @@ function serTokens(tokens) {
 /** The 32-byte commitment to a token set (double-SHA256 of its canonical serialization). */
 export const tokenSetHash = tokens => bytesToHex(sha256d(Uint8Array.from(serTokens(tokens))));
 
-// provisional extended-output versions (our fork): OP_1 = fungible asset, OP_2 = asset+tokens.
-export const ASSET_V_FUNGIBLE = 1, ASSET_V_TOKENS = 2;
+// provisional extended-output versions (our fork): OP_1 = fungible asset, OP_2 = asset+tokens,
+// OP_3 = Freiland Harberger covenant (see docs/freiland-covenant-spec.md §3, variant A). A HRBG
+// output is HOST currency (assetTag null) — the version opcode, not a tag, is the discriminator;
+// the suffix carries nameHash(32) ‖ ownerHash160(20) ‖ floorV(8 LE), NOT an asset tag.
+export const ASSET_V_FUNGIBLE = 1, ASSET_V_TOKENS = 2, HARBERGER_V = 3;
 const opN = v => v === 0 ? '00' : (0x50 + v).toString(16);   // small-int opcode for a version 0..16
 const dataPush = hex => (hex.length / 2).toString(16).padStart(2, '0') + hex;   // <len><bytes>, len ≤ 75
+// 8-byte little-endian kria amount ⇄ BigInt
+const le8 = v => { let b = BigInt(v), s = ''; for (let i = 0; i < 8; i++) { s += Number(b & 0xffn).toString(16).padStart(2, '0'); b >>= 8n; } return s; };
+const unLe8 = bytes => { let v = 0n; for (let i = 7; i >= 0; i--) v = (v << 8n) | BigInt(bytes[i]); return v; };
+
+/** Append the Harberger covenant SUFFIX (variant A) to a base HOST witness program.
+ *  base is a plain host program (e.g. 0014{hash20}); the coin stays host FRC (its value = the
+ *  melting deposit, its asset_pv = the current forced-sale price V). Commits the registry key
+ *  (nameHash), the forced-sale payout target (ownerHash160 → 0014{owner}), and the Gesell dust
+ *  floor (floorV, kria). Mirror the C++ extension-suffix walk; version OP_3 marks it as HRBG. */
+export function encodeHarbergerSpk(baseSpkHex, nameHashHex, ownerHash160Hex, floorV) {
+  if (!/^[0-9a-f]{64}$/.test(nameHashHex)) throw new Error('nameHash must be 32 bytes');
+  if (!/^[0-9a-f]{40}$/.test(ownerHash160Hex)) throw new Error('ownerHash160 must be 20 bytes');
+  const f = BigInt(floorV);
+  if (f < 0n || f > 0xffffffffffffffffn) throw new Error('floorV out of range');
+  return baseSpkHex + dataPush(nameHashHex) + dataPush(ownerHash160Hex) + dataPush(le8(f)) + opN(HARBERGER_V);
+}
 
 /** Append the asset extension SUFFIX (§XI: data pushes + trailing version opcode) to a base
  *  witness program. tag null/host ⇒ returns baseSpk unchanged (host outputs carry no suffix). */
@@ -99,6 +118,13 @@ export function decodeAssetSpk(spkHex) {
     } else return null;
   }
   if (version === null || pos !== b.length) return null;
+  // Harberger covenant (OP_3, variant A): HOST output — the suffix is nameHash(32)‖owner(20)‖floorV(8),
+  // NOT an asset tag. The version opcode discriminates; assetTag stays null (value is host FRC).
+  if (version === HARBERGER_V) {
+    if (data.length !== 60) return null;
+    return { baseSpk: base, assetTag: null, tokenHash: null, version,
+      harberger: { nameHash: bytesToHex(data.slice(0, 32)), owner: bytesToHex(data.slice(32, 52)), floorV: unLe8(data.slice(52, 60)) } };
+  }
   if (data.length !== 20 && data.length !== 52) return null;   // tag | tag++tokenHash
   return { baseSpk: base, assetTag: bytesToHex(data.slice(0, 20)), tokenHash: data.length === 52 ? bytesToHex(data.slice(20)) : null, version };
 }
