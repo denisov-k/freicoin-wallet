@@ -19,13 +19,16 @@ const rev = h => h.match(/../g).reverse().join('');
 const mineAddr = cli('getnewaddress');
 
 // ---- name / owner / deposit ----
-const nameHash = sha256(Buffer.from('covtest-alice', 'utf8')).toString('hex');
+const RUN = String(Date.now());
+const nameHash = sha256(Buffer.from('covtest-alice-'+RUN, 'utf8')).toString('hex');
 const ownerHex = 'bb'.repeat(20), buyerHex = 'cc'.repeat(20);
 const floorV = 1000000, V = 100000000;                 // 0.01 FRC floor, 1 FRC deposit
 const ownerSpk = '0014' + ownerHex;
 const OP_TRUE = '51';
 const hrbgSpk = encodeHarbergerSpk(nameHash, ownerHex, floorV);
 const succSpk = encodeHarbergerSpk(nameHash, buyerHex, floorV);
+const nameHash3 = sha256(Buffer.from('covtest-carol-'+RUN, 'utf8')).toString('hex');
+const hrbgSpk3 = encodeHarbergerSpk(nameHash3, ownerHex, floorV);
 const opIn = (txid, vout) => ({ prevout: { txid: rev(txid), vout }, scriptSig: '', sequence: 0xffffffff, witness: [] });
 
 // fresh OP_TRUE coinbase → mature it → sign-free funding at refheight = its block height
@@ -76,7 +79,7 @@ cli('generatetoaddress', '100', mineAddr);
 const cb2Val = Math.round(cliJSON('gettxout', cb2.tx[0], '0').value * 1e8);
 const LH2 = cb2.height;
 const tx2b = { version: 2, hasWitness: false, nLockTime: 0, lockHeight: LH2,
-  vin: [opIn(cb2.tx[0], 0)], vout: [{ value: BigInt(V), scriptPubKey: hrbgSpk }, { value: BigInt(cb2Val - V - 10000), scriptPubKey: OP_TRUE }] };
+  vin: [opIn(cb2.tx[0], 0)], vout: [{ value: BigInt(V), scriptPubKey: hrbgSpk3 }, { value: BigInt(cb2Val - V - 10000), scriptPubKey: OP_TRUE }] };
 const r1b = mineRaw(tx2b);
 ok('second HRBG create mined', r1b.ok);
 const hb = cliJSON('getblock', r1b.hash);

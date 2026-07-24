@@ -205,11 +205,19 @@ HRBG-выход создаётся → распознаётся (`DeriveAssetTag
 сериализации монеты) → ВАЛИДНЫЙ форс-выкуп ПРИНЯТ блок-валидацией → НЕВАЛИДНЫЙ (без payout)
 ОТВЕРГНУТ с `bad-txns-harberger-unpaid`. Это блок-коннект-интеграция, которую юнит не покрывает.
 
-### Осталось (следующий крупный сфокусированный кусок — НЕ автономно-впопыхах):
-- **Реестр имён** (уникальность по цепи): `NameRegistry` (nameHash→outpoint) как `AssetRegistry` —
-  член `Chainstate`, update на ConnectBlock, ОТКАТ на DisconnectBlock (реорг-safe), персист. Правило:
-  создать HRBG-выход для имени можно, если имя свободно ИЛИ в этом же tx тратится его текущий держатель.
-  Требует ФУНКЦИОНАЛЬНОГО теста (демон + регтест, connect/disconnect), не только юнита — stateful.
+4. **Реестр имён — уникальность + реорг-безопасный отког (СДЕЛАНО, aa92a8e).** `NameRegistry`
+   (nameHash→outpoint, `consensus/harberger.h`) ЗЕРКАЛИТ неистраченные HRBG-монеты в UTXO-set:
+   ConnectBlock — Release входов + Claim выходов (после CheckTxInputs, куда передан реестр для
+   проверки уникальности; RAII-откат на dry-run/сбой); DisconnectBlock — обратное (Release выходов,
+   Claim восстановленных входов из undo-данных) ⇒ откат симметричен UTXO, БЕЗ отдельного undo-data.
+   Член `Chainstate::m_name_registry`, персист `names.dat` (magic FRNM1), загрузка на старте, сброс
+   на `-reindex`. Уникальность: создать HRBG-выход для имени можно, если оно свободно ИЛИ в этом tx
+   тратится текущий держатель (reasons `bad-txns-harberger-{name-taken,dup-name}`).
+   Юнит `asset_tests/harberger_uniqueness` (15/15). **ФУНКЦ-РЕОРГ-ТЕСТ на демоне 5/5**
+   (`research/harberger-reorg-regtest.mjs`): дубль имени ОТВЕРГНУТ; `invalidateblock` откатывает
+   реестр (DisconnectBlock) → имя СНОВА заявляемо. Именно stateful-отког, недостижимый юнитом.
+
+### Осталось:
 - **Owner-path** (переоценка/долив/вывод): переоценка = «выкуп своего» через путь-A (payout себе);
   вывод (release без преемника) — нужен owner-sig-механизм (аналог asset-authorizer approvals).
 - **multiple HRBG-входов на tx** (позиционный матч payout/преемник).
