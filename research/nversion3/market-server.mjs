@@ -1789,6 +1789,13 @@ const api = {
     const r = this.landRow(w);
     return { name, found: BigInt(r.value) >= LAND_MIN_V, ...r };
   },
+  // Freiland CONSENSUS COVENANT discovery (services/market/covenant-land.mjs): a thin proxy to the
+  // node's getharbergernames RPC, which dumps the consensus name registry (nameHash → outpoint,
+  // owner, floorV, deposit, refheight, current price V). Authoritative and always current, so no
+  // relay-side indexing — unlike the relay-MVP land* above. Optional namehash returns one name.
+  async harbergernames({ namehash } = {}) {
+    return await rpc('getharbergernames', ...(namehash ? [namehash] : []));
+  },
 };
 
 // ---- rate limiting: a token bucket per client IP ----
