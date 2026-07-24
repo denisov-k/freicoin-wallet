@@ -18,7 +18,7 @@ import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
 import { annualRent, validLandName, frcWpkSpk } from '@core/freiland.mjs';
 import { covenantSpk, ownerHashOf, covenantPrice, readCovenant, nameHashOf } from '@core/covenant.mjs';
 import { sendFrcToSpk, signInput, myCoinsOf, opIn } from '@/services/market/swap-lib.mjs';
-import { serializeTx, NV3_TX_VERSION } from '@core/tx.mjs';
+import { serializeTx, parseTx, NV3_TX_VERSION } from '@core/tx.mjs';
 import { SIGHASH_ALL, segwitV0Sighash } from '@core/sighash.mjs';
 import { Buffer } from 'buffer';
 
@@ -39,6 +39,36 @@ export const covSpkOf = (name, floorV = FLOOR) => covenantSpk(name, covOwnerPub(
 const load = () => { try { return JSON.parse(localStorage.getItem('fw_covenant') || '[]'); } catch { return []; } };
 const save = a => localStorage.setItem('fw_covenant', JSON.stringify(a));
 
+// ── On-chain NAME BOOK (auto-recovery across devices) ───────────────────────────────────────────
+// localStorage is the ONLY record of WHICH names I hold (the chain keeps sha256(name), not the text),
+// so a fresh device shows nothing. Fix: every claim/buy/revalue also writes an OP_RETURN carrying the
+// name ENCRYPTED under a seed-derived key. On any device the wallet scans the registry, tries to
+// decrypt each name's tx, and the ones that decrypt (AES-GCM tag verifies ⇒ my key) are mine. Others
+// see only ciphertext. Names issued BEFORE this (no FRLN) still need the one-time manual recover.
+const FRLN = '46524c4e';                                  // 'FRLN' — Freiland name-book memo magic
+const nbKeyBytes = () => Buffer.from(sha256(Buffer.from(ctx.seed + 'fw-covenant-namebook', 'utf8')));
+const te = new TextEncoder(), td = new TextDecoder();
+/** Encrypt a name → OP_RETURN payload hex (FRLN + iv(12) + ciphertext+tag). */
+async function encName(name) {
+  const key = await crypto.subtle.importKey('raw', nbKeyBytes(), 'AES-GCM', false, ['encrypt']);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, te.encode(name)));
+  return FRLN + Buffer.from(iv).toString('hex') + Buffer.from(ct).toString('hex');
+}
+/** Decrypt an FRLN payload with MY key → the name, or null if it isn't mine (wrong key / tampered). */
+async function decName(payloadHex) {
+  if (!payloadHex?.startsWith(FRLN)) return null;
+  const b = Buffer.from(payloadHex.slice(8), 'hex');
+  if (b.length < 13) return null;
+  try {
+    const key = await crypto.subtle.importKey('raw', nbKeyBytes(), 'AES-GCM', false, ['decrypt']);
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b.subarray(0, 12) }, key, b.subarray(12));
+    return td.decode(pt);
+  } catch { return null; }
+}
+// a value-0 OP_RETURN output carrying the encrypted name (host FRC, no asset). ≤75-byte direct push.
+const frlnOut = async name => { const p = await encName(name); return { value: 0n, scriptPubKey: '6a' + (p.length / 2).toString(16).padStart(2, '0') + p, assetTag: HOST_TAG }; };
+
 // present-value spendable FRC coins for funding a spend (mirrors sendFrcToSpk's selection)
 const pickFrc = (need, L) => {
   const coins = myCoinsOf(null, L).sort((a, b) => (b.pv > a.pv ? 1 : b.pv < a.pv ? -1 : 0));
@@ -56,7 +86,7 @@ export async function registerName({ name, valueFrc, progress = () => {} }) {
   const V = frcToKria(valueFrc);
   const deposit = V + annualRent(V) / 52n;               // week-of-rent buffer so it doesn't lapse next block
   progress('lock');
-  const { txid } = await sendFrcToSpk(covSpkOf(name), deposit);
+  const { txid } = await sendFrcToSpk(covSpkOf(name), deposit, [await frlnOut(name)]);   // + encrypted name book
   const rec = { name, floorV: FLOOR, value: Number(valueFrc), claimTxid: txid, at: Date.now() };
   save(load().filter(x => x.name !== name).concat(rec));
   progress('done');
@@ -73,6 +103,33 @@ async function nameCoin(name, floorV = FLOOR) {
   const [txid, vout] = e.outpoint.split(':');
   return { spk: covSpkOf(name, floorV), txid, vout: +vout, value: Number(e.deposit),
     refheight: e.refheight, owner: e.owner, price: BigInt(e.price) };
+}
+
+// txids already inspected this session (skip re-fetching the same registry tx on every render)
+const _seenTx = new Set();
+/** AUTO-RECOVER my names from the chain: for each live registry entry, fetch its tx, try to decrypt
+ *  the FRLN name-book memo with MY seed key — the ones that decrypt (and hash-match + owner-match)
+ *  are mine, so add them to the local list. Lets «my names» populate on a fresh device with no manual
+ *  step. Names issued before the name book (no FRLN memo) fall back to manual recoverName(). */
+export async function recoverFromChain() {
+  let reg; try { reg = await idx(); } catch { return 0; }
+  const have = new Set(load().map(x => x.name));
+  let added = 0;
+  for (const e of (reg || [])) {
+    const txid = (e.outpoint || '').split(':')[0];
+    if (!txid || _seenTx.has(txid)) continue;
+    _seenTx.add(txid);
+    let tx; try { tx = parseTx((await api('rawFrcTx', { txid })).rawtx); } catch { continue; }
+    const memo = tx.vout.map(o => o.scriptPubKey || '').find(s => s.startsWith('6a') && s.indexOf(FRLN) > 0);
+    if (!memo) continue;
+    const name = await decName(memo.slice(memo.indexOf(FRLN)));
+    if (!name) continue;                                             // not mine (wrong key)
+    if (nameHashOf(name) !== e.namehash || e.owner !== ownerHashOf(covOwnerPub(name))) continue;   // integrity + mine
+    if (have.has(name)) continue;
+    save(load().filter(x => x.name !== name).concat({ name, floorV: e.floorV ?? FLOOR, value: Number(e.price) / 1e8, claimTxid: txid, at: Date.now() }));
+    have.add(name); added++;
+  }
+  return added;
 }
 
 /** My names + their live price (= present value of the melting deposit, what a forced buy pays). */
@@ -178,6 +235,7 @@ export async function revalueName({ name, valueFrc, progress = () => {} }) {
   const tx = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, nExpireTime: 0, lockHeight: L,
     vin: [opIn(`${c.txid}:${c.vout}`), ...picked.map(p => opIn(p.outpoint))],
     vout: [ out(V, '0014' + owner), out(newDeposit, covSpkOf(name, rec.floorV)),
+            await frlnOut(name),                              // encrypted name book (cross-device recovery)
             ...(change > 0n ? [out(change, ctx.spks[0])] : []) ] };
   tx.vin[0].witness = [];                                   // HRBG: anyone-can-spend
   picked.forEach((p, i) => signInput(tx, i + 1, p.spk, p.value, p.refheight, SIGHASH_ALL));
@@ -213,6 +271,7 @@ export async function buyName({ name, progress = () => {} }) {
     vin: [opIn(info.outpoint), ...picked.map(p => opIn(p.outpoint))],
     vout: [ out(V, '0014' + info.owner),                      // pay the current owner V
             out(V, covSpkOf(name, FLOOR)),                    // successor owned by me (carries V)
+            await frlnOut(name),                              // encrypted name book (cross-device recovery)
             ...(change > 0n ? [out(change, ctx.spks[0])] : []) ] };
   tx.vin[0].witness = [];                                     // HRBG: anyone-can-spend
   picked.forEach((p, i) => signInput(tx, i + 1, p.spk, p.value, p.refheight, SIGHASH_ALL));

@@ -63,7 +63,7 @@ export function myCoinsOf(tag, L, reserved = committedOutpoints()) {
 // NETWORK-AWARE VERSION: only an nv3 chain accepts NV3_TX_VERSION. A host-FRC spend has no
 // assetTag to serialize, so on mainnet/testnet it is built as a plain version-2 transaction (which
 // the nv3 node also accepts) — this is what lets the BTC↔FRC swap run outside the asset chain.
-export async function sendFrcToSpk(spk, amount) {
+export async function sendFrcToSpk(spk, amount, extraOuts = []) {
   const L = ctx.state.mine.height, fee = 10000n, reserved = committedOutpoints();
   const coins = ctx.state.mine.utxos.filter(u => (u.assetTag ?? null) === null && spendableAt(u, L) && !reserved.has(u.outpoint))
     .map(u => ({ outpoint: u.outpoint, spk: u.spk, value: BigInt(u.value), refheight: u.refheight,
@@ -74,7 +74,7 @@ export async function sendFrcToSpk(spk, amount) {
   if (S < amount + fee) throw new Error(tr('not enough FRC for this swap'));
   const nv3 = isNv3Net();
   const out = (value, scriptPubKey) => nv3 ? { value, scriptPubKey, assetTag: HOST_TAG } : { value, scriptPubKey };
-  const vout = [out(amount, spk)];
+  const vout = [out(amount, spk), ...extraOuts];   // extraOuts: full {value,scriptPubKey,assetTag} outputs (e.g. an OP_RETURN memo)
   if (S - amount - fee > 0n) vout.push(out(S - amount - fee, ctx.spks[0]));
   const tx = { version: nv3 ? NV3_TX_VERSION : 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, ...(nv3 ? { nExpireTime: 0 } : {}), vin: picked.map(c => opIn(c.outpoint)), vout };
   picked.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
