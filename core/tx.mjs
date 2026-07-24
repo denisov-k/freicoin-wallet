@@ -55,6 +55,12 @@ export function parseTx(hex) {
   // rides an extension push there), exposing the convenient {scriptPubKey(base), assetTag} shape.
   for (const o of vout) {
     const dec = decodeAssetSpk(o.scriptPubKey);
+    // Harberger covenant: host FRC whose baseSpk (51 20{nameHash}) DROPS the 14{owner} 08{floorV} 53
+    // suffix. Folding it to baseSpk would make serializeTx emit a 34-byte script for a 65-byte one,
+    // so parseBlock's `hex.slice(serializeTx(tx).length)` desyncs on the block carrying a claim/buy
+    // tx — the ONLY block a claiming wallet ever downloads (matched via its own change), which froze
+    // that wallet's sync at "reconnecting". Keep the full script opaque; it's host FRC (assetTag null).
+    if (dec && dec.harberger) { o.assetTag = null; continue; }
     if (dec) { o.scriptPubKey = dec.baseSpk; o.assetTag = dec.assetTag; if (dec.tokenHash) o.tokenHash = dec.tokenHash; }
     else o.assetTag = null;
   }

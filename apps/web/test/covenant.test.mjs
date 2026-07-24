@@ -8,6 +8,7 @@ import { encodeHarbergerSpk } from '@core/asset-spk.mjs';
 import { frcWpkSpk } from '@core/freiland.mjs';
 import { pubkeyCompressed } from '@core/ecdsa.mjs';
 import { assetPresentValue } from '@core/assets.mjs';
+import { parseTx, serializeTx } from '@core/tx.mjs';
 import { sha256 } from '@core/crypto.mjs';
 import { Buffer } from 'buffer';
 
@@ -41,5 +42,15 @@ check('covenantPrice == assetPresentValue(deposit, distance, host)',
   covenantPrice(D, refh, h) === assetPresentValue(D, h - refh, { k: 20, interest: false }));
 check('price drifts below the deposit as it melts', covenantPrice(D, refh, h) < D);
 check('price == deposit at distance 0 (fresh)', covenantPrice(D, refh, refh) === D);
+
+// REGRESSION (2026-07-24): a tx carrying a real 65-byte HARBERGER covenant output
+// (51 20{nameHash} 14{owner} 08{floorV} 53) must survive parseTx→serializeTx BYTE-FOR-BYTE.
+// decodeAssetSpk folded it to the 34-byte baseSpk, so serializeTx re-emitted a shorter script and
+// scan.mjs parseBlock's `hex.slice(serializeTx(tx).length)` desynced on the block holding a
+// claim/buy tx — the only block a claiming wallet downloads — freezing its sync at "reconnecting".
+const CLAIM_TX = '03000080ff0101406e2852c98c52f55b2c093f8e9c47a8b5eac1ad87892df41e7f93dbe80361b90100000000ffffffff02f8599b5402000000415120b3ec1fd024c36fcedb7fe8fd61351c7c42224faeca726e0ff5df2357ac1afad21410639dd513b64d951a3345a231e56a8dbef42a2d0840420f0000000000530af4791701000000160014ab1c72425eb8372e59acb1a9e4ceeae4dcc3b13a000003483045022100c380e16be23b47c33e152f719534e904e3f0184f2ed53995a9a8f14412552e5402207bcab14f7a56a9b1c54ecad70bd6acc230a237e954d048c2b003af97883832770124002102aa5fe987343a470332c2acc379166b3b151c02c40692ba68e6050d2fa72dd1eeac00000000008d04000000000000';
+check('covenant claim tx round-trips through parseTx/serializeTx', serializeTx(parseTx(CLAIM_TX)) === CLAIM_TX);
+const dvout = parseTx(CLAIM_TX).vout[0];
+check('covenant output keeps its full 65-byte script (not folded to baseSpk)', dvout.scriptPubKey.length === 130 && dvout.assetTag === null);
 
 console.log(`\nOK ✅  (${pass} checks)`);
