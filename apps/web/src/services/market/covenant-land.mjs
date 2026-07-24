@@ -101,6 +101,20 @@ export async function resolveName(name) {
   return e ? { taken: true, name, ...mapEntry(e), mine: e.owner === ownerHashOf(covOwnerPub(name)) } : null;
 }
 
+/** RECOVER an already-owned name into the local «my names» list. localStorage is the ONLY record of
+ *  WHICH names to show (the chain keeps just sha256(name), not the text), so a cleared store / another
+ *  device makes an owned name invisible though the seed still holds it. Verify on-chain ownership by
+ *  the seed-derived key, then re-add it. Returns false if the name is free or owned by someone else.
+ *  @param {string} name */
+export async function recoverName(name) {
+  const info = await resolveName(name);
+  if (!info || !info.mine) return false;                 // free, or not derivable from THIS seed
+  const rec = { name, floorV: info.floorV ?? FLOOR, value: Number(info.price) / 1e8,
+    claimTxid: (info.outpoint || '').split(':')[0], at: Date.now() };
+  save(load().filter(x => x.name !== name).concat(rec));
+  return true;
+}
+
 /** REVALUE (top up) my own name to a higher self-assessment via the path-A buy-your-own: spend the
  *  HRBG (anyone-can-spend) plus my FRC coins, pay V to myself, carry newDeposit into the successor.
  *  Only raising is possible (consensus: successor >= current price V); lowering happens via demurrage.

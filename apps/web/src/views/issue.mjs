@@ -9,7 +9,7 @@ import { toast } from '@/components/toast.mjs';
 import { armOverlay, closeOverlay } from '@/components/modal.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import { api, ctx, isCovenantNet } from '@/state/market-ctx.mjs';
-import { mvRefresh } from '@/views/exchange.mjs';
+import { mvRefresh, paintMyNames } from '@/views/exchange.mjs';
 
 let mode = 'a';   // 'a' = currency (amounts), 't' = tokens (unique items), 'n' = Freiland name
 
@@ -139,8 +139,17 @@ export function openIssueModal() {
         : await import('@/services/market/land.mjs');
       if (!L.validLandName(name)) { const e2 = $('#iAvail'); if (e2) { e2.textContent = tr('bad name (1–32: a-z 0-9 _ -)'); e2.style.color = 'var(--err)'; } return; }
       const addr = await L.resolveName(name); if (q(m, '#iName').value.trim() !== name) return;
-      const e2 = $('#iAvail');
-      if (e2) { e2.textContent = addr ? tr('name taken') : tr('available'); e2.style.color = addr ? 'var(--err)' : 'var(--ok)'; }
+      const e2 = $('#iAvail'); if (!e2) return;
+      // A name taken by THIS seed (mine) is not "taken" from the owner's view — the chain keeps only
+      // sha256(name), so a lost localStorage hides an owned name. Recover it into «my names» on sight.
+      if (addr && isCovenantNet() && addr.mine) {
+        const ok = await /** @type {any} */ (L).recoverName?.(name).catch(() => false);
+        e2.textContent = ok ? tr('✓ your name — restored to «My names»') : tr('name taken');
+        e2.style.color = ok ? 'var(--ok)' : 'var(--err)';
+        if (ok) { try { paintMyNames(); } catch {} }
+        return;
+      }
+      e2.textContent = addr ? tr('name taken') : tr('available'); e2.style.color = addr ? 'var(--err)' : 'var(--ok)';
     }, 400);
   });
   q(m, '#iVal').oninput = async () => {
