@@ -134,7 +134,9 @@ export function openIssueModal() {
     const name = q(m, '#iName').value.trim();
     if (!name) return;
     availT = setTimeout(async () => {
-      const L = await import('@/services/market/land.mjs');
+      const L = isCovenantNet()
+        ? await import('@/services/market/covenant-land.mjs')
+        : await import('@/services/market/land.mjs');
       if (!L.validLandName(name)) { const e2 = $('#iAvail'); if (e2) { e2.textContent = tr('bad name (1–32: a-z 0-9 _ -)'); e2.style.color = 'var(--err)'; } return; }
       const addr = await L.resolveName(name); if (q(m, '#iName').value.trim() !== name) return;
       const e2 = $('#iAvail');
@@ -143,7 +145,9 @@ export function openIssueModal() {
   });
   q(m, '#iVal').oninput = async () => {
     const v = num($('#iVal').value) || 0; const el = $('#iRent');
-    const L = await import('@/services/market/land.mjs');
+    const L = isCovenantNet()
+      ? await import('@/services/market/covenant-land.mjs')
+      : await import('@/services/market/land.mjs');
     if (el) el.textContent = v > 0 ? `≈ ${(Number(L.annualRent(BigInt(Math.round(v * 1e8)))) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 2 })} FRC/${tr('yr')}` : '—';
   };
   const rateHint = () => {
