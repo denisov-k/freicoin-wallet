@@ -130,9 +130,14 @@ export function decodeAssetSpk(spkHex) {
   // Harberger covenant (OP_3, variant A): HOST output on witness version 2 (base = 51 20{nameHash}).
   // program = nameHash (registry key); suffix = owner(20)+floorV(8). assetTag stays null (host FRC).
   if (version === HARBERGER_V) {
-    if (data.length !== 28 || base.length !== 68 || !base.startsWith(HRBG_WITVER_BYTE + '20')) return null;
+    // Mirror C++ ParseHarbergerOutput (consensus/harberger.h) BYTE-FOR-BYTE: the suffix must be
+    // exactly 0x14{owner:20} 0x08{floorV:8}, not merely 28 bytes of pushes in any shape. A lenient
+    // data.length===28 check would also accept e.g. `51 20{name} 1c{28} 53` (64 B) or a swapped
+    // `08{8} 14{20}` (65 B) — scripts the consensus treats as plain anyone-can-spend witver-2
+    // outputs (NOT covenants), which the wallet would then mis-display as protected names.
+    if (b.length !== 65 || b[34] !== 0x14 || b[55] !== 0x08 || base.length !== 68 || !base.startsWith(HRBG_WITVER_BYTE + '20')) return null;
     return { baseSpk: base, assetTag: null, tokenHash: null, version,
-      harberger: { nameHash: base.slice(4), owner: bytesToHex(data.slice(0, 20)), floorV: unLe8(data.slice(20, 28)) } };
+      harberger: { nameHash: base.slice(4), owner: bytesToHex(b.slice(35, 55)), floorV: unLe8(b.slice(56, 64)) } };
   }
   if (data.length !== 20 && data.length !== 52) return null;   // tag | tag++tokenHash
   return { baseSpk: base, assetTag: bytesToHex(data.slice(0, 20)), tokenHash: data.length === 52 ? bytesToHex(data.slice(20)) : null, version };

@@ -54,6 +54,12 @@ check('rejects wrong owner length', (() => { try { encodeHarbergerSpk(nameHash, 
 check('rejects floorV overflow', (() => { try { encodeHarbergerSpk(nameHash, owner, 1n << 64n); return false; } catch { return true; } })());
 // a suffix with OP_3 but the wrong data length must not decode as HRBG
 check('rejects HRBG suffix of wrong data length', decodeAssetSpk('5120' + nameHash + '14' + owner + '53') === null);
+// STRICTNESS (must match C++ ParseHarbergerOutput byte-for-byte): 28 suffix bytes reached by a
+// NON-canonical push structure are plain anyone-can-spend witver-2 outputs to the consensus, not
+// covenants — the wallet must NOT read them as names (else it shows unprotected outputs as owned).
+check('rejects HRBG with a single 28-byte push (64 B)', decodeAssetSpk('5120' + nameHash + '1c' + 'dd'.repeat(28) + '53') === null);
+check('rejects HRBG with swapped floorV/owner pushes (65 B)', decodeAssetSpk('5120' + nameHash + '08' + 'ee'.repeat(8) + '14' + owner + '53') === null);
+check('rejects HRBG with a split 2+26 suffix (65 B)', decodeAssetSpk('5120' + nameHash + '02' + 'ffff' + '1a' + '99'.repeat(26) + '53') === null);
 
 // ---- host output (no suffix) unaffected ----
 check('plain host program decodes as host, no harberger', (() => { const h = decodeAssetSpk('0014' + '11'.repeat(20)); return h.assetTag === null && !h.harberger; })());
