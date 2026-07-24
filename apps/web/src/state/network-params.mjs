@@ -20,7 +20,7 @@ export const NETWORKS = {
   // Freimarkets: the nVersion=3 chain (assets + DEX). Since 2026-07-17 a PUBLIC SIGNET —
   // freicoind -signet with our block-signing challenge; outside nodes can join P2P
   // (freicoin.ru:38639) while blocks stay reorg-proof. Signet bech32 hrp is 'tf'.
-  nv3:     { label: 'Freimarkets', hrp: 'tf', coinType: 1, genesis: '000000500fc45aa5ed5763371527daca0ddc04212352e4759b8c9b563cc53934', nv3: true },
+  nv3:     { label: 'Freimarkets', hrp: 'tf', coinType: 1, genesis: '000000500fc45aa5ed5763371527daca0ddc04212352e4759b8c9b563cc53934', nv3: true, covenant: true },
 };
 
 export const DEFAULT_NET = 'main';

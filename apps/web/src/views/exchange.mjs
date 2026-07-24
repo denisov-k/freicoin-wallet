@@ -19,7 +19,7 @@ import { tr, getLang } from '@/services/i18n.mjs';
 import QRCode from 'qrcode';
 import { loadMySwaps, putMySwap, dropMySwap, loadP2p, putP2p, dropP2p, addBtcNonce, addFeeTxid, lsKey } from '@/services/storage.mjs';
 import { refreshPushSubs } from '@/services/push.mjs';
-import { api, ctx, p2pKey, HOST_TAG, decimalsOf, scaleOf, assetName, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND, VB_HTLC_FUND } from '@/state/market-ctx.mjs';
+import { api, ctx, p2pKey, HOST_TAG, decimalsOf, scaleOf, assetName, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND, VB_HTLC_FUND, isCovenantNet } from '@/state/market-ctx.mjs';
 import { opIn, signInput, committedOutpoints, myCoinsOf, freeFrcKria, sendFrcToSpk, hostFeeCoin, lockAssetToHtlc, signRangedGive, signLadder, LADDER_SPAN } from '@/services/market/swap-lib.mjs';
 import { btcHrp, btcAcctAddr, btcFundHtlc, btcToStr, refreshBtc,
   mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvBtcMax, initBtcAccount, btcResetAcct } from '@/services/market/btc-account.mjs';
@@ -1566,18 +1566,27 @@ function paintOfferChart() {
 // ---- Freiland names surfaced INLINE (no modal): «My names» (manage) in the Balance tab,
 // «Names for sale» (browse + buy) in the Exchange. Both read the relay registry; actions sign
 // with the land-key via land.mjs. Claiming a name lives in Issue → Holdings.
-let _landMod = null;
+let _landMod = null, _covMod = null;
 let _nameTags = new Set();   // asset tags of Freiland name-NFTs — excluded from the trading book (they belong to «Holdings»)
 const landMod = async () => (_landMod ??= await import('@/services/market/land.mjs'));
+const covMod = async () => (_covMod ??= await import('@/services/market/covenant-land.mjs'));
+// the active «Владение» backend: consensus covenant on a covenant-active network, else the relay MVP
+const nameMod = async () => isCovenantNet() ? covMod() : landMod();
 const fmtFrcN = v => (Number(BigInt(v)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 2 });
 const nameLog = (sel, t) => { const el = $(sel); if (el) el.textContent = t; };
 
 // «Мои имена» (вкладка Баланс): управление — резолв ✎, переоценка/долив ±.
 export async function paintMyNames() {
   const box = $('#myNamesBody'); if (!box) return;
-  const L = await landMod();
-  let all = []; try { all = (await L.listNames()).names; } catch {}
-  const mine = all.filter(n => n.ownerFrcPub === L.landOwnerPub(n.name));
+  const L = await nameMod();
+  let mine = [];
+  try {
+    mine = isCovenantNet()
+      // covenant: myNames() already returns MINE (from the seed-derived scripts, read via the indexer),
+      // with the price (present value) and the melting deposit. Map to the shared row shape.
+      ? (await L.myNames()).map(n => ({ name: n.name, price: String(n.price), value: String(n.deposit), lapsed: false, resolve: '' }))
+      : (await L.listNames()).names.filter(n => n.ownerFrcPub === L.landOwnerPub(n.name));
+  } catch {}
   box.innerHTML = mine.length
     ? mine.map(n =>
         `<tr><td style="font-family:ui-monospace,monospace">${n.name}${n.lapsed ? ' ⚠' : ''}</td>
@@ -1591,15 +1600,16 @@ export async function paintMyNames() {
 // per-row icon buttons and their browser prompt() dialogs.
 async function openNameModal(name, resolve, price) {
   if ($('#modal')) return;
-  const L = await landMod();
+  const cov = isCovenantNet();   // the covenant has no resolve field — hide that section
+  const L = await nameMod();
   const curV = price ? String(Number(BigInt(price)) / 1e8) : '';
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>🗺️ ${name}</b><button id="nmX" class="icon">✕</button></div>
     <label>${tr('Self-assessed value')} (FRC)<input id="nmMV" type="text" inputmode="decimal" value="${curV}"></label>
     <button id="nmMReval">${tr('Top up / revalue')}</button>
-    <label>${tr('Points to address')}<input id="nmMRes" type="text" autocomplete="off" spellcheck="false" value="${resolve || ''}"></label>
-    <button id="nmMResBtn" class="ghost">${tr('Update address')}</button>
+    ${cov ? '' : `<label>${tr('Points to address')}<input id="nmMRes" type="text" autocomplete="off" spellcheck="false" value="${resolve || ''}"></label>
+    <button id="nmMResBtn" class="ghost">${tr('Update address')}</button>`}
     <div id="nmMLog" class="sub" style="font-size:12px;white-space:pre-line"></div></div>`;
   document.body.appendChild(m);
   armOverlay(m);
@@ -1618,7 +1628,8 @@ async function openNameModal(name, resolve, price) {
       toast(`${name}: ${tr('revalued ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
     } catch (e) { toast(e.message, 'err'); log(e.message); btn.disabled = false; }
   };
-  q(m, '#nmMResBtn').onclick = async () => {
+  const resBtn = q(m, '#nmMResBtn');
+  if (resBtn) resBtn.onclick = async () => {
     const to = $('#nmMRes').value.trim(); if (!to || to === resolve) return;
     try { await L.setResolve(name, to); toast(tr('resolve updated ✅'), 'ok'); $('#modal')?.remove(); paintMyNames(); }
     catch (e) { toast(e.message, 'err'); log(e.message); }
@@ -1647,7 +1658,39 @@ export async function paintNameMarket() {
 // трастлесс-выкуп (шаг 5c): исполнить стоячий оффер владельца (NFT едет филлом ПРЯМО на мой
 // land-адрес), затем adoptName — свой залог, свой оффер, перерегистрация на меня. Старому
 // владельцу V уже упала оффером; его залог заберёт его собственный maybeResignLand.
+// covenant «Holding»: look a name up by name (the registry is keyed by hash, so no public browse),
+// show its current forced-sale price, and buy it (pay V to the owner, become the new owner).
+async function covNameSearch() {
+  const name = ($('#covNameQ')?.value || '').trim();
+  const res = $('#covNameRes'); if (!res) return;
+  const L = await covMod();
+  if (!name) { res.innerHTML = ''; return; }
+  if (!L.validLandName(name)) { res.innerHTML = `<div class="sub">${tr('bad name (1–32: a-z 0-9 _ -)')}</div>`; return; }
+  res.innerHTML = `<div class="sub">${tr('looking up…')}</div>`;
+  try {
+    const info = await L.resolveName(name);
+    if (!info) { res.innerHTML = `<div class="sub">${tr('free — claim it in Issue → Holdings')}</div>`; return; }
+    res.innerHTML = `<table class="mkt"><tbody><tr>
+      <td style="font-family:ui-monospace,monospace">${name}${info.mine ? ' · ' + tr('yours') : ''}</td>
+      <td class="r">${fmtFrcN(info.price)} FRC</td>
+      <td class="act-cell">${info.mine ? '' : `<button id="covBuy" class="rbtn" title="${tr('Buy')}" aria-label="${tr('Buy')}">${SVG.buy}</button>`}</td>
+    </tr></tbody></table>`;
+    const bb = $('#covBuy'); if (bb) bb.onclick = () => buyName(name, String(info.price));
+  } catch (e) { res.innerHTML = `<div class="sub">${e.message}</div>`; }
+}
+
 async function buyName(name, price) {
+  if (isCovenantNet()) {
+    const L = await covMod();
+    const log = t => nameLog('#nameMktLog', t);
+    try {
+      await L.buyName({ name, progress: p => log(p === 'done' ? tr('name is yours ✅') : tr('buying the name…')) });
+      log(''); toast(`${name}: ${tr('name is yours ✅')}`, 'ok');
+      const res = $('#covNameRes'); if (res) res.innerHTML = ''; const qin = $('#covNameQ'); if (qin) qin.value = '';
+      paintMyNames();
+    } catch (e) { toast(e.message, 'err'); log(e.message); }
+    return;
+  }
   const L = await landMod();
   const priceFrc = Number(BigInt(price)) / 1e8;
   const vNew = prompt(`${tr('Buy for')} ${fmtFrcN(price)} FRC. ${tr('Your new self-assessed value (FRC)?')}`, String(Math.ceil(priceFrc)));
@@ -1682,6 +1725,7 @@ let mktClass = 'cur';   // 'cur' | 'tok' | 'hold'
 export function renderExchange(el) {
   const fopt = cachedFilterOpts();
   const nv3 = currentNet() === 'nv3';
+  const cov = isCovenantNet();   // covenant «Holding» is search-and-buy (registry is by name-hash, no public browse)
   mktClass = 'cur';
   el.innerHTML = `
     ${nv3 ? `<div class="seg" id="mktClass">
@@ -1699,9 +1743,13 @@ export function renderExchange(el) {
       <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>
     </div>
     ${nv3 ? `<div id="mktHold" hidden>
-      <div class="sub" style="font-size:12px;margin:2px 0">🗺️ ${tr('Names for sale')}. ${tr('to claim a new name, use Issue → Holdings')}</div>
+      ${cov ? `<div class="sub" style="font-size:12px;margin:2px 0">🗺️ ${tr('Find a name to buy — the covenant registry is keyed by name, there is no public browse.')}</div>
+      <div class="row"><input id="covNameQ" type="text" autocomplete="off" spellcheck="false" placeholder="${tr('name')}"><button id="covNameFind">${tr('Find')}</button></div>
+      <div id="covNameRes"></div>
+      <div id="nameMktLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`
+      : `<div class="sub" style="font-size:12px;margin:2px 0">🗺️ ${tr('Names for sale')}. ${tr('to claim a new name, use Issue → Holdings')}</div>
       <table class="mkt"><thead><tr><th>${tr('Name')}</th><th class="r">${tr('Price')}</th><th></th></tr></thead><tbody id="nameMktBody">${skelRows(2)}</tbody></table>
-      <div id="nameMktLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
+      <div id="nameMktLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`}
     </div>` : ''}`;
   $('#openOffer').onclick = openOfferModal;
   ['#fGive', '#fWant'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });
@@ -1711,9 +1759,15 @@ export function renderExchange(el) {
       el.querySelectorAll('#mktClass button').forEach(x => x.classList.toggle('on', x === b));
       $('#mktTrade').hidden = mktClass === 'hold';
       $('#mktHold').hidden = mktClass !== 'hold';
-      if (mktClass === 'hold') paintNameMarket(); else paint();
+      if (mktClass === 'hold') { if (!cov) paintNameMarket(); } else paint();
     });
-    paintNameMarket();   // populate the name-tag set (so the book can exclude name offers) + the board
+    if (cov) {
+      const find = $('#covNameFind'), qin = $('#covNameQ');
+      if (find) find.onclick = covNameSearch;
+      if (qin) qin.onkeydown = e => { if (e.key === 'Enter') covNameSearch(); };
+    } else {
+      paintNameMarket();   // relay only: populate the name-tag set (book exclusion) + the board
+    }
   }
   if (state) paint(); else mvRefresh();
 }
