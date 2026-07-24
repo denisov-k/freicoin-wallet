@@ -1609,41 +1609,59 @@ async function openNameModal(name, resolve, price, deposit) {
   const rentKria = (cov && deposit && price) ? (BigInt(deposit) - BigInt(price)) : 0n;
   const rentStr = rentKria > 0n ? fmtFrcN(rentKria.toString()) : '';
   const showRent = !!rentStr && !/^0([.,]0*)?$/.test(rentStr);   // hide when it rounds to zero (freshly topped)
+  const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+  const kv = (k, v) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0"><span class="sub">${cap(k)}</span><b>${v}</b></div>`;
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Manage holding')}</b><button id="nmX" class="icon">✕</button></div>
-    <div style="font-family:ui-monospace,monospace;font-size:15px;margin:2px 0 8px">🗺️ ${name}</div>
-    <div id="nmVView">
-      <div class="sub" style="font-size:13px">${tr('Self-assessed value')}: <b>${price ? fmtFrcN(price) : '—'} FRC</b></div>
-      ${cov && deposit ? `<div class="sub" style="font-size:12px">${tr('deposit')}: ${fmtFrcN(deposit)} FRC${showRent ? ` · ${tr('rent burned')}: ${rentStr} FRC` : ''}</div>` : ''}
-      <button id="nmMEdit" class="ghost" style="margin-top:8px">${tr('Change value')}</button>
+    <div id="nmScreen1">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Manage holding')}</b><button id="nmX" class="icon">✕</button></div>
+      <div style="font-family:ui-monospace,monospace;font-size:15px;font-weight:600;margin:2px 0 10px">${name}</div>
+      ${kv(tr('Property type'), tr('Holding'))}
+      ${kv(tr('Self-assessed value'), (price ? fmtFrcN(price) : '—') + ' FRC')}
+      ${cov && deposit ? kv(tr('deposit'), fmtFrcN(deposit) + ' FRC') : ''}
+      ${showRent ? kv(tr('rent burned'), rentStr + ' FRC') : ''}
+      <button id="nmMEdit" class="ghost" style="margin-top:10px">${tr('Change value')}</button>
+      ${cov ? '' : `<label>${tr('Points to address')}<input id="nmMRes" type="text" autocomplete="off" spellcheck="false" value="${resolve || ''}"></label>
+      <button id="nmMResBtn" class="ghost">${tr('Update address')}</button>`}
+      ${cov ? `<button id="nmMRelease" class="ghost" style="color:var(--err)">${tr('Free the holding')}</button>` : ''}
+      <div id="nmMLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
     </div>
-    <div id="nmVEdit" hidden>
+    <div id="nmScreen2" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack" class="icon">←</button><b style="flex:1;text-align:center">${tr('Change value')}</b><button id="nmX2" class="icon">✕</button></div>
+      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px;margin:2px 0 12px">${name}</div>
       <label>${tr('Self-assessed value')} (FRC)<input id="nmMV" type="text" inputmode="decimal" value="${curV}"></label>
       <button id="nmMReval">${tr('Confirm')}</button>
+      <div id="nmEditLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
     </div>
-    ${cov ? '' : `<label>${tr('Points to address')}<input id="nmMRes" type="text" autocomplete="off" spellcheck="false" value="${resolve || ''}"></label>
-    <button id="nmMResBtn" class="ghost">${tr('Update address')}</button>`}
-    ${cov ? `<button id="nmMRelease" class="ghost" style="color:var(--err)">${tr('Release the name (reclaim deposit)')}</button>` : ''}
-    <div id="nmMLog" class="sub" style="font-size:12px;white-space:pre-line"></div></div>`;
+    <div id="nmScreen3" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack3" class="icon">←</button><b style="flex:1;text-align:center">${tr('Free the holding')}</b><button id="nmX3" class="icon">✕</button></div>
+      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px;margin:2px 0 10px">${name}</div>
+      <div class="sub" style="font-size:13px;margin-bottom:12px">${tr('You give up the name; its melting deposit returns to your wallet.')}</div>
+      <button id="nmRelGo" class="ghost" style="color:var(--err)">${tr('Free the holding')}</button>
+      <div id="nmRelLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
+    </div></div>`;
   document.body.appendChild(m);
   armOverlay(m);
   const log = t => { const el = $('#nmMLog'); if (el) el.textContent = t; };
-  q(m, '#nmX').onclick = () => closeOverlay(m);
-  const editBtn = q(m, '#nmMEdit');
-  if (editBtn) editBtn.onclick = () => { const v = $('#nmVView'), e = $('#nmVEdit'); if (v) v.hidden = true; if (e) e.hidden = false; $('#nmMV')?.focus(); };
+  const logE = t => { const el = $('#nmEditLog'); if (el) el.textContent = t; };
+  const logR = t => { const el = $('#nmRelLog'); if (el) el.textContent = t; };
+  const showScreen = n => { for (const i of [1, 2, 3]) { const s = $('#nmScreen' + i); if (s) s.hidden = i !== n; } };
+  ['#nmX', '#nmX2', '#nmX3'].forEach(id => { const b = q(m, id); if (b) b.onclick = () => closeOverlay(m); });
+  q(m, '#nmMEdit').onclick = () => { showScreen(2); $('#nmMV')?.focus(); };
+  q(m, '#nmBack').onclick = () => { logE(''); showScreen(1); };
+  q(m, '#nmBack3').onclick = () => { logR(''); showScreen(1); };
   q(m, '#nmMReval').onclick = async () => {
     const nv = num($('#nmMV').value), rmin = await L.minValueFrc();
     if (!(nv >= rmin)) return toast(`${tr('minimum value is')} ${rmin} FRC`, 'err');
     const btn = $('#nmMReval'); btn.disabled = true;
     try {
-      await L.revalueName({ name, valueFrc: nv, progress: p => log(
+      await L.revalueName({ name, valueFrc: nv, progress: p => logE(
         p === 'rebond' ? tr('rebonding the deposit…')
         : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…')
         : p === 'offer' ? tr('signing the standing sale offer…')
         : tr('registered ✅')) });
       toast(`${name}: ${tr('revalued ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
-    } catch (e) { toast(e.message, 'err'); log(e.message); btn.disabled = false; }
+    } catch (e) { toast(e.message, 'err'); logE(e.message); btn.disabled = false; }
   };
   const resBtn = q(m, '#nmMResBtn');
   if (resBtn) resBtn.onclick = async () => {
@@ -1652,16 +1670,17 @@ async function openNameModal(name, resolve, price, deposit) {
     catch (e) { toast(e.message, 'err'); log(e.message); }
   };
   const relBtn = q(m, '#nmMRelease');
-  if (relBtn) relBtn.onclick = async () => {
-    if (!confirm(tr('Release «{name}»? You give up the name and its melting deposit returns to your wallet.').replace('{name}', name))) return;
-    relBtn.disabled = true; $('#nmMReval').disabled = true;
+  if (relBtn) relBtn.onclick = () => showScreen(3);
+  const relGo = q(m, '#nmRelGo');
+  if (relGo) relGo.onclick = async () => {
+    relGo.disabled = true;
     try {
-      await L.releaseName({ name, progress: p => log(
+      await L.releaseName({ name, progress: p => logR(
         p === 'fund' ? tr('authorizing (funding the owner address)…')
         : p === 'release' ? tr('releasing the name…')
         : tr('released ✅')) });
       toast(`${name}: ${tr('released — deposit reclaimed ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
-    } catch (e) { toast(e.message, 'err'); log(e.message); relBtn.disabled = false; $('#nmMReval').disabled = false; }
+    } catch (e) { toast(e.message, 'err'); logR(e.message); relGo.disabled = false; }
   };
 }
 
