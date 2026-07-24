@@ -240,7 +240,16 @@ HRBG-выход создаётся → распознаётся (`DeriveAssetTag
 - **multiple HRBG-входов на tx** (позиционный матч payout/преемник; сейчас >1 отвергается).
 - **Кошелёк** (JS): строить/распознавать HRBG-tx (encodeHarbergerSpk уже есть); релей → индексатор;
   авто-сползание цены и floorV-протухание (present-value уже считает консенсус); e2e на регтесте.
-- **Аудит** консенсус-кода перед активацией (adversarial-проход).
+- **Аудит** консенсус-кода перед активацией (adversarial-проход). **НАЧАТ (2026-07-24):**
+  self-audit нашёл+закрыл дыру **coinbase-covenant-bypass** — коинбейз минует и `CheckTxInputs`,
+  и зеркало реестра (обе секции под `if(!IsCoinBase())`), поэтому HRBG-выход в коинбейзе = бесплатный
+  незарегистрированный клейм + слом уникальности (обычная tx потом видит имя свободным). Фикс:
+  ConnectBlock отвергает блок с HRBG-выходом в коинбейзе (`bad-cb-harberger-output`) при активном
+  HARBERGER — софт-форк-safe ужесточение. Регресс `research/harberger-coinbase-regtest.mjs` 3/3.
+  Проверено SAFE в self-audit: RAII-откат vs dry-run (keep=true ПОСЛЕ fJustCheck-возврата ⇒ dry-run
+  откатывает); DisconnectBlock симметричен (читает undo ДО ApplyTxInUndo); distance≥0 (монотонность
+  lock_height энфорсится до HARBERGER-блока); payout(witver-0)≠successor(witver-2) — один выход не
+  закрывает оба правила. Идёт независимый adversarial-проход.
 
 ## 8. Риски / открытые вопросы
 
