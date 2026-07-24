@@ -278,9 +278,16 @@ HRBG-выход создаётся → распознаётся (`DeriveAssetTag
     (дефолт 0 = always-active сохранён); `harberger-activation-regtest.mjs` 4/4 гоняет блок-часы
     через T (setmocktime): ПРЕ — дубль имени принят (энфорс+зеркало выкл ⇒ F2 подтверждён), ПОСТ —
     отвергнут name-taken. Сам триггер активации ранее не тестился вообще.
-  - **Регресс-набор ковенанта (7 сьютов, все зелёные на патче):** unit asset_tests 15/15;
-    функц research/harberger-{func 7, reorg 5, drift 4, coinbase 3, verifydb 4, activation 4}.
-    JS-модель apps/web/test/harberger.test.mjs 31.
+  - **Регресс-набор ковенанта (все зелёные на патче):** unit `asset_tests` 16/16 (вкл.
+    harberger_relay_standardness); функц `research/harberger-{func 7, reorg 5, drift 4, coinbase 3,
+    verifydb 4, activation 4, relay 6, forcedbuy-e2e 4}`; клиент-либа `covenant-e2e` 7. JS-модели
+    `apps/web/test/{harberger 31, covenant 12}`.
+
+**КЛИЕНТ-ЛИБА `core/covenant.mjs` (aea00d2).** Чистые (без relay/UI) строители+ридер под будущий
+кошелёк-UX: `nameHashOf`/`ownerHashOf`/`covenantSpk`/`readCovenant`, `covenantPrice`=asset_pv,
+`buildClaim`/`buildForcedBuy`/`buildRevalue` (каждый подписывает Freicoin MAST-v0 wpk-фандинг,
+возвращает node-ready `{rawtx,txid}`). `buildRevalue`=path-A «выкуп своего» ⇒ только поднятие V
+(successor≥V консенсусно). Юнит 12/12; e2e claim→forced-buy→revalue через sendrawtransaction 7/7.
 
 ## 8. Риски / открытые вопросы
 
