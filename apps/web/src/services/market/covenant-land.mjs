@@ -122,6 +122,9 @@ export async function revalueName({ name, valueFrc, progress = () => {} }) {
   return { txid, price: V };
 }
 
+/** Minimum self-assessed value (FRC) — the Gesell dust floor, so a name's deposit can't be dust. */
+export async function minValueFrc() { return FLOOR / 1e8; }
+
 // Discovery of OTHERS' names needs an HRBG indexer (a scan of all covenant outputs). Until one exists
 // these throw NEEDS_INDEXER so the UI can gracefully show only the trustless «my names» flow.
 export async function listNames() { throw new Error(NEEDS_INDEXER); }

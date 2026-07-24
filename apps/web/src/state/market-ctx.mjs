@@ -39,6 +39,10 @@ export const p2pKey = (nonce, leg) => sha256(Buffer.from(ctx.seed + 'fw-p2p:' + 
 // cross-chain swap's FRC leg must be built as a plain v2 tx there. Assets/DEX only exist on nv3
 // anyway, so their builders can stay NV3-only.
 export const isNv3Net = () => !!NETWORKS[currentNet()]?.nv3;
+// Freiland «Владение» backend selector: a network with the consensus Harberger covenant ACTIVE
+// (covenant:true) drives names trustlessly through services/market/covenant-land.mjs; every current
+// network leaves it unset ⇒ the relay MVP (land.mjs) stays in use, so this is dormant until deploy.
+export const isCovenantNet = () => !!NETWORKS[currentNet()]?.covenant;
 // the network key the HTLC ADDRESS is encoded for — always the wallet's current chain (a hardcoded
 // 'regtest' would mint fcrt1 escrow addresses on mainnet)
 export const swapNet = () => currentNet();

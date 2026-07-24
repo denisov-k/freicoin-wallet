@@ -8,7 +8,7 @@ import { $, q, num } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
 import { armOverlay, closeOverlay } from '@/components/modal.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
-import { api, ctx } from '@/state/market-ctx.mjs';
+import { api, ctx, isCovenantNet } from '@/state/market-ctx.mjs';
 import { mvRefresh } from '@/views/exchange.mjs';
 
 let mode = 'a';   // 'a' = currency (amounts), 't' = tokens (unique items), 'n' = Freiland name
@@ -20,7 +20,10 @@ async function issue() {
     // Freiland name: the full claim pipeline (mint land-NFT → deposit → standing offer →
     // register) — the registry machinery lives in land.mjs, this is only its issuance face
     if (mode === 'n') {
-      const L = await import('@/services/market/land.mjs');
+      // trustless covenant backend on a covenant-active network, else the relay MVP (dormant until deploy)
+      const L = isCovenantNet()
+        ? await import('@/services/market/covenant-land.mjs')
+        : await import('@/services/market/land.mjs');
       if (!L.validLandName(name)) throw new Error(tr('bad name (1–32: a-z 0-9 _ -)'));
       const v = num($('#iVal')?.value ?? '');
       const min = await L.minValueFrc();
