@@ -1800,11 +1800,30 @@ export function renderAssetBalance(el) {
     <table class="mkt"><thead><tr><th>${tr('Currency')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="curBalBody">${skelRows(2)}</tbody></table>
     <table class="mkt" style="margin-top:12px"><thead><tr><th>${tr('Token')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="tokBalBody">${skelRows(1)}</tbody></table>
     <table class="mkt" style="margin-top:12px"><thead><tr><th>${tr('Holding')}</th><th class="r">${tr('Price')} / ${tr('deposit')}</th><th></th></tr></thead><tbody id="myNamesBody">${skelRows(1)}</tbody></table>
-    <div id="myNamesLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`
+    <div id="myNamesLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
+    <div style="margin-top:6px;display:flex;gap:6px">
+      <input id="nameRecQ" type="text" placeholder="${tr('restore a name you already own…')}" autocomplete="off" spellcheck="false" style="flex:1;min-width:0">
+      <button id="nameRecBtn" class="ghost" style="white-space:nowrap">${tr('Restore')}</button></div>
+    <div id="nameRecLog" class="sub" style="font-size:12px"></div>`
   : `<table class="mkt"><thead><tr><th>${tr('Asset')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="curBalBody">${skelRows(3)}</tbody></table>`;
   const f = $('#faucetBtn'); if (f) f.onclick = faucet;   // the button itself lives with the other Balance actions
   if (state) paintAssetBalance(); else mvRefresh();
   if (nv3) paintMyNames();
+  // «Restore a name» — for names issued BEFORE the on-chain name book (no encrypted memo to auto-read),
+  // or held on another device: type it, verify the seed owns it on-chain, add it back to «my names».
+  const recBtn = nv3 ? $('#nameRecBtn') : null;
+  if (recBtn) recBtn.onclick = async () => {
+    const q = $('#nameRecQ'), lg = $('#nameRecLog'), name = (q?.value || '').trim();
+    if (!name) return;
+    recBtn.disabled = true; if (lg) lg.textContent = tr('checking the chain…');
+    try {
+      const L = await covMod();
+      const ok = await L.recoverName(name);
+      if (ok) { if (lg) lg.textContent = ''; if (q) q.value = ''; toast(`${name}: ${tr('restored ✅')}`, 'ok'); paintMyNames(); }
+      else if (lg) lg.textContent = tr('not found on-chain, or not owned by this wallet');
+    } catch (e) { if (lg) lg.textContent = e.message; }
+    recBtn.disabled = false;
+  };
 }
 function paintAssetBalance() {
   const cur = $('#curBalBody'), tok = $('#tokBalBody'); if (!cur || !state) return;
