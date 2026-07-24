@@ -264,6 +264,13 @@ HRBG-выход создаётся → распознаётся (`DeriveAssetTag
     вносит ≥V, без free-acquisition/underpay); парсер (65-байт, host-tag); реорг-симметрия;
     ConnectBlock dry-run (keep ПОСЛЕ fJustCheck); мемпул (rules=NONE, реестр не мутирует);
     детерминизм (std::map/set упорядочены).
+  - **АКТИВАЦИЯ софт-форка ПРОТЕСТИРОВАНА:** добавлен регтест-арг `-harbergeractivationtime=<unix>`
+    (дефолт 0 = always-active сохранён); `harberger-activation-regtest.mjs` 4/4 гоняет блок-часы
+    через T (setmocktime): ПРЕ — дубль имени принят (энфорс+зеркало выкл ⇒ F2 подтверждён), ПОСТ —
+    отвергнут name-taken. Сам триггер активации ранее не тестился вообще.
+  - **Регресс-набор ковенанта (7 сьютов, все зелёные на патче):** unit asset_tests 15/15;
+    функц research/harberger-{func 7, reorg 5, drift 4, coinbase 3, verifydb 4, activation 4}.
+    JS-модель apps/web/test/harberger.test.mjs 31.
 
 ## 8. Риски / открытые вопросы
 
