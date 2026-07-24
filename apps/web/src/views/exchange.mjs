@@ -1611,10 +1611,17 @@ async function openNameModal(name, resolve, price, deposit) {
   const showRent = !!rentStr && !/^0([.,]0*)?$/.test(rentStr);   // hide when it rounds to zero (freshly topped)
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>🗺️ ${name}</b><button id="nmX" class="icon">✕</button></div>
-    <label>${tr('Self-assessed value')} (FRC)<input id="nmMV" type="text" inputmode="decimal" value="${curV}"></label>
-    ${cov && deposit ? `<div class="sub" style="font-size:12px;margin-top:-4px">${tr('deposit')}: ${fmtFrcN(deposit)} FRC${showRent ? ` · ${tr('rent burned')}: ${rentStr} FRC` : ''}</div>` : ''}
-    <button id="nmMReval">${tr('Top up / revalue')}</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Manage holding')}</b><button id="nmX" class="icon">✕</button></div>
+    <div style="font-family:ui-monospace,monospace;font-size:15px;margin:2px 0 8px">🗺️ ${name}</div>
+    <div id="nmVView">
+      <div class="sub" style="font-size:13px">${tr('Self-assessed value')}: <b>${price ? fmtFrcN(price) : '—'} FRC</b></div>
+      ${cov && deposit ? `<div class="sub" style="font-size:12px">${tr('deposit')}: ${fmtFrcN(deposit)} FRC${showRent ? ` · ${tr('rent burned')}: ${rentStr} FRC` : ''}</div>` : ''}
+      <button id="nmMEdit" class="ghost" style="margin-top:8px">${tr('Change value')}</button>
+    </div>
+    <div id="nmVEdit" hidden>
+      <label>${tr('Self-assessed value')} (FRC)<input id="nmMV" type="text" inputmode="decimal" value="${curV}"></label>
+      <button id="nmMReval">${tr('Confirm')}</button>
+    </div>
     ${cov ? '' : `<label>${tr('Points to address')}<input id="nmMRes" type="text" autocomplete="off" spellcheck="false" value="${resolve || ''}"></label>
     <button id="nmMResBtn" class="ghost">${tr('Update address')}</button>`}
     ${cov ? `<button id="nmMRelease" class="ghost" style="color:var(--err)">${tr('Release the name (reclaim deposit)')}</button>` : ''}
@@ -1623,6 +1630,8 @@ async function openNameModal(name, resolve, price, deposit) {
   armOverlay(m);
   const log = t => { const el = $('#nmMLog'); if (el) el.textContent = t; };
   q(m, '#nmX').onclick = () => closeOverlay(m);
+  const editBtn = q(m, '#nmMEdit');
+  if (editBtn) editBtn.onclick = () => { const v = $('#nmVView'), e = $('#nmVEdit'); if (v) v.hidden = true; if (e) e.hidden = false; $('#nmMV')?.focus(); };
   q(m, '#nmMReval').onclick = async () => {
     const nv = num($('#nmMV').value), rmin = await L.minValueFrc();
     if (!(nv >= rmin)) return toast(`${tr('minimum value is')} ${rmin} FRC`, 'err');
