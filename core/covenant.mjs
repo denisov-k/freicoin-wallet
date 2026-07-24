@@ -38,7 +38,7 @@ export function readCovenant(spk) {
 /** The current forced-sale price V = present value of the melting deposit at `height` (BigInt).
  *  This is exactly what the consensus charges (asset_pv on the host coin). */
 export const covenantPrice = (depositNominal, refheight, height) =>
-  assetPresentValue(BigInt(depositNominal), height - refheight, HOST_K);
+  /** @type {bigint} */ (assetPresentValue(BigInt(depositNominal), height - refheight, HOST_K));
 
 const revh = t => t.match(/../g).reverse().join('');
 const opIn = (t, v) => ({ prevout: { txid: revh(t), vout: v }, scriptSig: '', sequence: 0xfffffffd, witness: [] });
@@ -52,7 +52,7 @@ function signWpk(tx, idx, key, value, refheight) {
 }
 
 // a spendable wpk coin: {txid, vout, value, refheight, key}
-const fundPv = (coin, lockHeight) => assetPresentValue(BigInt(coin.value), lockHeight - coin.refheight, HOST_K);
+const fundPv = (coin, lockHeight) => /** @type {bigint} */ (assetPresentValue(BigInt(coin.value), lockHeight - coin.refheight, HOST_K));
 
 /** CLAIM a free name: create a HRBG output with `deposit`, funded by the owner's wpk `funding` coin,
  *  change back to `changeSpk`. Signs the funding input. */

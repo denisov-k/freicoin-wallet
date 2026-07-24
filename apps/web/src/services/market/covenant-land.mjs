@@ -49,7 +49,8 @@ const pickFrc = (need, L) => {
 };
 
 /** CLAIM a free name: fund a covenant output to my owner-key with a deposit that holds V for ~a week
- *  (a HRBG output is just host FRC paid to the covenant script, so this reuses the ordinary FRC send). */
+ *  (a HRBG output is just host FRC paid to the covenant script, so this reuses the ordinary FRC send).
+ *  @param {{name:string, valueFrc:number|string, progress?:(p:string)=>void}} o */
 export async function registerName({ name, valueFrc, progress = () => {} }) {
   if (!validLandName(name)) throw new Error('bad name');
   const V = frcToKria(valueFrc);
@@ -101,7 +102,8 @@ export async function resolveName(name) {
 
 /** REVALUE (top up) my own name to a higher self-assessment via the path-A buy-your-own: spend the
  *  HRBG (anyone-can-spend) plus my FRC coins, pay V to myself, carry newDeposit into the successor.
- *  Only raising is possible (consensus: successor >= current price V); lowering happens via demurrage. */
+ *  Only raising is possible (consensus: successor >= current price V); lowering happens via demurrage.
+ *  @param {{name:string, valueFrc:number|string, progress?:(p:string)=>void}} o */
 export async function revalueName({ name, valueFrc, progress = () => {} }) {
   const rec = load().find(x => x.name === name);
   if (!rec) throw new Error('not my name');
@@ -141,7 +143,8 @@ export async function listNames() {
 }
 
 /** FORCED BUY a live name: pay its current price V to the owner and carry the deposit into a successor
- *  owned by me. Funded from my FRC coins; the HRBG input is anyone-can-spend (empty witness). */
+ *  owned by me. Funded from my FRC coins; the HRBG input is anyone-can-spend (empty witness).
+ *  @param {{name:string, progress?:(p:string)=>void}} o */
 export async function buyName({ name, progress = () => {} }) {
   const info = await resolveName(name);
   if (!info) throw new Error('name not found');
