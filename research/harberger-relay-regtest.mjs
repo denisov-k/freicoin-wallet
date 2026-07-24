@@ -53,7 +53,10 @@ function relaySpend(coin) {
 const nameHash = sha256(Buffer.from('relay-' + Date.now(), 'utf8')).toString('hex');
 const rHrbg = relaySpend(coinWith(encodeHarbergerSpk(nameHash, 'bb'.repeat(20), 1000000)));
 ok('invalid forced buy REJECTED at the mempool', !rHrbg.ok);
-ok('rejection is harberger-unpaid (reached CheckTxInputs — covenant enforced at relay)', /harberger-unpaid/i.test(rHrbg.err || ''));
+// a bare HRBG spend has no successor and no owner-input, so the covenant rejects it as an
+// unauthorized release (harberger-no-successor) — reaching CheckTxInputs proves the mempool enforces
+// HARBERGER (had standardness blocked it we'd see nonstandard-inputs, as for the generic case below).
+ok('rejection is a covenant rule (reached CheckTxInputs — enforced at relay)', /harberger-(no-successor|unpaid)/i.test(rHrbg.err || ''));
 if (rHrbg.ok) console.log('   BUG: invalid forced buy entered the mempool — would poison block production');
 
 // 2. generic unknown-witness output (OP_1 + 32-byte push, no OP_3 suffix) → rejected as nonstandard input
