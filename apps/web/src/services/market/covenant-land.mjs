@@ -16,7 +16,7 @@ import { ctx, api, HOST_TAG } from '@/state/market-ctx.mjs';
 import { sha256 } from '@core/crypto.mjs';
 import { pubkeyCompressed } from '@core/ecdsa.mjs';
 import { annualRent, validLandName } from '@core/freiland.mjs';
-import { covenantSpk, ownerHashOf, covenantPrice, readCovenant } from '@core/covenant.mjs';
+import { covenantSpk, ownerHashOf, covenantPrice, readCovenant, nameHashOf } from '@core/covenant.mjs';
 import { sendFrcToSpk, signInput, myCoinsOf, opIn } from '@/services/market/swap-lib.mjs';
 import { serializeTx, NV3_TX_VERSION } from '@core/tx.mjs';
 import { SIGHASH_ALL } from '@core/sighash.mjs';
@@ -85,10 +85,18 @@ export async function myNames() {
   return out;
 }
 
-/** Live availability of a name FOR ME (my own registry mirror). A definitive «is this name taken by
- *  anyone» check needs the indexer; here we only know about names in this wallet. */
+// the authoritative HRBG indexer, exposed by the relay as a proxy of the node's getharbergernames RPC
+// (dump of the consensus name registry). Returns entries {namehash, outpoint, owner, floorV, deposit,
+// refheight, price}. Discovery is by name HASH (the human name is not recoverable from the chain).
+const idx = params => api('harbergernames', params || {});
+const mapEntry = e => ({ nameHash: e.namehash, outpoint: e.outpoint, owner: e.owner,
+  floorV: e.floorV, deposit: BigInt(e.deposit), refheight: e.refheight, price: BigInt(e.price) });
+
+/** Look a specific name up on-chain: is it live, at what price, held by whom. null if free. */
 export async function resolveName(name) {
-  return (await nameCoin(name)) ? { taken: true, mine: true } : null;
+  const r = await idx({ namehash: nameHashOf(name) }).catch(() => []);
+  const e = (r || [])[0];
+  return e ? { taken: true, name, ...mapEntry(e), mine: e.owner === ownerHashOf(covOwnerPub(name)) } : null;
 }
 
 /** REVALUE (top up) my own name to a higher self-assessment via the path-A buy-your-own: spend the
@@ -125,7 +133,33 @@ export async function revalueName({ name, valueFrc, progress = () => {} }) {
 /** Minimum self-assessed value (FRC) — the Gesell dust floor, so a name's deposit can't be dust. */
 export async function minValueFrc() { return FLOOR / 1e8; }
 
-// Discovery of OTHERS' names needs an HRBG indexer (a scan of all covenant outputs). Until one exists
-// these throw NEEDS_INDEXER so the UI can gracefully show only the trustless «my names» flow.
-export async function listNames() { throw new Error(NEEDS_INDEXER); }
-export async function buyName() { throw new Error(NEEDS_INDEXER); }
+/** All live names on-chain, each with its current forced-sale price. Addressed by name HASH (the
+ *  human name is not recoverable from the chain). The relay must expose `harbergernames`. */
+export async function listNames() {
+  const r = await idx().catch(() => { throw new Error(NEEDS_INDEXER); });
+  return { names: (r || []).map(mapEntry), height: ctx.state?.mine?.height };
+}
+
+/** FORCED BUY a live name: pay its current price V to the owner and carry the deposit into a successor
+ *  owned by me. Funded from my FRC coins; the HRBG input is anyone-can-spend (empty witness). */
+export async function buyName({ name, progress = () => {} }) {
+  const info = await resolveName(name);
+  if (!info) throw new Error('name not found');
+  const L = ctx.state.mine.height;
+  const V = covenantPrice(info.deposit, info.refheight, L);   // exact price the consensus charges at L
+  const { picked, total } = pickFrc(V + FEE, L);              // buyer brings V (+fee); the HRBG's own V carries the successor
+  const change = total - V - FEE;
+  const out = (value, spk) => ({ value, scriptPubKey: spk, assetTag: HOST_TAG });
+  const tx = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, nExpireTime: 0, lockHeight: L,
+    vin: [opIn(info.outpoint), ...picked.map(p => opIn(p.outpoint))],
+    vout: [ out(V, '0014' + info.owner),                      // pay the current owner V
+            out(V, covSpkOf(name, FLOOR)),                    // successor owned by me (carries V)
+            ...(change > 0n ? [out(change, ctx.spks[0])] : []) ] };
+  tx.vin[0].witness = [];                                     // HRBG: anyone-can-spend
+  picked.forEach((p, i) => signInput(tx, i + 1, p.spk, p.value, p.refheight, SIGHASH_ALL));
+  progress('confirm');
+  const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+  save(load().filter(x => x.name !== name).concat({ name, floorV: FLOOR, value: Number(V) / 1e8, claimTxid: txid, at: Date.now() }));
+  progress('done');
+  return { txid, price: V };
+}
