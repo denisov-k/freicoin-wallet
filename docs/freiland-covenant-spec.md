@@ -283,10 +283,16 @@ HRBG-выход создаётся → распознаётся (`DeriveAssetTag
     (дефолт 0 = always-active сохранён); `harberger-activation-regtest.mjs` 4/4 гоняет блок-часы
     через T (setmocktime): ПРЕ — дубль имени принят (энфорс+зеркало выкл ⇒ F2 подтверждён), ПОСТ —
     отвергнут name-taken. Сам триггер активации ранее не тестился вообще.
-  - **Регресс-набор ковенанта (все зелёные на патче):** unit `asset_tests` 16/16 (вкл.
-    harberger_relay_standardness); функц `research/harberger-{func 7, reorg 5, drift 4, coinbase 3,
-    verifydb 4, activation 4, relay 6, forcedbuy-e2e 4}`; клиент-либа `covenant-e2e` 7. JS-модели
-    `apps/web/test/{harberger 31, covenant 12}`.
+  - **Регресс-набор ковенанта (все зелёные на патче):** unit `asset_tests` 17/17 (вкл.
+    harberger_relay_standardness, harberger_owner_withdraw); функц `research/harberger-{func 7, reorg 5,
+    drift 4, coinbase 3, verifydb 4, activation 4, relay 6, forcedbuy-e2e 4, withdraw-e2e 3, indexer 8}`;
+    клиент-либа `covenant-e2e` 7. JS-модели `apps/web/test/{harberger 31, covenant 12}`.
+
+**HRBG-ИНДЕКСАТОР (db2179a).** RPC `getharbergernames [namehash]` — авторитетная дискавери прямо из
+консенсус-реестра m_name_registry: namehash/outpoint/owner/floorV/deposit/refheight/price (=present
+value на tip+1). Байт-порядок namehash/owner forward (совпадает с клиентом), txid реверс (канон).
+Тест indexer 8/8. Сервис covenant-land.mjs доведён (listNames/resolveName/buyName через
+api('harbergernames')); дремлет до релейного эндпоинта + covenant-сети.
 
 **КЛИЕНТ-ЛИБА `core/covenant.mjs` (aea00d2).** Чистые (без relay/UI) строители+ридер под будущий
 кошелёк-UX: `nameHashOf`/`ownerHashOf`/`covenantSpk`/`readCovenant`, `covenantPrice`=asset_pv,
