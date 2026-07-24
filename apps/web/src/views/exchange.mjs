@@ -1591,23 +1591,29 @@ export async function paintMyNames() {
   box.innerHTML = mine.length
     ? mine.map(n =>
         `<tr><td style="font-family:ui-monospace,monospace">${n.name}${n.lapsed ? ' ⚠' : ''}</td>
-           <td class="r">${n.price ? fmtFrcN(n.price) : '—'} / ${n.value && n.value !== '0' ? fmtFrcN(n.value) : '—'} FRC</td>
-           <td class="act-cell"><button class="icon nmMng" data-n="${n.name}" data-r="${n.resolve || ''}" data-p="${n.price || ''}" title="${tr('Manage')}">⋯</button></td></tr>`).join('')
+           <td class="r">${(n.price || n.value) ? fmtFrcN(n.price || n.value) : '—'} FRC</td>
+           <td class="act-cell"><button class="icon nmMng" data-n="${n.name}" data-r="${n.resolve || ''}" data-p="${n.price || ''}" data-d="${n.value || ''}" title="${tr('Manage')}">⋯</button></td></tr>`).join('')
     : `<tr><td colspan="3" class="sub">${tr('no names yet — claim one in Issue → Holdings')}</td></tr>`;
-  box.querySelectorAll('.nmMng').forEach(b => b.onclick = () => openNameModal(b.dataset.n, b.dataset.r, b.dataset.p));
+  box.querySelectorAll('.nmMng').forEach(b => b.onclick = () => openNameModal(b.dataset.n, b.dataset.r, b.dataset.p, b.dataset.d));
 }
 
 // Manage a name: ONE modal with both actions (revalue/top-up + repoint), replacing the two
 // per-row icon buttons and their browser prompt() dialogs.
-async function openNameModal(name, resolve, price) {
+async function openNameModal(name, resolve, price, deposit) {
   if ($('#modal')) return;
   const cov = isCovenantNet();   // the covenant has no resolve field — hide that section
   const L = await nameMod();
   const curV = price ? String(Number(BigInt(price)) / 1e8) : '';
+  // deposit = the nominal FRC staked; price = its present (demurraged) value = the forced-buy price.
+  // The gap is the rent that has burned off since the last top-up — shown here where you act on it.
+  const rentKria = (cov && deposit && price) ? (BigInt(deposit) - BigInt(price)) : 0n;
+  const rentStr = rentKria > 0n ? fmtFrcN(rentKria.toString()) : '';
+  const showRent = !!rentStr && !/^0([.,]0*)?$/.test(rentStr);   // hide when it rounds to zero (freshly topped)
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>🗺️ ${name}</b><button id="nmX" class="icon">✕</button></div>
     <label>${tr('Self-assessed value')} (FRC)<input id="nmMV" type="text" inputmode="decimal" value="${curV}"></label>
+    ${cov && deposit ? `<div class="sub" style="font-size:12px;margin-top:-4px">${tr('deposit')}: ${fmtFrcN(deposit)} FRC${showRent ? ` · ${tr('rent burned')}: ${rentStr} FRC` : ''}</div>` : ''}
     <button id="nmMReval">${tr('Top up / revalue')}</button>
     ${cov ? '' : `<label>${tr('Points to address')}<input id="nmMRes" type="text" autocomplete="off" spellcheck="false" value="${resolve || ''}"></label>
     <button id="nmMResBtn" class="ghost">${tr('Update address')}</button>`}
@@ -1799,7 +1805,7 @@ export function renderAssetBalance(el) {
   el.innerHTML = nv3 ? `
     <table class="mkt"><thead><tr><th>${tr('Currency')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="curBalBody">${skelRows(2)}</tbody></table>
     <table class="mkt" style="margin-top:12px"><thead><tr><th>${tr('Token')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="tokBalBody">${skelRows(1)}</tbody></table>
-    <table class="mkt" style="margin-top:12px"><thead><tr><th>${tr('Holding')}</th><th class="r">${tr('Price')} / ${tr('deposit')}</th><th></th></tr></thead><tbody id="myNamesBody">${skelRows(1)}</tbody></table>
+    <table class="mkt" style="margin-top:12px"><thead><tr><th>${tr('Holding')}</th><th class="r">${tr('Price')}</th><th></th></tr></thead><tbody id="myNamesBody">${skelRows(1)}</tbody></table>
     <div id="myNamesLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`
   : `<table class="mkt"><thead><tr><th>${tr('Asset')}</th><th class="r">${tr('Quantity')}</th></tr></thead><tbody id="curBalBody">${skelRows(3)}</tbody></table>`;
   const f = $('#faucetBtn'); if (f) f.onclick = faucet;   // the button itself lives with the other Balance actions

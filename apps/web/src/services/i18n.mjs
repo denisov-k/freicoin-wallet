@@ -52,6 +52,7 @@ const RU = {
   'releasing the name…': 'отпускаю имя…',
   'released ✅': 'отпущено ✅',
   'released — deposit reclaimed ✅': 'отпущено — залог возвращён ✅',
+  'rent burned': 'сгорело ренты',
   'bad name': 'плохое имя',
   'bad name (1–32: a-z 0-9 _ -)': 'плохое имя (1–32: a-z 0-9 _ -)',
   'Claim the name': 'Занять имя',
