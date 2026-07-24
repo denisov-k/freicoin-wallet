@@ -240,16 +240,30 @@ HRBG-выход создаётся → распознаётся (`DeriveAssetTag
 - **multiple HRBG-входов на tx** (позиционный матч payout/преемник; сейчас >1 отвергается).
 - **Кошелёк** (JS): строить/распознавать HRBG-tx (encodeHarbergerSpk уже есть); релей → индексатор;
   авто-сползание цены и floorV-протухание (present-value уже считает консенсус); e2e на регтесте.
-- **Аудит** консенсус-кода перед активацией (adversarial-проход). **НАЧАТ (2026-07-24):**
-  self-audit нашёл+закрыл дыру **coinbase-covenant-bypass** — коинбейз минует и `CheckTxInputs`,
-  и зеркало реестра (обе секции под `if(!IsCoinBase())`), поэтому HRBG-выход в коинбейзе = бесплатный
-  незарегистрированный клейм + слом уникальности (обычная tx потом видит имя свободным). Фикс:
-  ConnectBlock отвергает блок с HRBG-выходом в коинбейзе (`bad-cb-harberger-output`) при активном
-  HARBERGER — софт-форк-safe ужесточение. Регресс `research/harberger-coinbase-regtest.mjs` 3/3.
-  Проверено SAFE в self-audit: RAII-откат vs dry-run (keep=true ПОСЛЕ fJustCheck-возврата ⇒ dry-run
-  откатывает); DisconnectBlock симметричен (читает undo ДО ApplyTxInUndo); distance≥0 (монотонность
-  lock_height энфорсится до HARBERGER-блока); payout(witver-0)≠successor(witver-2) — один выход не
-  закрывает оба правила. Идёт независимый adversarial-проход.
+- **Аудит** консенсус-кода перед активацией — **ПРОЙДЕН (2026-07-24): self-audit + независимый
+  adversarial-агент.** Найдено и закрыто ТРИ бага; ядро форс-выкупа/реорга/парсера — SAFE.
+  - **BUG (self-audit) coinbase-covenant-bypass** — коинбейз минует и `CheckTxInputs`, и зеркало
+    реестра (обе под `if(!IsCoinBase())`) ⇒ HRBG-выход в коинбейзе = бесплатный незарег. клейм +
+    слом уникальности. Фикс: ConnectBlock отвергает `bad-cb-harberger-output` при HARBERGER.
+    Регресс `harberger-coinbase-regtest.mjs` 3/3.
+  - **BUG F1 (агент, РАСКОЛ, воспроизведён) VerifyDB-name-registry-split** — VerifyDB на КАЖДОМ
+    старте dry-run'ит DisconnectBlock (checklevel=3/checkblocks=6), а тот мутирует `m_name_registry`
+    БЕЗ внутреннего RAII (в отличие от ConnectBlock), guard же снапшотил только asset-реестр ⇒ после
+    рестарта реестр имён откатан на ~6 блоков: имена последних блоков «свободны» → нода переклеймивает
+    → пиры реджектят `name-taken` = раскол (+ порча names.dat). Фикс: `RegistryGuard` снапшотит ОБА
+    реестра. Регресс `harberger-verifydb-regtest.mjs` 4/4 (setup→рестарт→dup отвергнут).
+  - **BUG F2 (агент, окно активации) mirror-not-gated** — зеркало Connect/Disconnect работало
+    безусловно, а энфорс уникальности гейтится `rules&HARBERGER` ⇒ пре-активации два клейма одного
+    имени сеют вечную registry/UTXO-дивергенцию. Фикс: обе секции зеркала гейтированы `rules&HARBERGER`
+    ОДИНАКОВЫМ выражением (`GetActiveRules` по родителю) — симметрично в обе стороны.
+  - **Low-sev (задокументировано, без правки логики):** zero-value distance-underflow → V=0, только
+    уже-протухшее имя за 0, не кража (коммент в tx_verify:354); `floorV` парсится но не энфорсится
+    (lapse-правило — follow-on); crash-consistency: names.dat пишется по-блочно, при disk-fail только
+    LogWarning, реконсиляция лишь `-reindex` (как у asset-реестра) — узкий disk-edge.
+  - **Verified SAFE (агент):** форс-выкуп-экономика (payout≠successor, host-сохранение ⇒ покупатель
+    вносит ≥V, без free-acquisition/underpay); парсер (65-байт, host-tag); реорг-симметрия;
+    ConnectBlock dry-run (keep ПОСЛЕ fJustCheck); мемпул (rules=NONE, реестр не мутирует);
+    детерминизм (std::map/set упорядочены).
 
 ## 8. Риски / открытые вопросы
 
