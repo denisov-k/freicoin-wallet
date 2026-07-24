@@ -65,13 +65,14 @@ export async function registerName({ name, valueFrc, progress = () => {} }) {
 
 // the live covenant coin backing one of my names, read via the relay's utxo view of my own spk
 async function nameCoin(name, floorV = FLOOR) {
-  const spk = covSpkOf(name, floorV);
-  const r = await api('utxos', { spks: [spk] }).catch(() => null);
-  if (!r) return null;
-  const u = (r.utxos || []).find(x => (x.script || x.spk) === spk);
-  if (!u) return null;
-  const [txid, vout] = (u.outpoint ?? `${u.txid}:${u.vout}`).split(':');
-  return { spk, txid, vout: +vout, value: Number(u.value), refheight: u.refheight, height: r.height };
+  // read from the AUTHORITATIVE registry indexer (getharbergernames), NOT the relay's utxo index —
+  // the latter keys a HRBG coin by its witness BASE (5120{nameHash}), not the full covenant spk, so a
+  // lookup by the full spk misses it. The indexer returns the coin plus the consensus price/owner.
+  const e = (await idx({ namehash: nameHashOf(name) }).catch(() => []))[0];
+  if (!e) return null;
+  const [txid, vout] = e.outpoint.split(':');
+  return { spk: covSpkOf(name, floorV), txid, vout: +vout, value: Number(e.deposit),
+    refheight: e.refheight, owner: e.owner, price: BigInt(e.price) };
 }
 
 /** My names + their live price (= present value of the melting deposit, what a forced buy pays). */
@@ -79,9 +80,9 @@ export async function myNames() {
   const out = [];
   for (const rec of load()) {
     const c = await nameCoin(rec.name, rec.floorV);
-    if (!c) continue;                                    // spent (bought from me) or not yet confirmed
-    out.push({ name: rec.name, price: covenantPrice(c.value, c.refheight, c.height), deposit: BigInt(c.value),
-      floorV: rec.floorV, coin: c });
+    if (!c) continue;                                              // not live (spent / not yet confirmed)
+    if (c.owner !== ownerHashOf(covOwnerPub(rec.name))) continue;  // no longer mine (someone bought it)
+    out.push({ name: rec.name, price: c.price, deposit: BigInt(c.value), floorV: rec.floorV, coin: c });
   }
   return out;
 }
