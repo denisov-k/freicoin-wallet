@@ -1610,33 +1610,36 @@ async function openNameModal(name, resolve, price, deposit) {
   const rentStr = rentKria > 0n ? fmtFrcN(rentKria.toString()) : '';
   const showRent = !!rentStr && !/^0([.,]0*)?$/.test(rentStr);   // hide when it rounds to zero (freshly topped)
   const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
-  const kv = (k, v) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0"><span class="sub">${cap(k)}</span><b>${v}</b></div>`;
+  const kv = (k, v) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0"><span class="sub">${cap(k)}</span><span>${v}</span></div>`;
+  const mono = s => '<span style="font-family:ui-monospace,monospace">' + s + '</span>';
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
-    <div id="nmScreen1">
+    <div id="nmScreen1" class="nmScr">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Manage holding')}</b><button id="nmX" class="icon">✕</button></div>
-      <div style="font-family:ui-monospace,monospace;font-size:15px;font-weight:600;margin:2px 0 10px">${name}</div>
-      ${kv(tr('Property type'), tr('Holding'))}
-      ${kv(tr('Self-assessed value'), (price ? fmtFrcN(price) : '—') + ' FRC')}
-      ${cov && deposit ? kv(tr('deposit'), fmtFrcN(deposit) + ' FRC') : ''}
-      ${showRent ? kv(tr('rent burned'), rentStr + ' FRC') : ''}
-      <button id="nmMEdit" class="ghost" style="margin-top:10px">${tr('Change value')}</button>
+      <div>
+        ${kv(tr('Name'), mono(name))}
+        ${kv(tr('Property type'), tr('Holding'))}
+        ${kv(tr('Self-assessed value'), (price ? fmtFrcN(price) : '—') + ' FRC')}
+        ${cov && deposit ? kv(tr('deposit'), fmtFrcN(deposit) + ' FRC') : ''}
+        ${showRent ? kv(tr('rent burned'), rentStr + ' FRC') : ''}
+      </div>
+      <button id="nmMEdit" class="ghost">${tr('Change value')}</button>
       ${cov ? '' : `<label>${tr('Points to address')}<input id="nmMRes" type="text" autocomplete="off" spellcheck="false" value="${resolve || ''}"></label>
       <button id="nmMResBtn" class="ghost">${tr('Update address')}</button>`}
       ${cov ? `<button id="nmMRelease" class="ghost" style="color:var(--err)">${tr('Free the holding')}</button>` : ''}
       <div id="nmMLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
     </div>
-    <div id="nmScreen2" hidden>
+    <div id="nmScreen2" class="nmScr" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack" class="icon">←</button><b style="flex:1;text-align:center">${tr('Change value')}</b><button id="nmX2" class="icon">✕</button></div>
-      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px;margin:2px 0 12px">${name}</div>
+      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${name}</div>
       <label>${tr('Self-assessed value')} (FRC)<input id="nmMV" type="text" inputmode="decimal" value="${curV}"></label>
       <button id="nmMReval">${tr('Confirm')}</button>
       <div id="nmEditLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
     </div>
-    <div id="nmScreen3" hidden>
+    <div id="nmScreen3" class="nmScr" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack3" class="icon">←</button><b style="flex:1;text-align:center">${tr('Free the holding')}</b><button id="nmX3" class="icon">✕</button></div>
-      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px;margin:2px 0 10px">${name}</div>
-      <div class="sub" style="font-size:13px;margin-bottom:12px">${tr('You give up the name; its melting deposit returns to your wallet.')}</div>
+      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${name}</div>
+      <div class="sub" style="font-size:13px">${tr('You give up the name; its melting deposit returns to your wallet.')}</div>
       <button id="nmRelGo" class="ghost" style="color:var(--err)">${tr('Free the holding')}</button>
       <div id="nmRelLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
     </div></div>`;
@@ -1645,7 +1648,7 @@ async function openNameModal(name, resolve, price, deposit) {
   const log = t => { const el = $('#nmMLog'); if (el) el.textContent = t; };
   const logE = t => { const el = $('#nmEditLog'); if (el) el.textContent = t; };
   const logR = t => { const el = $('#nmRelLog'); if (el) el.textContent = t; };
-  const showScreen = n => { for (const i of [1, 2, 3]) { const s = $('#nmScreen' + i); if (s) s.hidden = i !== n; } };
+  const showScreen = n => { for (const i of [1, 2, 3]) { const s = $('#nmScreen' + i); if (s) s.style.display = i === n ? '' : 'none'; } };
   ['#nmX', '#nmX2', '#nmX3'].forEach(id => { const b = q(m, id); if (b) b.onclick = () => closeOverlay(m); });
   q(m, '#nmMEdit').onclick = () => { showScreen(2); $('#nmMV')?.focus(); };
   q(m, '#nmBack').onclick = () => { logE(''); showScreen(1); };
