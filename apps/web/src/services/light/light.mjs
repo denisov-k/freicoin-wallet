@@ -286,6 +286,10 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
     tailPrev = null;   // the verified full result supersedes the preview
     try { await store.save(n, skey); } catch {}
     cache = toCache(r);
+    // Emit the completed, verified snapshot (NOT stale) so the status reaches 'ok' — otherwise, with
+    // no mempool change or send to fire emitState(), the header stays "syncing…" forever after a
+    // clean sync (the sync result returns via RPC, which does not flip the status).
+    try { onProvisional?.(cache); } catch {}
     // Learned birth height: after a completed (verified) scan the wallet's first activity
     // is known — a manual birth stays authoritative; a full scan learns min(history height)
     // (or the tip for an empty wallet: nothing below the scanned tip can appear later).
