@@ -197,6 +197,14 @@ scriptPubKey = 51 20{nameHash(32)} 14{ownerHash160(20)} 08{floorV(8 LE)} OP_3
    Reasons `bad-txns-harberger-{unpaid,no-successor,multiple-inputs}`. Один HRBG-вход на tx пока.
    Тест `asset_tests/harberger_forced_buy` (валид + недоплата + нет-преемника + недо-залог + флаг-off).
 
+**ФУНКЦИОНАЛЬНЫЙ ТЕСТ на реальном демоне — ПРОШЁЛ (7/7).** `research/harberger-func-regtest.mjs`
+на выделенном регтесте (`/root/cov-regtest`, `-nv3assets`, HARBERGER активен): фандинг sign-free
+из OP_TRUE-coinbase (`generateblock "raw(51)"`), tx-формат — legacy version-2 (`hasWitness:false`;
+маркер 0xff nv3-сериализации `decode`/`generateblock` НЕ парсят — плейн-моувы идут v2). Проверено:
+HRBG-выход создаётся → распознаётся (`DeriveAssetTag`→host + парсер) → в UTXO-set (round-trip
+сериализации монеты) → ВАЛИДНЫЙ форс-выкуп ПРИНЯТ блок-валидацией → НЕВАЛИДНЫЙ (без payout)
+ОТВЕРГНУТ с `bad-txns-harberger-unpaid`. Это блок-коннект-интеграция, которую юнит не покрывает.
+
 ### Осталось (следующий крупный сфокусированный кусок — НЕ автономно-впопыхах):
 - **Реестр имён** (уникальность по цепи): `NameRegistry` (nameHash→outpoint) как `AssetRegistry` —
   член `Chainstate`, update на ConnectBlock, ОТКАТ на DisconnectBlock (реорг-safe), персист. Правило:
