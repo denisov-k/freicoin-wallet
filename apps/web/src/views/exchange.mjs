@@ -1610,7 +1610,7 @@ async function openNameModal(name, resolve, price, deposit) {
   const rentStr = rentKria > 0n ? fmtFrcN(rentKria.toString()) : '';
   const showRent = !!rentStr && !/^0([.,]0*)?$/.test(rentStr);   // hide when it rounds to zero (freshly topped)
   const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
-  const kv = (k, v) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:14px"><span style="color:var(--sub)">${cap(k)}</span><span>${v}</span></div>`;
+  const kv = (k, v) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:14px"><span style="color:var(--sub)">${cap(k)}</span><b>${v}</b></div>`;
   const mono = s => '<span style="font-family:ui-monospace,monospace">' + s + '</span>';
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
