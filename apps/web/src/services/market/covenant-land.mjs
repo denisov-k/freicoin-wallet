@@ -14,12 +14,12 @@
 // is wired but dormant until the covenant is deployed to the network the wallet talks to.
 import { ctx, api, HOST_TAG } from '@/state/market-ctx.mjs';
 import { sha256 } from '@core/crypto.mjs';
-import { pubkeyCompressed } from '@core/ecdsa.mjs';
-import { annualRent, validLandName } from '@core/freiland.mjs';
+import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
+import { annualRent, validLandName, frcWpkSpk } from '@core/freiland.mjs';
 import { covenantSpk, ownerHashOf, covenantPrice, readCovenant, nameHashOf } from '@core/covenant.mjs';
 import { sendFrcToSpk, signInput, myCoinsOf, opIn } from '@/services/market/swap-lib.mjs';
 import { serializeTx, NV3_TX_VERSION } from '@core/tx.mjs';
-import { SIGHASH_ALL } from '@core/sighash.mjs';
+import { SIGHASH_ALL, segwitV0Sighash } from '@core/sighash.mjs';
 import { Buffer } from 'buffer';
 
 export { validLandName, annualRent };
@@ -113,6 +113,47 @@ export async function recoverName(name) {
     claimTxid: (info.outpoint || '').split(':')[0], at: Date.now() };
   save(load().filter(x => x.name !== name).concat(rec));
   return true;
+}
+
+/** RELEASE (withdraw) my name: free it and reclaim its melting deposit via the owner path — spend the
+ *  HRBG with NO successor, authorized by co-spending a coin at 0014{owner} whose sig the interpreter
+ *  verifies (consensus tx_verify.cpp §path-A else-branch). Two CHAINED txs: (1) fund the owner address
+ *  0014{owner} from my FRC, (2) spend HRBG + that owner coin back to my wallet. A forced buyer cannot
+ *  do this (no owner key), so only the holder frees a name. @param {{name:string, progress?:(p:string)=>void}} o */
+export async function releaseName({ name, progress = () => {} }) {
+  const rec = load().find(x => x.name === name);
+  const c = await nameCoin(name, rec?.floorV ?? FLOOR);
+  if (!c) throw new Error('name coin not found');
+  if (c.owner !== ownerHashOf(covOwnerPub(name))) throw new Error('not my name');
+  const ownerPub = covOwnerPub(name), ownerKey = covKey(name);
+  const ownerLeaf = '21' + ownerPub + 'ac';
+  const ownerSpk = frcWpkSpk(ownerPub);                    // 0014{owner} — the owner's own address
+  const L = ctx.state.mine.height;
+  const FUND = 50000n;                                     // the owner-auth coin (well above dust)
+  const out = (value, spk) => ({ value, scriptPubKey: spk, assetTag: HOST_TAG });
+  // 1) fund 0014{owner} from my FRC (a fresh coin the interpreter will check the owner's sig on)
+  const { picked, total } = pickFrc(FUND + FEE, L);
+  const fchange = total - FUND - FEE;
+  const fund = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, nExpireTime: 0, lockHeight: L,
+    vin: picked.map(p => opIn(p.outpoint)),
+    vout: [ out(FUND, ownerSpk), ...(fchange > 0n ? [out(fchange, ctx.spks[0])] : []) ] };
+  picked.forEach((p, i) => signInput(fund, i, p.spk, p.value, p.refheight, SIGHASH_ALL));
+  progress('fund');
+  const { txid: fundTxid } = await api('tx', { rawtx: serializeTx(fund), kind: 'send' });
+  // 2) release: HRBG (anyone-can-spend) + the owner coin (signed with the covenant key), NO successor.
+  //    Present value V of the melting deposit is what the HRBG input is worth at L; reclaim V + FUND − fee.
+  const V = covenantPrice(c.value, c.refheight, L);
+  const rel = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, nExpireTime: 0, lockHeight: L,
+    vin: [opIn(`${c.txid}:${c.vout}`), opIn(`${fundTxid}:0`)],
+    vout: [ out(V + FUND - FEE, ctx.spks[0]) ] };
+  rel.vin[0].witness = [];                                 // HRBG: anyone-can-spend
+  const sh = segwitV0Sighash(rel, 1, ownerLeaf, FUND, L, SIGHASH_ALL);
+  rel.vin[1].witness = [signEcdsa(ownerKey, sh) + '01', '00' + ownerLeaf, ''];
+  progress('release');
+  const { txid } = await api('tx', { rawtx: serializeTx(rel), kind: 'send' });
+  save(load().filter(x => x.name !== name));
+  progress('done');
+  return { txid, reclaimed: V };
 }
 
 /** REVALUE (top up) my own name to a higher self-assessment via the path-A buy-your-own: spend the

@@ -1610,6 +1610,7 @@ async function openNameModal(name, resolve, price) {
     <button id="nmMReval">${tr('Top up / revalue')}</button>
     ${cov ? '' : `<label>${tr('Points to address')}<input id="nmMRes" type="text" autocomplete="off" spellcheck="false" value="${resolve || ''}"></label>
     <button id="nmMResBtn" class="ghost">${tr('Update address')}</button>`}
+    ${cov ? `<button id="nmMRelease" class="ghost" style="color:var(--err)">${tr('Release the name (reclaim deposit)')}</button>` : ''}
     <div id="nmMLog" class="sub" style="font-size:12px;white-space:pre-line"></div></div>`;
   document.body.appendChild(m);
   armOverlay(m);
@@ -1633,6 +1634,18 @@ async function openNameModal(name, resolve, price) {
     const to = $('#nmMRes').value.trim(); if (!to || to === resolve) return;
     try { await L.setResolve(name, to); toast(tr('resolve updated ✅'), 'ok'); $('#modal')?.remove(); paintMyNames(); }
     catch (e) { toast(e.message, 'err'); log(e.message); }
+  };
+  const relBtn = q(m, '#nmMRelease');
+  if (relBtn) relBtn.onclick = async () => {
+    if (!confirm(tr('Release «{name}»? You give up the name and its melting deposit returns to your wallet.').replace('{name}', name))) return;
+    relBtn.disabled = true; $('#nmMReval').disabled = true;
+    try {
+      await L.releaseName({ name, progress: p => log(
+        p === 'fund' ? tr('authorizing (funding the owner address)…')
+        : p === 'release' ? tr('releasing the name…')
+        : tr('released ✅')) });
+      toast(`${name}: ${tr('released — deposit reclaimed ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
+    } catch (e) { toast(e.message, 'err'); log(e.message); relBtn.disabled = false; $('#nmMReval').disabled = false; }
   };
 }
 
