@@ -2,6 +2,7 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'Change price': 'Изменить цену',
   'Change': 'Изменение',
   'applying the new value…': 'применяю новую ценность…',
   'Forced-buy price': 'Цена выкупа',
@@ -358,6 +359,7 @@ const RU = {
 };
 
 const ES = {
+  'Change price': 'Cambiar el precio',
   'Change': 'Cambio',
   'applying the new value…': 'aplicando el nuevo valor…',
   'Forced-buy price': 'Precio de recompra',
@@ -892,6 +894,7 @@ const ES = {
 };
 
 const DE = {
+  'Change price': 'Preis ändern',
   'Change': 'Änderung',
   'applying the new value…': 'neuer Wert wird angewendet…',
   'Forced-buy price': 'Rückkaufpreis',
@@ -1426,6 +1429,7 @@ const DE = {
 };
 
 const FR = {
+  'Change price': 'Modifier le prix',
   'Change': 'Variation',
   'applying the new value…': 'application de la nouvelle valeur…',
   'Forced-buy price': 'Prix de rachat',
@@ -1960,6 +1964,7 @@ const FR = {
 };
 
 const PT = {
+  'Change price': 'Alterar o preço',
   'Change': 'Alteração',
   'applying the new value…': 'aplicando o novo valor…',
   'Forced-buy price': 'Preço de recompra',
@@ -2494,6 +2499,7 @@ const PT = {
 };
 
 const ZH = {
+  'Change price': '修改价格',
   'Change': '变动',
   'applying the new value…': '正在应用新价值…',
   'Forced-buy price': '赎买价格',

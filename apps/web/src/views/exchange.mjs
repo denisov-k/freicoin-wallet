@@ -1607,7 +1607,11 @@ async function openNameModal(name, resolve, price, deposit, declared) {
   if ($('#modal')) return;
   const cov = isCovenantNet();   // the covenant has no resolve field — hide that section
   const L = await nameMod();
-  const curV = price ? String(Number(BigInt(price)) / 1e8) : '';
+  // Pre-fill with the CURRENT price — that is what the holding is worth right now and the floor a
+  // raise has to clear. The change row is measured against the same number, so an untouched editor
+  // reads «—» instead of the few kria the deposit melted since the declaration.
+  const declaredNum = (declared === '' || declared == null) ? null : Number(declared);
+  const curV = price ? String(Number(BigInt(price)) / 1e8) : (declaredNum != null ? String(declaredNum) : '');
   // deposit = the nominal FRC staked; price = its present (demurraged) value = the forced-buy price.
   // The gap is the rent that has burned off since the last top-up — shown here where you act on it.
   const rentKria = (cov && deposit && price) ? (BigInt(deposit) - BigInt(price)) : 0n;
@@ -1632,16 +1636,16 @@ async function openNameModal(name, resolve, price, deposit, declared) {
         ${cov && deposit && !dupDeposit ? kv(tr('deposit'), fmtFrc8(deposit) + ' FRC') : ''}
         ${showRent ? kv(tr('rent burned'), rentStr + ' FRC') : ''}
       </div>
-      <button id="nmMEdit" class="ghost">${tr('Change value')}</button>
+      <button id="nmMEdit" class="ghost">${tr('Change price')}</button>
       ${cov ? '' : `<label>${tr('Points to address')}<input id="nmMRes" type="text" autocomplete="off" spellcheck="false" value="${resolve || ''}"></label>
       <button id="nmMResBtn" class="ghost">${tr('Update address')}</button>`}
       ${cov ? `<button id="nmMRelease" class="ghost" style="color:var(--err)">${tr('Free the holding')}</button>` : ''}
       <div id="nmMLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
     </div>
     <div id="nmScreen2" class="nmScr" style="display:none">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack" class="icon">←</button><b style="flex:1;text-align:center">${tr('Change value')}</b><button id="nmX2" class="icon">✕</button></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack" class="icon">←</button><b style="flex:1;text-align:center">${tr('Change price')}</b><button id="nmX2" class="icon">✕</button></div>
       <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${name}</div>
-      <label>${tr('Self-assessed value')} (FRC)<input id="nmMV" type="text" inputmode="decimal" value="${curV}"></label>
+      <label>${tr('Forced-buy price')} (FRC)<input id="nmMV" type="text" inputmode="decimal" value="${curV}"></label>
       <div id="nmVDelta" style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:14px"></div>
       <button id="nmMReval">${tr('Confirm')}</button>
       <div id="nmEditLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
@@ -1662,7 +1666,7 @@ async function openNameModal(name, resolve, price, deposit, declared) {
   ['#nmX', '#nmX2', '#nmX3'].forEach(id => { const b = q(m, id); if (b) b.onclick = () => closeOverlay(m); });
   // live «Изменение: +/− X FRC» against what the holding is worth now, so raising and lowering read
   // the same way (lowering is legitimate in Harberger — less rent, but cheaper for others to take).
-  const baseV = Number(declared ?? (price ? Number(price) / 1e8 : 0));
+  const baseV = price ? Number(price) / 1e8 : (declaredNum ?? 0);
   const paintDelta = () => {
     const el = $('#nmVDelta'); if (!el) return;
     const nv = num($('#nmMV')?.value ?? '');
