@@ -20,6 +20,7 @@ import { covenantSpk, ownerHashOf, covenantPrice, readCovenant, nameHashOf } fro
 import { sendFrcToSpk, signInput, myCoinsOf, opIn } from '@/services/market/swap-lib.mjs';
 import { serializeTx, parseTx, NV3_TX_VERSION } from '@core/tx.mjs';
 import { SIGHASH_ALL, segwitV0Sighash } from '@core/sighash.mjs';
+import { assetPresentValue } from '@core/assets.mjs';
 import { encodeWitness } from '@core/address.mjs';
 import { currentNet } from '@/services/wallet.mjs';
 import { Buffer } from 'buffer';
@@ -113,6 +114,42 @@ async function nameCoin(name, floorV = FLOOR) {
 
 // txids already inspected this session (skip re-fetching the same registry tx on every render)
 const _seenTx = new Set();
+const _sweptOps = new Set();     // outpoints already swept this session (a broadcast is not instant)
+
+/** RECOVER path-A payouts stranded on a name's own covenant address. Consensus pays a raise (and a
+ *  forced buy) to 0014{owner}; for a name we hold that is OUR per-name covenant key — derived from
+ *  the seed, but not in the wallet's watch set, so the coin is spendable yet invisible. Raises now
+ *  sweep inline, so this is for payouts made before that (and a safety net if an inline sweep fails).
+ *  Silent and idempotent: nothing stranded ⇒ no transaction. Returns the kria brought back. */
+export async function sweepPayouts() {
+  const L = ctx.state?.mine?.height; if (!L) return 0n;
+  const names = load().map(x => x.name); if (!names.length) return 0n;
+  const spkOfName = new Map(names.map(n => [frcWpkSpk(covOwnerPub(n)), n]));
+  const r = await api('utxos', { spks: [...spkOfName.keys()] }).catch(() => null);
+  let swept = 0n;
+  for (const [spk, name] of spkOfName) {
+    const coins = (r?.utxos || []).filter(u => u.spk === spk && !u.coinbase && !_sweptOps.has(u.outpoint));
+    if (!coins.length) continue;
+    // value at OUR height, not the relay's — a block in between would make the outputs exceed the inputs
+    const pvAt = u => assetPresentValue(BigInt(u.value), L - u.refheight, { k: 20, interest: false });
+    const total = coins.reduce((s, u) => s + pvAt(u), 0n);
+    if (total <= FEE) continue;
+    const key = covKey(name), leaf = '21' + covOwnerPub(name) + 'ac';
+    const tx = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, nExpireTime: 0, lockHeight: L,
+      vin: coins.map(u => opIn(u.outpoint)),
+      vout: [ { value: total - FEE, scriptPubKey: ctx.spks[0], assetTag: HOST_TAG } ] };
+    coins.forEach((u, i) => {
+      const sh = segwitV0Sighash(tx, i, leaf, BigInt(u.value), u.refheight, SIGHASH_ALL);
+      tx.vin[i].witness = [signEcdsa(key, sh) + '01', '00' + leaf, ''];
+    });
+    try {
+      await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+      coins.forEach(u => _sweptOps.add(u.outpoint));
+      swept += total - FEE;
+    } catch {}
+  }
+  return swept;
+}
 /** AUTO-RECOVER my names from the chain: for each live registry entry, fetch its tx, try to decrypt
  *  the FRLN name-book memo with MY seed key — the ones that decrypt (and hash-match + owner-match)
  *  are mine, so add them to the local list. Lets «my names» populate on a fresh device with no manual

@@ -1585,7 +1585,10 @@ export async function paintMyNames() {
   const L = await nameMod();
   let mine = [];
   try {
-    if (isCovenantNet()) await L.recoverFromChain?.();   // pull any owned names the chain knows but this device doesn't
+    if (isCovenantNet()) {
+      await L.recoverFromChain?.();          // pull any owned names the chain knows but this device doesn't
+      L.sweepPayouts?.().catch(() => {});    // and bring home any raise payout stranded on a covenant address
+    }
     mine = isCovenantNet()
       // covenant: myNames() already returns MINE (from the seed-derived scripts, read via the indexer),
       // with the price (present value) and the melting deposit. Map to the shared row shape.
