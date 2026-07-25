@@ -174,7 +174,10 @@ export async function recoverFromChain() {
     if (!name) continue;                                             // not mine (wrong key)
     if (nameHashOf(name) !== e.namehash || e.owner !== ownerHashOf(covOwnerPub(name))) continue;   // integrity + mine
     if (have.has(name)) continue;
-    save(load().filter(x => x.name !== name).concat({ name, value: Number(e.price) / 1e8, claimTxid: txid, at: Date.now() }));
+    // no `value`: the DECLARED figure is local knowledge and the chain does not carry it. Filling it
+    // with the current price would invent a declaration that happens to equal the price, so the panel
+    // showed «self-assessed value» and «forced-buy price» as the same number.
+    save(load().filter(x => x.name !== name).concat({ name, claimTxid: txid, at: Date.now() }));
     have.add(name); added++;
   }
   return added;
@@ -226,8 +229,7 @@ export async function resolveName(name) {
 export async function recoverName(name) {
   const info = await resolveName(name);
   if (!info || !info.mine) return false;                 // free, or not derivable from THIS seed
-  const rec = { name, value: Number(info.price) / 1e8,
-    claimTxid: (info.outpoint || '').split(':')[0], at: Date.now() };
+  const rec = { name, claimTxid: (info.outpoint || '').split(':')[0], at: Date.now() };   // no invented declaration
   save(load().filter(x => x.name !== name).concat(rec));
   return true;
 }
