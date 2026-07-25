@@ -3,7 +3,7 @@
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
   "Draw the plot on the map": "Нарисовать участок на карте",
-  "Tap the corners of your plot; tap the first corner to close it. Drag a corner to move it, hold on a taken plot to see what it is.": "Отмечайте углы участка; тап по первому углу замкнёт контур. Угол можно перетащить, а долгий тап по занятому участку покажет, что это.",
+  "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "Тап по занятому участку покажет, что это; тапами отмечайте углы своего — тап по первому углу замкнёт контур. Угол можно перетащить.",
   "Undo corner": "Убрать угол",
   "Your plot": "Ваш участок",
   "Taken plot": "Занятый участок",
@@ -416,7 +416,7 @@ const RU = {
 
 const ES = {
   "Draw the plot on the map": "Dibujar la parcela en el mapa",
-  "Tap the corners of your plot; tap the first corner to close it. Drag a corner to move it, hold on a taken plot to see what it is.": "Marca las esquinas de tu parcela; toca la primera para cerrarla. Arrastra una esquina para moverla; mantén pulsada una parcela ocupada para ver qué es.",
+  "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "Toca una parcela ocupada para ver qué es, o marca las esquinas de la tuya; toca la primera esquina para cerrarla. Una esquina se puede arrastrar.",
   "Undo corner": "Quitar esquina",
   "Your plot": "Tu parcela",
   "Taken plot": "Parcela ocupada",
@@ -1007,7 +1007,7 @@ const ES = {
 
 const DE = {
   "Draw the plot on the map": "Parzelle auf der Karte zeichnen",
-  "Tap the corners of your plot; tap the first corner to close it. Drag a corner to move it, hold on a taken plot to see what it is.": "Tippe die Ecken deiner Parzelle an; ein Tipp auf die erste schließt sie. Eine Ecke lässt sich ziehen, ein langer Druck auf eine belegte Parzelle zeigt, was sie ist.",
+  "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "Tippe eine belegte Parzelle an, um zu sehen, was sie ist, oder setze die Ecken deiner eigenen; ein Tipp auf die erste schließt sie. Eine Ecke lässt sich ziehen.",
   "Undo corner": "Ecke zurück",
   "Your plot": "Deine Parzelle",
   "Taken plot": "Belegte Parzelle",
@@ -1598,7 +1598,7 @@ const DE = {
 
 const FR = {
   "Draw the plot on the map": "Dessiner la parcelle sur la carte",
-  "Tap the corners of your plot; tap the first corner to close it. Drag a corner to move it, hold on a taken plot to see what it is.": "Touchez les coins de votre parcelle ; touchez le premier pour la fermer. Faites glisser un coin pour le déplacer, appuyez longuement sur une parcelle occupée pour voir ce qu’elle est.",
+  "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "Touchez une parcelle occupée pour voir ce qu’elle est, ou placez les coins de la vôtre ; touchez le premier coin pour la fermer. Un coin peut être déplacé.",
   "Undo corner": "Annuler le coin",
   "Your plot": "Votre parcelle",
   "Taken plot": "Parcelle occupée",
@@ -2189,7 +2189,7 @@ const FR = {
 
 const PT = {
   "Draw the plot on the map": "Desenhar a parcela no mapa",
-  "Tap the corners of your plot; tap the first corner to close it. Drag a corner to move it, hold on a taken plot to see what it is.": "Toque nos cantos da sua parcela; toque no primeiro para fechá-la. Arraste um canto para movê-lo e mantenha pressionada uma parcela ocupada para ver o que é.",
+  "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "Toque numa parcela ocupada para ver o que é, ou marque os cantos da sua; toque no primeiro canto para fechá-la. Um canto pode ser arrastado.",
   "Undo corner": "Remover canto",
   "Your plot": "Sua parcela",
   "Taken plot": "Parcela ocupada",
@@ -2780,7 +2780,7 @@ const PT = {
 
 const ZH = {
   "Draw the plot on the map": "在地图上绘制地块",
-  "Tap the corners of your plot; tap the first corner to close it. Drag a corner to move it, hold on a taken plot to see what it is.": "依次点按地块的角，点第一个角即可闭合。拖动角可移动它；长按已占用的地块可查看详情。",
+  "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "点按已占用的地块可查看详情；点按可依次标出自己地块的角，点第一个角即可闭合。角可以拖动。",
   "Undo corner": "撤销角点",
   "Your plot": "你的地块",
   "Taken plot": "已被占用的地块",

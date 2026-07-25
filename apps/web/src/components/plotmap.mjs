@@ -20,7 +20,9 @@ const y2lat = (y, z) => { const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z); 
  *           onInspect?:(plot:any)=>void}} o */
 export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspect = null }) {
   const cv = document.createElement('canvas');
-  cv.style.cssText = 'width:100%;height:300px;border:1px solid var(--line);border-radius:10px;touch-action:none;display:block;cursor:crosshair';
+  // no text selection: a press held over the canvas would otherwise raise the selection UI
+  cv.style.cssText = 'width:100%;height:300px;border:1px solid var(--line);border-radius:10px;touch-action:none;'
+    + 'user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;display:block;cursor:crosshair';
   el.innerHTML = ''; el.appendChild(cv);
   const st = { lat, lon, z: zoom, pts: [], sel: null };   // z is fractional — a pinch zooms between tile levels
   const tiles = new Map();                                   // cached tile images, keyed z/x/y
@@ -93,8 +95,7 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
   // two fingers: pinch zooms, and the ground under the midpoint stays put — a map you can zoom
   // only in whole steps from a button is a map you cannot frame a plot with.
   const ptrs = new Map();
-  let pan = null, pinch = null, moved = false, vdrag = null, lpTimer = null;
-  const cancelPress = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
+  let pan = null, pinch = null, moved = false, vdrag = null;
   const two = () => [...ptrs.values()];
   const local = pt => { const b = cv.getBoundingClientRect(); return { x: pt.x - b.left, y: pt.y - b.top }; };
   const midOf = p => local({ x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 });
@@ -110,23 +111,9 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
       vdrag = null;
       for (let i = 0; i < st.pts.length; i++) { const sc = toScreen(st.pts[i]);
         if (Math.hypot(sc.x - lx, sc.y - ly) < 16) { vdrag = { i }; break; } }
-      // holding still over someone's plot asks about it — a plain tap has to stay «add a corner»,
-      // and ground you cannot draw on is ground you cannot ask about
-      cancelPress();
-      if (onInspect && !vdrag) lpTimer = setTimeout(() => {
-        lpTimer = null;
-        const here = toWorld(lx, ly);
-        // plots may lie on top of each other (the chain does not forbid it), so answer with the
-        // SMALLEST one under the finger — otherwise a small plot inside a big one is unreachable
-        const hit = (taken() || []).filter(t => pointInPolygon(here, t.points))
-          .sort((a, b) => (a.area ?? polygonArea(a.points)) - (b.area ?? polygonArea(b.points)))[0];
-        if (!hit) return;
-        moved = true;                                            // this press is not a corner
-        st.sel = hit; draw(); onInspect(hit);
-      }, 500);
     }
     else if (ptrs.size === 2) {
-      cancelPress(); vdrag = null;
+      vdrag = null;
       pan = null; moved = true;                                  // a pinch is never a tap
       const p = two(), m = midOf(p);
       pinch = { d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), z: st.z, anchor: toWorld(m.x, m.y) };
@@ -154,7 +141,7 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
       return;
     }
     if (!pan) return;
-    if (Math.abs(e.clientX - pan.x) + Math.abs(e.clientY - pan.y) > 6) { moved = true; cancelPress(); }
+    if (Math.abs(e.clientX - pan.x) + Math.abs(e.clientY - pan.y) > 6) moved = true;
     if (!moved) return;
     st.lon = x2lon(lon2x(pan.lon, st.z) - (e.clientX - pan.x) / TS, st.z);
     st.lat = y2lat(lat2y(pan.lat, st.z) - (e.clientY - pan.y) / TS, st.z);
@@ -162,7 +149,6 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
   };
   cv.onpointercancel = cv.onpointerup = e => {
     ptrs.delete(e.pointerId);
-    cancelPress();
     if (ptrs.size === 1) {                                       // lifted one finger of a pinch:
       pinch = null;                                              // carry on panning with the other
       const [p] = two(); pan = { x: p.x, y: p.y, lat: st.lat, lon: st.lon };
@@ -179,6 +165,13 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
       if (Math.hypot(f.x - (e.clientX - b.left), f.y - (e.clientY - b.top)) < 14) { draw(); onChange(st.pts.slice()); return; }
     }
     if (onVertex) return;                                       // tapped a corner you already have
+    if (onInspect && !st.pts.length) {
+      // plots may lie on top of each other (the chain does not forbid it), so answer with the
+      // SMALLEST one under the finger — otherwise a small plot inside a big one is unreachable
+      const hit = (taken() || []).filter(t => pointInPolygon(p, t.points))
+        .sort((a, b) => (a.area ?? polygonArea(a.points)) - (b.area ?? polygonArea(b.points)))[0];
+      if (hit) { st.sel = hit; draw(); onInspect(hit); return; }
+    }
     if (st.pts.length >= MAX_VERTICES) return;
     st.pts.push(p); draw(); onChange(st.pts.slice());
   };
