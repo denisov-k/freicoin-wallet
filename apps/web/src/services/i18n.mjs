@@ -2,6 +2,15 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  "Draw the plot on the map": "Нарисовать участок на карте",
+  "Tap the corners of your plot; tap the first corner to close it.": "Отметьте углы участка; тап по первому углу замкнёт контур.",
+  "Undo corner": "Убрать угол",
+  "Clear": "Очистить",
+  "corners": "углов",
+  "m²": "м²",
+  "no plot drawn yet": "участок не нарисован",
+  "overlaps a taken plot": "пересекается с занятым участком",
+  "plots are found on the map": "участки ищутся на карте",
   "Choose a world": "Выберите мир",
   "Choose a plot on the map": "Выбрать участок на карте",
   "Choose a plot": "Выбор участка",
@@ -397,6 +406,15 @@ const RU = {
 };
 
 const ES = {
+  "Draw the plot on the map": "Dibujar la parcela en el mapa",
+  "Tap the corners of your plot; tap the first corner to close it.": "Toca las esquinas de tu parcela; toca la primera para cerrarla.",
+  "Undo corner": "Quitar esquina",
+  "Clear": "Limpiar",
+  "corners": "esquinas",
+  "m²": "m²",
+  "no plot drawn yet": "aún no has dibujado la parcela",
+  "overlaps a taken plot": "se solapa con una parcela ocupada",
+  "plots are found on the map": "las parcelas se buscan en el mapa",
   "Choose a world": "Elige un mundo",
   "Choose a plot on the map": "Elegir parcela en el mapa",
   "Choose a plot": "Elegir parcela",
@@ -970,6 +988,15 @@ const ES = {
 };
 
 const DE = {
+  "Draw the plot on the map": "Parzelle auf der Karte zeichnen",
+  "Tap the corners of your plot; tap the first corner to close it.": "Tippe die Ecken deiner Parzelle an; tippe die erste an, um sie zu schließen.",
+  "Undo corner": "Ecke zurück",
+  "Clear": "Leeren",
+  "corners": "Ecken",
+  "m²": "m²",
+  "no plot drawn yet": "noch keine Parzelle gezeichnet",
+  "overlaps a taken plot": "überschneidet eine belegte Parzelle",
+  "plots are found on the map": "Parzellen findet man auf der Karte",
   "Choose a world": "Welt wählen",
   "Choose a plot on the map": "Parzelle auf der Karte wählen",
   "Choose a plot": "Parzelle wählen",
@@ -1543,6 +1570,15 @@ const DE = {
 };
 
 const FR = {
+  "Draw the plot on the map": "Dessiner la parcelle sur la carte",
+  "Tap the corners of your plot; tap the first corner to close it.": "Touchez les coins de votre parcelle ; touchez le premier pour fermer le contour.",
+  "Undo corner": "Annuler le coin",
+  "Clear": "Effacer",
+  "corners": "coins",
+  "m²": "m²",
+  "no plot drawn yet": "aucune parcelle dessinée",
+  "overlaps a taken plot": "chevauche une parcelle occupée",
+  "plots are found on the map": "les parcelles se trouvent sur la carte",
   "Choose a world": "Choisissez un monde",
   "Choose a plot on the map": "Choisir une parcelle sur la carte",
   "Choose a plot": "Choisir une parcelle",
@@ -2116,6 +2152,15 @@ const FR = {
 };
 
 const PT = {
+  "Draw the plot on the map": "Desenhar a parcela no mapa",
+  "Tap the corners of your plot; tap the first corner to close it.": "Toque nos cantos da parcela; toque no primeiro para fechá-la.",
+  "Undo corner": "Remover canto",
+  "Clear": "Limpar",
+  "corners": "cantos",
+  "m²": "m²",
+  "no plot drawn yet": "nenhuma parcela desenhada",
+  "overlaps a taken plot": "sobrepõe uma parcela ocupada",
+  "plots are found on the map": "as parcelas são encontradas no mapa",
   "Choose a world": "Escolha um mundo",
   "Choose a plot on the map": "Escolher parcela no mapa",
   "Choose a plot": "Escolher parcela",
@@ -2689,6 +2734,15 @@ const PT = {
 };
 
 const ZH = {
+  "Draw the plot on the map": "在地图上绘制地块",
+  "Tap the corners of your plot; tap the first corner to close it.": "点击地块的各个角；点击第一个角闭合轮廓。",
+  "Undo corner": "撤销角点",
+  "Clear": "清除",
+  "corners": "个角",
+  "m²": "平方米",
+  "no plot drawn yet": "尚未绘制地块",
+  "overlaps a taken plot": "与已占用地块重叠",
+  "plots are found on the map": "地块在地图上查找",
   "Choose a world": "选择世界",
   "Choose a plot on the map": "在地图上选择地块",
   "Choose a plot": "选择地块",

@@ -10,18 +10,19 @@ import { armOverlay, closeOverlay } from '@/components/modal.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import { api, ctx, isCovenantNet } from '@/state/market-ctx.mjs';
 import { mvRefresh, paintMyNames } from '@/views/exchange.mjs';
-import { tickerId, plotId, PLOT_PRECISION } from '@core/freiland.mjs';
-import { GEOHASH_MAX } from '@core/geohash.mjs';
-import { geohashEncode, geohashDecode, geohashSize } from '@core/geohash.mjs';
+import { tickerId } from '@core/freiland.mjs';
 import { mountPlotMap } from '@/components/plotmap.mjs';
+import { encodePolygon } from '@core/geopoly.mjs';
+import { plotId } from '@core/freiland.mjs';
+import { sha256 } from '@core/crypto.mjs';
+import { Buffer } from 'buffer';
 
 let mode = 'a';   // 'a' = currency (amounts), 't' = tokens (unique items), 'n' = Freiland holding
 let kind = 'name';   // holding sub-kind: 'name' (human-readable) | 'ticker' (asset symbol)
 // The claimed id carries the namespace — a ticker is `ticker:USD`, a name is bare. Everything else
 // (covenant, rent, forced buy) is identical, so the two kinds share the whole pipeline.
-const holdingId = raw => kind === 'ticker' ? tickerId(raw)
-  : kind === 'plot' ? plotId(($('#iWorld')?.value || '').trim(), raw)
-  : raw;
+let plotPoints = [];   // the boundary being drawn (a plot's id is the hash of it)
+const holdingId = raw => kind === 'ticker' ? tickerId(raw) : raw;
 
 async function issue() {
   try {
@@ -30,7 +31,7 @@ async function issue() {
     // firing the input handler.
     const raw = $('#iName').value.trim();
     const name = mode === 'n' ? holdingId(kind === 'ticker' ? raw.toUpperCase() : raw.toLowerCase()) : raw;
-    if (!raw) throw new Error(tr('enter a name'));
+    if (!raw && !(mode === 'n' && kind === 'plot')) throw new Error(tr('enter a name'));
     // Freiland name: the full claim pipeline (mint land-NFT → deposit → standing offer →
     // register) — the registry machinery lives in land.mjs, this is only its issuance face
     if (mode === 'n') {
@@ -38,21 +39,29 @@ async function issue() {
       const L = isCovenantNet()
         ? await import('@/services/market/covenant-land.mjs')
         : await import('@/services/market/land.mjs');
-      if (!L.validHoldingId(name)) throw new Error(tr(kind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : kind === 'plot' ? 'bad cell' : 'bad name (1–32: a-z 0-9 _ -)'));
+      let shape = null, id = name;
+      if (kind === 'plot') {
+        const world = ($('#iWorld')?.value || '').trim();
+        if (!world) throw new Error(tr('choose a world first'));
+        if (plotPoints.length < 3) throw new Error(tr('no plot drawn yet'));
+        shape = encodePolygon(plotPoints);
+        id = plotId(world, sha256(Buffer.from(shape, 'hex')).toString('hex'));
+      }
+      if (!L.validHoldingId(id)) throw new Error(tr(kind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : 'bad name (1–32: a-z 0-9 _ -)'));
       const v = num($('#iVal')?.value ?? '');
       const min = await L.minValueFrc();
       if (!(v >= min)) throw new Error(`${tr('minimum value is')} ${min} FRC`);
       const log = t => { const el = $('#iLog'); if (el) el.textContent = t; };
       const btn = $('#issueBtn'); if (btn) btn.disabled = true;
       try {
-        await L.registerName({ name, valueFrc: v, progress: p => log(
+        await L.registerName({ name: id, valueFrc: v, shape, progress: p => log(
           p === 'mint' ? tr('minting the name token…')
           : p === 'lock' ? tr('locking the deposit…')
           : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…')
           : p === 'offer' ? tr('signing the standing sale offer…')
           : tr('registered ✅')) });
         $('#modal')?.remove();
-        toast(`${raw}: ${tr('name claimed ✅')}`, 'ok'); mvRefresh(); paintMyNames();
+        toast(`${kind === 'plot' ? tr('Plot') : raw}: ${tr('name claimed ✅')}`, 'ok'); mvRefresh(); paintMyNames();
       } catch (e) { log(e.message); throw e; }
       finally { const b = $('#issueBtn'); if (b) b.disabled = false; }
       return;
@@ -95,7 +104,7 @@ export function openIssueModal() {
     <p class="sub" id="iModeHint" style="font-size:12px">${tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.')}</p>
     <div id="iPlotBox" class="stack" hidden>
       <label>${tr('World')}<div class="row"><select id="iWorld" style="flex:1"></select><button id="iNewWorld" class="ghost" style="flex:0 0 auto;padding:12px 16px" title="${tr('New world')}">＋</button></div></label>
-      <button id="iPickPlot" class="ghost">${tr('Choose a plot on the map')}</button>
+      <button id="iPickPlot" class="ghost">${tr('Draw the plot on the map')}</button>
       <div class="sub" id="iCellInfo" style="font-size:12px"></div>
     </div>
     <div id="iMapScreen" class="stack" hidden>
@@ -106,8 +115,11 @@ export function openIssueModal() {
         <button id="iZoomOut" class="ghost" style="flex:0 0 auto;padding:12px 16px">−</button>
         <button id="iZoomIn" class="ghost" style="flex:0 0 auto;padding:12px 16px">+</button>
       </div>
-      <label>${tr('Cell')}<input id="iCellManual" type="text" autocomplete="off" spellcheck="false" placeholder="ucfv0n01" maxlength="12"></label>
-      <div class="sub" id="iMapInfo" style="font-size:12px"></div>
+      <div class="row">
+        <button id="imUndo" class="ghost">${tr('Undo corner')}</button>
+        <button id="imClear" class="ghost">${tr('Clear')}</button>
+      </div>
+      <div class="sub" id="iMapInfo" style="font-size:12px">${tr('Tap the corners of your plot; tap the first corner to close it.')}</div>
       <button id="imDone">${tr('Choose')}</button>
     </div>
     <div id="iWorldNew" class="stack" hidden>
@@ -171,7 +183,7 @@ export function openIssueModal() {
     const plot = mode === 'n' && kind === 'plot';
     const box = $('#iPlotBox'); if (box) box.hidden = !plot;
     const inp = /** @type {HTMLInputElement} */ ($('#iName'));
-    inp.maxLength = mode !== 'n' ? 24 : tick ? 10 : plot ? GEOHASH_MAX : 32;
+    inp.maxLength = mode !== 'n' ? 24 : tick ? 10 : 32;
     inp.placeholder = mode !== 'n' ? tr('e.g. labor-hours') : tick ? 'USD' : plot ? 'ucfv0n01' : 'alice';
     // A holding id is canonical, and the mobile keyboard fights it: it capitalises the first letter
     // of a name (which must be lower-case) and offers lower-case for a ticker (which must be upper).
@@ -193,59 +205,75 @@ export function openIssueModal() {
     if (mode === 'n') $('#iName').dispatchEvent(new Event('input'));   // сразу проверить занятость
   }
   // what the typed cell actually IS — a place on the ground, not a code
-  // What the typed cell IS — a place and a size — plus who else already claims that ground. The
-  // chain does not forbid overlap (a coarse cell nests a fine one), so the warning is the wallet's job.
-  let overlapT = null;
-  async function paintCell() {
+  // what the drawn boundary is, in the form: size and whether it clashes with someone
+  function paintCell() {
     const el = $('#iCellInfo'); if (!el) return;
-    const cell = ($('#iName')?.value || '').trim().toLowerCase();
-    if (!cell) { el.textContent = tr('tap «Where I am» or type a cell — longer means smaller'); return; }
-    let c, z;
-    try { c = geohashDecode(cell); z = geohashSize(cell); } catch { el.textContent = tr('bad cell'); return; }
-    el.textContent = `${c.lat.toFixed(5)}, ${c.lon.toFixed(5)} · ≈ ${z.widthM}×${z.heightM} ${tr('m')}`;
-    el.style.color = '';
-    clearTimeout(overlapT);
-    overlapT = setTimeout(async () => {
-      if (!isCovenantNet()) return;
-      const L = await import('@/services/market/covenant-land.mjs');
-      const id = plotId(($('#iWorld')?.value || '').trim(), cell);
-      const hits = await L.overlapsOf(id).catch(() => []);
-      if (($('#iName')?.value || '').trim().toLowerCase() !== cell) return;
-      const e2 = $('#iCellInfo'); if (!e2 || !hits.length) return;
-      e2.textContent += ' · ' + tr('overlaps') + ': ' + hits.map(h => h.id.split(':')[2]).join(', ');
-      e2.style.color = 'var(--warn)';
-    }, 500);
+    if (plotPoints.length < 3) { el.textContent = tr('no plot drawn yet'); el.style.color = ''; return; }
+    const a = Math.round(map?.area || 0);
+    const clash = map?.overlapsAny();
+    el.textContent = `${plotPoints.length} ${tr('corners')} · ≈ ${a.toLocaleString(getLang())} ${tr('m²')}`
+      + (clash ? ' · ' + tr('overlaps a taken plot') : '');
+    el.style.color = clash ? 'var(--warn)' : '';
   }
-  // The worlds you may claim in are read from the chain (each announces itself), never typed —
-  // a typo would silently claim ground in a map nobody knows.
+
+  // ── plot flow: choose a world, draw a boundary on the map, claim it ────────────────────────────
+  let map = null, mapPlots = [];
+  async function mountMap(lat = 55.7558, lon = 37.6173) {
+    const host = $('#iMap'); if (!host) return;
+    const w0 = ($('#iWorld')?.value || '').trim(); if (!w0) { host.innerHTML = ''; map = null; return; }
+    if (isCovenantNet()) {
+      const L = await import('@/services/market/covenant-land.mjs');
+      mapPlots = (await L.livePlots().catch(() => [])).filter(x => x.world === w0)
+        .map(x => ({ points: x.points, mine: x.mine }));
+    }
+    map = mountPlotMap({ el: host, lat, lon, taken: () => mapPlots, onChange: pts => {
+      plotPoints = pts;
+      const info = $('#iMapInfo');
+      if (info) {
+        if (pts.length < 3) { info.textContent = tr('Tap the corners of your plot; tap the first corner to close it.'); info.style.color = ''; }
+        else {
+          const clash = map.overlapsAny();
+          info.textContent = `${pts.length} ${tr('corners')} · ≈ ${Math.round(map.area).toLocaleString(getLang())} ${tr('m²')}`
+            + (clash ? ' · ' + tr('overlaps a taken plot') : '');
+          info.style.color = clash ? 'var(--warn)' : '';
+        }
+      }
+      paintCell(); syncPlotState();
+    } });
+  }
+
+  // The worlds you may claim in are read from the chain (each announces itself), never typed — and
+  // never auto-picked: claiming ground in a map you did not choose is the mistake to avoid.
   async function fillWorlds(select = null) {
     const sel = /** @type {HTMLSelectElement} */ ($('#iWorld')); if (!sel) return;
     let worlds = [];
     if (isCovenantNet()) { const L = await import('@/services/market/covenant-land.mjs'); worlds = await L.liveWorlds().catch(() => []); }
     const cur = select || sel.value;
-    // never auto-pick: claiming ground in a map you did not choose is exactly the mistake the
-    // free-text field invited. The placeholder stays selected until the user says which world.
     sel.innerHTML = `<option value="">${tr(worlds.length ? 'Choose a world' : 'no worlds yet — create one')}</option>`
       + worlds.map(w => `<option value="${w.name}">${w.name}${w.mine ? ' · ' + tr('yours') : ''}</option>`).join('');
     sel.value = (cur && worlds.some(w => w.name === cur)) ? cur : '';
     syncPlotState();
   }
-  // one place that decides what the plot form allows: no world chosen ⇒ nothing to pick and nothing
-  // to claim, so both are disabled rather than failing later with a cryptic id error.
+
+  // one place that decides what the plot form allows: no world ⇒ nothing to draw, no boundary ⇒
+  // nothing to claim, said plainly instead of failing later on a malformed id
   function syncPlotState() {
     if (kind !== 'plot') return;
     const world = ($('#iWorld')?.value || '').trim();
     const pick = $('#iPickPlot'); if (pick) pick.disabled = !world;
-    const cell = ($('#iName')?.value || '').trim();
-    const btn = $('#issueBtn'); if (btn) btn.disabled = !world || !cell;
+    const btn = $('#issueBtn'); if (btn) btn.disabled = !world || plotPoints.length < 3;
     const info = $('#iCellInfo');
-    if (info && !cell) info.textContent = world ? tr('no plot chosen yet') : tr('choose a world first');
+    if (info && plotPoints.length < 3) info.textContent = world ? tr('no plot drawn yet') : tr('choose a world first');
   }
-  const showWorldForm = on => {
-    const a = $('#iWorldNew'), b2 = $('#iPlotBox'), nm = $('#iName')?.closest('label'), v = $('#iLandBox'), sw = $('#iLandKind'), md = $('#iMode'), btn = $('#issueBtn');
-    [b2, nm, v, sw, md, btn].forEach(x => { if (x) x.hidden = on; });
-    if (a) a.hidden = !on;
+
+  const mainEls = () => [$('#iPlotBox'), $('#iName')?.closest('label'), $('#iLandBox'), $('#iLandKind'), $('#iMode'), $('#issueBtn')];
+  const showWorldForm = on => { mainEls().forEach(x => { if (x) x.hidden = on; }); const a = $('#iWorldNew'); if (a) a.hidden = !on; };
+  const showMapScreen = on => {
+    mainEls().forEach(x => { if (x) x.hidden = on; });
+    const scr = $('#iMapScreen'); if (scr) scr.hidden = !on;
+    if (on) { if (!map) mountMap(); else map.draw(); }
   };
+
   const wsel = q(m, '#iWorld'); if (wsel) wsel.onchange = () => { syncPlotState(); mountMap(); };
   const nwBtn = q(m, '#iNewWorld'); if (nwBtn) nwBtn.onclick = () => showWorldForm(true);
   const iwBack = q(m, '#iwBack'); if (iwBack) iwBack.onclick = () => showWorldForm(false);
@@ -264,8 +292,7 @@ export function openIssueModal() {
         p2 === 'lock' ? tr('locking the deposit…') : tr('registered ✅')) });
       toast(`${name}: ${tr('world created ✅')}`, 'ok');
       showWorldForm(false); paintMyNames();
-      // the registry only lists CONFIRMED holdings, so the new world appears a block later — keep
-      // re-reading until it does instead of leaving the picker saying «no worlds yet»
+      // the registry lists CONFIRMED holdings only, so the new world lands a block later
       logW(tr('waiting for confirmation (this can take a few minutes)…'));
       for (let i = 0; i < 40; i++) {
         await fillWorlds(name);
@@ -276,65 +303,20 @@ export function openIssueModal() {
     finally { iwCreate.disabled = false; }
   };
 
-  // the map: cells at the current zoom, taken ones shaded, tap to choose. Mounted lazily — it only
-  // exists in plot mode — and fed the live plots of the selected world.
-  let map = null, mapPlots = [];
-  async function mountMap(lat = 55.7558, lon = 37.6173) {
-    const host = $('#iMap'); if (!host) return;
-    const w0 = ($('#iWorld')?.value || '').trim(); if (!w0) { host.innerHTML = ''; map = null; return; }
-    if (isCovenantNet()) {
-      const L = await import('@/services/market/covenant-land.mjs');
-      const world = ($('#iWorld')?.value || '').trim();
-      mapPlots = (await L.livePlots().catch(() => []))
-        .map(x => ({ ...x, parsed: x.id.split(':') }))
-        .filter(x => x.parsed[1] === world)
-        .map(x => ({ cell: x.parsed[2], mine: x.mine }));
-    }
-    map = mountPlotMap({ el: host, lat, lon, precision: PLOT_PRECISION,
-      taken: () => mapPlots,
-      onPick: cell => {
-        const i = /** @type {HTMLInputElement} */ ($('#iName'));
-        i.value = cell; i.dispatchEvent(new Event('input', { bubbles: true }));
-        const mi = /** @type {HTMLInputElement} */ ($('#iCellManual')); if (mi) mi.value = cell;
-        const info = $('#iMapInfo');
-        if (info) { try { const c = geohashDecode(cell), z = geohashSize(cell);
-          info.textContent = `${cell} · ${c.lat.toFixed(5)}, ${c.lon.toFixed(5)} · ≈ ${z.widthM}×${z.heightM} ${tr('m')}`; } catch {} }
-      } });
-  }
-  const zi = q(m, '#iZoomIn'); if (zi) zi.onclick = () => map?.zoom(1);
-  const zo = q(m, '#iZoomOut'); if (zo) zo.onclick = () => map?.zoom(-1);
-  const showMapScreen = on => {
-    const scr = $('#iMapScreen');
-    [$('#iPlotBox'), $('#iName')?.closest('label'), $('#iLandBox'), $('#iLandKind'), $('#iMode'), $('#issueBtn')]
-      .forEach(x => { if (x) x.hidden = on; });
-    if (scr) scr.hidden = !on;
-    if (on) { mountMap(); map?.draw(); }
-  };
   const pickBtn = q(m, '#iPickPlot'); if (pickBtn) pickBtn.onclick = () => showMapScreen(true);
   const imBack = q(m, '#imBack'); if (imBack) imBack.onclick = () => showMapScreen(false);
-  const imDone = q(m, '#imDone'); if (imDone) imDone.onclick = () => { showMapScreen(false); paintCell(); };
-  const manual = q(m, '#iCellManual');
-  if (manual) manual.oninput = () => {
-    const v = manual.value.trim().toLowerCase();
-    if (manual.value !== v) manual.value = v;
-    const inp = /** @type {HTMLInputElement} */ ($('#iName'));
-    inp.value = v; inp.dispatchEvent(new Event('input', { bubbles: true }));
-    if (v.length >= 1) map?.select(v);
-  };
+  const imDone = q(m, '#imDone'); if (imDone) imDone.onclick = () => { showMapScreen(false); paintCell(); syncPlotState(); };
+  const imUndo = q(m, '#imUndo'); if (imUndo) imUndo.onclick = () => map?.undo();
+  const imClear = q(m, '#imClear'); if (imClear) imClear.onclick = () => map?.clear();
+  const zi = q(m, '#iZoomIn'); if (zi) zi.onclick = () => map?.zoom(1);
+  const zo = q(m, '#iZoomOut'); if (zo) zo.onclick = () => map?.zoom(-1);
 
   const hereBtn = q(m, '#iHere');
   if (hereBtn) hereBtn.onclick = () => {
     if (!navigator.geolocation) return toast(tr('this device cannot report a position'), 'err');
     const el = $('#iCellInfo'); if (el) el.textContent = tr('locating…');
     navigator.geolocation.getCurrentPosition(
-      pos => {
-        if (map) map.center(pos.coords.latitude, pos.coords.longitude);
-        else {
-          const inp = /** @type {HTMLInputElement} */ ($('#iName'));
-          inp.value = geohashEncode(pos.coords.latitude, pos.coords.longitude, PLOT_PRECISION);
-          inp.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-      },
+      pos => map?.centre(pos.coords.latitude, pos.coords.longitude),
       () => { const e2 = $('#iCellInfo'); if (e2) e2.textContent = tr('could not get your position — type a cell instead'); },
       { enableHighAccuracy: true, timeout: 10000 });
   };
@@ -342,7 +324,7 @@ export function openIssueModal() {
   // Freiland-режим: живая проверка доступности имени + годовая рента от заявленной V
   let availT = null;
   q(m, '#iName').addEventListener('input', () => {
-    if (mode !== 'n') return;
+    if (mode !== 'n' || kind === 'plot') return;
     // canonicalise as you type: the id is addressed by sha256, so «Test» and «test» would be two
     // different holdings — and the keyboard fights the required case either way. Fold it silently.
     const inp = /** @type {HTMLInputElement} */ (q(m, '#iName'));

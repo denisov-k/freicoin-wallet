@@ -15,17 +15,19 @@
 import { ctx, api, HOST_TAG } from '@/state/market-ctx.mjs';
 import { sha256 } from '@core/crypto.mjs';
 import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
-import { annualRent, validLandName, validHoldingId, tickerId, isTickerId, isPlotId, isWorldId, worldId, plotsOverlap, holdingLabel, validTicker, validPlot, frcWpkSpk } from '@core/freiland.mjs';
+import { annualRent, validLandName, validHoldingId, tickerId, isTickerId, isPlotId, isWorldId, worldId, plotId, parsePlotId, holdingLabel, validTicker, validPlot, frcWpkSpk } from '@core/freiland.mjs';
 import { covenantSpk, ownerHashOf, covenantPrice, readCovenant, nameHashOf } from '@core/covenant.mjs';
 import { sendFrcToSpk, signInput, myCoinsOf, opIn } from '@/services/market/swap-lib.mjs';
 import { serializeTx, parseTx, NV3_TX_VERSION } from '@core/tx.mjs';
 import { SIGHASH_ALL, segwitV0Sighash } from '@core/sighash.mjs';
 import { assetPresentValue } from '@core/assets.mjs';
+import { encodePolygon, decodePolygon, polygonsOverlap, polygonArea, polygonCentre } from '@core/geopoly.mjs';
 import { encodeWitness } from '@core/address.mjs';
 import { currentNet } from '@/services/wallet.mjs';
 import { Buffer } from 'buffer';
 
-export { validLandName, validHoldingId, tickerId, isTickerId, isPlotId, isWorldId, worldId, holdingLabel, validTicker, validPlot, annualRent };
+export { validLandName, validHoldingId, tickerId, isTickerId, isPlotId, isWorldId, worldId, plotId, parsePlotId, holdingLabel, validTicker, validPlot, annualRent };
+export { encodePolygon, decodePolygon, polygonArea, polygonCentre } from '@core/geopoly.mjs';
 
 export const NEEDS_INDEXER = 'covenant-needs-indexer';
 // The covenant's trailing 8 bytes are RESERVED padding (see core/asset-spk.mjs): they keep the
@@ -84,19 +86,20 @@ async function decName(payloadHex) {
 // self-certification as everywhere here: hash the announced id and it must be the registry key the
 // announcement was found under. This is also what makes overlap VISIBLE — the chain refuses to
 // adjudicate it, so the wallet needs the neighbours' cells to warn about it.
-const PLT1 = '504c5431';                                  // 'PLT1' — this holding is that cell
-const plotOut = id => {
-  const b = Buffer.from(String(id), 'utf8').toString('hex');
-  return { value: 0n, scriptPubKey: '6a' + (4 + b.length / 2).toString(16).padStart(2, '0') + PLT1 + b, assetTag: HOST_TAG };
-};
-const readPlot = tx => {
+const PLT1 = '504c5431';                                  // 'PLT1' — the BOUNDARY this holding is
+const plotOut = polyHex => ({ value: 0n,
+  scriptPubKey: '6a' + (4 + polyHex.length / 2).toString(16).padStart(2, '0') + PLT1 + polyHex, assetTag: HOST_TAG });
+const readPlotShape = tx => {
   for (const o of tx.vout || []) {
     const spk = o.scriptPubKey || '';
     const i = spk.indexOf(PLT1);
-    if (spk.startsWith('6a') && i > 0) { const id = Buffer.from(spk.slice(i + 8), 'hex').toString('utf8'); if (id) return id; }
+    if (spk.startsWith('6a') && i > 0) { const hex = spk.slice(i + 8); if (hex) return hex; }
   }
   return null;
 };
+/** The id a boundary commits to: plot:<world>:sha256(canonical bytes). */
+export const plotIdOf = (world, points) =>
+  plotId(world, sha256(Buffer.from(encodePolygon(points), 'hex')).toString('hex'));
 
 // A WORLD announces itself in clear too, for the same reason a plot does: a map nobody can
 // enumerate is not a map. Later this memo also carries the world's parameters (the community fund
@@ -151,8 +154,8 @@ const pickFrc = (need, L) => {
 
 /** CLAIM a free name: fund a covenant output to my owner-key with a deposit that holds V for ~a week
  *  (a HRBG output is just host FRC paid to the covenant script, so this reuses the ordinary FRC send).
- *  @param {{name:string, valueFrc:number|string, bind?:string|null, progress?:(p:string)=>void}} o */
-export async function registerName({ name, valueFrc, bind = null, progress = () => {} }) {
+ *  @param {{name:string, valueFrc:number|string, bind?:string|null, shape?:string|null, progress?:(p:string)=>void}} o */
+export async function registerName({ name, valueFrc, bind = null, shape = null, progress = () => {} }) {
   if (!validHoldingId(name)) throw new Error('bad name');
   const V = frcToKria(valueFrc);
   // The deposit IS the declaration — no rent buffer on top. A buffer would lock more than the holder
@@ -161,8 +164,12 @@ export async function registerName({ name, valueFrc, bind = null, progress = () 
   // (it getting cheaper is exactly the signal to top up).
   const deposit = V;
   progress('lock');
-  const extra = [await frlnOut(name), ...(bind ? [bindOut(bind, holdingLabel(name))] : []),
-    ...(isPlotId(name) ? [plotOut(name)] : []), ...(isWorldId(name) ? [worldOut(name)] : [])];
+  // The name book encrypts the id so a fresh device can recover it — but a PLOT's id is a 76-char
+  // commitment to a boundary that is already published in clear, and encrypting it would overflow
+  // the 48-byte memo. Plots recover from their public boundary instead (see recoverFromChain).
+  const extra = [...(isPlotId(name) ? [] : [await frlnOut(name)]),
+    ...(bind ? [bindOut(bind, holdingLabel(name))] : []),
+    ...(shape ? [plotOut(shape)] : []), ...(isWorldId(name) ? [worldOut(name)] : [])];
   const { txid } = await sendFrcToSpk(covSpkOf(name), deposit, extra);
   const rec = { name, value: Number(valueFrc), bind, claimTxid: txid, at: Date.now() };
   save(load().filter(x => x.name !== name).concat(rec));
@@ -283,11 +290,20 @@ export async function livePlots() {
   if (Date.now() - _plotCache.at < 30000) return _plotCache.list;
   const list = [];
   try {
+    const worlds = await liveWorlds();
     for (const e of (await idx()) || []) {
       const txid = (e.outpoint || '').split(':')[0]; if (!txid) continue;
-      let id; try { id = readPlot(parseTx((await api('rawFrcTx', { txid })).rawtx)); } catch { continue; }
-      if (!id || !validPlot(id) || nameHashOf(id) !== e.namehash) continue;   // must hash to THIS entry
-      list.push({ id, price: BigInt(e.price), outpoint: e.outpoint, owner: e.owner,
+      let hex; try { hex = readPlotShape(parseTx((await api('rawFrcTx', { txid })).rawtx)); } catch { continue; }
+      if (!hex) continue;
+      let points; try { points = decodePolygon(hex); } catch { continue; }
+      // the boundary self-certifies: hash it, pair it with each known world, and keep the pairing
+      // that reproduces the registry key it was found under
+      const shapeHash = sha256(Buffer.from(hex, 'hex')).toString('hex');
+      const world = worlds.find(w => nameHashOf(plotId(w.name, shapeHash)) === e.namehash);
+      if (!world) continue;
+      const id = plotId(world.name, shapeHash);
+      list.push({ id, world: world.name, points, area: polygonArea(points), centre: polygonCentre(points),
+        price: BigInt(e.price), outpoint: e.outpoint, owner: e.owner,
         mine: e.owner === ownerHashOf(covOwnerPub(id)) });
     }
     _plotCache = { at: Date.now(), list };
@@ -295,10 +311,11 @@ export async function livePlots() {
   return _plotCache.list;
 }
 
-/** Live plots whose ground overlaps `id` (nesting either way). Empty when the cell is clear. */
-export async function overlapsOf(id) {
-  if (!validPlot(id)) return [];
-  return (await livePlots()).filter(p => p.id !== id && plotsOverlap(p.id, id));
+/** Live plots in `world` whose ground overlaps the boundary being drawn. The chain refuses to
+ *  adjudicate this, so the wallet has to show it. */
+export async function overlapsOf(world, points) {
+  if (!points || points.length < 3) return [];
+  return (await livePlots()).filter(p => p.world === world && polygonsOverlap(p.points, points));
 }
 
 /** VERIFIED symbols, straight from the chain: Map(assetTag → symbol). For every live holding we

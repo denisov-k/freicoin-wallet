@@ -10,7 +10,7 @@
 // Держатель при регистрации/доливе запирает nominal == желаемую V в текущей высоте (distance 0,
 // свежие монеты стоят номинал), а landValue показывает, во что это превратилось позже.
 import { timeAdjustValue } from './demurrage.mjs';
-import { validGeohash } from './geohash.mjs';
+
 import { sha256d, ripemd160 } from './crypto.mjs';
 
 // FRC wpk-spk по компресс.-публичному ключу (то же, что wpkProgramHex кошелька): 0014 ‖
@@ -92,7 +92,7 @@ export const validTicker = sym => typeof sym === 'string' && TICKER_RE.test(sym)
 /** Strip the namespace for display: `ticker:USD` → `USD`, a plain name unchanged. */
 export const holdingLabel = id =>
   isTickerId(id) ? id.slice(TICKER_NS.length)
-  : isPlotId(id) ? (parsePlotId(id) ? parsePlotId(id).world + '/' + parsePlotId(id).cell : id)
+  : isPlotId(id) ? (parsePlotId(id) ? parsePlotId(id).world + '/' + parsePlotId(id).shape.slice(0, 8) : id)
   : isWorldId(id) ? id.slice(WORLD_NS.length)
   : id;
 // A PLOT is a cell of the geohash grid inside a WORLD: `plot:sunnyvale:ucfv0n01`. Fixed precision is
@@ -100,36 +100,31 @@ export const holdingLabel = id =>
 // the registry's uniqueness of an id IS uniqueness of the ground, with no geometry in consensus.
 // A WORLD (`world:sunnyvale`) is a holding too: whoever holds it publishes the map's parameters and
 // can be replaced by buying it out, so stewardship needs no committee.
-export const PLOT_PRECISION = 8;                 // the DEFAULT «where I am» zoom (≈20×20 m); not a rule
 export const PLOT_NS = 'plot:';
 export const WORLD_NS = 'world:';
 export const worldId = name => WORLD_NS + String(name ?? '').trim().toLowerCase();
-export const plotId = (world, cell) => PLOT_NS + String(world).toLowerCase() + ':' + String(cell).toLowerCase();
+/** `plot:<world>:<sha256 of the canonical boundary>` — the id COMMITS to the shape; the shape
+ *  itself travels in the holding's own transaction (see covenant-land), so anyone can read it back
+ *  and check that it hashes to this id. */
+export const plotId = (world, shapeHash) => PLOT_NS + String(world).toLowerCase() + ':' + String(shapeHash).toLowerCase();
 export const isPlotId = id => typeof id === 'string' && id.startsWith(PLOT_NS);
 export const isWorldId = id => typeof id === 'string' && id.startsWith(WORLD_NS);
-/** `plot:sunnyvale:ucfv0n01` → {world, cell}; null if it is not a plot id. */
+/** `plot:<world>:<hash>` → {world, shape}; null if it is not a plot id. */
 export const parsePlotId = id => {
   if (!isPlotId(id)) return null;
-  const [world, cell, ...rest] = id.slice(PLOT_NS.length).split(':');
-  return (world && cell && !rest.length) ? { world, cell } : null;
+  const [world, shape, ...rest] = id.slice(PLOT_NS.length).split(':');
+  return (world && shape && !rest.length) ? { world, shape } : null;
 };
 export const validPlot = id => {
   const p = parsePlotId(id);
-  return !!p && validLandName(p.world) && validGeohash(p.cell);
+  return !!p && validLandName(p.world) && /^[0-9a-f]{64}$/.test(p.shape);
 };
 
-// Cells of different zoom NEST, and nesting is a plain prefix — `ucfv0n` contains `ucfv0n01`. The
-// chain cannot see this (it only ever holds sha256 of an id) and, more to the point, SHOULD not:
-// a name is created by the registry, so uniqueness of the record is uniqueness of the thing, but
-// land exists whether or not anyone records it. Guaranteeing non-overlap would only deform the map
-// to fit the data structure while settling no real dispute. So overlap is surfaced, not forbidden:
-// the wallet shows it, the price reflects it, and the community resolves it.
-export const cellsOverlap = (a, b) => a === b || a.startsWith(b) || b.startsWith(a);
-/** Do two plot ids describe overlapping ground? (Different worlds never overlap — different maps.) */
-export const plotsOverlap = (idA, idB) => {
-  const a = parsePlotId(idA), b = parsePlotId(idB);
-  return !!a && !!b && a.world === b.world && cellsOverlap(a.cell, b.cell);
-};
+// Overlap is a question about SHAPES, so it is answered where the shapes are (covenant-land reads
+// them off the chain and compares with geopoly). The chain does not adjudicate it: a name is created
+// by the registry, so uniqueness of the record is uniqueness of the thing, but land exists whether
+// or not anyone records it — forbidding overlap would only deform boundaries while settling no real
+// dispute. The wallet warns, the price reflects it, the community resolves it.
 
 /** Is this a well-formed holding id of any kind? */
 export const validHoldingId = id =>
