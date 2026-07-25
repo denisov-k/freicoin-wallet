@@ -20,6 +20,8 @@ import { covenantSpk, ownerHashOf, covenantPrice, readCovenant, nameHashOf } fro
 import { sendFrcToSpk, signInput, myCoinsOf, opIn } from '@/services/market/swap-lib.mjs';
 import { serializeTx, parseTx, NV3_TX_VERSION } from '@core/tx.mjs';
 import { SIGHASH_ALL, segwitV0Sighash } from '@core/sighash.mjs';
+import { encodeWitness } from '@core/address.mjs';
+import { currentNet } from '@/services/wallet.mjs';
 import { Buffer } from 'buffer';
 
 export { validLandName, annualRent };
@@ -150,6 +152,15 @@ export async function myNames() {
 const idx = params => api('harbergernames', params || {});
 const mapEntry = e => ({ nameHash: e.namehash, outpoint: e.outpoint, owner: e.owner,
   floorV: e.floorV, deposit: BigInt(e.deposit), refheight: e.refheight, price: BigInt(e.price) });
+
+/** RESOLVE a name to a payable address. The covenant already commits the holder's `owner` — the wpk
+ *  program consensus pays a forced buy to — so the name resolves to its holder's own address with NO
+ *  extra record, no relay index and no trust: the answer comes from the consensus registry and follows
+ *  the name automatically when it changes hands. null if the name is free. @param {string} name */
+export async function resolveAddress(name) {
+  const e = (await idx({ namehash: nameHashOf(name) }).catch(() => []))[0];
+  return e ? encodeWitness(currentNet(), 0, e.owner) : null;
+}
 
 /** Look a specific name up on-chain: is it live, at what price, held by whom. null if free. */
 export async function resolveName(name) {

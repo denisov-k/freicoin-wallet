@@ -9,11 +9,18 @@ import { btcToStr } from '@/services/market/btc-account.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import QRCode from 'qrcode';
 import { deriveAddress, isValidAddress, addrToSpk, buildSignedTx } from '@/services/wallet.mjs';
+import { isCovenantNet } from '@/state/market-ctx.mjs';
 import { mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvBtcMax, mvOwnedAssets, mvSendAsset, mvTokenCoins, mvSendTokenCoin, tokLabel } from '@/views/exchange.mjs';
 
 /** deps injected by the app shell (see main.mjs initSend) */
 let d;
 export const initSend = deps => { d = deps; };
+
+// «Отправить по имени»: на цепи с консенсус-ковенантом имя резолвится ТРАСТЛЕСС — реестр отдаёт
+// owner (wpk-программу держателя), то есть его собственный адрес; на прочих сетях — релейный MVP.
+const nameBackend = () => isCovenantNet()
+  ? import('@/services/market/covenant-land.mjs')
+  : import('@/services/market/land.mjs');
 
 // The FRC "available" is the SPENDABLE balance (matured coins), not the raw balance — freshly-mined
 // coinbase shows in the balance but can't be sent for 100 blocks, so offering it here would mislead.
@@ -178,10 +185,10 @@ export async function renderSend() {
     const el = $('#toResolve'); if (el) { el.textContent = ''; el.style.color = ''; }
     clearTimeout(resolveT);
     // имя — только для FRC на mainnet-цепи со свопами (nv3), и только когда это не адрес
-    const { validLandName } = await import('@/services/market/land.mjs');
-    if (!d.MKT() || $('#sendAsset')?.value === 'BTC' || !validLandName(raw)) return;
+    const L = await nameBackend();
+    if (!d.MKT() || $('#sendAsset')?.value === 'BTC' || !L.validLandName(raw)) return;
     resolveT = setTimeout(async () => {
-      const addr = await (await import('@/services/market/land.mjs')).resolveName(raw);
+      const addr = await L.resolveAddress(raw);
       if ($('#to').value.trim() !== raw) return;   // поле уже изменилось
       const el2 = $('#toResolve'); if (!el2) return;
       if (addr) { resolvedName = { name: raw, addr }; el2.textContent = `→ ${addr.slice(0, 18)}… (${raw})`; el2.style.color = 'var(--ok, #2e7d32)'; }
@@ -257,8 +264,8 @@ async function doReview() {
   let to = $('#to').value.trim(); const amt = parseFloat($('#amt').value);
   // FREILAND: имя вместо адреса → развернуть в адрес авторитетно (не полагаясь на подсказку из поля)
   if (d.MKT() && !isValidAddress(to)) {
-    const { validLandName, resolveName } = await import('@/services/market/land.mjs');
-    if (validLandName(to)) { const a = await resolveName(to); if (a) to = a; else return toast(tr('name not found'), 'err'); }
+    const L = await nameBackend();
+    if (L.validLandName(to)) { const a = await L.resolveAddress(to); if (a) to = a; else return toast(tr('name not found'), 'err'); }
   }
   if (!isValidAddress(to)) return toast(tr('invalid Freicoin address'), 'err');
   const assetTag = $('#sendAsset')?.value || null;

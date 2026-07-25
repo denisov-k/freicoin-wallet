@@ -57,6 +57,9 @@ export async function minValueFrc() {
   return _minV > 0 ? _minV : 0.01;
 }
 
+/** имя → адрес (или null). Общий интерфейс резолва: covenant-land.mjs экспортирует такой же. */
+export const resolveAddress = name => resolveName(name);
+
 /** имя → адрес (или null). Основа резолва в «Отправить». */
 export async function resolveName(name) {
   if (!validLandName(name)) return null;
