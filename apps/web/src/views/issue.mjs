@@ -111,7 +111,7 @@ export function openIssueModal() {
           <div class="map-ctl map-ctl-z"><button id="iZoomIn" title="+">+</button><button id="iZoomOut" title="−">−</button></div>
           <div class="map-ctl map-ctl-edit"><button id="imUndo" title="${tr('Undo corner')}" disabled>↶</button><button id="imClear" title="${tr('Clear')}" disabled>🗑</button></div>
           <div class="map-ctl map-ctl-here"><button id="iHere" title="${tr('📍 Where I am')}">📍</button></div>
-          <div class="map-ctl map-ctl-full"><button id="imFull" title="${tr('Full screen')}">⤢</button></div>
+          <div class="map-ctl map-ctl-full"><button class="map-accept" id="imDoneFull" hidden>${tr('Accept')}</button><button id="imFull" title="${tr('Full screen')}">⤢</button></div>
           <div class="map-pill" id="iMapPill"></div>
         </div>
         <div class="map-sheet" id="iPlotCard" hidden></div>
@@ -234,9 +234,14 @@ export function openIssueModal() {
     for (const el of [$('#iMapInfo'), $('#iMapPill')]) if (el) { el.textContent = txt; el.style.color = clash ? 'var(--warn)' : ''; }
   }
 
-  const syncMapCtl = () => ['#imUndo', '#imClear'].forEach(sel => {
-    const b = /** @type {HTMLButtonElement} */ ($(sel)); if (b) b.disabled = !plotPoints.length;
-  });
+  const syncMapCtl = () => {
+    ['#imUndo', '#imClear'].forEach(sel => {
+      const b = /** @type {HTMLButtonElement} */ ($(sel)); if (b) b.disabled = !plotPoints.length;
+    });
+    // full screen has no “Choose” below the map, so the map carries its own — once there is a
+    // boundary to accept
+    const done = $('#imDoneFull'); if (done) done.hidden = plotPoints.length < 3;
+  };
 
   // a taken plot is a holding like any other: it says what it is, what it would cost to take over,
   // and lets you do it right here — «occupied» with no way to ask about it is just a coloured blob
@@ -294,7 +299,9 @@ export function openIssueModal() {
 
   const pickBtn = q(m, '#iPickPlot'); if (pickBtn) pickBtn.onclick = () => showMapScreen(true);
   const imBack = q(m, '#imBack'); if (imBack) imBack.onclick = () => showMapScreen(false);
-  const imDone = q(m, '#imDone'); if (imDone) imDone.onclick = () => { showMapScreen(false); paintCell(); syncPlotState(); };
+  const accept = () => { showMapScreen(false); paintCell(); syncPlotState(); };
+  const imDone = q(m, '#imDone'); if (imDone) imDone.onclick = accept;
+  const imDoneFull = q(m, '#imDoneFull'); if (imDoneFull) imDoneFull.onclick = accept;
   const imUndo = q(m, '#imUndo'); if (imUndo) imUndo.onclick = () => { map?.undo(); syncMapCtl(); };
   const imClear = q(m, '#imClear'); if (imClear) imClear.onclick = () => { map?.clear(); syncMapCtl(); };
   const zi = q(m, '#iZoomIn'); if (zi) zi.onclick = () => map?.zoom(1);
