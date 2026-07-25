@@ -120,7 +120,7 @@ export function openIssueModal() {
         </div>
         <div class="map-sheet" id="iPlotCard" hidden></div>
       </div>
-      <div class="sub" id="iMapInfo" style="font-size:12px">${tr('Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.')}</div>
+      <div class="sub" id="iMapInfo" style="font-size:12px"></div>
       <button id="imDone">${tr('Accept')}</button>
       <button id="imBack" class="ghost">${tr('← Back')}</button>
     </div>
@@ -231,8 +231,7 @@ export function openIssueModal() {
   // the same readout under the map and on it — in full screen the line below is off-screen
   function paintMapInfo(pts) {
     const clash = pts.length >= 3 && !!map?.overlapsAny();
-    const txt = pts.length < 3
-      ? tr('Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.')
+    const txt = pts.length < 3 ? ''
       : `${pts.length} ${tr('corners')} · ≈ ${Math.round(map?.area || 0).toLocaleString(getLang())} ${tr('m²')}`
         + (clash ? ' · ' + tr('overlaps a taken plot') : '');
     for (const el of [$('#iMapInfo'), $('#iMapPill')]) if (el) { el.textContent = txt; el.style.color = clash ? 'var(--warn)' : ''; }

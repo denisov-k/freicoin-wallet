@@ -3,7 +3,6 @@
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
   "Choose the plot": "Выбрать участок",
-  "Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.": "Тапами отмечайте углы участка; тап по первому углу замкнёт контур. Угол можно перетащить, а значок ⓘ на занятом участке расскажет, что это.",
   "Undo corner": "Убрать угол",
   "to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.": "текущему владельцу и забрать участок? Заявленная ценность — она же цена, по которой участок могут забрать уже у вас, — станет вашей.",
   "Find a place": "Найти место",
@@ -422,7 +421,6 @@ const RU = {
 
 const ES = {
   "Choose the plot": "Elegir la parcela",
-  "Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.": "Marca las esquinas de tu parcela; toca la primera para cerrarla. Una esquina se puede arrastrar, y la ⓘ de una parcela ocupada dice qué es.",
   "Undo corner": "Quitar esquina",
   "to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.": "al titular actual y quedarte con la parcela? El valor declarado —que es también el precio al que cualquiera puede quitártela— pasa a fijarlo tú.",
   "Find a place": "Buscar un lugar",
@@ -1019,7 +1017,6 @@ const ES = {
 
 const DE = {
   "Choose the plot": "Parzelle wählen",
-  "Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.": "Tippe die Ecken deiner Parzelle an; ein Tipp auf die erste schließt sie. Eine Ecke lässt sich ziehen, und das ⓘ auf einer belegten Parzelle sagt, was sie ist.",
   "Undo corner": "Ecke zurück",
   "to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.": "an den jetzigen Halter und die Parzelle übernehmen? Der angegebene Wert — zugleich der Preis, zu dem sie dir jeder abnehmen kann — liegt dann bei dir.",
   "Find a place": "Ort suchen",
@@ -1616,7 +1613,6 @@ const DE = {
 
 const FR = {
   "Choose the plot": "Choisir la parcelle",
-  "Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.": "Touchez les coins de votre parcelle ; touchez le premier pour la fermer. Un coin peut être déplacé, et le ⓘ d’une parcelle occupée dit ce qu’elle est.",
   "Undo corner": "Annuler le coin",
   "to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.": "au détenteur actuel et reprendre la parcelle ? La valeur déclarée — qui est aussi le prix auquel on peut vous la reprendre — devient la vôtre à fixer.",
   "Find a place": "Rechercher un lieu",
@@ -2213,7 +2209,6 @@ const FR = {
 
 const PT = {
   "Choose the plot": "Escolher a parcela",
-  "Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.": "Toque nos cantos da sua parcela; toque no primeiro para fechá-la. Um canto pode ser arrastado, e o ⓘ de uma parcela ocupada diz o que ela é.",
   "Undo corner": "Remover canto",
   "Pay": "Pagar",
   "to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.": "ao titular atual e assumir a parcela? O valor declarado — que é também o preço pelo qual qualquer um pode tomá-la de você — passa a ser definido por você.",
@@ -2810,7 +2805,6 @@ const PT = {
 
 const ZH = {
   "Choose the plot": "选择地块",
-  "Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.": "点按标出地块的角，点第一个角即可闭合。角可以拖动；已占用地块上的 ⓘ 会说明它是什么。",
   "Undo corner": "撤销角点",
   "to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.": "给当前持有人并接手这块地？申报价值（也就是别人能从你手里接手的价格）将由你来设定。",
   "Find a place": "搜索地点",

@@ -12,7 +12,7 @@ const MAX_TILE_Z = 19;   // the deepest level the tile server has
 // …but a plot can be a few metres across, so the view goes deeper than the tiles do and the last
 // level is simply stretched: blurrier ground, and corners you can actually place apart.
 const MAX_Z = 21;
-const BADGE = 13;        // radius of a taken plot's «what is this?» badge
+const BADGE = 13;        // how close to a taken plot's centre a tap asks about it
 const lon2x = (lon, z) => (lon + 180) / 360 * Math.pow(2, z);
 const lat2y = (lat, z) => (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, z);
 const x2lon = (x, z) => x / Math.pow(2, z) * 360 - 180;
@@ -88,16 +88,12 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
       if (t === st.sel) {                                        // the one being looked at, outlined
         g.lineWidth = 4; g.strokeStyle = c; g.setLineDash([6, 4]); g.stroke(); g.setLineDash([]);
       }
-      // a taken plot asks to be asked about through its own badge, not by swallowing taps: zoomed
-      // inside someone's plot, every first tap would open a card and drawing would be impossible
+      // A taken plot answers about itself around its centre, not anywhere inside it: zoomed into
+      // someone's plot, a tap-anywhere rule would open a card every time and leave no way to place
+      // a corner. Nothing is drawn for it — the plot itself is already visible.
       if (!onInspect) continue;
       const m = toScreen(polygonCentre(t.points));
       if (m.x < -BADGE || m.y < -BADGE || m.x > w + BADGE || m.y > h + BADGE) continue;
-      g.beginPath(); g.arc(m.x, m.y, BADGE, 0, 7);
-      g.fillStyle = css('--card'); g.fill(); g.lineWidth = 2; g.strokeStyle = c; g.stroke();
-      g.fillStyle = c; g.font = 'bold 15px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText('i', m.x, m.y + 0.5);
-      g.textAlign = 'left'; g.textBaseline = 'alphabetic';
       st.badges.push({ x: m.x, y: m.y, plot: t });
     }
     poly(st.pts, css('--accent'), css('--accent'));
