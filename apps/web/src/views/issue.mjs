@@ -15,7 +15,9 @@ let mode = 'a';   // 'a' = currency (amounts), 't' = tokens (unique items), 'n' 
 
 async function issue() {
   try {
-    const name = $('#iName').value.trim();
+    // a Freiland name is canonically lower-case (it is addressed by sha256, so case would fork it);
+    // fold here too — autofill/paste can land a value without ever firing the input handler
+    const name = mode === 'n' ? $('#iName').value.trim().toLowerCase() : $('#iName').value.trim();
     if (!name) throw new Error(tr('enter a name'));
     // Freiland name: the full claim pipeline (mint land-NFT → deposit → standing offer →
     // register) — the registry machinery lives in land.mjs, this is only its issuance face
@@ -117,6 +119,12 @@ export function openIssueModal() {
     const nameInp = /** @type {HTMLInputElement} */ ($('#iName'));
     nameInp.maxLength = mode === 'n' ? 32 : 24;   // land-имена до 32
     nameInp.placeholder = mode === 'n' ? 'alice' : tr('e.g. labor-hours');
+    // Freiland-имена — только строчные, а мобильная клавиатура капитализирует первую букву, из-за
+    // чего человек сразу видел «плохое имя» на пустом месте. Гасим автокапитализацию (для остальных
+    // режимов имя актива произвольное — возвращаем как было).
+    nameInp.setAttribute('autocapitalize', mode === 'n' ? 'none' : 'sentences');
+    nameInp.setAttribute('autocorrect', 'off');
+    nameInp.setAttribute('spellcheck', 'false');
     $('#issueBtn').textContent = mode === 'n' ? tr('Claim the name') : tr('Issue asset');
     $('#iModeHint').textContent = mode === 't'
       ? tr('Unique named items — tickets, memberships, keys. They do not melt, travel whole on one coin, and names must not repeat.')
@@ -129,9 +137,17 @@ export function openIssueModal() {
   let availT = null;
   q(m, '#iName').addEventListener('input', () => {
     if (mode !== 'n') return;
+    // canonicalise as you type: a name is addressed by sha256, so «Test» and «test» would be two
+    // different names — and the mobile keyboard capitalises for you. Fold it instead of scolding.
+    const inp = /** @type {HTMLInputElement} */ (q(m, '#iName'));
+    if (inp.value !== inp.value.toLowerCase()) {
+      const pos = inp.selectionStart;
+      inp.value = inp.value.toLowerCase();
+      try { inp.setSelectionRange(pos, pos); } catch {}
+    }
     const el = $('#iAvail'); if (el) { el.textContent = ''; el.style.color = ''; }
     clearTimeout(availT);
-    const name = q(m, '#iName').value.trim();
+    const name = inp.value.trim();
     if (!name) return;
     availT = setTimeout(async () => {
       const L = isCovenantNet()
