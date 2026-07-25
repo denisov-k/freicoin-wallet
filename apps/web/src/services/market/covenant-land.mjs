@@ -536,8 +536,8 @@ export async function listNames() {
 
 /** FORCED BUY a live name: pay its current price V to the owner and carry the deposit into a successor
  *  owned by me. Funded from my FRC coins; the HRBG input is anyone-can-spend (empty witness).
- *  @param {{name:string, progress?:(p:string)=>void}} o */
-export async function buyName({ name, progress = () => {} }) {
+ *  @param {{name:string, label?:string|null, progress?:(p:string)=>void}} o */
+export async function buyName({ name, label = null, progress = () => {} }) {
   const info = await resolveName(name);
   if (!info) throw new Error('name not found');
   const L = ctx.state.mine.height;
@@ -549,7 +549,7 @@ export async function buyName({ name, progress = () => {} }) {
     vin: [opIn(info.outpoint), ...picked.map(p => opIn(p.outpoint))],
     vout: [ out(V, '0014' + info.owner),                      // pay the current owner V
             out(V, covSpkOf(name)),                           // successor owned by me (carries V)
-            ...(await carryMemos(name, { keepLabel: false })),   // name book, or a plot's boundary
+            ...(await carryMemos(name, { keepLabel: false, label })),   // name book, or boundary + YOUR name
             // deliberately NO binding, and no inherited plot name: taking a symbol does not inherit the previous holder's claim
             // about which asset it stands for — the new holder announces their own (or none).
             ...(change > 0n ? [out(change, ctx.spks[0])] : []) ] };
@@ -557,7 +557,7 @@ export async function buyName({ name, progress = () => {} }) {
   picked.forEach((p, i) => signInput(tx, i + 1, p.spk, p.value, p.refheight, SIGHASH_ALL));
   progress('confirm');
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
-  save(load().filter(x => x.name !== name).concat({ name, value: Number(V) / 1e8, claimTxid: txid, at: Date.now() }));
+  save(load().filter(x => x.name !== name).concat({ name, value: Number(V) / 1e8, label, claimTxid: txid, at: Date.now() }));
   invalidateChainCaches();
   progress('done');
   return { txid, price: V };

@@ -296,6 +296,8 @@ export function openIssueModal() {
       ${row(tr('Area'), `≈ ${Math.round(plot.area).toLocaleString(getLang())} ${tr('m²')}`)}
       ${row(tr('Forced-buy price'), `${price} FRC`)}
       <p class="sub" style="font-size:13px">${tr('Pay')} ${price} FRC ${tr('to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.')}</p>
+      <label>${tr('Name')} <span class="sub">(${tr('optional')})</span><input id="ipbName" type="text" maxlength="24" autocomplete="off" spellcheck="false" placeholder="${tr('e.g. the field by the river')}"></label>
+      <p class="sub" style="font-size:12px">${tr('The name is written by whoever holds the plot, so the previous one does not come with it — publish your own now or later.')}</p>
       <div class="sub" id="ipbLog" style="font-size:12px;white-space:pre-line"></div>
       <button id="ipbYes">${tr('Confirm')}</button>
       <button id="ipbNo" class="ghost">${tr('Cancel')}</button>`;
@@ -308,7 +310,9 @@ export function openIssueModal() {
       yes.disabled = true;
       try {
         const L = await import('@/services/market/covenant-land.mjs');
-        await L.buyName({ name: plot.id, progress: p => log(p === 'done' ? tr('the plot is yours ✅') : tr('taking it over…')) });
+        const label = ($('#ipbName')?.value || '').trim() || null;
+        if (label && L.plotLabelBytes(label) > L.MAX_PLOT_LABEL) throw new Error(tr('the name is too long'));
+        await L.buyName({ name: plot.id, label, progress: p => log(p === 'done' ? tr('the plot is yours ✅') : tr('taking it over…')) });
         back(); closePlotCard();
         toast(tr('the plot is yours ✅'), 'ok');
         await mountMap(plot.centre.lat, plot.centre.lon);   // redraw the map off the new chain state
