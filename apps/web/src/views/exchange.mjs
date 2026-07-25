@@ -16,6 +16,7 @@ import { frcLeg, refundGiven } from '@core/swap.mjs';
 import { paymentHashOf } from '@core/htlc.mjs';
 import { btcHtlcClaim, btcAddress } from '@core/btc.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
+import { holdingLabel, isTickerId, tickerId, validTicker } from '@core/freiland.mjs';
 import QRCode from 'qrcode';
 import { loadMySwaps, putMySwap, dropMySwap, loadP2p, putP2p, dropP2p, addBtcNonce, addFeeTxid, lsKey } from '@/services/storage.mjs';
 import { refreshPushSubs } from '@/services/push.mjs';
@@ -1597,7 +1598,7 @@ export async function paintMyNames() {
   } catch {}
   box.innerHTML = mine.length
     ? mine.map(n =>
-        `<tr><td style="font-family:ui-monospace,monospace">${n.name}${n.lapsed ? ' ⚠' : ''}</td>
+        `<tr><td style="font-family:ui-monospace,monospace">${holdingLabel(n.name)}${n.lapsed ? ' ⚠' : ''}</td>
            <td class="r">${(n.price || n.value) ? fmtFrc8(n.price || n.value) : '—'} FRC</td>
            <td class="act-cell"><button class="icon nmMng" data-n="${n.name}" data-r="${n.resolve || ''}" data-p="${n.price || ''}" data-d="${n.value || ''}" title="${tr('Manage')}">⋯</button></td></tr>`).join('')
     : `<tr><td colspan="3" class="sub">${tr('no names yet — claim one in Issue → Holdings')}</td></tr>`;
@@ -1631,8 +1632,8 @@ async function openNameModal(name, resolve, price, deposit) {
     <div id="nmScreen1" class="nmScr">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Manage holding')}</b><button id="nmX" class="icon">✕</button></div>
       <div>
-        ${kv(tr('Name'), mono(name))}
-        ${kv(tr('Property type'), tr('Holding'))}
+        ${kv(tr('Name'), mono(holdingLabel(name)))}
+        ${kv(tr('Property type'), tr(isTickerId(name) ? 'Ticker' : 'Holding'))}
         ${kv(tr('Forced-buy price'), (price ? fmtFrc8(price) : '—') + ' FRC')}
         ${cov && deposit ? kv(tr('deposit'), fmtFrc8(deposit) + ' FRC') : ''}
         ${showRent ? kv(tr('rent burned'), rentStr + ' FRC') : ''}
@@ -1645,7 +1646,7 @@ async function openNameModal(name, resolve, price, deposit) {
     </div>
     <div id="nmScreen2" class="nmScr" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack" class="icon">←</button><b style="flex:1;text-align:center">${tr('Change price')}</b><button id="nmX2" class="icon">✕</button></div>
-      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${name}</div>
+      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${holdingLabel(name)}</div>
       <label>${tr('Forced-buy price')} (FRC)<input id="nmMV" type="text" inputmode="decimal" value="${curV}"></label>
       <div id="nmVDelta" style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:14px"></div>
       <button id="nmMReval">${tr('Confirm')}</button>
@@ -1653,7 +1654,7 @@ async function openNameModal(name, resolve, price, deposit) {
     </div>
     <div id="nmScreen3" class="nmScr" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack3" class="icon">←</button><b style="flex:1;text-align:center">${tr('Free the holding')}</b><button id="nmX3" class="icon">✕</button></div>
-      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${name}</div>
+      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${holdingLabel(name)}</div>
       <div class="sub" style="font-size:13px">${tr('You give up the name; its melting deposit returns to your wallet.')}</div>
       <button id="nmRelGo" class="ghost" style="color:var(--err)">${tr('Free the holding')}</button>
       <div id="nmRelLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
@@ -1749,17 +1750,23 @@ async function covNameSearch() {
   const res = $('#covNameRes'); if (!res) return;
   const L = await covMod();
   if (!name) { res.innerHTML = ''; return; }
-  if (!L.validLandName(name)) { res.innerHTML = `<div class="sub">${tr('bad name (1–32: a-z 0-9 _ -)')}</div>`; return; }
+  // One field, both namespaces: a bare name and — when the input could be a symbol — the ticker id.
+  // The registry is keyed by hash, so we simply look up each candidate the input could canonically be.
+  const ids = [];
+  if (L.validLandName(name.toLowerCase())) ids.push(name.toLowerCase());
+  if (validTicker(name.toUpperCase())) ids.push(tickerId(name));
+  if (!ids.length) { res.innerHTML = `<div class="sub">${tr('bad name (1–32: a-z 0-9 _ -)')}</div>`; return; }
   res.innerHTML = `<div class="sub">${tr('looking up…')}</div>`;
   try {
-    const info = await L.resolveName(name);
-    if (!info) { res.innerHTML = `<div class="sub">${tr('free — claim it in Issue → Holdings')}</div>`; return; }
-    res.innerHTML = `<table class="mkt"><tbody><tr>
-      <td style="font-family:ui-monospace,monospace">${name}${info.mine ? ' · ' + tr('yours') : ''}</td>
+    const found = [];
+    for (const id of ids) { const info = await L.resolveName(id); if (info) found.push({ id, info }); }
+    if (!found.length) { res.innerHTML = `<div class="sub">${tr('free — claim it in Issue → Holdings')}</div>`; return; }
+    res.innerHTML = `<table class="mkt"><tbody>${found.map(({ id, info }, i) => `<tr>
+      <td style="font-family:ui-monospace,monospace">${holdingLabel(id)}${isTickerId(id) ? ' · ' + tr('Ticker') : ''}${info.mine ? ' · ' + tr('yours') : ''}</td>
       <td class="r">${fmtFrc8(info.price)} FRC</td>
-      <td class="act-cell">${info.mine ? '' : `<button id="covBuy" class="rbtn" title="${tr('Buy')}" aria-label="${tr('Buy')}">${SVG.buy}</button>`}</td>
-    </tr></tbody></table>`;
-    const bb = $('#covBuy'); if (bb) bb.onclick = () => buyName(name, String(info.price));
+      <td class="act-cell">${info.mine ? '' : `<button class="covBuy rbtn" data-i="${i}" title="${tr('Buy')}" aria-label="${tr('Buy')}">${SVG.buy}</button>`}</td>
+    </tr>`).join('')}</tbody></table>`;
+    res.querySelectorAll('.covBuy').forEach(b => b.onclick = () => { const f = found[+b.dataset.i]; buyName(f.id, String(f.info.price)); });
   } catch (e) { res.innerHTML = `<div class="sub">${e.message}</div>`; }
 }
 

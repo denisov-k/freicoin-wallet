@@ -15,7 +15,7 @@
 import { ctx, api, HOST_TAG } from '@/state/market-ctx.mjs';
 import { sha256 } from '@core/crypto.mjs';
 import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
-import { annualRent, validLandName, frcWpkSpk } from '@core/freiland.mjs';
+import { annualRent, validLandName, validHoldingId, tickerId, isTickerId, holdingLabel, validTicker, frcWpkSpk } from '@core/freiland.mjs';
 import { covenantSpk, ownerHashOf, covenantPrice, readCovenant, nameHashOf } from '@core/covenant.mjs';
 import { sendFrcToSpk, signInput, myCoinsOf, opIn } from '@/services/market/swap-lib.mjs';
 import { serializeTx, parseTx, NV3_TX_VERSION } from '@core/tx.mjs';
@@ -25,7 +25,7 @@ import { encodeWitness } from '@core/address.mjs';
 import { currentNet } from '@/services/wallet.mjs';
 import { Buffer } from 'buffer';
 
-export { validLandName, annualRent };
+export { validLandName, validHoldingId, tickerId, isTickerId, holdingLabel, validTicker, annualRent };
 
 export const NEEDS_INDEXER = 'covenant-needs-indexer';
 // The covenant's trailing 8 bytes are RESERVED padding (see core/asset-spk.mjs): they keep the
@@ -90,7 +90,7 @@ const pickFrc = (need, L) => {
  *  (a HRBG output is just host FRC paid to the covenant script, so this reuses the ordinary FRC send).
  *  @param {{name:string, valueFrc:number|string, progress?:(p:string)=>void}} o */
 export async function registerName({ name, valueFrc, progress = () => {} }) {
-  if (!validLandName(name)) throw new Error('bad name');
+  if (!validHoldingId(name)) throw new Error('bad name');
   const V = frcToKria(valueFrc);
   // The deposit IS the declaration — no rent buffer on top. A buffer would lock more than the holder
   // asked for and make the forced-buy price start ABOVE the declared figure; letting the price sit at

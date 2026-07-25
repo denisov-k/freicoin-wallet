@@ -76,3 +76,19 @@ export function landStatus(depositNominal, refheight, height, minV) {
 // и разделители _ - , но не в начале/конце и не подряд. Токен-строка nv3 == это имя.
 const LAND_NAME_RE = /^(?!.*[_-]{2})[a-z0-9]([a-z0-9_-]{0,30}[a-z0-9])?$/;
 export const validLandName = name => typeof name === 'string' && LAND_NAME_RE.test(name);
+
+// ── Holding namespaces ──────────────────────────────────────────────────────────────────────────
+// A holding is addressed by sha256 of its id, so different KINDS just live under different id
+// prefixes and share the whole covenant machinery. A bare id is a human-readable name; a ticker —
+// the short symbol an asset trades under — is `ticker:USD`. Keeping tickers in their own namespace
+// means the exchange symbol «USD» and the name «usd» are different holdings, as they should be.
+const TICKER_RE = /^[A-Z0-9]{2,10}$/;
+export const TICKER_NS = 'ticker:';
+/** Canonical ticker id (symbols are upper-case; the hash is taken over this exact string). */
+export const tickerId = sym => TICKER_NS + String(sym ?? '').trim().toUpperCase();
+export const isTickerId = id => typeof id === 'string' && id.startsWith(TICKER_NS);
+export const validTicker = sym => typeof sym === 'string' && TICKER_RE.test(sym);
+/** Strip the namespace for display: `ticker:USD` → `USD`, a plain name unchanged. */
+export const holdingLabel = id => isTickerId(id) ? id.slice(TICKER_NS.length) : id;
+/** Is this a well-formed holding id of any kind? */
+export const validHoldingId = id => isTickerId(id) ? validTicker(id.slice(TICKER_NS.length)) : validLandName(id);

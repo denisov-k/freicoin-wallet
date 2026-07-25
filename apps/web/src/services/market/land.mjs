@@ -57,6 +57,10 @@ export async function minValueFrc() {
   return _minV > 0 ? _minV : 0.01;
 }
 
+/** Общий интерфейс с covenant-land: у релейного MVP нет пространств имён (тикеров/участков),
+ *  поэтому любой валидный id — это обычное имя. */
+export const validHoldingId = id => validLandName(id);
+
 /** имя → адрес (или null). Общий интерфейс резолва: covenant-land.mjs экспортирует такой же. */
 export const resolveAddress = name => resolveName(name);
 

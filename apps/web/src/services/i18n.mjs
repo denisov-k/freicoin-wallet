@@ -2,6 +2,10 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'Ticker': 'Тикер',
+  'Claim the ticker': 'Занять тикер',
+  'bad ticker (2–10: A-Z 0-9)': 'плохой тикер (2–10: A-Z 0-9)',
+  '🏷 A ticker is the short symbol an asset trades under. Held from the community like a name: nothing stops two issuers picking «USD», so the symbol goes to whoever values it enough to pay the rent.': '🏷 Тикер — короткий символ, под которым актив торгуется. Держится «в аренду у общины», как имя: ничто не мешает двум эмитентам взять «USD», поэтому символ достаётся тому, кто ценит его достаточно, чтобы платить ренту.',
   'Change price': 'Изменить цену',
   'Change': 'Изменение',
   'applying the new value…': 'применяю новую ценность…',
@@ -359,6 +363,10 @@ const RU = {
 };
 
 const ES = {
+  'Ticker': 'Símbolo',
+  'Claim the ticker': 'Reservar el símbolo',
+  'bad ticker (2–10: A-Z 0-9)': 'símbolo inválido (2–10: A-Z 0-9)',
+  '🏷 A ticker is the short symbol an asset trades under. Held from the community like a name: nothing stops two issuers picking «USD», so the symbol goes to whoever values it enough to pay the rent.': '🏷 El símbolo es la sigla con la que se negocia un activo. Se tiene en arriendo de la comunidad, como un nombre: nada impide que dos emisores elijan «USD», así que el símbolo queda para quien lo valore lo bastante como para pagar la renta.',
   'Change price': 'Cambiar el precio',
   'Change': 'Cambio',
   'applying the new value…': 'aplicando el nuevo valor…',
@@ -894,6 +902,10 @@ const ES = {
 };
 
 const DE = {
+  'Ticker': 'Kürzel',
+  'Claim the ticker': 'Kürzel beanspruchen',
+  'bad ticker (2–10: A-Z 0-9)': 'ungültiges Kürzel (2–10: A-Z 0-9)',
+  '🏷 A ticker is the short symbol an asset trades under. Held from the community like a name: nothing stops two issuers picking «USD», so the symbol goes to whoever values it enough to pay the rent.': '🏷 Das Kürzel ist das kurze Symbol, unter dem ein Asset gehandelt wird. Es wird wie ein Name von der Gemeinschaft gehalten: nichts hindert zwei Emittenten daran, «USD» zu wählen — also bekommt es, wer genug Miete dafür zahlt.',
   'Change price': 'Preis ändern',
   'Change': 'Änderung',
   'applying the new value…': 'neuer Wert wird angewendet…',
@@ -1429,6 +1441,10 @@ const DE = {
 };
 
 const FR = {
+  'Ticker': 'Symbole',
+  'Claim the ticker': 'Réserver le symbole',
+  'bad ticker (2–10: A-Z 0-9)': 'symbole invalide (2–10 : A-Z 0-9)',
+  '🏷 A ticker is the short symbol an asset trades under. Held from the community like a name: nothing stops two issuers picking «USD», so the symbol goes to whoever values it enough to pay the rent.': '🏷 Le symbole est le sigle sous lequel un actif se négocie. Il se tient en location auprès de la communauté, comme un nom : rien n’empêche deux émetteurs de choisir «USD», il revient donc à qui le valorise assez pour en payer le loyer.',
   'Change price': 'Modifier le prix',
   'Change': 'Variation',
   'applying the new value…': 'application de la nouvelle valeur…',
@@ -1964,6 +1980,10 @@ const FR = {
 };
 
 const PT = {
+  'Ticker': 'Símbolo',
+  'Claim the ticker': 'Reservar o símbolo',
+  'bad ticker (2–10: A-Z 0-9)': 'símbolo inválido (2–10: A-Z 0-9)',
+  '🏷 A ticker is the short symbol an asset trades under. Held from the community like a name: nothing stops two issuers picking «USD», so the symbol goes to whoever values it enough to pay the rent.': '🏷 O símbolo é a sigla sob a qual um ativo é negociado. É mantido em arrendamento da comunidade, como um nome: nada impede dois emissores de escolherem «USD», então fica com quem o valorize o bastante para pagar o aluguel.',
   'Change price': 'Alterar o preço',
   'Change': 'Alteração',
   'applying the new value…': 'aplicando o novo valor…',
@@ -2499,6 +2519,10 @@ const PT = {
 };
 
 const ZH = {
+  'Ticker': '代号',
+  'Claim the ticker': '占用代号',
+  'bad ticker (2–10: A-Z 0-9)': '代号无效（2–10：A-Z 0-9）',
+  '🏷 A ticker is the short symbol an asset trades under. Held from the community like a name: nothing stops two issuers picking «USD», so the symbol goes to whoever values it enough to pay the rent.': '🏷 代号是资产交易时使用的短符号。与名称一样向社区租用：没有什么能阻止两个发行方都选「USD」，所以代号归愿意为其付租的人。',
   'Change price': '修改价格',
   'Change': '变动',
   'applying the new value…': '正在应用新价值…',

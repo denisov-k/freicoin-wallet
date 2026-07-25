@@ -10,15 +10,22 @@ import { armOverlay, closeOverlay } from '@/components/modal.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import { api, ctx, isCovenantNet } from '@/state/market-ctx.mjs';
 import { mvRefresh, paintMyNames } from '@/views/exchange.mjs';
+import { tickerId } from '@core/freiland.mjs';
 
-let mode = 'a';   // 'a' = currency (amounts), 't' = tokens (unique items), 'n' = Freiland name
+let mode = 'a';   // 'a' = currency (amounts), 't' = tokens (unique items), 'n' = Freiland holding
+let kind = 'name';   // holding sub-kind: 'name' (human-readable) | 'ticker' (asset symbol)
+// The claimed id carries the namespace — a ticker is `ticker:USD`, a name is bare. Everything else
+// (covenant, rent, forced buy) is identical, so the two kinds share the whole pipeline.
+const holdingId = raw => kind === 'ticker' ? tickerId(raw) : raw;
 
 async function issue() {
   try {
-    // a Freiland name is canonically lower-case (it is addressed by sha256, so case would fork it);
-    // fold here too — autofill/paste can land a value without ever firing the input handler
-    const name = mode === 'n' ? $('#iName').value.trim().toLowerCase() : $('#iName').value.trim();
-    if (!name) throw new Error(tr('enter a name'));
+    // a holding id is canonical (it is addressed by sha256, so case would fork it): names are
+    // lower-case, tickers upper-case. Fold here too — autofill/paste can land a value without ever
+    // firing the input handler.
+    const raw = $('#iName').value.trim();
+    const name = mode === 'n' ? holdingId(kind === 'ticker' ? raw.toUpperCase() : raw.toLowerCase()) : raw;
+    if (!raw) throw new Error(tr('enter a name'));
     // Freiland name: the full claim pipeline (mint land-NFT → deposit → standing offer →
     // register) — the registry machinery lives in land.mjs, this is only its issuance face
     if (mode === 'n') {
@@ -26,7 +33,7 @@ async function issue() {
       const L = isCovenantNet()
         ? await import('@/services/market/covenant-land.mjs')
         : await import('@/services/market/land.mjs');
-      if (!L.validLandName(name)) throw new Error(tr('bad name (1–32: a-z 0-9 _ -)'));
+      if (!L.validHoldingId(name)) throw new Error(tr(kind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : 'bad name (1–32: a-z 0-9 _ -)'));
       const v = num($('#iVal')?.value ?? '');
       const min = await L.minValueFrc();
       if (!(v >= min)) throw new Error(`${tr('minimum value is')} ${min} FRC`);
@@ -40,7 +47,7 @@ async function issue() {
           : p === 'offer' ? tr('signing the standing sale offer…')
           : tr('registered ✅')) });
         $('#modal')?.remove();
-        toast(`${name}: ${tr('name claimed ✅')}`, 'ok'); mvRefresh();
+        toast(`${raw}: ${tr('name claimed ✅')}`, 'ok'); mvRefresh(); paintMyNames();
       } catch (e) { log(e.message); throw e; }
       finally { const b = $('#issueBtn'); if (b) b.disabled = false; }
       return;
@@ -77,7 +84,7 @@ export function openIssueModal() {
     </div>
     <div class="seg" id="iLandKind" hidden>
       <button data-k="name" class="on">${tr('name (human-readable)')}</button>
-      <button data-k="ticker" disabled title="${tr('coming soon')}">${tr('ticker')}</button>
+      <button data-k="ticker">${tr('ticker')}</button>
       <button data-k="plot" disabled title="${tr('coming soon')}">${tr('plot')}</button>
     </div>
     <p class="sub" id="iModeHint" style="font-size:12px">${tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.')}</p>
@@ -118,31 +125,50 @@ export function openIssueModal() {
     $('#iLandKind').hidden = mode !== 'n';   // под-переключатель Имя/Тикер/Участок — сразу под классом
     const nameInp = /** @type {HTMLInputElement} */ ($('#iName'));
     nameInp.maxLength = mode === 'n' ? 32 : 24;   // land-имена до 32
-    nameInp.placeholder = mode === 'n' ? 'alice' : tr('e.g. labor-hours');
-    // Freiland-имена — только строчные, а мобильная клавиатура капитализирует первую букву, из-за
-    // чего человек сразу видел «плохое имя» на пустом месте. Гасим автокапитализацию (для остальных
-    // режимов имя актива произвольное — возвращаем как было).
-    nameInp.setAttribute('autocapitalize', mode === 'n' ? 'none' : 'sentences');
-    nameInp.setAttribute('autocorrect', 'off');
-    nameInp.setAttribute('spellcheck', 'false');
-    $('#issueBtn').textContent = mode === 'n' ? tr('Claim the name') : tr('Issue asset');
+    paintKind();
+  });
+  // holding sub-kind: name | ticker (plot pending). Both are the same covenant under different id
+  // namespaces, so only the field's shape and the copy change.
+  m.querySelectorAll('#iLandKind button').forEach((/** @type {HTMLButtonElement} */ b) => {
+    if (b.disabled) return;
+    b.onclick = () => {
+      kind = b.dataset.k;
+      m.querySelectorAll('#iLandKind button').forEach(x => x.classList.toggle('on', x === b));
+      paintKind();
+    };
+  });
+  function paintKind() {
+    const tick = mode === 'n' && kind === 'ticker';
+    const inp = /** @type {HTMLInputElement} */ ($('#iName'));
+    inp.maxLength = mode !== 'n' ? 24 : tick ? 10 : 32;
+    inp.placeholder = mode !== 'n' ? tr('e.g. labor-hours') : tick ? 'USD' : 'alice';
+    // A holding id is canonical, and the mobile keyboard fights it: it capitalises the first letter
+    // of a name (which must be lower-case) and offers lower-case for a ticker (which must be upper).
+    // Force the right shape instead of scolding the user.
+    inp.setAttribute('autocapitalize', mode !== 'n' ? 'sentences' : tick ? 'characters' : 'none');
+    inp.setAttribute('autocorrect', 'off');
+    inp.setAttribute('spellcheck', 'false');
+    $('#issueBtn').textContent = mode === 'n' ? tr(tick ? 'Claim the ticker' : 'Claim the name') : tr('Issue asset');
     $('#iModeHint').textContent = mode === 't'
       ? tr('Unique named items — tickets, memberships, keys. They do not melt, travel whole on one coin, and names must not repeat.')
       : mode === 'n'
-        ? tr('🗺️ Freiland — a name held from the community: your deposit melts as rent, and anyone can buy it at your self-assessed price.')
+        ? (tick
+          ? tr('🏷 A ticker is the short symbol an asset trades under. Held from the community like a name: nothing stops two issuers picking «USD», so the symbol goes to whoever values it enough to pay the rent.')
+          : tr('🗺️ Freiland — a name held from the community: your deposit melts as rent, and anyone can buy it at your self-assessed price.'))
         : tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.');
     if (mode === 'n') $('#iName').dispatchEvent(new Event('input'));   // сразу проверить занятость
-  });
+  }
   // Freiland-режим: живая проверка доступности имени + годовая рента от заявленной V
   let availT = null;
   q(m, '#iName').addEventListener('input', () => {
     if (mode !== 'n') return;
-    // canonicalise as you type: a name is addressed by sha256, so «Test» and «test» would be two
-    // different names — and the mobile keyboard capitalises for you. Fold it instead of scolding.
+    // canonicalise as you type: the id is addressed by sha256, so «Test» and «test» would be two
+    // different holdings — and the keyboard fights the required case either way. Fold it silently.
     const inp = /** @type {HTMLInputElement} */ (q(m, '#iName'));
-    if (inp.value !== inp.value.toLowerCase()) {
+    const canon = kind === 'ticker' ? inp.value.toUpperCase() : inp.value.toLowerCase();
+    if (inp.value !== canon) {
       const pos = inp.selectionStart;
-      inp.value = inp.value.toLowerCase();
+      inp.value = canon;
       try { inp.setSelectionRange(pos, pos); } catch {}
     }
     const el = $('#iAvail'); if (el) { el.textContent = ''; el.style.color = ''; }
@@ -153,13 +179,14 @@ export function openIssueModal() {
       const L = isCovenantNet()
         ? await import('@/services/market/covenant-land.mjs')
         : await import('@/services/market/land.mjs');
-      if (!L.validLandName(name)) { const e2 = $('#iAvail'); if (e2) { e2.textContent = tr('bad name (1–32: a-z 0-9 _ -)'); e2.style.color = 'var(--err)'; } return; }
-      const addr = await L.resolveName(name); if (q(m, '#iName').value.trim() !== name) return;
+      const id = holdingId(name);
+      if (!L.validHoldingId(id)) { const e2 = $('#iAvail'); if (e2) { e2.textContent = tr(kind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : 'bad name (1–32: a-z 0-9 _ -)'); e2.style.color = 'var(--err)'; } return; }
+      const addr = await L.resolveName(id); if (q(m, '#iName').value.trim() !== name) return;
       const e2 = $('#iAvail'); if (!e2) return;
       // A name taken by THIS seed (mine) is not "taken" from the owner's view — the chain keeps only
       // sha256(name), so a lost localStorage hides an owned name. Recover it into «my names» on sight.
       if (addr && isCovenantNet() && addr.mine) {
-        const ok = await /** @type {any} */ (L).recoverName?.(name).catch(() => false);
+        const ok = await /** @type {any} */ (L).recoverName?.(id).catch(() => false);
         e2.textContent = ok ? tr('✓ your name — restored to «My names»') : tr('name taken');
         e2.style.color = ok ? 'var(--ok)' : 'var(--err)';
         if (ok) { try { paintMyNames(); } catch {} }
