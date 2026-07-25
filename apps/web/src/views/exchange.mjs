@@ -1609,6 +1609,10 @@ async function openNameModal(name, resolve, price, deposit, declared) {
   const rentKria = (cov && deposit && price) ? (BigInt(deposit) - BigInt(price)) : 0n;
   const rentStr = rentKria > 0n ? fmtFrcN(rentKria.toString()) : '';
   const showRent = !!rentStr && !/^0([.,]0*)?$/.test(rentStr);   // hide when it rounds to zero (freshly topped)
+  // Since the claim locks EXACTLY the declared figure, the deposit repeats it — show that row only
+  // when the two really differ: names claimed before the rent buffer was dropped (deposit = value +
+  // a week of rent), and names recovered from chain (where the declaration is only reconstructed).
+  const dupDeposit = declared && deposit && Math.abs(Number(deposit) / 1e8 - Number(declared)) < 1e-8;
   const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
   const kv = (k, v) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:14px"><span style="color:var(--sub)">${cap(k)}</span><b>${v}</b></div>`;
   const mono = s => '<span style="font-family:ui-monospace,monospace">' + s + '</span>';
@@ -1621,7 +1625,7 @@ async function openNameModal(name, resolve, price, deposit, declared) {
         ${kv(tr('Property type'), tr('Holding'))}
         ${declared ? kv(tr('Self-assessed value'), Number(declared).toLocaleString(getLang(), { maximumFractionDigits: 8 }) + ' FRC') : ''}
         ${kv(tr('Forced-buy price'), (price ? fmtFrcN(price) : '—') + ' FRC')}
-        ${cov && deposit ? kv(tr('deposit'), fmtFrcN(deposit) + ' FRC') : ''}
+        ${cov && deposit && !dupDeposit ? kv(tr('deposit'), fmtFrcN(deposit) + ' FRC') : ''}
         ${showRent ? kv(tr('rent burned'), rentStr + ' FRC') : ''}
       </div>
       <button id="nmMEdit" class="ghost">${tr('Change value')}</button>
