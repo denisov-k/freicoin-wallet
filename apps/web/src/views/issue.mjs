@@ -108,11 +108,10 @@ export function openIssueModal() {
       <div class="mapwrap">
         <div id="iMap"></div>
         <div class="map-ctl map-ctl-z"><button id="iZoomIn" title="+">+</button><button id="iZoomOut" title="−">−</button></div>
+        <div class="map-ctl map-ctl-edit"><button id="imUndo" title="${tr('Undo corner')}" disabled>↶</button><button id="imClear" title="${tr('Clear')}" disabled>🗑</button></div>
         <div class="map-ctl map-ctl-here"><button id="iHere" title="${tr('📍 Where I am')}">📍</button></div>
-      </div>
-      <div class="row">
-        <button id="imUndo" class="ghost">${tr('Undo corner')}</button>
-        <button id="imClear" class="ghost">${tr('Clear')}</button>
+        <div class="map-ctl map-ctl-full"><button id="imFull" title="${tr('Full screen')}">⤢</button></div>
+        <div class="map-pill" id="iMapPill"></div>
       </div>
       <div class="sub" id="iMapInfo" style="font-size:12px">${tr('Tap the corners of your plot; tap the first corner to close it.')}</div>
       <button id="imDone">${tr('Choose')}</button>
@@ -215,19 +214,21 @@ export function openIssueModal() {
     }
     map = mountPlotMap({ el: host, lat, lon, taken: () => mapPlots, onChange: pts => {
       plotPoints = pts;
-      const info = $('#iMapInfo');
-      if (info) {
-        if (pts.length < 3) { info.textContent = tr('Tap the corners of your plot; tap the first corner to close it.'); info.style.color = ''; }
-        else {
-          const clash = map.overlapsAny();
-          info.textContent = `${pts.length} ${tr('corners')} · ≈ ${Math.round(map.area).toLocaleString(getLang())} ${tr('m²')}`
-            + (clash ? ' · ' + tr('overlaps a taken plot') : '');
-          info.style.color = clash ? 'var(--warn)' : '';
-        }
-      }
-      paintCell(); syncPlotState();
+      const info = $('#iMapInfo'), pill = $('#iMapPill');
+      const clash = pts.length >= 3 && map.overlapsAny();
+      const txt = pts.length < 3
+        ? tr('Tap the corners of your plot; tap the first corner to close it.')
+        : `${pts.length} ${tr('corners')} · ≈ ${Math.round(map.area).toLocaleString(getLang())} ${tr('m²')}`
+          + (clash ? ' · ' + tr('overlaps a taken plot') : '');
+      for (const el of [info, pill]) if (el) { el.textContent = txt; el.style.color = clash ? 'var(--warn)' : ''; }
+      paintCell(); syncPlotState(); syncMapCtl();
     } });
+    syncMapCtl();
   }
+
+  const syncMapCtl = () => ['#imUndo', '#imClear'].forEach(sel => {
+    const b = /** @type {HTMLButtonElement} */ ($(sel)); if (b) b.disabled = !plotPoints.length;
+  });
 
   // one place that decides what the plot form allows: no boundary ⇒ nothing to claim, said
   // plainly instead of failing later on a malformed id
@@ -240,6 +241,8 @@ export function openIssueModal() {
 
   const mainEls = () => [$('#iPlotBox'), $('#iNameLbl'), $('#iLandBox'), $('#iLandKind'), $('#iMode'), $('#iModeHint'), $('#issueBtn')];
   const showMapScreen = on => {
+    if (!on) { m.querySelector('.mapwrap')?.classList.remove('full'); document.body.classList.remove('map-full');
+      const fb = $('#imFull'); if (fb) { fb.textContent = '⤢'; fb.title = tr('Full screen'); } }
     mainEls().forEach(x => { if (x) x.hidden = on; });
     const ttl = $('#issTitle'); if (ttl) ttl.textContent = on ? tr('Choose a plot') : tr('Issue asset');
     const scr = $('#iMapScreen'); if (scr) scr.hidden = !on;
@@ -249,10 +252,22 @@ export function openIssueModal() {
   const pickBtn = q(m, '#iPickPlot'); if (pickBtn) pickBtn.onclick = () => showMapScreen(true);
   const imBack = q(m, '#imBack'); if (imBack) imBack.onclick = () => showMapScreen(false);
   const imDone = q(m, '#imDone'); if (imDone) imDone.onclick = () => { showMapScreen(false); paintCell(); syncPlotState(); };
-  const imUndo = q(m, '#imUndo'); if (imUndo) imUndo.onclick = () => map?.undo();
-  const imClear = q(m, '#imClear'); if (imClear) imClear.onclick = () => map?.clear();
+  const imUndo = q(m, '#imUndo'); if (imUndo) imUndo.onclick = () => { map?.undo(); syncMapCtl(); };
+  const imClear = q(m, '#imClear'); if (imClear) imClear.onclick = () => { map?.clear(); syncMapCtl(); };
   const zi = q(m, '#iZoomIn'); if (zi) zi.onclick = () => map?.zoom(1);
   const zo = q(m, '#iZoomOut'); if (zo) zo.onclick = () => map?.zoom(-1);
+
+  // full screen: iOS has no Fullscreen API for anything but video, so the map takes over the
+  // viewport from inside the page — same element, same drawing, just given the whole screen
+  const imFull = q(m, '#imFull');
+  if (imFull) imFull.onclick = () => {
+    const wrap = m.querySelector('.mapwrap'); if (!wrap) return;
+    const on = wrap.classList.toggle('full');
+    document.body.classList.toggle('map-full', on);
+    imFull.textContent = on ? '⤡' : '⤢';
+    imFull.title = tr(on ? 'Leave full screen' : 'Full screen');
+    requestAnimationFrame(() => map?.draw());   // the canvas sizes itself from the new layout
+  };
 
   const hereBtn = q(m, '#iHere');
   if (hereBtn) hereBtn.onclick = () => {

@@ -21,7 +21,7 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange }) {
   const cv = document.createElement('canvas');
   cv.style.cssText = 'width:100%;height:300px;border:1px solid var(--line);border-radius:10px;touch-action:none;display:block;cursor:crosshair';
   el.innerHTML = ''; el.appendChild(cv);
-  const st = { lat, lon, z: zoom, pts: [] };
+  const st = { lat, lon, z: zoom, pts: [] };   // z is fractional — a pinch zooms between tile levels
   const tiles = new Map();                                   // cached tile images, keyed z/x/y
 
   const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
@@ -50,15 +50,19 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange }) {
     cv.width = w * dpr; cv.height = h * dpr;
     const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.fillStyle = css('--card'); g.fillRect(0, 0, w, h);
-    // basemap
-    const cx = lon2x(st.lon, st.z), cy = lat2y(st.lat, st.z);
-    const x0 = Math.floor(cx - w / 2 / TS), x1 = Math.floor(cx + w / 2 / TS);
-    const y0 = Math.floor(cy - h / 2 / TS), y1 = Math.floor(cy + h / 2 / TS);
+    // basemap: a pinch zooms continuously, tiles only exist at whole levels — so take the nearest
+    // level and scale it by the remainder (ts), which is what keeps the map still under the fingers
+    const zi = Math.max(0, Math.min(19, Math.round(st.z)));
+    const ts = TS * Math.pow(2, st.z - zi);
+    const cx = lon2x(st.lon, zi), cy = lat2y(st.lat, zi);
+    const x0 = Math.floor(cx - w / 2 / ts), x1 = Math.floor(cx + w / 2 / ts);
+    const y0 = Math.floor(cy - h / 2 / ts), y1 = Math.floor(cy + h / 2 / ts);
     for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
-      const n = Math.pow(2, st.z);
+      const n = Math.pow(2, zi);
       if (y < 0 || y >= n) continue;
-      const img = tile(st.z, ((x % n) + n) % n, y);
-      if (img.complete && img.naturalWidth) g.drawImage(img, w / 2 + (x - cx) * TS, h / 2 + (y - cy) * TS, TS, TS);
+      const img = tile(zi, ((x % n) + n) % n, y);
+      // +1px: neighbouring tiles land on fractional pixels and would show hairline seams
+      if (img.complete && img.naturalWidth) g.drawImage(img, w / 2 + (x - cx) * ts, h / 2 + (y - cy) * ts, ts + 1, ts + 1);
     }
     // plots already taken, then the one being drawn
     const poly = (pts, stroke, fill) => {
@@ -78,21 +82,54 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange }) {
     g.fillText('© OpenStreetMap', w - 6, h - 6);
   }
 
-  // tap adds a corner; tapping the first corner closes the shape; drag pans
-  let down = null, moved = false;
-  cv.onpointerdown = e => { down = { x: e.clientX, y: e.clientY, lat: st.lat, lon: st.lon }; moved = false; cv.setPointerCapture(e.pointerId); };
+  // one finger: tap adds a corner (tapping the first one closes the shape), drag pans.
+  // two fingers: pinch zooms, and the ground under the midpoint stays put — a map you can zoom
+  // only in whole steps from a button is a map you cannot frame a plot with.
+  const ptrs = new Map();
+  let pan = null, pinch = null, moved = false;
+  const two = () => [...ptrs.values()];
+  const local = pt => { const b = cv.getBoundingClientRect(); return { x: pt.x - b.left, y: pt.y - b.top }; };
+  const midOf = p => local({ x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 });
+
+  cv.onpointerdown = e => {
+    try { cv.setPointerCapture(e.pointerId); } catch {}   // synthetic events have no live pointer
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ptrs.size === 1) { pan = { x: e.clientX, y: e.clientY, lat: st.lat, lon: st.lon }; moved = false; }
+    else if (ptrs.size === 2) {
+      pan = null; moved = true;                                  // a pinch is never a tap
+      const p = two(), m = midOf(p);
+      pinch = { d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), z: st.z, anchor: toWorld(m.x, m.y) };
+    }
+  };
   cv.onpointermove = e => {
-    if (!down) return;
-    if (Math.abs(e.clientX - down.x) + Math.abs(e.clientY - down.y) > 6) moved = true;
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && ptrs.size >= 2) {
+      const p = two(), d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+      if (!d || !pinch.d) return;
+      st.z = Math.max(3, Math.min(19, pinch.z + Math.log2(d / pinch.d)));
+      const m = midOf(p), cur = toWorld(m.x, m.y);               // hold the anchored ground still
+      st.lon = x2lon(lon2x(st.lon, st.z) + lon2x(pinch.anchor.lon, st.z) - lon2x(cur.lon, st.z), st.z);
+      st.lat = y2lat(lat2y(st.lat, st.z) + lat2y(pinch.anchor.lat, st.z) - lat2y(cur.lat, st.z), st.z);
+      draw();
+      return;
+    }
+    if (!pan) return;
+    if (Math.abs(e.clientX - pan.x) + Math.abs(e.clientY - pan.y) > 6) moved = true;
     if (!moved) return;
-    const { w, h } = size();
-    const b = cv.getBoundingClientRect();
-    st.lon = x2lon(lon2x(down.lon, st.z) - (e.clientX - down.x) / TS, st.z);
-    st.lat = y2lat(lat2y(down.lat, st.z) - (e.clientY - down.y) / TS, st.z);
+    st.lon = x2lon(lon2x(pan.lon, st.z) - (e.clientX - pan.x) / TS, st.z);
+    st.lat = y2lat(lat2y(pan.lat, st.z) - (e.clientY - pan.y) / TS, st.z);
     draw();
   };
-  cv.onpointerup = e => {
-    const wasDrag = moved; down = null;
+  cv.onpointercancel = cv.onpointerup = e => {
+    ptrs.delete(e.pointerId);
+    if (ptrs.size === 1) {                                       // lifted one finger of a pinch:
+      pinch = null;                                              // carry on panning with the other
+      const [p] = two(); pan = { x: p.x, y: p.y, lat: st.lat, lon: st.lon };
+      return;
+    }
+    if (ptrs.size > 1) return;
+    const wasDrag = moved || !!pinch; pan = null; pinch = null;
     if (wasDrag) return;
     const b = cv.getBoundingClientRect();
     const p = toWorld(e.clientX - b.left, e.clientY - b.top);
@@ -103,11 +140,12 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange }) {
     if (st.pts.length >= MAX_VERTICES) return;
     st.pts.push(p); draw(); onChange(st.pts.slice());
   };
-  cv.onwheel = e => { e.preventDefault(); setZoom(st.z + (e.deltaY > 0 ? -1 : 1)); };
+  cv.onwheel = e => { e.preventDefault(); setZoom(Math.round(st.z) + (e.deltaY > 0 ? -1 : 1)); };
+  // the buttons step whole levels, so they snap a pinched view back onto a crisp tile level
   function setZoom(z) { const nz = Math.max(3, Math.min(19, z)); if (nz === st.z) return; st.z = nz; draw(); }
 
   const api = {
-    draw, zoom: d => setZoom(st.z + d),
+    draw, zoom: d => setZoom(Math.round(st.z) + d),
     centre(la, lo, z) { st.lat = la; st.lon = lo; if (z) st.z = z; draw(); },
     clear() { st.pts = []; draw(); onChange([]); },
     undo() { st.pts.pop(); draw(); onChange(st.pts.slice()); },

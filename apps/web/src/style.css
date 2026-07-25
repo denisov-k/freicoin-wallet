@@ -139,7 +139,9 @@ table.mkt .act-cell .p2pstatus { border-color:var(--accent); color:var(--accent)
 .mapwrap { position: relative; }
 .map-ctl { position: absolute; display: flex; flex-direction: column; gap: 6px; z-index: 2; }
 .map-ctl-z { top: 10px; right: 10px; }
+.map-ctl-edit { top: 10px; left: 10px; }
 .map-ctl-here { left: 10px; bottom: 30px; }
+.map-ctl-full { right: 10px; bottom: 30px; }
 .mapwrap .map-ctl button {
   width: 38px; height: 38px; padding: 0; flex: 0 0 auto;
   font-size: 18px; line-height: 1; font-weight: 600;
@@ -148,3 +150,21 @@ table.mkt .act-cell .p2pstatus { border-color:var(--accent); color:var(--accent)
   box-shadow: 0 1px 4px rgba(0,0,0,.25);
 }
 .mapwrap .map-ctl button:active { background: var(--line); }
+.mapwrap .map-ctl button:disabled { opacity: .4; }
+
+/* the map given the whole screen: the wrapper leaves the modal's flow and covers the viewport,
+   controls keep clear of the notch and the home indicator */
+.mapwrap.full { position: fixed; inset: 0; z-index: 120; background: var(--bg); }
+.mapwrap.full #iMap { height: 100%; }
+.mapwrap.full #iMap canvas { height: 100% !important; border-radius: 0; border: 0; }
+.mapwrap.full .map-ctl-z, .mapwrap.full .map-ctl-edit { top: calc(10px + env(safe-area-inset-top)); }
+.mapwrap.full .map-ctl-here, .mapwrap.full .map-ctl-full { bottom: calc(30px + env(safe-area-inset-bottom)); }
+.map-pill { display: none; }
+.mapwrap.full .map-pill {
+  display: block; position: absolute; z-index: 2;
+  left: 60px; right: 60px; bottom: calc(34px + env(safe-area-inset-bottom));
+  background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+  padding: 8px 14px; font-size: 12px; text-align: center; color: var(--sub);
+  box-shadow: 0 1px 4px rgba(0,0,0,.25);
+}
+body.map-full { overflow: hidden; }
