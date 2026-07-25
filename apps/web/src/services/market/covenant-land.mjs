@@ -74,6 +74,22 @@ async function decName(payloadHex) {
     return td.decode(pt);
   } catch { return null; }
 }
+// ── TICKER BINDING (which asset a symbol stands for) ────────────────────────────────────────────
+// A symbol is only useful if a third party can tell WHICH «USD» is the real one. The binding needs
+// no signature: it rides in the very transaction that created the holding's current output, and the
+// author of that transaction IS the current holder (a forced buy replaces the output, so the new
+// owner writes their own). Verification is one registry lookup + one raw-tx read — no scanning.
+const TKR1 = '544b5231';                                  // 'TKR1' — ticker → assetTag announcement
+const bindOut = tag => ({ value: 0n, scriptPubKey: '6a' + (4 + 20).toString(16) + TKR1 + tag, assetTag: HOST_TAG });
+const readBind = tx => {
+  for (const o of tx.vout || []) {
+    const spk = o.scriptPubKey || '';
+    const i = spk.indexOf(TKR1);
+    if (spk.startsWith('6a') && i > 0 && spk.length >= i + 8 + 40) return spk.slice(i + 8, i + 8 + 40);
+  }
+  return null;
+};
+
 // a value-0 OP_RETURN output carrying the encrypted name (host FRC, no asset). ≤75-byte direct push.
 const frlnOut = async name => { const p = await encName(name); return { value: 0n, scriptPubKey: '6a' + (p.length / 2).toString(16).padStart(2, '0') + p, assetTag: HOST_TAG }; };
 
@@ -88,8 +104,8 @@ const pickFrc = (need, L) => {
 
 /** CLAIM a free name: fund a covenant output to my owner-key with a deposit that holds V for ~a week
  *  (a HRBG output is just host FRC paid to the covenant script, so this reuses the ordinary FRC send).
- *  @param {{name:string, valueFrc:number|string, progress?:(p:string)=>void}} o */
-export async function registerName({ name, valueFrc, progress = () => {} }) {
+ *  @param {{name:string, valueFrc:number|string, bind?:string|null, progress?:(p:string)=>void}} o */
+export async function registerName({ name, valueFrc, bind = null, progress = () => {} }) {
   if (!validHoldingId(name)) throw new Error('bad name');
   const V = frcToKria(valueFrc);
   // The deposit IS the declaration — no rent buffer on top. A buffer would lock more than the holder
@@ -98,8 +114,9 @@ export async function registerName({ name, valueFrc, progress = () => {} }) {
   // (it getting cheaper is exactly the signal to top up).
   const deposit = V;
   progress('lock');
-  const { txid } = await sendFrcToSpk(covSpkOf(name), deposit, [await frlnOut(name)]);   // + encrypted name book
-  const rec = { name, value: Number(valueFrc), claimTxid: txid, at: Date.now() };
+  const extra = [await frlnOut(name), ...(bind ? [bindOut(bind)] : [])];
+  const { txid } = await sendFrcToSpk(covSpkOf(name), deposit, extra);
+  const rec = { name, value: Number(valueFrc), bind, claimTxid: txid, at: Date.now() };
   save(load().filter(x => x.name !== name).concat(rec));
   progress('done');
   return rec;
@@ -181,6 +198,30 @@ export async function recoverFromChain() {
     have.add(name); added++;
   }
   return added;
+}
+
+/** VERIFY that a symbol vouches for an asset — the whole point of holding a ticker.
+ *  Given an asset that calls itself «USD» with tag T, anyone can check, trusting nobody:
+ *    sha256('ticker:USD') → registry entry → the tx that created its output → its TKR1 tag == T?
+ *  No signature is needed: the author of that transaction IS the current holder (a forced buy
+ *  replaces the output, so the taker publishes their own claim). The symbol itself never has to be
+ *  decrypted — the verifier already knows it, it is the asset's own self-certified name.
+ *  @param {{tag:string, name:string}[]} assets  @returns {Promise<Set<string>>} tags that check out */
+let _vCache = { at: 0, set: new Set() };
+export async function verifiedAssetTags(assets) {
+  if (Date.now() - _vCache.at < 60000) return _vCache.set;
+  const set = new Set();
+  for (const a of assets || []) {
+    if (!a?.tag || !a?.name || !validTicker(String(a.name).toUpperCase())) continue;
+    try {
+      const e = (await idx({ namehash: nameHashOf(tickerId(a.name)) }))[0];
+      if (!e) continue;
+      const tx = parseTx((await api('rawFrcTx', { txid: (e.outpoint || '').split(':')[0] })).rawtx);
+      if (readBind(tx) === a.tag) set.add(a.tag);
+    } catch {}
+  }
+  _vCache = { at: Date.now(), set };
+  return set;
 }
 
 /** My names + their live price (= present value of the melting deposit, what a forced buy pays). */
@@ -301,16 +342,19 @@ async function ownerPathSpend({ name, successor, progress }) {
 /** REVALUE (top up) my own name to a higher self-assessment via the path-A buy-your-own: spend the
  *  HRBG (anyone-can-spend) plus my FRC coins, pay V to myself, carry newDeposit into the successor.
  *  Only raising is possible (consensus: successor >= current price V); lowering happens via demurrage.
- *  @param {{name:string, valueFrc:number|string, progress?:(p:string)=>void}} o */
-export async function revalueName({ name, valueFrc, progress = () => {} }) {
+ *  @param {{name:string, valueFrc:number|string|null, bind?:string|null, progress?:(p:string)=>void}} o */
+export async function revalueName({ name, valueFrc, bind = undefined, progress = () => {} }) {
   const rec = load().find(x => x.name === name);
   if (!rec) throw new Error('not my name');
   const c = await nameCoin(name);
   if (!c) throw new Error('name coin not found');
   const L = ctx.state.mine.height;
   const V = covenantPrice(c.value, c.refheight, L);      // consensus charges this now
-  const newV = frcToKria(valueFrc);
-  const newDeposit = newV;                                 // same rule as the claim: deposit == declaration
+  // `null` = republish at exactly today's price (used when only the announcement changes). Otherwise
+  // tolerate a hair's shortfall: the indexer prices at tip+1 while we build at tip, so «the price I
+  // was just shown» is a few kria under V and would otherwise be rejected as a lowering.
+  let newDeposit = valueFrc == null ? V : frcToKria(valueFrc);
+  if (newDeposit < V && V - newDeposit <= V / 100000n) newDeposit = V;
   if (newDeposit < V) throw new Error('revalue below current price (lower only melts down over time)');
   const owner = ownerHashOf(covOwnerPub(name));
   const { picked, total } = pickFrc(newDeposit + FEE, L);   // funds the new deposit; payout V returns from the HRBG's own V
@@ -321,6 +365,7 @@ export async function revalueName({ name, valueFrc, progress = () => {} }) {
     vin: [opIn(`${c.txid}:${c.vout}`), ...picked.map(p => opIn(p.outpoint))],
     vout: [ out(V, '0014' + owner), out(newDeposit, covSpkOf(name)),
             await frlnOut(name),                              // encrypted name book (cross-device recovery)
+            ...(((bind === undefined ? rec.bind : bind)) ? [bindOut(bind === undefined ? rec.bind : bind)] : []),
             ...(change > 0n ? [out(change, ctx.spks[0])] : []) ] };
   tx.vin[0].witness = [];                                   // HRBG: anyone-can-spend
   picked.forEach((p, i) => signInput(tx, i + 1, p.spk, p.value, p.refheight, SIGHASH_ALL));
@@ -335,7 +380,7 @@ export async function revalueName({ name, valueFrc, progress = () => {} }) {
   const sh = segwitV0Sighash(sweep, 0, ownerLeaf, V, L, SIGHASH_ALL);
   sweep.vin[0].witness = [signEcdsa(ownerKey, sh) + '01', '00' + ownerLeaf, ''];
   await api('tx', { rawtx: serializeTx(sweep), kind: 'send' });
-  save(load().map(x => x.name === name ? { ...x, value: Number(valueFrc) } : x));
+  save(load().map(x => x.name === name ? { ...x, ...(valueFrc == null ? {} : { value: Number(valueFrc) }), ...(bind === undefined ? {} : { bind }) } : x));
   progress('done');
   return { txid, price: V };
 }
@@ -366,6 +411,8 @@ export async function buyName({ name, progress = () => {} }) {
     vout: [ out(V, '0014' + info.owner),                      // pay the current owner V
             out(V, covSpkOf(name)),                           // successor owned by me (carries V)
             await frlnOut(name),                              // encrypted name book (cross-device recovery)
+            // deliberately NO binding: taking a symbol does not inherit the previous holder's claim
+            // about which asset it stands for — the new holder announces their own (or none).
             ...(change > 0n ? [out(change, ctx.spks[0])] : []) ] };
   tx.vin[0].witness = [];                                     // HRBG: anyone-can-spend
   picked.forEach((p, i) => signInput(tx, i + 1, p.spk, p.value, p.refheight, SIGHASH_ALL));

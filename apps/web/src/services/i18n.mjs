@@ -2,6 +2,10 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  "Link an asset": "Привязать актив",
+  "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "Объявите, какой актив обозначает этот символ. После этого любой сможет проверить связь по цепи: объявление едет в той же транзакции, что держит тикер, поэтому сделать его может только держатель.",
+  "you hold no asset named like this symbol": "у вас нет актива с таким названием",
+  "asset linked ✅": "актив привязан ✅",
   'Ticker': 'Тикер',
   'Claim the ticker': 'Занять тикер',
   'bad ticker (2–10: A-Z 0-9)': 'плохой тикер (2–10: A-Z 0-9)',
@@ -363,6 +367,10 @@ const RU = {
 };
 
 const ES = {
+  "Link an asset": "Vincular un activo",
+  "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "Declara qué activo representa este símbolo. Cualquiera podrá verificarlo contra la cadena: la declaración viaja en la transacción que sostiene el símbolo, así que solo su tenedor puede hacerla.",
+  "you hold no asset named like this symbol": "no tienes ningún activo con ese nombre",
+  "asset linked ✅": "activo vinculado ✅",
   'Ticker': 'Símbolo',
   'Claim the ticker': 'Reservar el símbolo',
   'bad ticker (2–10: A-Z 0-9)': 'símbolo inválido (2–10: A-Z 0-9)',
@@ -902,6 +910,10 @@ const ES = {
 };
 
 const DE = {
+  "Link an asset": "Asset verknüpfen",
+  "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "Gib bekannt, für welches Asset dieses Kürzel steht. Danach kann es jeder gegen die Kette prüfen: die Bekanntgabe reist in der Transaktion, die das Kürzel hält — nur der Inhaber kann sie machen.",
+  "you hold no asset named like this symbol": "du hältst kein Asset mit diesem Namen",
+  "asset linked ✅": "Asset verknüpft ✅",
   'Ticker': 'Kürzel',
   'Claim the ticker': 'Kürzel beanspruchen',
   'bad ticker (2–10: A-Z 0-9)': 'ungültiges Kürzel (2–10: A-Z 0-9)',
@@ -1441,6 +1453,10 @@ const DE = {
 };
 
 const FR = {
+  "Link an asset": "Lier un actif",
+  "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "Annoncez quel actif ce symbole désigne. Chacun pourra le vérifier sur la chaîne : l’annonce voyage dans la transaction qui détient le symbole, seul son détenteur peut donc la faire.",
+  "you hold no asset named like this symbol": "vous ne détenez aucun actif portant ce nom",
+  "asset linked ✅": "actif lié ✅",
   'Ticker': 'Symbole',
   'Claim the ticker': 'Réserver le symbole',
   'bad ticker (2–10: A-Z 0-9)': 'symbole invalide (2–10 : A-Z 0-9)',
@@ -1980,6 +1996,10 @@ const FR = {
 };
 
 const PT = {
+  "Link an asset": "Vincular um ativo",
+  "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "Anuncie qual ativo este símbolo representa. Qualquer um poderá verificar na cadeia: o anúncio viaja na transação que mantém o símbolo, então só o detentor pode fazê-lo.",
+  "you hold no asset named like this symbol": "você não tem nenhum ativo com esse nome",
+  "asset linked ✅": "ativo vinculado ✅",
   'Ticker': 'Símbolo',
   'Claim the ticker': 'Reservar o símbolo',
   'bad ticker (2–10: A-Z 0-9)': 'símbolo inválido (2–10: A-Z 0-9)',
@@ -2519,6 +2539,10 @@ const PT = {
 };
 
 const ZH = {
+  "Link an asset": "关联资产",
+  "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "声明该代号代表哪个资产。之后任何人都能对链验证：声明随持有代号的交易一起写入，因此只有持有者才能做出。",
+  "you hold no asset named like this symbol": "你没有与该代号同名的资产",
+  "asset linked ✅": "资产已关联 ✅",
   'Ticker': '代号',
   'Claim the ticker': '占用代号',
   'bad ticker (2–10: A-Z 0-9)': '代号无效（2–10：A-Z 0-9）',

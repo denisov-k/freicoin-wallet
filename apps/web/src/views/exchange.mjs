@@ -20,7 +20,7 @@ import { holdingLabel, isTickerId, tickerId, validTicker } from '@core/freiland.
 import QRCode from 'qrcode';
 import { loadMySwaps, putMySwap, dropMySwap, loadP2p, putP2p, dropP2p, addBtcNonce, addFeeTxid, lsKey } from '@/services/storage.mjs';
 import { refreshPushSubs } from '@/services/push.mjs';
-import { api, ctx, p2pKey, HOST_TAG, decimalsOf, scaleOf, assetName, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND, VB_HTLC_FUND, isCovenantNet } from '@/state/market-ctx.mjs';
+import { api, ctx, p2pKey, HOST_TAG, decimalsOf, scaleOf, assetName, verifiedTags, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND, VB_HTLC_FUND, isCovenantNet } from '@/state/market-ctx.mjs';
 import { opIn, signInput, committedOutpoints, myCoinsOf, freeFrcKria, sendFrcToSpk, hostFeeCoin, lockAssetToHtlc, signRangedGive, signLadder, LADDER_SPAN } from '@/services/market/swap-lib.mjs';
 import { btcHrp, btcAcctAddr, btcFundHtlc, btcToStr, refreshBtc,
   mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvBtcMax, initBtcAccount, btcResetAcct } from '@/services/market/btc-account.mjs';
@@ -165,6 +165,11 @@ async function doRefresh() {
   } catch {}
   state = { info, defs: r.assetDefs, mine: { height: r.tipHeight, utxos: r.assetUtxos, pendingChange: BigInt(r.pendingChange || '0'), ...(r.provisional ? { provisional: true } : {}) }, swap, p2p };
   ctx.state = state;                          // mirror for the extracted modules (read via ctx)
+  // Which symbols are vouched for by their ticker holder — checked against the chain, cached inside
+  // the service. Repaints follow on the next poll, so an unverified asset is never marked by mistake.
+  if (isCovenantNet()) covMod().then(L => L.verifiedAssetTags(
+    Object.entries(r.assetDefs || {}).map(([tag, d]) => ({ tag, name: d?.name })).filter(a => a.name)
+  )).then(set => { verifiedTags.clear(); set.forEach(t => verifiedTags.add(t)); }).catch(() => {});
   // cache relay defs for the light client's next boot (seedDefs) — rates for history valuation only.
   // Deliberately WITHOUT decimals: display decimals are self-certified on-chain, so they must come from
   // the trustless scan or fresh relay info — never a cached seed (a stale one rendered "1 Test1" as "0.0001").
@@ -1639,6 +1644,7 @@ async function openNameModal(name, resolve, price, deposit) {
         ${showRent ? kv(tr('rent burned'), rentStr + ' FRC') : ''}
       </div>
       <button id="nmMEdit" class="ghost">${tr('Change price')}</button>
+      ${isTickerId(name) ? `<button id="nmMBind" class="ghost">${tr('Link an asset')}</button>` : ''}
       ${cov ? '' : `<label>${tr('Points to address')}<input id="nmMRes" type="text" autocomplete="off" spellcheck="false" value="${resolve || ''}"></label>
       <button id="nmMResBtn" class="ghost">${tr('Update address')}</button>`}
       ${cov ? `<button id="nmMRelease" class="ghost" style="color:var(--err)">${tr('Free the holding')}</button>` : ''}
@@ -1652,6 +1658,14 @@ async function openNameModal(name, resolve, price, deposit) {
       <button id="nmMReval">${tr('Confirm')}</button>
       <div id="nmEditLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
     </div>
+    <div id="nmScreen4" class="nmScr" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack4" class="icon">←</button><b style="flex:1;text-align:center">${tr('Link an asset')}</b><button id="nmX4" class="icon">✕</button></div>
+      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${holdingLabel(name)}</div>
+      <div class="sub" style="font-size:13px">${tr('Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.')}</div>
+      <label>${tr('Asset')}<select id="nmBindSel"></select></label>
+      <button id="nmBindGo">${tr('Confirm')}</button>
+      <div id="nmBindLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
+    </div>
     <div id="nmScreen3" class="nmScr" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack3" class="icon">←</button><b style="flex:1;text-align:center">${tr('Free the holding')}</b><button id="nmX3" class="icon">✕</button></div>
       <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${holdingLabel(name)}</div>
@@ -1664,8 +1678,8 @@ async function openNameModal(name, resolve, price, deposit) {
   const log = t => { const el = $('#nmMLog'); if (el) el.textContent = t; };
   const logE = t => { const el = $('#nmEditLog'); if (el) el.textContent = t; };
   const logR = t => { const el = $('#nmRelLog'); if (el) el.textContent = t; };
-  const showScreen = n => { for (const i of [1, 2, 3]) { const s = $('#nmScreen' + i); if (s) s.style.display = i === n ? '' : 'none'; } };
-  ['#nmX', '#nmX2', '#nmX3'].forEach(id => { const b = q(m, id); if (b) b.onclick = () => closeOverlay(m); });
+  const showScreen = n => { for (const i of [1, 2, 3, 4]) { const s = $('#nmScreen' + i); if (s) s.style.display = i === n ? '' : 'none'; } };
+  ['#nmX', '#nmX2', '#nmX3', '#nmX4'].forEach(id => { const b = q(m, id); if (b) b.onclick = () => closeOverlay(m); });
   // live «Изменение: +/− X FRC» against what the holding is worth now, so raising and lowering read
   // the same way (lowering is legitimate in Harberger — less rent, but cheaper for others to take).
   const baseV = price ? Number(price) / 1e8 : 0;
@@ -1705,6 +1719,33 @@ async function openNameModal(name, resolve, price, deposit) {
     const to = $('#nmMRes').value.trim(); if (!to || to === resolve) return;
     try { await L.setResolve(name, to); toast(tr('resolve updated ✅'), 'ok'); $('#modal')?.remove(); paintMyNames(); }
     catch (e) { toast(e.message, 'err'); log(e.message); }
+  };
+  const bindBtn = q(m, '#nmMBind');
+  if (bindBtn) bindBtn.onclick = async () => {
+    const sym = holdingLabel(name).toUpperCase();
+    // only an asset whose OWN name is the symbol can ever verify — offering the rest would just
+    // publish a claim that no checker will accept
+    const opts = (await mvOwnedAssets()).filter(a => String(a.name).replace(' ✓', '').trim().toUpperCase() === sym);
+    const sel = $('#nmBindSel');
+    if (sel) sel.innerHTML = opts.length
+      ? opts.map(a => `<option value="${a.tag}">${a.name} · ${a.tag.slice(0, 8)}…</option>`).join('')
+      : `<option value="">${tr('you hold no asset named like this symbol')}</option>`;
+    const go = $('#nmBindGo'); if (go) go.disabled = !opts.length;
+    showScreen(4);
+  };
+  const back4 = q(m, '#nmBack4'); if (back4) back4.onclick = () => showScreen(1);
+  const bindGo = q(m, '#nmBindGo');
+  if (bindGo) bindGo.onclick = async () => {
+    const tag = $('#nmBindSel')?.value; if (!tag) return;
+    const logB = t => { const el = $('#nmBindLog'); if (el) el.textContent = t; };
+    bindGo.disabled = true;
+    try {
+      // republish the holding at its CURRENT price, carrying the announcement — costs fees only
+      // (path A pays the price to the owner address, which the service sweeps straight back)
+      await L.revalueName({ name, valueFrc: null, bind: tag, progress: p => logB(
+        p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…') : tr('registered ✅')) });
+      toast(`${holdingLabel(name)}: ${tr('asset linked ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
+    } catch (e) { toast(e.message, 'err'); logB(e.message); bindGo.disabled = false; }
   };
   const relBtn = q(m, '#nmMRelease');
   if (relBtn) relBtn.onclick = () => showScreen(3);

@@ -80,8 +80,13 @@ export const HOST_TAG = '00'.repeat(20);
 export const decimalsOf = tag => Number(ctx.state?.info?.assets?.find(a => a.tag === tag)?.decimals ?? ctx.state?.defs?.[tag]?.decimals ?? 0);
 export const scaleOf = tag => (tag == null || tag === HOST_TAG || tag === 'FRC') ? 100000000 : 10 ** decimalsOf(tag);
 // self-certified name from the light client first, then the relay's (untrusted, cosmetic), then the tag.
+// Tags whose symbol is vouched for by the holder of the matching ticker (see covenant-land
+// verifiedAssetTags). Refreshed by the market poll; empty until then, so the mark only ever appears
+// on a CHECKED asset — never the other way round.
+export const verifiedTags = new Set();
 export const assetName = tag => tag === null || tag === HOST_TAG ? 'FRC'
-  : (ctx.state?.defs?.[tag]?.name ?? ctx.state?.info?.assets?.find(a => a.tag === tag)?.name ?? tag.slice(0, 8) + '…');
+  : ((ctx.state?.defs?.[tag]?.name ?? ctx.state?.info?.assets?.find(a => a.tag === tag)?.name ?? tag.slice(0, 8) + '…')
+     + (verifiedTags.has(tag) ? ' ✓' : ''));
 // asset demurrage/interest rate: the light client's self-certified def (trustless) first, then the
 // relay's (untrusted, flagged). FRC = the host rate. A wrong rate can only mislabel, not misprice.
 export const rateOf = tag => {
