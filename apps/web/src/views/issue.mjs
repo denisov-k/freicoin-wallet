@@ -101,13 +101,17 @@ export function openIssueModal() {
     </div>
     <p class="sub" id="iModeHint" style="font-size:12px">${tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.')}</p>
     <div id="iPlotBox" class="stack" hidden>
-      <button id="iPickPlot" class="ghost">${tr('Draw the plot on the map')}</button>
+      <button id="iPickPlot" class="ghost">${tr('Choose the plot')}</button>
       <div class="sub" id="iCellInfo" style="font-size:12px"></div>
     </div>
     <div id="iMapScreen" class="stack" hidden>
       <div class="mapwrap">
         <div class="mapbox">
           <div id="iMap"></div>
+          <div class="map-search">
+            <input id="iSearch" type="search" enterkeyhint="search" autocomplete="off" spellcheck="false" placeholder="${tr('Find a place')}">
+            <div class="map-search-res" id="iSearchRes" hidden></div>
+          </div>
           <div class="map-ctl map-ctl-z"><button id="iZoomIn" title="+">+</button><button id="iZoomOut" title="−">−</button></div>
           <div class="map-ctl map-ctl-edit"><button id="imUndo" title="${tr('Undo corner')}" disabled>↶</button><button id="imClear" title="${tr('Clear')}" disabled>🗑</button></div>
           <div class="map-ctl map-ctl-here"><button id="iHere" title="${tr('📍 Where I am')}">📍</button></div>
@@ -117,7 +121,7 @@ export function openIssueModal() {
         <div class="map-sheet" id="iPlotCard" hidden></div>
       </div>
       <div class="sub" id="iMapInfo" style="font-size:12px">${tr('Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.')}</div>
-      <button id="imDone">${tr('Choose')}</button>
+      <button id="imDone">${tr('Accept')}</button>
       <button id="imBack" class="ghost">${tr('← Back')}</button>
     </div>
     <label id="iNameLbl">${tr('Name')}<input id="iName" maxlength="24" placeholder="${tr('e.g. labor-hours')}"></label>
@@ -139,7 +143,7 @@ export function openIssueModal() {
     <div id="iLandBox" class="stack" hidden>
       <div class="sub" id="iAvail" style="font-size:12px"></div>
       <label>${tr('Self-assessed value')} (FRC)<input id="iVal" type="text" inputmode="decimal" placeholder="0.01+"></label>
-      <div class="rrow"><span>${tr('Rent (auto, demurrage)')}</span><b id="iRent" class="sub">—</b></div>
+      <div class="rrow"><span>${tr('Network fee')}</span><b id="iRent" class="sub">—</b></div>
     </div>
     <div id="iLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
     <button id="issueBtn">${tr('Issue asset')}</button></div>`;
@@ -318,6 +322,38 @@ export function openIssueModal() {
     imFull.title = tr(on ? 'Leave full screen' : 'Full screen');
     requestAnimationFrame(() => map?.draw());   // the canvas sizes itself from the new layout
   };
+
+  // Finding the ground you mean by typing its name. The lookup goes to OpenStreetMap's geocoder —
+  // the same trade the basemap already makes: it learns what you searched for, and nothing else
+  // about the wallet goes near it. Only on Enter or after a pause, never per keystroke (their usage
+  // policy asks for at most one request a second).
+  let searchT = null;
+  const searchRes = q(m, '#iSearchRes');
+  const showRes = html => { if (!searchRes) return; searchRes.innerHTML = html; searchRes.hidden = !html; };
+  async function findPlace() {
+    const inp = /** @type {HTMLInputElement} */ ($('#iSearch'));
+    const term = (inp?.value || '').trim();
+    if (term.length < 3) return showRes('');
+    showRes(`<div class="sub" style="padding:8px 10px">${tr('searching…')}</div>`);
+    try {
+      const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5'
+        + `&accept-language=${encodeURIComponent(getLang())}&q=${encodeURIComponent(term)}`;
+      const found = await (await fetch(url)).json();
+      if ((inp?.value || '').trim() !== term) return;                 // a newer search won
+      if (!found.length) return showRes(`<div class="sub" style="padding:8px 10px">${tr('nothing found')}</div>`);
+      showRes(found.map((f, i) => `<button class="mapfind" data-i="${i}">${f.display_name}</button>`).join(''));
+      searchRes?.querySelectorAll('.mapfind').forEach((/** @type {HTMLButtonElement} */ b) => b.onclick = () => {
+        const f = found[+b.dataset.i];
+        map?.centre(+f.lat, +f.lon, 18);
+        showRes(''); inp.blur();
+      });
+    } catch { showRes(`<div class="sub" style="padding:8px 10px">${tr('search is unavailable')}</div>`); }
+  }
+  const searchInp = q(m, '#iSearch');
+  if (searchInp) {
+    searchInp.oninput = () => { clearTimeout(searchT); searchT = setTimeout(findPlace, 800); };
+    searchInp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(searchT); findPlace(); } };
+  }
 
   const hereBtn = q(m, '#iHere');
   if (hereBtn) hereBtn.onclick = () => {

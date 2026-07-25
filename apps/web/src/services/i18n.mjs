@@ -2,9 +2,13 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
-  "Draw the plot on the map": "Нарисовать участок на карте",
+  "Choose the plot": "Выбрать участок",
   "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "Тап по занятому участку покажет, что это; тапами отмечайте углы своего — тап по первому углу замкнёт контур. Угол можно перетащить.",
   "Undo corner": "Убрать угол",
+  "Find a place": "Найти место",
+  "searching…": "ищем…",
+  "nothing found": "ничего не найдено",
+  "search is unavailable": "поиск недоступен",
   "Accept": "Принять",
   "Your plot": "Ваш участок",
   "Taken plot": "Занятый участок",
@@ -416,9 +420,13 @@ const RU = {
 };
 
 const ES = {
-  "Draw the plot on the map": "Dibujar la parcela en el mapa",
+  "Choose the plot": "Elegir la parcela",
   "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "Toca una parcela ocupada para ver qué es, o marca las esquinas de la tuya; toca la primera esquina para cerrarla. Una esquina se puede arrastrar.",
   "Undo corner": "Quitar esquina",
+  "Find a place": "Buscar un lugar",
+  "searching…": "buscando…",
+  "nothing found": "no se encontró nada",
+  "search is unavailable": "la búsqueda no está disponible",
   "Accept": "Aceptar",
   "Your plot": "Tu parcela",
   "Taken plot": "Parcela ocupada",
@@ -1008,9 +1016,13 @@ const ES = {
 };
 
 const DE = {
-  "Draw the plot on the map": "Parzelle auf der Karte zeichnen",
+  "Choose the plot": "Parzelle wählen",
   "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "Tippe eine belegte Parzelle an, um zu sehen, was sie ist, oder setze die Ecken deiner eigenen; ein Tipp auf die erste schließt sie. Eine Ecke lässt sich ziehen.",
   "Undo corner": "Ecke zurück",
+  "Find a place": "Ort suchen",
+  "searching…": "wird gesucht…",
+  "nothing found": "nichts gefunden",
+  "search is unavailable": "Suche nicht verfügbar",
   "Accept": "Übernehmen",
   "Your plot": "Deine Parzelle",
   "Taken plot": "Belegte Parzelle",
@@ -1600,9 +1612,13 @@ const DE = {
 };
 
 const FR = {
-  "Draw the plot on the map": "Dessiner la parcelle sur la carte",
+  "Choose the plot": "Choisir la parcelle",
   "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "Touchez une parcelle occupée pour voir ce qu’elle est, ou placez les coins de la vôtre ; touchez le premier coin pour la fermer. Un coin peut être déplacé.",
   "Undo corner": "Annuler le coin",
+  "Find a place": "Rechercher un lieu",
+  "searching…": "recherche…",
+  "nothing found": "rien trouvé",
+  "search is unavailable": "recherche indisponible",
   "Accept": "Valider",
   "Your plot": "Votre parcelle",
   "Taken plot": "Parcelle occupée",
@@ -2192,9 +2208,13 @@ const FR = {
 };
 
 const PT = {
-  "Draw the plot on the map": "Desenhar a parcela no mapa",
+  "Choose the plot": "Escolher a parcela",
   "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "Toque numa parcela ocupada para ver o que é, ou marque os cantos da sua; toque no primeiro canto para fechá-la. Um canto pode ser arrastado.",
   "Undo corner": "Remover canto",
+  "Find a place": "Procurar um lugar",
+  "searching…": "procurando…",
+  "nothing found": "nada encontrado",
+  "search is unavailable": "busca indisponível",
   "Accept": "Aceitar",
   "Your plot": "Sua parcela",
   "Taken plot": "Parcela ocupada",
@@ -2784,9 +2804,13 @@ const PT = {
 };
 
 const ZH = {
-  "Draw the plot on the map": "在地图上绘制地块",
+  "Choose the plot": "选择地块",
   "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "点按已占用的地块可查看详情；点按可依次标出自己地块的角，点第一个角即可闭合。角可以拖动。",
   "Undo corner": "撤销角点",
+  "Find a place": "搜索地点",
+  "searching…": "搜索中…",
+  "nothing found": "没有找到",
+  "search is unavailable": "搜索不可用",
   "Accept": "确定",
   "Your plot": "你的地块",
   "Taken plot": "已被占用的地块",
