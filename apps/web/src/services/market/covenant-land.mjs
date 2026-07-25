@@ -196,7 +196,7 @@ const _sweptOps = new Set();     // outpoints already swept this session (a broa
 // Chain reads are cached (the map and the symbol table are re-read on every render), so anything
 // that CHANGES the registry has to drop them — otherwise a fresh claim is invisible to the very
 // overlap warning that is supposed to notice it.
-const invalidateChainCaches = () => { _plotCache = { at: 0, list: [] }; _vCache = { at: 0, map: new Map() }; };
+export const invalidateChainCaches = () => { _plotCache = { at: 0, list: [] }; _vCache = { at: 0, map: new Map() }; };
 
 /** RECOVER path-A payouts stranded on a name's own covenant address. Consensus pays a raise (and a
  *  forced buy) to 0014{owner}; for a name we hold that is OUR per-name covenant key — derived from

@@ -1591,6 +1591,7 @@ export async function paintMyNames() {
   let mine = [];
   try {
     if (isCovenantNet()) {
+      try { for (const pl of await L.livePlots?.() ?? []) plotInfo.set(pl.id, pl); } catch {}
       await L.recoverFromChain?.();          // pull any owned names the chain knows but this device doesn't
       L.sweepPayouts?.().catch(() => {});    // and bring home any raise payout stranded on a covenant address
     }
@@ -1600,14 +1601,30 @@ export async function paintMyNames() {
       ? (await L.myNames()).map(n => ({ name: n.name, price: String(n.price), value: String(n.deposit), lapsed: false, resolve: '' }))
       : (await L.listNames()).names.filter(n => n.ownerFrcPub === L.landOwnerPub(n.name));
   } catch {}
+  // a plot just claimed is not in the map's cache yet, and it is the row that needs its place said
+  if (isCovenantNet() && mine.some(n => isPlotId(n.name) && !plotInfo.get(n.name))) {
+    try { L.invalidateChainCaches?.(); for (const pl of await L.livePlots?.() ?? []) plotInfo.set(pl.id, pl); } catch {}
+  }
   box.innerHTML = mine.length
     ? mine.map(n =>
-        `<tr><td style="font-family:ui-monospace,monospace">${holdingLabel(n.name)}${n.lapsed ? ' ⚠' : ''}</td>
+        `<tr><td style="font-family:ui-monospace,monospace">${nameLabel(n.name)}${n.lapsed ? ' ⚠' : ''}</td>
            <td class="r">${(n.price || n.value) ? fmtFrc8(n.price || n.value) : '—'} FRC</td>
            <td class="act-cell"><button class="icon nmMng" data-n="${n.name}" data-r="${n.resolve || ''}" data-p="${n.price || ''}" data-d="${n.value || ''}" title="${tr('Manage')}">⋯</button></td></tr>`).join('')
     : `<tr><td colspan="3" class="sub">${tr('no names yet — claim one in Issue → Holdings')}</td></tr>`;
   box.querySelectorAll('.nmMng').forEach(b => b.onclick = () => openNameModal(b.dataset.n, b.dataset.r, b.dataset.p, b.dataset.d));
 }
+
+// A plot has no name — its id is the hash of its boundary, and a hash prefix names nothing anyone
+// can recognise. Say where it is instead, off the boundary the chain already carries.
+const plotInfo = new Map();
+const latlon = c => `${c.lat.toFixed(4)}, ${c.lon.toFixed(4)}`;
+const nameLabel = id => {
+  if (!isPlotId(id)) return holdingLabel(id);
+  const pl = plotInfo.get(id);
+  // no boundary read back yet (a claim the map's cache has not caught up with): the id prefix is
+  // wrong-looking but at least it is the plot's own, not a label that fits every plot alike
+  return pl ? `${tr('Plot')} ${latlon(pl.centre)}` : holdingLabel(id);
+};
 
 // Manage a name: ONE modal with both actions (revalue/top-up + repoint), replacing the two
 // per-row icon buttons and their browser prompt() dialogs.
@@ -1636,9 +1653,11 @@ async function openNameModal(name, resolve, price, deposit) {
     <div id="nmScreen1" class="nmScr">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Manage holding')}</b><button id="nmX" class="icon">✕</button></div>
       <div>
-        ${kv(tr('Name'), mono(holdingLabel(name)))}
+        ${isPlotId(name)
+          ? (plotInfo.get(name) ? kv(tr('Where'), mono(latlon(plotInfo.get(name).centre))) : '')
+          : kv(tr('Name'), mono(nameLabel(name)))}
         ${kv(tr('Property type'), tr(isTickerId(name) ? 'Ticker' : isPlotId(name) ? 'Plot' : 'Holding'))}
-        ${isPlotId(name) ? `<div id="nmPlace"></div>` : ''}
+        ${isPlotId(name) && plotInfo.get(name) ? kv(tr('Area'), '≈ ' + Math.round(plotInfo.get(name).area).toLocaleString(getLang()) + ' ' + tr('m²')) : ''}
         ${kv(tr('Forced-buy price'), (price ? fmtFrc8(price) : '—') + ' FRC')}
         ${cov && deposit ? kv(tr('deposit'), fmtFrc8(deposit) + ' FRC') : ''}
         ${showRent ? kv(tr('rent burned'), rentStr + ' FRC') : ''}
@@ -1652,7 +1671,7 @@ async function openNameModal(name, resolve, price, deposit) {
     </div>
     <div id="nmScreen2" class="nmScr" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack" class="icon">←</button><b style="flex:1;text-align:center">${tr('Change price')}</b><button id="nmX2" class="icon">✕</button></div>
-      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${holdingLabel(name)}</div>
+      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${nameLabel(name)}</div>
       <label>${tr('Forced-buy price')} (FRC)<input id="nmMV" type="text" inputmode="decimal" value="${curV}"></label>
       <div id="nmVDelta" style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:14px"></div>
       <button id="nmMReval">${tr('Confirm')}</button>
@@ -1660,7 +1679,7 @@ async function openNameModal(name, resolve, price, deposit) {
     </div>
     <div id="nmScreen4" class="nmScr" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack4" class="icon">←</button><b style="flex:1;text-align:center">${tr('Link an asset')}</b><button id="nmX4" class="icon">✕</button></div>
-      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${holdingLabel(name)}</div>
+      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${nameLabel(name)}</div>
       <div class="sub" style="font-size:13px">${tr('Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.')}</div>
       <label>${tr('Asset')}<select id="nmBindSel"></select></label>
       <button id="nmBindGo">${tr('Confirm')}</button>
@@ -1668,7 +1687,7 @@ async function openNameModal(name, resolve, price, deposit) {
     </div>
     <div id="nmScreen3" class="nmScr" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack3" class="icon">←</button><b style="flex:1;text-align:center">${tr('Free the holding')}</b><button id="nmX3" class="icon">✕</button></div>
-      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${holdingLabel(name)}</div>
+      <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${nameLabel(name)}</div>
       <div class="sub" style="font-size:13px">${tr('You give up the name; its melting deposit returns to your wallet.')}</div>
       <button id="nmRelGo" class="ghost" style="color:var(--err)">${tr('Free the holding')}</button>
       <div id="nmRelLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
@@ -1745,7 +1764,7 @@ async function openNameModal(name, resolve, price, deposit) {
       // raising the price and charging for it.) Costs fees only; the payout comes straight back.
       await L.revalueName({ name, valueFrc: null, bind: tag, progress: p => logB(
         p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…') : tr('registered ✅')) });
-      toast(`${holdingLabel(name)}: ${tr('asset linked ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
+      toast(`${nameLabel(name)}: ${tr('asset linked ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
     } catch (e) { toast(e.message, 'err'); logB(e.message); bindGo.disabled = false; }
   };
   const relBtn = q(m, '#nmMRelease');
@@ -1804,7 +1823,7 @@ async function covNameSearch() {
     for (const id of ids) { const info = await L.resolveName(id); if (info) found.push({ id, info }); }
     if (!found.length) { res.innerHTML = `<div class="sub">${tr('free — claim it in Issue → Holdings')}</div>`; return; }
     res.innerHTML = `<table class="mkt"><tbody>${found.map(({ id, info }, i) => `<tr>
-      <td style="font-family:ui-monospace,monospace">${holdingLabel(id)}${isTickerId(id) ? ' · ' + tr('Ticker') : ''}${info.mine ? ' · ' + tr('yours') : ''}</td>
+      <td style="font-family:ui-monospace,monospace">${nameLabel(id)}${isTickerId(id) ? ' · ' + tr('Ticker') : ''}${info.mine ? ' · ' + tr('yours') : ''}</td>
       <td class="r">${fmtFrc8(info.price)} FRC</td>
       <td class="act-cell">${info.mine ? '' : `<button class="covBuy rbtn" data-i="${i}" title="${tr('Buy')}" aria-label="${tr('Buy')}">${SVG.buy}</button>`}</td>
     </tr>`).join('')}</tbody></table>`;
