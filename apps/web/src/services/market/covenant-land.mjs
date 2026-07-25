@@ -285,6 +285,15 @@ export async function revalueName({ name, valueFrc, progress = () => {} }) {
   picked.forEach((p, i) => signInput(tx, i + 1, p.spk, p.value, p.refheight, SIGHASH_ALL));
   progress('confirm');
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+  // Consensus makes the raise pay V to 0014{owner} — the per-name covenant key's address, which the
+  // wallet does NOT scan. Left there, raising looks like it costs the WHOLE new value instead of the
+  // difference (the money is recoverable from the seed, just invisible). Sweep it straight back.
+  const ownerKey = covKey(name), ownerLeaf = '21' + covOwnerPub(name) + 'ac';
+  const sweep = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, nExpireTime: 0, lockHeight: L,
+    vin: [opIn(`${txid}:0`)], vout: [out(V - FEE, ctx.spks[0])] };
+  const sh = segwitV0Sighash(sweep, 0, ownerLeaf, V, L, SIGHASH_ALL);
+  sweep.vin[0].witness = [signEcdsa(ownerKey, sh) + '01', '00' + ownerLeaf, ''];
+  await api('tx', { rawtx: serializeTx(sweep), kind: 'send' });
   save(load().map(x => x.name === name ? { ...x, value: Number(valueFrc) } : x));
   progress('done');
   return { txid, price: V };
