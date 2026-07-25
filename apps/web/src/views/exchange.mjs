@@ -1573,6 +1573,10 @@ const covMod = async () => (_covMod ??= await import('@/services/market/covenant
 // the active «Владение» backend: consensus covenant on a covenant-active network, else the relay MVP
 const nameMod = async () => isCovenantNet() ? covMod() : landMod();
 const fmtFrcN = v => (Number(BigInt(v)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 2 });
+// Full precision, as the balance table shows amounts. The holding panel is ALL about the drift
+// between the declaration, the melting deposit and the price — at two decimals that drift (and the
+// rent burned on a small name) rounds away to nothing.
+const fmtFrc8 = v => (Number(BigInt(v)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 });
 const nameLog = (sel, t) => { const el = $(sel); if (el) el.textContent = t; };
 
 // «Мои имена» (вкладка Баланс): управление — резолв ✎, переоценка/долив ±.
@@ -1607,8 +1611,8 @@ async function openNameModal(name, resolve, price, deposit, declared) {
   // deposit = the nominal FRC staked; price = its present (demurraged) value = the forced-buy price.
   // The gap is the rent that has burned off since the last top-up — shown here where you act on it.
   const rentKria = (cov && deposit && price) ? (BigInt(deposit) - BigInt(price)) : 0n;
-  const rentStr = rentKria > 0n ? fmtFrcN(rentKria.toString()) : '';
-  const showRent = !!rentStr && !/^0([.,]0*)?$/.test(rentStr);   // hide when it rounds to zero (freshly topped)
+  const rentStr = rentKria > 0n ? fmtFrc8(rentKria.toString()) : '';
+  const showRent = rentKria >= 10000n;   // below a fee's worth (0.0001 FRC) the rent is noise, not news
   // Since the claim locks EXACTLY the declared figure, the deposit repeats it — show that row only
   // when the two really differ: names claimed before the rent buffer was dropped (deposit = value +
   // a week of rent), and names recovered from chain (where the declaration is only reconstructed).
@@ -1624,8 +1628,8 @@ async function openNameModal(name, resolve, price, deposit, declared) {
         ${kv(tr('Name'), mono(name))}
         ${kv(tr('Property type'), tr('Holding'))}
         ${declared ? kv(tr('Self-assessed value'), Number(declared).toLocaleString(getLang(), { maximumFractionDigits: 8 }) + ' FRC') : ''}
-        ${kv(tr('Forced-buy price'), (price ? fmtFrcN(price) : '—') + ' FRC')}
-        ${cov && deposit && !dupDeposit ? kv(tr('deposit'), fmtFrcN(deposit) + ' FRC') : ''}
+        ${kv(tr('Forced-buy price'), (price ? fmtFrc8(price) : '—') + ' FRC')}
+        ${cov && deposit && !dupDeposit ? kv(tr('deposit'), fmtFrc8(deposit) + ' FRC') : ''}
         ${showRent ? kv(tr('rent burned'), rentStr + ' FRC') : ''}
       </div>
       <button id="nmMEdit" class="ghost">${tr('Change value')}</button>
