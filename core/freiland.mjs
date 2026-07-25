@@ -10,6 +10,7 @@
 // Держатель при регистрации/доливе запирает nominal == желаемую V в текущей высоте (distance 0,
 // свежие монеты стоят номинал), а landValue показывает, во что это превратилось позже.
 import { timeAdjustValue } from './demurrage.mjs';
+import { validGeohash } from './geohash.mjs';
 import { sha256d, ripemd160 } from './crypto.mjs';
 
 // FRC wpk-spk по компресс.-публичному ключу (то же, что wpkProgramHex кошелька): 0014 ‖
@@ -89,6 +90,37 @@ export const tickerId = sym => TICKER_NS + String(sym ?? '').trim().toUpperCase(
 export const isTickerId = id => typeof id === 'string' && id.startsWith(TICKER_NS);
 export const validTicker = sym => typeof sym === 'string' && TICKER_RE.test(sym);
 /** Strip the namespace for display: `ticker:USD` → `USD`, a plain name unchanged. */
-export const holdingLabel = id => isTickerId(id) ? id.slice(TICKER_NS.length) : id;
+export const holdingLabel = id =>
+  isTickerId(id) ? id.slice(TICKER_NS.length)
+  : isPlotId(id) ? (parsePlotId(id) ? parsePlotId(id).world + '/' + parsePlotId(id).cell : id)
+  : isWorldId(id) ? id.slice(WORLD_NS.length)
+  : id;
+// A PLOT is a cell of the geohash grid inside a WORLD: `plot:sunnyvale:ucfv0n01`. Fixed precision is
+// what makes the covenant enough on its own — same-size cells are either identical or disjoint, so
+// the registry's uniqueness of an id IS uniqueness of the ground, with no geometry in consensus.
+// A WORLD (`world:sunnyvale`) is a holding too: whoever holds it publishes the map's parameters and
+// can be replaced by buying it out, so stewardship needs no committee.
+export const PLOT_PRECISION = 8;                 // ≈ 20×20 m — a yard, a building footprint
+export const PLOT_NS = 'plot:';
+export const WORLD_NS = 'world:';
+export const worldId = name => WORLD_NS + String(name ?? '').trim().toLowerCase();
+export const plotId = (world, cell) => PLOT_NS + String(world).toLowerCase() + ':' + String(cell).toLowerCase();
+export const isPlotId = id => typeof id === 'string' && id.startsWith(PLOT_NS);
+export const isWorldId = id => typeof id === 'string' && id.startsWith(WORLD_NS);
+/** `plot:sunnyvale:ucfv0n01` → {world, cell}; null if it is not a plot id. */
+export const parsePlotId = id => {
+  if (!isPlotId(id)) return null;
+  const [world, cell, ...rest] = id.slice(PLOT_NS.length).split(':');
+  return (world && cell && !rest.length) ? { world, cell } : null;
+};
+export const validPlot = id => {
+  const p = parsePlotId(id);
+  return !!p && validLandName(p.world) && validGeohash(p.cell, PLOT_PRECISION);
+};
+
 /** Is this a well-formed holding id of any kind? */
-export const validHoldingId = id => isTickerId(id) ? validTicker(id.slice(TICKER_NS.length)) : validLandName(id);
+export const validHoldingId = id =>
+  isTickerId(id) ? validTicker(id.slice(TICKER_NS.length))
+  : isPlotId(id) ? validPlot(id)
+  : isWorldId(id) ? validLandName(id.slice(WORLD_NS.length))
+  : validLandName(id);

@@ -16,7 +16,8 @@ import { frcLeg, refundGiven } from '@core/swap.mjs';
 import { paymentHashOf } from '@core/htlc.mjs';
 import { btcHtlcClaim, btcAddress } from '@core/btc.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
-import { holdingLabel, isTickerId, tickerId, validTicker } from '@core/freiland.mjs';
+import { holdingLabel, isTickerId, isPlotId, tickerId, plotId, validTicker, validPlot, PLOT_PRECISION } from '@core/freiland.mjs';
+import { geohashDecode, geohashSize } from '@core/geohash.mjs';
 import QRCode from 'qrcode';
 import { loadMySwaps, putMySwap, dropMySwap, loadP2p, putP2p, dropP2p, addBtcNonce, addFeeTxid, lsKey } from '@/services/storage.mjs';
 import { refreshPushSubs } from '@/services/push.mjs';
@@ -1637,7 +1638,9 @@ async function openNameModal(name, resolve, price, deposit) {
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Manage holding')}</b><button id="nmX" class="icon">✕</button></div>
       <div>
         ${kv(tr('Name'), mono(holdingLabel(name)))}
-        ${kv(tr('Property type'), tr(isTickerId(name) ? 'Ticker' : 'Holding'))}
+        ${kv(tr('Property type'), tr(isTickerId(name) ? 'Ticker' : isPlotId(name) ? 'Plot' : 'Holding'))}
+        ${isPlotId(name) ? (() => { try { const p = name.split(':'), c = geohashDecode(p[2]), z = geohashSize(p[2]);
+            return kv(tr('Place'), `${c.lat.toFixed(5)}, ${c.lon.toFixed(5)} · ≈ ${z.widthM}×${z.heightM} ${tr('m')}`); } catch { return ''; } })() : ''}
         ${kv(tr('Forced-buy price'), (price ? fmtFrc8(price) : '—') + ' FRC')}
         ${cov && deposit ? kv(tr('deposit'), fmtFrc8(deposit) + ' FRC') : ''}
         ${showRent ? kv(tr('rent burned'), rentStr + ' FRC') : ''}
@@ -1795,8 +1798,9 @@ async function covNameSearch() {
   // know which id to hash. Canonical case per kind, same as the claim form.
   const ids = [];
   if (covKind === 'ticker') { if (validTicker(name.toUpperCase())) ids.push(tickerId(name)); }
+  else if (covKind === 'plot') { const id = plotId(($('#covWorld')?.value || 'demo').trim(), name); if (validPlot(id)) ids.push(id); }
   else if (L.validLandName(name.toLowerCase())) ids.push(name.toLowerCase());
-  if (!ids.length) { res.innerHTML = `<div class="sub">${tr(covKind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : 'bad name (1–32: a-z 0-9 _ -)')}</div>`; return; }
+  if (!ids.length) { res.innerHTML = `<div class="sub">${tr(covKind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : covKind === 'plot' ? 'bad cell' : 'bad name (1–32: a-z 0-9 _ -)')}</div>`; return; }
   res.innerHTML = `<div class="sub">${tr('looking up…')}</div>`;
   try {
     const found = [];
@@ -1881,9 +1885,10 @@ export function renderExchange(el) {
       ${cov ? `<div class="seg" id="covKind">
         <button data-k="name" class="on">${tr('name (human-readable)')}</button>
         <button data-k="ticker">${tr('ticker')}</button>
-        <button data-k="plot" disabled title="${tr('coming soon')}">${tr('plot')}</button>
+        <button data-k="plot">${tr('plot')}</button>
       </div>
       <div class="sub" id="covKindHint" style="font-size:12px;margin:2px 0">🗺️ ${tr('Find a name to buy — the covenant registry is keyed by name, there is no public browse.')}</div>
+      <label id="covWorldLbl" hidden>${tr('World')}<input id="covWorld" type="text" value="demo" autocomplete="off" spellcheck="false"></label>
       <div class="row"><input id="covNameQ" type="text" autocomplete="off" spellcheck="false" placeholder="${tr('name')}"><button id="covNameFind">${tr('Find')}</button></div>
       <div id="covNameRes"></div>
       <div id="nameMktLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`
@@ -1911,16 +1916,17 @@ export function renderExchange(el) {
         if (qin.value !== want) { const p = qin.selectionStart; qin.value = want; try { qin.setSelectionRange(p, p); } catch {} }
       };
       const paintCovKind = () => {
-        const tick = covKind === 'ticker';
+        const tick = covKind === 'ticker', plot = covKind === 'plot';
+        const wl = $('#covWorldLbl'); if (wl) wl.hidden = !plot;
         if (qin) {
-          qin.placeholder = tick ? 'USD' : tr('name');
-          qin.maxLength = tick ? 10 : 32;
+          qin.placeholder = tick ? 'USD' : plot ? 'ucfv0n01' : tr('name');
+          qin.maxLength = tick ? 10 : plot ? PLOT_PRECISION : 32;
           qin.setAttribute('autocapitalize', tick ? 'characters' : 'none');
           qin.value = ''; qin.dispatchEvent(new Event('input'));
         }
         const res = $('#covNameRes'); if (res) res.innerHTML = '';
         const hint = $('#covKindHint');
-        if (hint) hint.textContent = (tick ? '🏷 ' : '🗺️ ') + tr(tick
+        if (hint) hint.textContent = (tick ? '🏷 ' : '🗺️ ') + tr(plot ? 'Find a plot to buy — a cell is held from the community, so it can be taken over at the price its holder set.' : tick
           ? 'Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.'
           : 'Find a name to buy — the covenant registry is keyed by name, there is no public browse.');
       };

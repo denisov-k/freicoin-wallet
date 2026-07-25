@@ -2,6 +2,19 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  "Plot": "Участок",
+  "World": "Мир",
+  "Place": "Место",
+  "Claim the plot": "Занять участок",
+  "📍 Where I am": "📍 Где я",
+  "m": "м",
+  "bad cell": "плохая ячейка",
+  "a cell is 8 characters — tap «Where I am» or type one": "ячейка — 8 знаков: нажмите «Где я» или введите вручную",
+  "locating…": "определяю место…",
+  "could not get your position — type a cell instead": "не удалось определить место — введите ячейку вручную",
+  "this device cannot report a position": "это устройство не сообщает место",
+  "🗺 A plot is one cell of the map, held from the community: the id IS the place, so same-size cells never overlap. Your deposit melts as rent and anyone can take the cell at the price you set.": "🗺 Участок — одна ячейка карты, взятая «в аренду у общины»: идентификатор и есть место, поэтому ячейки одного размера никогда не пересекаются. Залог тает как рента, и любой может забрать ячейку по вашей же цене.",
+  "Find a plot to buy — a cell is held from the community, so it can be taken over at the price its holder set.": "Найдите участок для выкупа — ячейка держится «в аренду у общины», поэтому её можно перехватить по цене держателя.",
   "Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.": "Найдите символ для выкупа. Тикер тоже держится «в аренду у общины», поэтому его можно перехватить по цене, которую назначил держатель.",
   "you hold no assets yet": "у вас пока нет активов",
   "Link an asset": "Привязать актив",
@@ -369,6 +382,19 @@ const RU = {
 };
 
 const ES = {
+  "Plot": "Parcela",
+  "World": "Mundo",
+  "Place": "Lugar",
+  "Claim the plot": "Reservar la parcela",
+  "📍 Where I am": "📍 Dónde estoy",
+  "m": "m",
+  "bad cell": "celda inválida",
+  "a cell is 8 characters — tap «Where I am» or type one": "una celda son 8 caracteres: pulsa «Dónde estoy» o escríbela",
+  "locating…": "localizando…",
+  "could not get your position — type a cell instead": "no se pudo obtener tu posición: escribe una celda",
+  "this device cannot report a position": "este dispositivo no informa la posición",
+  "🗺 A plot is one cell of the map, held from the community: the id IS the place, so same-size cells never overlap. Your deposit melts as rent and anyone can take the cell at the price you set.": "🗺 Una parcela es una celda del mapa, tenida en arriendo de la comunidad: el identificador ES el lugar, así que celdas del mismo tamaño nunca se solapan. Tu depósito se funde como renta y cualquiera puede tomar la celda al precio que fijes.",
+  "Find a plot to buy — a cell is held from the community, so it can be taken over at the price its holder set.": "Busca una parcela para comprar: la celda se tiene en arriendo de la comunidad, así que puede tomarse al precio de su tenedor.",
   "Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.": "Busca un símbolo para comprar. El símbolo también se tiene en arriendo de la comunidad, así que puede tomarse al precio que fijó su tenedor.",
   "you hold no assets yet": "aún no tienes activos",
   "Link an asset": "Vincular un activo",
@@ -914,6 +940,19 @@ const ES = {
 };
 
 const DE = {
+  "Plot": "Parzelle",
+  "World": "Welt",
+  "Place": "Ort",
+  "Claim the plot": "Parzelle beanspruchen",
+  "📍 Where I am": "📍 Wo ich bin",
+  "m": "m",
+  "bad cell": "ungültige Zelle",
+  "a cell is 8 characters — tap «Where I am» or type one": "eine Zelle hat 8 Zeichen — tippe «Wo ich bin» oder gib sie ein",
+  "locating…": "ermittle Position…",
+  "could not get your position — type a cell instead": "Position nicht ermittelt — gib eine Zelle ein",
+  "this device cannot report a position": "dieses Gerät meldet keine Position",
+  "🗺 A plot is one cell of the map, held from the community: the id IS the place, so same-size cells never overlap. Your deposit melts as rent and anyone can take the cell at the price you set.": "🗺 Eine Parzelle ist eine Zelle der Karte, von der Gemeinschaft gehalten: die Kennung IST der Ort, gleich große Zellen überlappen daher nie. Deine Einlage schmilzt als Miete, und jeder kann die Zelle zu deinem Preis übernehmen.",
+  "Find a plot to buy — a cell is held from the community, so it can be taken over at the price its holder set.": "Suche eine Parzelle zum Übernehmen — die Zelle wird von der Gemeinschaft gehalten und kann zum Preis ihres Inhabers übernommen werden.",
   "Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.": "Suche ein Kürzel zum Übernehmen. Auch ein Kürzel wird von der Gemeinschaft gehalten — man kann es zu dem Preis übernehmen, den sein Inhaber gesetzt hat.",
   "you hold no assets yet": "du hältst noch keine Assets",
   "Link an asset": "Asset verknüpfen",
@@ -1459,6 +1498,19 @@ const DE = {
 };
 
 const FR = {
+  "Plot": "Parcelle",
+  "World": "Monde",
+  "Place": "Lieu",
+  "Claim the plot": "Réserver la parcelle",
+  "📍 Where I am": "📍 Où je suis",
+  "m": "m",
+  "bad cell": "cellule invalide",
+  "a cell is 8 characters — tap «Where I am» or type one": "une cellule fait 8 caractères — touchez «Où je suis» ou saisissez-la",
+  "locating…": "localisation…",
+  "could not get your position — type a cell instead": "position introuvable — saisissez une cellule",
+  "this device cannot report a position": "cet appareil ne fournit pas de position",
+  "🗺 A plot is one cell of the map, held from the community: the id IS the place, so same-size cells never overlap. Your deposit melts as rent and anyone can take the cell at the price you set.": "🗺 Une parcelle est une cellule de la carte, tenue en location auprès de la communauté : l’identifiant EST le lieu, donc des cellules de même taille ne se chevauchent jamais. Votre dépôt fond comme loyer et chacun peut prendre la cellule au prix que vous fixez.",
+  "Find a plot to buy — a cell is held from the community, so it can be taken over at the price its holder set.": "Cherchez une parcelle à racheter — la cellule est tenue en location auprès de la communauté et peut être reprise au prix de son détenteur.",
   "Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.": "Cherchez un symbole à racheter. Un symbole se tient aussi en location auprès de la communauté : on peut le reprendre au prix fixé par son détenteur.",
   "you hold no assets yet": "vous ne détenez encore aucun actif",
   "Link an asset": "Lier un actif",
@@ -2004,6 +2056,19 @@ const FR = {
 };
 
 const PT = {
+  "Plot": "Parcela",
+  "World": "Mundo",
+  "Place": "Lugar",
+  "Claim the plot": "Reservar a parcela",
+  "📍 Where I am": "📍 Onde estou",
+  "m": "m",
+  "bad cell": "célula inválida",
+  "a cell is 8 characters — tap «Where I am» or type one": "uma célula tem 8 caracteres — toque «Onde estou» ou digite",
+  "locating…": "localizando…",
+  "could not get your position — type a cell instead": "não foi possível obter sua posição — digite uma célula",
+  "this device cannot report a position": "este dispositivo não informa a posição",
+  "🗺 A plot is one cell of the map, held from the community: the id IS the place, so same-size cells never overlap. Your deposit melts as rent and anyone can take the cell at the price you set.": "🗺 Uma parcela é uma célula do mapa, mantida em arrendamento da comunidade: o identificador É o lugar, então células do mesmo tamanho nunca se sobrepõem. Seu depósito derrete como aluguel e qualquer um pode tomar a célula pelo preço que você definir.",
+  "Find a plot to buy — a cell is held from the community, so it can be taken over at the price its holder set.": "Busque uma parcela para comprar — a célula é mantida em arrendamento da comunidade e pode ser tomada pelo preço do detentor.",
   "Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.": "Busque um símbolo para comprar. O símbolo também é mantido em arrendamento da comunidade, então pode ser tomado pelo preço que seu detentor definiu.",
   "you hold no assets yet": "você ainda não tem ativos",
   "Link an asset": "Vincular um ativo",
@@ -2549,6 +2614,19 @@ const PT = {
 };
 
 const ZH = {
+  "Plot": "地块",
+  "World": "世界",
+  "Place": "位置",
+  "Claim the plot": "占用地块",
+  "📍 Where I am": "📍 我的位置",
+  "m": "米",
+  "bad cell": "无效单元",
+  "a cell is 8 characters — tap «Where I am» or type one": "单元为 8 个字符 — 点「我的位置」或手动输入",
+  "locating…": "正在定位…",
+  "could not get your position — type a cell instead": "无法获取位置 — 请手动输入单元",
+  "this device cannot report a position": "此设备无法提供位置",
+  "🗺 A plot is one cell of the map, held from the community: the id IS the place, so same-size cells never overlap. Your deposit melts as rent and anyone can take the cell at the price you set.": "🗺 地块是地图上的一个单元，向社区租用：标识符就是位置，因此同尺寸单元永不重叠。押金作为租金融化，任何人都能按你设定的价格接手。",
+  "Find a plot to buy — a cell is held from the community, so it can be taken over at the price its holder set.": "查找可购买的地块 — 单元向社区租用，可按持有者设定的价格接手。",
   "Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.": "查找可购买的代号。代号同样向社区租用，因此可以按持有者设定的价格接手。",
   "you hold no assets yet": "你还没有资产",
   "Link an asset": "关联资产",

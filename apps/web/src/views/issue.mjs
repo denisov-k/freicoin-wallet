@@ -10,13 +10,16 @@ import { armOverlay, closeOverlay } from '@/components/modal.mjs';
 import { tr, getLang } from '@/services/i18n.mjs';
 import { api, ctx, isCovenantNet } from '@/state/market-ctx.mjs';
 import { mvRefresh, paintMyNames } from '@/views/exchange.mjs';
-import { tickerId } from '@core/freiland.mjs';
+import { tickerId, plotId, PLOT_PRECISION } from '@core/freiland.mjs';
+import { geohashEncode, geohashDecode, geohashSize } from '@core/geohash.mjs';
 
 let mode = 'a';   // 'a' = currency (amounts), 't' = tokens (unique items), 'n' = Freiland holding
 let kind = 'name';   // holding sub-kind: 'name' (human-readable) | 'ticker' (asset symbol)
 // The claimed id carries the namespace — a ticker is `ticker:USD`, a name is bare. Everything else
 // (covenant, rent, forced buy) is identical, so the two kinds share the whole pipeline.
-const holdingId = raw => kind === 'ticker' ? tickerId(raw) : raw;
+const holdingId = raw => kind === 'ticker' ? tickerId(raw)
+  : kind === 'plot' ? plotId(($('#iWorld')?.value || 'demo').trim(), raw)
+  : raw;
 
 async function issue() {
   try {
@@ -33,7 +36,7 @@ async function issue() {
       const L = isCovenantNet()
         ? await import('@/services/market/covenant-land.mjs')
         : await import('@/services/market/land.mjs');
-      if (!L.validHoldingId(name)) throw new Error(tr(kind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : 'bad name (1–32: a-z 0-9 _ -)'));
+      if (!L.validHoldingId(name)) throw new Error(tr(kind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : kind === 'plot' ? 'bad cell' : 'bad name (1–32: a-z 0-9 _ -)'));
       const v = num($('#iVal')?.value ?? '');
       const min = await L.minValueFrc();
       if (!(v >= min)) throw new Error(`${tr('minimum value is')} ${min} FRC`);
@@ -85,9 +88,14 @@ export function openIssueModal() {
     <div class="seg" id="iLandKind" hidden>
       <button data-k="name" class="on">${tr('name (human-readable)')}</button>
       <button data-k="ticker">${tr('ticker')}</button>
-      <button data-k="plot" disabled title="${tr('coming soon')}">${tr('plot')}</button>
+      <button data-k="plot">${tr('plot')}</button>
     </div>
     <p class="sub" id="iModeHint" style="font-size:12px">${tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.')}</p>
+    <div id="iPlotBox" class="stack" hidden>
+      <label>${tr('World')}<input id="iWorld" type="text" value="demo" autocomplete="off" spellcheck="false"></label>
+      <div class="row"><button id="iHere" class="ghost">${tr('📍 Where I am')}</button></div>
+      <div class="sub" id="iCellInfo" style="font-size:12px"></div>
+    </div>
     <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="${tr('e.g. labor-hours')}"></label>
     <div id="iFungible" class="stack">
       <div class="row">
@@ -139,25 +147,54 @@ export function openIssueModal() {
   });
   function paintKind() {
     const tick = mode === 'n' && kind === 'ticker';
+    const plot = mode === 'n' && kind === 'plot';
+    const box = $('#iPlotBox'); if (box) box.hidden = !plot;
     const inp = /** @type {HTMLInputElement} */ ($('#iName'));
-    inp.maxLength = mode !== 'n' ? 24 : tick ? 10 : 32;
-    inp.placeholder = mode !== 'n' ? tr('e.g. labor-hours') : tick ? 'USD' : 'alice';
+    inp.maxLength = mode !== 'n' ? 24 : tick ? 10 : plot ? PLOT_PRECISION : 32;
+    inp.placeholder = mode !== 'n' ? tr('e.g. labor-hours') : tick ? 'USD' : plot ? 'ucfv0n01' : 'alice';
     // A holding id is canonical, and the mobile keyboard fights it: it capitalises the first letter
     // of a name (which must be lower-case) and offers lower-case for a ticker (which must be upper).
     // Force the right shape instead of scolding the user.
     inp.setAttribute('autocapitalize', mode !== 'n' ? 'sentences' : tick ? 'characters' : 'none');
+    if (plot) paintCell();
     inp.setAttribute('autocorrect', 'off');
     inp.setAttribute('spellcheck', 'false');
-    $('#issueBtn').textContent = mode === 'n' ? tr(tick ? 'Claim the ticker' : 'Claim the name') : tr('Issue asset');
+    $('#issueBtn').textContent = mode === 'n' ? tr(tick ? 'Claim the ticker' : plot ? 'Claim the plot' : 'Claim the name') : tr('Issue asset');
     $('#iModeHint').textContent = mode === 't'
       ? tr('Unique named items — tickets, memberships, keys. They do not melt, travel whole on one coin, and names must not repeat.')
       : mode === 'n'
-        ? (tick
+        ? (plot
+          ? tr('🗺 A plot is one cell of the map, held from the community: the id IS the place, so same-size cells never overlap. Your deposit melts as rent and anyone can take the cell at the price you set.')
+          : tick
           ? tr('🏷 A ticker is the short symbol an asset trades under. Held from the community like a name: nothing stops two issuers picking «USD», so the symbol goes to whoever values it enough to pay the rent.')
           : tr('🗺️ Freiland — a name held from the community: your deposit melts as rent, and anyone can buy it at your self-assessed price.'))
         : tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.');
     if (mode === 'n') $('#iName').dispatchEvent(new Event('input'));   // сразу проверить занятость
   }
+  // what the typed cell actually IS — a place on the ground, not a code
+  function paintCell() {
+    const el = $('#iCellInfo'); if (!el) return;
+    const cell = ($('#iName')?.value || '').trim().toLowerCase();
+    if (cell.length !== PLOT_PRECISION) { el.textContent = tr('a cell is 8 characters — tap «Where I am» or type one'); return; }
+    try {
+      const c = geohashDecode(cell), s = geohashSize(cell);
+      el.textContent = `${c.lat.toFixed(5)}, ${c.lon.toFixed(5)} · ≈ ${s.widthM}×${s.heightM} ${tr('m')}`;
+    } catch { el.textContent = tr('bad cell'); }
+  }
+  const hereBtn = q(m, '#iHere');
+  if (hereBtn) hereBtn.onclick = () => {
+    if (!navigator.geolocation) return toast(tr('this device cannot report a position'), 'err');
+    const el = $('#iCellInfo'); if (el) el.textContent = tr('locating…');
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const inp = /** @type {HTMLInputElement} */ ($('#iName'));
+        inp.value = geohashEncode(pos.coords.latitude, pos.coords.longitude, PLOT_PRECISION);
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+      },
+      () => { const e2 = $('#iCellInfo'); if (e2) e2.textContent = tr('could not get your position — type a cell instead'); },
+      { enableHighAccuracy: true, timeout: 10000 });
+  };
+
   // Freiland-режим: живая проверка доступности имени + годовая рента от заявленной V
   let availT = null;
   q(m, '#iName').addEventListener('input', () => {
@@ -172,6 +209,7 @@ export function openIssueModal() {
       try { inp.setSelectionRange(pos, pos); } catch {}
     }
     const el = $('#iAvail'); if (el) { el.textContent = ''; el.style.color = ''; }
+    if (kind === 'plot') paintCell();
     clearTimeout(availT);
     const name = inp.value.trim();
     if (!name) return;
@@ -180,7 +218,7 @@ export function openIssueModal() {
         ? await import('@/services/market/covenant-land.mjs')
         : await import('@/services/market/land.mjs');
       const id = holdingId(name);
-      if (!L.validHoldingId(id)) { const e2 = $('#iAvail'); if (e2) { e2.textContent = tr(kind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : 'bad name (1–32: a-z 0-9 _ -)'); e2.style.color = 'var(--err)'; } return; }
+      if (!L.validHoldingId(id)) { const e2 = $('#iAvail'); if (e2) { e2.textContent = tr(kind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : kind === 'plot' ? 'bad cell' : 'bad name (1–32: a-z 0-9 _ -)'); e2.style.color = 'var(--err)'; } return; }
       const addr = await L.resolveName(id); if (q(m, '#iName').value.trim() !== name) return;
       const e2 = $('#iAvail'); if (!e2) return;
       // A name taken by THIS seed (mine) is not "taken" from the owner's view — the chain keeps only
