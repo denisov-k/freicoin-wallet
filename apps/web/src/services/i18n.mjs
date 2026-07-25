@@ -2,6 +2,7 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  "you hold no assets yet": "у вас пока нет активов",
   "Link an asset": "Привязать актив",
   "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "Объявите, какой актив обозначает этот символ. После этого любой сможет проверить связь по цепи: объявление едет в той же транзакции, что держит тикер, поэтому сделать его может только держатель.",
   "you hold no asset named like this symbol": "у вас нет актива с таким названием",
@@ -367,6 +368,7 @@ const RU = {
 };
 
 const ES = {
+  "you hold no assets yet": "aún no tienes activos",
   "Link an asset": "Vincular un activo",
   "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "Declara qué activo representa este símbolo. Cualquiera podrá verificarlo contra la cadena: la declaración viaja en la transacción que sostiene el símbolo, así que solo su tenedor puede hacerla.",
   "you hold no asset named like this symbol": "no tienes ningún activo con ese nombre",
@@ -910,6 +912,7 @@ const ES = {
 };
 
 const DE = {
+  "you hold no assets yet": "du hältst noch keine Assets",
   "Link an asset": "Asset verknüpfen",
   "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "Gib bekannt, für welches Asset dieses Kürzel steht. Danach kann es jeder gegen die Kette prüfen: die Bekanntgabe reist in der Transaktion, die das Kürzel hält — nur der Inhaber kann sie machen.",
   "you hold no asset named like this symbol": "du hältst kein Asset mit diesem Namen",
@@ -1453,6 +1456,7 @@ const DE = {
 };
 
 const FR = {
+  "you hold no assets yet": "vous ne détenez encore aucun actif",
   "Link an asset": "Lier un actif",
   "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "Annoncez quel actif ce symbole désigne. Chacun pourra le vérifier sur la chaîne : l’annonce voyage dans la transaction qui détient le symbole, seul son détenteur peut donc la faire.",
   "you hold no asset named like this symbol": "vous ne détenez aucun actif portant ce nom",
@@ -1996,6 +2000,7 @@ const FR = {
 };
 
 const PT = {
+  "you hold no assets yet": "você ainda não tem ativos",
   "Link an asset": "Vincular um ativo",
   "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "Anuncie qual ativo este símbolo representa. Qualquer um poderá verificar na cadeia: o anúncio viaja na transação que mantém o símbolo, então só o detentor pode fazê-lo.",
   "you hold no asset named like this symbol": "você não tem nenhum ativo com esse nome",
@@ -2539,6 +2544,7 @@ const PT = {
 };
 
 const ZH = {
+  "you hold no assets yet": "你还没有资产",
   "Link an asset": "关联资产",
   "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "声明该代号代表哪个资产。之后任何人都能对链验证：声明随持有代号的交易一起写入，因此只有持有者才能做出。",
   "you hold no asset named like this symbol": "你没有与该代号同名的资产",

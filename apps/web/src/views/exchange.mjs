@@ -20,7 +20,7 @@ import { holdingLabel, isTickerId, tickerId, validTicker } from '@core/freiland.
 import QRCode from 'qrcode';
 import { loadMySwaps, putMySwap, dropMySwap, loadP2p, putP2p, dropP2p, addBtcNonce, addFeeTxid, lsKey } from '@/services/storage.mjs';
 import { refreshPushSubs } from '@/services/push.mjs';
-import { api, ctx, p2pKey, HOST_TAG, decimalsOf, scaleOf, assetName, verifiedTags, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND, VB_HTLC_FUND, isCovenantNet } from '@/state/market-ctx.mjs';
+import { api, ctx, p2pKey, HOST_TAG, decimalsOf, scaleOf, assetName, verifiedTickers, rateOf, swapNet, btcFeeFor, VB_HTLC_SPEND, VB_HTLC_FUND, isCovenantNet } from '@/state/market-ctx.mjs';
 import { opIn, signInput, committedOutpoints, myCoinsOf, freeFrcKria, sendFrcToSpk, hostFeeCoin, lockAssetToHtlc, signRangedGive, signLadder, LADDER_SPAN } from '@/services/market/swap-lib.mjs';
 import { btcHrp, btcAcctAddr, btcFundHtlc, btcToStr, refreshBtc,
   mvBtc, mvBtcAddress, mvBtcValidAddr, mvSendBtc, mvBtcSendFee, mvBtcMax, initBtcAccount, btcResetAcct } from '@/services/market/btc-account.mjs';
@@ -167,9 +167,8 @@ async function doRefresh() {
   ctx.state = state;                          // mirror for the extracted modules (read via ctx)
   // Which symbols are vouched for by their ticker holder — checked against the chain, cached inside
   // the service. Repaints follow on the next poll, so an unverified asset is never marked by mistake.
-  if (isCovenantNet()) covMod().then(L => L.verifiedAssetTags(
-    Object.entries(r.assetDefs || {}).map(([tag, d]) => ({ tag, name: d?.name })).filter(a => a.name)
-  )).then(set => { verifiedTags.clear(); set.forEach(t => verifiedTags.add(t)); }).catch(() => {});
+  if (isCovenantNet()) covMod().then(L => L.verifiedSymbols())
+    .then(map => { verifiedTickers.clear(); map.forEach((sym, tag) => verifiedTickers.set(tag, sym)); }).catch(() => {});
   // cache relay defs for the light client's next boot (seedDefs) — rates for history valuation only.
   // Deliberately WITHOUT decimals: display decimals are self-certified on-chain, so they must come from
   // the trustless scan or fresh relay info — never a cached seed (a stale one rendered "1 Test1" as "0.0001").
@@ -1722,14 +1721,13 @@ async function openNameModal(name, resolve, price, deposit) {
   };
   const bindBtn = q(m, '#nmMBind');
   if (bindBtn) bindBtn.onclick = async () => {
-    const sym = holdingLabel(name).toUpperCase();
-    // only an asset whose OWN name is the symbol can ever verify — offering the rest would just
-    // publish a claim that no checker will accept
-    const opts = (await mvOwnedAssets()).filter(a => String(a.name).replace(' ✓', '').trim().toUpperCase() === sym);
+    // ANY asset may be given a symbol — the whole point of a ticker is that «Acme Dollar» can trade
+    // as ACD. The announcement carries the symbol itself, checked by hashing it back to this holding.
+    const opts = await mvOwnedAssets();
     const sel = $('#nmBindSel');
     if (sel) sel.innerHTML = opts.length
       ? opts.map(a => `<option value="${a.tag}">${a.name} · ${a.tag.slice(0, 8)}…</option>`).join('')
-      : `<option value="">${tr('you hold no asset named like this symbol')}</option>`;
+      : `<option value="">${tr('you hold no assets yet')}</option>`;
     const go = $('#nmBindGo'); if (go) go.disabled = !opts.length;
     showScreen(4);
   };

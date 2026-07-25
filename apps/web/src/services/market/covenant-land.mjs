@@ -79,13 +79,24 @@ async function decName(payloadHex) {
 // no signature: it rides in the very transaction that created the holding's current output, and the
 // author of that transaction IS the current holder (a forced buy replaces the output, so the new
 // owner writes their own). Verification is one registry lookup + one raw-tx read — no scanning.
-const TKR1 = '544b5231';                                  // 'TKR1' — ticker → assetTag announcement
-const bindOut = tag => ({ value: 0n, scriptPubKey: '6a' + (4 + 20).toString(16) + TKR1 + tag, assetTag: HOST_TAG });
+const TKR1 = '544b5231';                                  // 'TKR1' — «this symbol stands for that asset»
+// Payload: TKR1 ‖ assetTag(20) ‖ symbol(utf8). The symbol travels IN CLEAR and is self-certifying:
+// a reader checks sha256('ticker:'+symbol) against the registry entry the announcement was found
+// under, so a wrong symbol simply fails to match. That is what frees an asset from having to be
+// NAMED like its ticker — «Acme Dollar» can trade as ACD, which is the point of having symbols.
+const bindOut = (tag, symbol) => {
+  const sym = Buffer.from(String(symbol), 'utf8').toString('hex');
+  const len = (4 + 20 + sym.length / 2).toString(16).padStart(2, '0');
+  return { value: 0n, scriptPubKey: '6a' + len + TKR1 + tag + sym, assetTag: HOST_TAG };
+};
 const readBind = tx => {
   for (const o of tx.vout || []) {
     const spk = o.scriptPubKey || '';
     const i = spk.indexOf(TKR1);
-    if (spk.startsWith('6a') && i > 0 && spk.length >= i + 8 + 40) return spk.slice(i + 8, i + 8 + 40);
+    if (!spk.startsWith('6a') || i <= 0 || spk.length < i + 8 + 40) continue;
+    const tag = spk.slice(i + 8, i + 8 + 40);
+    const sym = Buffer.from(spk.slice(i + 8 + 40), 'hex').toString('utf8');
+    if (tag && sym) return { tag, symbol: sym };
   }
   return null;
 };
@@ -114,7 +125,7 @@ export async function registerName({ name, valueFrc, bind = null, progress = () 
   // (it getting cheaper is exactly the signal to top up).
   const deposit = V;
   progress('lock');
-  const extra = [await frlnOut(name), ...(bind ? [bindOut(bind)] : [])];
+  const extra = [await frlnOut(name), ...(bind ? [bindOut(bind, holdingLabel(name))] : [])];
   const { txid } = await sendFrcToSpk(covSpkOf(name), deposit, extra);
   const rec = { name, value: Number(valueFrc), bind, claimTxid: txid, at: Date.now() };
   save(load().filter(x => x.name !== name).concat(rec));
@@ -200,28 +211,27 @@ export async function recoverFromChain() {
   return added;
 }
 
-/** VERIFY that a symbol vouches for an asset — the whole point of holding a ticker.
- *  Given an asset that calls itself «USD» with tag T, anyone can check, trusting nobody:
- *    sha256('ticker:USD') → registry entry → the tx that created its output → its TKR1 tag == T?
- *  No signature is needed: the author of that transaction IS the current holder (a forced buy
- *  replaces the output, so the taker publishes their own claim). The symbol itself never has to be
- *  decrypted — the verifier already knows it, it is the asset's own self-certified name.
- *  @param {{tag:string, name:string}[]} assets  @returns {Promise<Set<string>>} tags that check out */
-let _vCache = { at: 0, set: new Set() };
-export async function verifiedAssetTags(assets) {
-  if (Date.now() - _vCache.at < 60000) return _vCache.set;
-  const set = new Set();
-  for (const a of assets || []) {
-    if (!a?.tag || !a?.name || !validTicker(String(a.name).toUpperCase())) continue;
-    try {
-      const e = (await idx({ namehash: nameHashOf(tickerId(a.name)) }))[0];
-      if (!e) continue;
-      const tx = parseTx((await api('rawFrcTx', { txid: (e.outpoint || '').split(':')[0] })).rawtx);
-      if (readBind(tx) === a.tag) set.add(a.tag);
-    } catch {}
-  }
-  _vCache = { at: Date.now(), set };
-  return set;
+/** VERIFIED symbols, straight from the chain: Map(assetTag → symbol). For every live holding we
+ *  read the transaction that created its current output and take the TKR1 announcement from it —
+ *  authentic by construction, since that transaction's author IS the current holder (a forced buy
+ *  replaces the output, so a taker publishes their own claim and inherits nobody's word). The
+ *  announced symbol is checked by hashing it back to the registry key it was found under, so it
+ *  cannot claim to be a symbol it does not hold. Cached: this runs on every market refresh. */
+let _vCache = { at: 0, map: new Map() };
+export async function verifiedSymbols() {
+  if (Date.now() - _vCache.at < 60000) return _vCache.map;
+  const map = new Map();
+  try {
+    for (const e of (await idx()) || []) {
+      const txid = (e.outpoint || '').split(':')[0]; if (!txid) continue;
+      let b; try { b = readBind(parseTx((await api('rawFrcTx', { txid })).rawtx)); } catch { continue; }
+      if (!b || !validTicker(b.symbol.toUpperCase())) continue;
+      if (nameHashOf(tickerId(b.symbol)) !== e.namehash) continue;   // the symbol must hash to THIS entry
+      map.set(b.tag, b.symbol.toUpperCase());
+    }
+    _vCache = { at: Date.now(), map };
+  } catch {}
+  return map;
 }
 
 /** My names + their live price (= present value of the melting deposit, what a forced buy pays). */
@@ -365,7 +375,7 @@ export async function revalueName({ name, valueFrc, bind = undefined, progress =
     vin: [opIn(`${c.txid}:${c.vout}`), ...picked.map(p => opIn(p.outpoint))],
     vout: [ out(V, '0014' + owner), out(newDeposit, covSpkOf(name)),
             await frlnOut(name),                              // encrypted name book (cross-device recovery)
-            ...(((bind === undefined ? rec.bind : bind)) ? [bindOut(bind === undefined ? rec.bind : bind)] : []),
+            ...(((bind === undefined ? rec.bind : bind)) ? [bindOut(bind === undefined ? rec.bind : bind, holdingLabel(name))] : []),
             ...(change > 0n ? [out(change, ctx.spks[0])] : []) ] };
   tx.vin[0].witness = [];                                   // HRBG: anyone-can-spend
   picked.forEach((p, i) => signInput(tx, i + 1, p.spk, p.value, p.refheight, SIGHASH_ALL));
