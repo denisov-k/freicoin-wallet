@@ -1592,38 +1592,37 @@ export async function paintMyNames() {
     mine = isCovenantNet()
       // covenant: myNames() already returns MINE (from the seed-derived scripts, read via the indexer),
       // with the price (present value) and the melting deposit. Map to the shared row shape.
-      ? (await L.myNames()).map(n => ({ name: n.name, price: String(n.price), value: String(n.deposit), declared: n.declared, lapsed: false, resolve: '' }))
+      ? (await L.myNames()).map(n => ({ name: n.name, price: String(n.price), value: String(n.deposit), lapsed: false, resolve: '' }))
       : (await L.listNames()).names.filter(n => n.ownerFrcPub === L.landOwnerPub(n.name));
   } catch {}
   box.innerHTML = mine.length
     ? mine.map(n =>
         `<tr><td style="font-family:ui-monospace,monospace">${n.name}${n.lapsed ? ' ⚠' : ''}</td>
            <td class="r">${(n.price || n.value) ? fmtFrc8(n.price || n.value) : '—'} FRC</td>
-           <td class="act-cell"><button class="icon nmMng" data-n="${n.name}" data-r="${n.resolve || ''}" data-p="${n.price || ''}" data-d="${n.value || ''}" data-v="${n.declared ?? ''}" title="${tr('Manage')}">⋯</button></td></tr>`).join('')
+           <td class="act-cell"><button class="icon nmMng" data-n="${n.name}" data-r="${n.resolve || ''}" data-p="${n.price || ''}" data-d="${n.value || ''}" title="${tr('Manage')}">⋯</button></td></tr>`).join('')
     : `<tr><td colspan="3" class="sub">${tr('no names yet — claim one in Issue → Holdings')}</td></tr>`;
-  box.querySelectorAll('.nmMng').forEach(b => b.onclick = () => openNameModal(b.dataset.n, b.dataset.r, b.dataset.p, b.dataset.d, b.dataset.v));
+  box.querySelectorAll('.nmMng').forEach(b => b.onclick = () => openNameModal(b.dataset.n, b.dataset.r, b.dataset.p, b.dataset.d));
 }
 
 // Manage a name: ONE modal with both actions (revalue/top-up + repoint), replacing the two
 // per-row icon buttons and their browser prompt() dialogs.
-async function openNameModal(name, resolve, price, deposit, declared) {
+async function openNameModal(name, resolve, price, deposit) {
   if ($('#modal')) return;
   const cov = isCovenantNet();   // the covenant has no resolve field — hide that section
   const L = await nameMod();
   // Pre-fill with the CURRENT price — that is what the holding is worth right now and the floor a
   // raise has to clear. The change row is measured against the same number, so an untouched editor
   // reads «—» instead of the few kria the deposit melted since the declaration.
-  const declaredNum = (declared === '' || declared == null) ? null : Number(declared);
-  const curV = price ? String(Number(BigInt(price)) / 1e8) : (declaredNum != null ? String(declaredNum) : '');
+  const curV = price ? String(Number(BigInt(price)) / 1e8) : '';
   // deposit = the nominal FRC staked; price = its present (demurraged) value = the forced-buy price.
   // The gap is the rent that has burned off since the last top-up — shown here where you act on it.
   const rentKria = (cov && deposit && price) ? (BigInt(deposit) - BigInt(price)) : 0n;
   const rentStr = rentKria > 0n ? fmtFrc8(rentKria.toString()) : '';
   const showRent = rentKria >= 10000n;   // below a fee's worth (0.0001 FRC) the rent is noise, not news
-  // Since the claim locks EXACTLY the declared figure, the deposit repeats it — show that row only
-  // when the two really differ: names claimed before the rent buffer was dropped (deposit = value +
-  // a week of rent), and names recovered from chain (where the declaration is only reconstructed).
-  const dupDeposit = declared && deposit && Math.abs(Number(deposit) / 1e8 - Number(declared)) < 1e-8;
+  // Everything shown comes from the CHAIN: the deposit is the nominal locked (which, now that the
+  // claim locks exactly the declared figure, IS the declaration) and the price is its present value.
+  // A locally-remembered «declared» number added nothing and went stale — a recovered name has none,
+  // so it used to be back-filled with the price and printed as a duplicate of it.
   const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
   const kv = (k, v) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:14px"><span style="color:var(--sub)">${cap(k)}</span><b>${v}</b></div>`;
   const mono = s => '<span style="font-family:ui-monospace,monospace">' + s + '</span>';
@@ -1634,9 +1633,8 @@ async function openNameModal(name, resolve, price, deposit, declared) {
       <div>
         ${kv(tr('Name'), mono(name))}
         ${kv(tr('Property type'), tr('Holding'))}
-        ${declared ? kv(tr('Self-assessed value'), Number(declared).toLocaleString(getLang(), { maximumFractionDigits: 8 }) + ' FRC') : ''}
         ${kv(tr('Forced-buy price'), (price ? fmtFrc8(price) : '—') + ' FRC')}
-        ${cov && deposit && !dupDeposit ? kv(tr('deposit'), fmtFrc8(deposit) + ' FRC') : ''}
+        ${cov && deposit ? kv(tr('deposit'), fmtFrc8(deposit) + ' FRC') : ''}
         ${showRent ? kv(tr('rent burned'), rentStr + ' FRC') : ''}
       </div>
       <button id="nmMEdit" class="ghost">${tr('Change price')}</button>
@@ -1669,7 +1667,7 @@ async function openNameModal(name, resolve, price, deposit, declared) {
   ['#nmX', '#nmX2', '#nmX3'].forEach(id => { const b = q(m, id); if (b) b.onclick = () => closeOverlay(m); });
   // live «Изменение: +/− X FRC» against what the holding is worth now, so raising and lowering read
   // the same way (lowering is legitimate in Harberger — less rent, but cheaper for others to take).
-  const baseV = price ? Number(price) / 1e8 : (declaredNum ?? 0);
+  const baseV = price ? Number(price) / 1e8 : 0;
   const paintDelta = () => {
     const el = $('#nmVDelta'); if (!el) return;
     const nv = num($('#nmMV')?.value ?? '');
