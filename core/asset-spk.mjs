@@ -56,15 +56,20 @@ const unLe8 = bytes => { let v = 0n; for (let i = 7; i >= 0; i--) v = (v << 8n) 
 const HRBG_WITVER_BYTE = '51';   // OP_1 → witness version 2
 
 /** Build a Freiland Harberger covenant output (variant A). HOST-FRC output on witness version 2:
- *    51 20{nameHash} 14{ownerHash160} 08{floorV LE} OP_3
+ *    51 20{nameHash} 14{ownerHash160} 08{reserved LE} OP_3
  *  program = nameHash (the registry key / name commitment); suffix = owner (forced-sale payout
- *  target, 0014{owner}) + floorV (Gesell dust floor, kria) + OP_3 marker. Value = the melting
- *  deposit (host FRC); asset_pv(value) = the current forced-sale price V. */
-export function encodeHarbergerSpk(nameHashHex, ownerHash160Hex, floorV) {
+ *  target, 0014{owner}) + 8 RESERVED bytes + OP_3 marker. Value = the melting deposit (host FRC);
+ *  asset_pv(value) = the current forced-sale price V.
+ *
+ *  The 8 reserved bytes are STRUCTURAL, not decorative: DeriveAssetTag reads a 20- or 52-byte
+ *  extension suffix as an ASSET TAG. owner(20) alone would land in that class and the deposit
+ *  would stop being host FRC; the padding keeps the suffix at 28 bytes ⇒ host currency. Consensus
+ *  parses the field and ignores its value (it once meant a lapse floor — it never enforced one). */
+export function encodeHarbergerSpk(nameHashHex, ownerHash160Hex, reserved = 0) {
   if (!/^[0-9a-f]{64}$/.test(nameHashHex)) throw new Error('nameHash must be 32 bytes');
   if (!/^[0-9a-f]{40}$/.test(ownerHash160Hex)) throw new Error('ownerHash160 must be 20 bytes');
-  const f = BigInt(floorV);
-  if (f < 0n || f > 0xffffffffffffffffn) throw new Error('floorV out of range');
+  const f = BigInt(reserved);
+  if (f < 0n || f > 0xffffffffffffffffn) throw new Error('reserved out of range');
   return HRBG_WITVER_BYTE + dataPush(nameHashHex) + dataPush(ownerHash160Hex) + dataPush(le8(f)) + opN(HARBERGER_V);
 }
 
@@ -128,16 +133,17 @@ export function decodeAssetSpk(spkHex) {
   }
   if (version === null || pos !== b.length) return null;
   // Harberger covenant (OP_3, variant A): HOST output on witness version 2 (base = 51 20{nameHash}).
-  // program = nameHash (registry key); suffix = owner(20)+floorV(8). assetTag stays null (host FRC).
+  // program = nameHash (registry key); suffix = owner(20)+reserved(8) — 28 bytes, deliberately
+  // outside the 20/52 asset-tag sizes, so the coin stays host FRC. assetTag stays null.
   if (version === HARBERGER_V) {
     // Mirror C++ ParseHarbergerOutput (consensus/harberger.h) BYTE-FOR-BYTE: the suffix must be
-    // exactly 0x14{owner:20} 0x08{floorV:8}, not merely 28 bytes of pushes in any shape. A lenient
+    // exactly 0x14{owner:20} 0x08{reserved:8}, not merely 28 bytes of pushes in any shape. A lenient
     // data.length===28 check would also accept e.g. `51 20{name} 1c{28} 53` (64 B) or a swapped
     // `08{8} 14{20}` (65 B) — scripts the consensus treats as plain anyone-can-spend witver-2
     // outputs (NOT covenants), which the wallet would then mis-display as protected names.
     if (b.length !== 65 || b[34] !== 0x14 || b[55] !== 0x08 || base.length !== 68 || !base.startsWith(HRBG_WITVER_BYTE + '20')) return null;
     return { baseSpk: base, assetTag: null, tokenHash: null, version,
-      harberger: { nameHash: base.slice(4), owner: bytesToHex(b.slice(35, 55)), floorV: unLe8(b.slice(56, 64)) } };
+      harberger: { nameHash: base.slice(4), owner: bytesToHex(b.slice(35, 55)), reserved: unLe8(b.slice(56, 64)) } };
   }
   if (data.length !== 20 && data.length !== 52) return null;   // tag | tag++tokenHash
   return { baseSpk: base, assetTag: bytesToHex(data.slice(0, 20)), tokenHash: data.length === 52 ? bytesToHex(data.slice(20)) : null, version };

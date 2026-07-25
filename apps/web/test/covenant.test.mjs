@@ -24,16 +24,16 @@ check('nameHashOf is deterministic', nameHashOf('x') === nameHashOf('x') && name
 check('ownerHashOf = wpk program of the pubkey', ownerHashOf(pub) === frcWpkSpk(pub).slice(4));
 check('owner is 20 bytes', ownerHashOf(pub).length === 40);
 
-// covenantSpk == the raw HRBG wire bytes for (nameHash, owner, floorV)
+// covenantSpk == the raw HRBG wire bytes for (nameHash, owner, reserved)
 const spk = covenantSpk('alice.frl', pub, 1000000);
-check('covenantSpk == encodeHarbergerSpk(nameHash, owner, floorV)',
+check('covenantSpk == encodeHarbergerSpk(nameHash, owner, reserved)',
   spk === encodeHarbergerSpk(nameHashOf('alice.frl'), ownerHashOf(pub), 1000000));
 
 // readCovenant round-trips covenantSpk
 const r = readCovenant(spk);
 check('readCovenant nameHash round-trips', r && r.nameHash === nameHashOf('alice.frl'));
 check('readCovenant owner round-trips', r.owner === ownerHashOf(pub));
-check('readCovenant floorV round-trips as BigInt', r.floorV === 1000000n);
+check('readCovenant reserved round-trips as BigInt', r.reserved === 1000000n);
 check('readCovenant returns null for a non-covenant spk', readCovenant('0014' + '11'.repeat(20)) === null);
 
 // covenantPrice == asset_pv (host demurrage, shift 20) at the given distance
@@ -44,7 +44,7 @@ check('price drifts below the deposit as it melts', covenantPrice(D, refh, h) < 
 check('price == deposit at distance 0 (fresh)', covenantPrice(D, refh, refh) === D);
 
 // REGRESSION (2026-07-24): a tx carrying a real 65-byte HARBERGER covenant output
-// (51 20{nameHash} 14{owner} 08{floorV} 53) must survive parseTx→serializeTx BYTE-FOR-BYTE.
+// (51 20{nameHash} 14{owner} 08{reserved} 53) must survive parseTx→serializeTx BYTE-FOR-BYTE.
 // decodeAssetSpk folded it to the 34-byte baseSpk, so serializeTx re-emitted a shorter script and
 // scan.mjs parseBlock's `hex.slice(serializeTx(tx).length)` desynced on the block holding a
 // claim/buy tx — the only block a claiming wallet downloads — freezing its sync at "reconnecting".

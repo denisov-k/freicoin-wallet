@@ -9,14 +9,14 @@ const check = (name, cond) => { assert.ok(cond, name); console.log('PASS ', name
 
 const nameHash = 'aa'.repeat(32);
 const owner = 'bb'.repeat(20);
-const floorV = 1000000n;                     // 0.01 FRC dust floor (kria)
+const reserved = 1000000n;                     // 0.01 FRC dust floor (kria)
 
-// ---- exact wire bytes: witness v2 (OP_1=0x51), program = nameHash, suffix = owner+floorV+OP_3 ----
-const spk = encodeHarbergerSpk(nameHash, owner, floorV);
+// ---- exact wire bytes: witness v2 (OP_1=0x51), program = nameHash, suffix = owner+reserved+OP_3 ----
+const spk = encodeHarbergerSpk(nameHash, owner, reserved);
 const expected = '51'                         // OP_1 → witness version 2 (anyone-can-spend on old nodes)
   + '20' + nameHash                          // 32-byte program = nameHash (registry key)
   + '14' + owner                             // push 20-byte ownerHash160 (forced-sale payout target)
-  + '08' + '40420f0000000000'                // push 8-byte little-endian floorV (1_000_000)
+  + '08' + '40420f0000000000'                // push 8-byte little-endian reserved (1_000_000)
   + '53';                                    // OP_3 (0x50 + 3) — HRBG marker
 check('encodes to the exact HRBG wire bytes', spk === expected);
 check('HARBERGER_V is 3', HARBERGER_V === 3);
@@ -32,12 +32,12 @@ check('version is HARBERGER_V', d.version === HARBERGER_V);
 check('harberger field present', !!d.harberger);
 check('nameHash round-trips', d.harberger.nameHash === nameHash);
 check('owner round-trips', d.harberger.owner === owner);
-check('floorV round-trips as BigInt', d.harberger.floorV === floorV);
+check('reserved round-trips as BigInt', d.harberger.reserved === reserved);
 
-// ---- floorV little-endian over a range (incl. large / MAX_MONEY-scale) ----
+// ---- reserved little-endian over a range (incl. large / MAX_MONEY-scale) ----
 for (const v of [0n, 1n, 255n, 256n, 100000000n, 9007199254740991n, 0xdeadbeefn, 0xfffffffffffffffen]) {
   const r = decodeAssetSpk(encodeHarbergerSpk(nameHash, owner, v));
-  check(`floorV ${v} round-trips`, r.harberger.floorV === v);
+  check(`reserved ${v} round-trips`, r.harberger.reserved === v);
 }
 
 // ---- distinct from asset v1/v2, and no regression on the asset path ----
@@ -49,16 +49,16 @@ check('asset v2 still decodes tag+tokenHash (no regression)', tok.assetTag === '
 check('a HRBG spk is NOT read as an asset', decodeAssetSpk(spk).assetTag === null);
 
 // ---- rejects malformed ----
-check('rejects wrong nameHash length', (() => { try { encodeHarbergerSpk('aa'.repeat(31), owner, floorV); return false; } catch { return true; } })());
-check('rejects wrong owner length', (() => { try { encodeHarbergerSpk(nameHash, 'bb'.repeat(19), floorV); return false; } catch { return true; } })());
-check('rejects floorV overflow', (() => { try { encodeHarbergerSpk(nameHash, owner, 1n << 64n); return false; } catch { return true; } })());
+check('rejects wrong nameHash length', (() => { try { encodeHarbergerSpk('aa'.repeat(31), owner, reserved); return false; } catch { return true; } })());
+check('rejects wrong owner length', (() => { try { encodeHarbergerSpk(nameHash, 'bb'.repeat(19), reserved); return false; } catch { return true; } })());
+check('rejects reserved overflow', (() => { try { encodeHarbergerSpk(nameHash, owner, 1n << 64n); return false; } catch { return true; } })());
 // a suffix with OP_3 but the wrong data length must not decode as HRBG
 check('rejects HRBG suffix of wrong data length', decodeAssetSpk('5120' + nameHash + '14' + owner + '53') === null);
 // STRICTNESS (must match C++ ParseHarbergerOutput byte-for-byte): 28 suffix bytes reached by a
 // NON-canonical push structure are plain anyone-can-spend witver-2 outputs to the consensus, not
 // covenants — the wallet must NOT read them as names (else it shows unprotected outputs as owned).
 check('rejects HRBG with a single 28-byte push (64 B)', decodeAssetSpk('5120' + nameHash + '1c' + 'dd'.repeat(28) + '53') === null);
-check('rejects HRBG with swapped floorV/owner pushes (65 B)', decodeAssetSpk('5120' + nameHash + '08' + 'ee'.repeat(8) + '14' + owner + '53') === null);
+check('rejects HRBG with swapped reserved/owner pushes (65 B)', decodeAssetSpk('5120' + nameHash + '08' + 'ee'.repeat(8) + '14' + owner + '53') === null);
 check('rejects HRBG with a split 2+26 suffix (65 B)', decodeAssetSpk('5120' + nameHash + '02' + 'ffff' + '1a' + '99'.repeat(26) + '53') === null);
 
 // ---- host output (no suffix) unaffected ----

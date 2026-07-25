@@ -28,7 +28,12 @@ import { Buffer } from 'buffer';
 export { validLandName, annualRent };
 
 export const NEEDS_INDEXER = 'covenant-needs-indexer';
-const FLOOR = 1000000;                                   // Gesell dust floor (kria): self-assessed lapse floor
+// The covenant's trailing 8 bytes are RESERVED padding (see core/asset-spk.mjs): they keep the
+// extension suffix out of the 20/52 asset-tag sizes so the deposit stays host FRC. Consensus never
+// reads their value, so new names carry zero. MIN_VALUE is a separate UI guard — the smallest
+// self-assessment worth claiming, unrelated to those bytes.
+const RESERVED = 0;
+const MIN_VALUE = 1000000;                               // 0.01 FRC — smallest sensible declaration
 const FEE = 10000n;
 const frcToKria = v => BigInt(Math.round(Number(v) * 1e8));
 
@@ -36,9 +41,9 @@ const frcToKria = v => BigInt(Math.round(Number(v) * 1e8));
 // this key's wpk program, so the forced-sale payout 0014{owner} is an address the wallet can spend.
 const covKey = name => sha256(Buffer.from(ctx.seed + 'fw-covenant:' + name, 'utf8')).toString('hex');
 export const covOwnerPub = name => pubkeyCompressed(covKey(name));
-export const covSpkOf = (name, floorV = FLOOR) => covenantSpk(name, covOwnerPub(name), floorV);
+export const covSpkOf = (name, reserved = RESERVED) => covenantSpk(name, covOwnerPub(name), reserved);
 
-// localStorage mirror of names I've claimed (name + the floorV I committed, to rederive the exact spk)
+// localStorage mirror of names I've claimed
 const load = () => { try { return JSON.parse(localStorage.getItem('fw_covenant') || '[]'); } catch { return []; } };
 const save = a => localStorage.setItem('fw_covenant', JSON.stringify(a));
 
@@ -94,21 +99,21 @@ export async function registerName({ name, valueFrc, progress = () => {} }) {
   const deposit = V;
   progress('lock');
   const { txid } = await sendFrcToSpk(covSpkOf(name), deposit, [await frlnOut(name)]);   // + encrypted name book
-  const rec = { name, floorV: FLOOR, value: Number(valueFrc), claimTxid: txid, at: Date.now() };
+  const rec = { name, value: Number(valueFrc), claimTxid: txid, at: Date.now() };
   save(load().filter(x => x.name !== name).concat(rec));
   progress('done');
   return rec;
 }
 
 // the live covenant coin backing one of my names, read via the relay's utxo view of my own spk
-async function nameCoin(name, floorV = FLOOR) {
+async function nameCoin(name) {
   // read from the AUTHORITATIVE registry indexer (getharbergernames), NOT the relay's utxo index —
   // the latter keys a HRBG coin by its witness BASE (5120{nameHash}), not the full covenant spk, so a
   // lookup by the full spk misses it. The indexer returns the coin plus the consensus price/owner.
   const e = (await idx({ namehash: nameHashOf(name) }).catch(() => []))[0];
   if (!e) return null;
   const [txid, vout] = e.outpoint.split(':');
-  return { spk: covSpkOf(name, floorV), txid, vout: +vout, value: Number(e.deposit),
+  return { spk: covSpkOf(name), txid, vout: +vout, value: Number(e.deposit),
     refheight: e.refheight, owner: e.owner, price: BigInt(e.price) };
 }
 
@@ -169,7 +174,7 @@ export async function recoverFromChain() {
     if (!name) continue;                                             // not mine (wrong key)
     if (nameHashOf(name) !== e.namehash || e.owner !== ownerHashOf(covOwnerPub(name))) continue;   // integrity + mine
     if (have.has(name)) continue;
-    save(load().filter(x => x.name !== name).concat({ name, floorV: e.floorV ?? FLOOR, value: Number(e.price) / 1e8, claimTxid: txid, at: Date.now() }));
+    save(load().filter(x => x.name !== name).concat({ name, value: Number(e.price) / 1e8, claimTxid: txid, at: Date.now() }));
     have.add(name); added++;
   }
   return added;
@@ -179,13 +184,13 @@ export async function recoverFromChain() {
 export async function myNames() {
   const out = [];
   for (const rec of load()) {
-    const c = await nameCoin(rec.name, rec.floorV);
+    const c = await nameCoin(rec.name);
     if (!c) continue;                                              // not live (spent / not yet confirmed)
     if (c.owner !== ownerHashOf(covOwnerPub(rec.name))) continue;  // no longer mine (someone bought it)
     // `declared` = the figure the holder actually typed. The price is the melting deposit's present
     // value, so it drifts away from the declaration — showing only the price under the label
     // «self-assessed value» made the claim look like it locked a different number than requested.
-    out.push({ name: rec.name, price: c.price, deposit: BigInt(c.value), declared: rec.value, floorV: rec.floorV, coin: c });
+    out.push({ name: rec.name, price: c.price, deposit: BigInt(c.value), declared: rec.value, coin: c });
   }
   return out;
 }
@@ -195,7 +200,7 @@ export async function myNames() {
 // refheight, price}. Discovery is by name HASH (the human name is not recoverable from the chain).
 const idx = params => api('harbergernames', params || {});
 const mapEntry = e => ({ nameHash: e.namehash, outpoint: e.outpoint, owner: e.owner,
-  floorV: e.floorV, deposit: BigInt(e.deposit), refheight: e.refheight, price: BigInt(e.price) });
+  reserved: e.reserved ?? e.floorV, deposit: BigInt(e.deposit), refheight: e.refheight, price: BigInt(e.price) });
 
 /** RESOLVE a name to a payable address. The covenant already commits the holder's `owner` — the wpk
  *  program consensus pays a forced buy to — so the name resolves to its holder's own address with NO
@@ -221,7 +226,7 @@ export async function resolveName(name) {
 export async function recoverName(name) {
   const info = await resolveName(name);
   if (!info || !info.mine) return false;                 // free, or not derivable from THIS seed
-  const rec = { name, floorV: info.floorV ?? FLOOR, value: Number(info.price) / 1e8,
+  const rec = { name, value: Number(info.price) / 1e8,
     claimTxid: (info.outpoint || '').split(':')[0], at: Date.now() };
   save(load().filter(x => x.name !== name).concat(rec));
   return true;
@@ -257,7 +262,7 @@ export async function lowerName({ name, valueFrc, progress = () => {} }) {
  *  @param {{name:string, successor:bigint|null, progress:(p:string)=>void}} o */
 async function ownerPathSpend({ name, successor, progress }) {
   const rec = load().find(x => x.name === name);
-  const c = await nameCoin(name, rec?.floorV ?? FLOOR);
+  const c = await nameCoin(name);
   if (!c) throw new Error('name coin not found');
   if (c.owner !== ownerHashOf(covOwnerPub(name))) throw new Error('not my name');
   const ownerPub = covOwnerPub(name), ownerKey = covKey(name);
@@ -284,7 +289,7 @@ async function ownerPathSpend({ name, successor, progress }) {
   const back = V + FUND - FEE - (successor ?? 0n);         // what returns to the wallet
   const rel = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, nExpireTime: 0, lockHeight: L,
     vin: [opIn(`${c.txid}:${c.vout}`), opIn(`${fundTxid}:0`)],
-    vout: [ ...(successor !== null ? [out(successor, covSpkOf(name, rec?.floorV ?? FLOOR))] : []),
+    vout: [ ...(successor !== null ? [out(successor, covSpkOf(name))] : []),
             out(back, ctx.spks[0]) ] };
   rel.vin[0].witness = [];                                 // HRBG: anyone-can-spend
   const sh = segwitV0Sighash(rel, 1, ownerLeaf, FUND, L, SIGHASH_ALL);
@@ -301,7 +306,7 @@ async function ownerPathSpend({ name, successor, progress }) {
 export async function revalueName({ name, valueFrc, progress = () => {} }) {
   const rec = load().find(x => x.name === name);
   if (!rec) throw new Error('not my name');
-  const c = await nameCoin(name, rec.floorV);
+  const c = await nameCoin(name);
   if (!c) throw new Error('name coin not found');
   const L = ctx.state.mine.height;
   const V = covenantPrice(c.value, c.refheight, L);      // consensus charges this now
@@ -315,7 +320,7 @@ export async function revalueName({ name, valueFrc, progress = () => {} }) {
   const out = (value, spk) => ({ value, scriptPubKey: spk, assetTag: HOST_TAG });
   const tx = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, nExpireTime: 0, lockHeight: L,
     vin: [opIn(`${c.txid}:${c.vout}`), ...picked.map(p => opIn(p.outpoint))],
-    vout: [ out(V, '0014' + owner), out(newDeposit, covSpkOf(name, rec.floorV)),
+    vout: [ out(V, '0014' + owner), out(newDeposit, covSpkOf(name)),
             await frlnOut(name),                              // encrypted name book (cross-device recovery)
             ...(change > 0n ? [out(change, ctx.spks[0])] : []) ] };
   tx.vin[0].witness = [];                                   // HRBG: anyone-can-spend
@@ -337,7 +342,7 @@ export async function revalueName({ name, valueFrc, progress = () => {} }) {
 }
 
 /** Minimum self-assessed value (FRC) — the Gesell dust floor, so a name's deposit can't be dust. */
-export async function minValueFrc() { return FLOOR / 1e8; }
+export async function minValueFrc() { return MIN_VALUE / 1e8; }
 
 /** All live names on-chain, each with its current forced-sale price. Addressed by name HASH (the
  *  human name is not recoverable from the chain). The relay must expose `harbergernames`. */
@@ -360,14 +365,14 @@ export async function buyName({ name, progress = () => {} }) {
   const tx = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, nExpireTime: 0, lockHeight: L,
     vin: [opIn(info.outpoint), ...picked.map(p => opIn(p.outpoint))],
     vout: [ out(V, '0014' + info.owner),                      // pay the current owner V
-            out(V, covSpkOf(name, FLOOR)),                    // successor owned by me (carries V)
+            out(V, covSpkOf(name)),                           // successor owned by me (carries V)
             await frlnOut(name),                              // encrypted name book (cross-device recovery)
             ...(change > 0n ? [out(change, ctx.spks[0])] : []) ] };
   tx.vin[0].witness = [];                                     // HRBG: anyone-can-spend
   picked.forEach((p, i) => signInput(tx, i + 1, p.spk, p.value, p.refheight, SIGHASH_ALL));
   progress('confirm');
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
-  save(load().filter(x => x.name !== name).concat({ name, floorV: FLOOR, value: Number(V) / 1e8, claimTxid: txid, at: Date.now() }));
+  save(load().filter(x => x.name !== name).concat({ name, value: Number(V) / 1e8, claimTxid: txid, at: Date.now() }));
   progress('done');
   return { txid, price: V };
 }

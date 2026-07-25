@@ -25,14 +25,16 @@ export const nameHashOf = name => sha256(Buffer.from(name, 'utf8')).toString('he
  *  is exactly the owner's own address (they receive V and can spend it). Hex. */
 export const ownerHashOf = ownerPub => frcWpkSpk(ownerPub).slice(4);
 
-/** The covenant output scriptPubKey for `name`, owned by `ownerPub`, with a self-assessed floor. */
-export const covenantSpk = (name, ownerPub, floorV) =>
-  encodeHarbergerSpk(nameHashOf(name), ownerHashOf(ownerPub), floorV);
+/** The covenant output scriptPubKey for `name`, owned by `ownerPub`. The trailing 8 bytes are
+ *  reserved padding required by the extension format (see encodeHarbergerSpk) — consensus ignores
+ *  their value, so new outputs simply carry zero. */
+export const covenantSpk = (name, ownerPub, reserved = 0) =>
+  encodeHarbergerSpk(nameHashOf(name), ownerHashOf(ownerPub), reserved);
 
-/** Decode a covenant output → {nameHash, owner, floorV:BigInt} | null (null if not a HRBG output). */
+/** Decode a covenant output → {nameHash, owner, reserved:BigInt} | null (null if not HRBG). */
 export function readCovenant(spk) {
   const d = decodeAssetSpk(spk);
-  return d?.harberger ? { nameHash: d.harberger.nameHash, owner: d.harberger.owner, floorV: d.harberger.floorV } : null;
+  return d?.harberger ? { nameHash: d.harberger.nameHash, owner: d.harberger.owner, reserved: d.harberger.reserved } : null;
 }
 
 /** The current forced-sale price V = present value of the melting deposit at `height` (BigInt).
