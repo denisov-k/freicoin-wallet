@@ -141,7 +141,10 @@ export async function myNames() {
     const c = await nameCoin(rec.name, rec.floorV);
     if (!c) continue;                                              // not live (spent / not yet confirmed)
     if (c.owner !== ownerHashOf(covOwnerPub(rec.name))) continue;  // no longer mine (someone bought it)
-    out.push({ name: rec.name, price: c.price, deposit: BigInt(c.value), floorV: rec.floorV, coin: c });
+    // `declared` = the figure the holder actually typed. The price is the melting deposit's present
+    // value, so it drifts away from the declaration — showing only the price under the label
+    // «self-assessed value» made the claim look like it locked a different number than requested.
+    out.push({ name: rec.name, price: c.price, deposit: BigInt(c.value), declared: rec.value, floorV: rec.floorV, coin: c });
   }
   return out;
 }

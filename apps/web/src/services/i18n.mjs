@@ -2,6 +2,7 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'Forced-buy price': 'Цена выкупа',
   'fc1… or a name': 'fc1… или имя',
   'name not found': 'имя не найдено',
   'My names': 'Мои имена',
@@ -355,6 +356,7 @@ const RU = {
 };
 
 const ES = {
+  'Forced-buy price': 'Precio de recompra',
   'yours': 'tuyo',
   'no names registered yet': 'aún no hay nombres registrados',
   'resolve updated ✅': 'dirección actualizada ✅',
@@ -886,6 +888,7 @@ const ES = {
 };
 
 const DE = {
+  'Forced-buy price': 'Rückkaufpreis',
   'yours': 'deins',
   'no names registered yet': 'noch keine Namen registriert',
   'resolve updated ✅': 'Adresse aktualisiert ✅',
@@ -1417,6 +1420,7 @@ const DE = {
 };
 
 const FR = {
+  'Forced-buy price': 'Prix de rachat',
   'yours': 'à vous',
   'no names registered yet': 'aucun nom enregistré pour l’instant',
   'resolve updated ✅': 'adresse mise à jour ✅',
@@ -1948,6 +1952,7 @@ const FR = {
 };
 
 const PT = {
+  'Forced-buy price': 'Preço de recompra',
   'yours': 'seu',
   'no names registered yet': 'ainda não há nomes registrados',
   'resolve updated ✅': 'endereço atualizado ✅',
@@ -2479,6 +2484,7 @@ const PT = {
 };
 
 const ZH = {
+  'Forced-buy price': '赎买价格',
   'yours': '你的',
   'no names registered yet': '尚无已注册的名称',
   'resolve updated ✅': '地址已更新 ✅',

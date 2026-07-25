@@ -1585,21 +1585,21 @@ export async function paintMyNames() {
     mine = isCovenantNet()
       // covenant: myNames() already returns MINE (from the seed-derived scripts, read via the indexer),
       // with the price (present value) and the melting deposit. Map to the shared row shape.
-      ? (await L.myNames()).map(n => ({ name: n.name, price: String(n.price), value: String(n.deposit), lapsed: false, resolve: '' }))
+      ? (await L.myNames()).map(n => ({ name: n.name, price: String(n.price), value: String(n.deposit), declared: n.declared, lapsed: false, resolve: '' }))
       : (await L.listNames()).names.filter(n => n.ownerFrcPub === L.landOwnerPub(n.name));
   } catch {}
   box.innerHTML = mine.length
     ? mine.map(n =>
         `<tr><td style="font-family:ui-monospace,monospace">${n.name}${n.lapsed ? ' ⚠' : ''}</td>
            <td class="r">${(n.price || n.value) ? fmtFrcN(n.price || n.value) : '—'} FRC</td>
-           <td class="act-cell"><button class="icon nmMng" data-n="${n.name}" data-r="${n.resolve || ''}" data-p="${n.price || ''}" data-d="${n.value || ''}" title="${tr('Manage')}">⋯</button></td></tr>`).join('')
+           <td class="act-cell"><button class="icon nmMng" data-n="${n.name}" data-r="${n.resolve || ''}" data-p="${n.price || ''}" data-d="${n.value || ''}" data-v="${n.declared ?? ''}" title="${tr('Manage')}">⋯</button></td></tr>`).join('')
     : `<tr><td colspan="3" class="sub">${tr('no names yet — claim one in Issue → Holdings')}</td></tr>`;
-  box.querySelectorAll('.nmMng').forEach(b => b.onclick = () => openNameModal(b.dataset.n, b.dataset.r, b.dataset.p, b.dataset.d));
+  box.querySelectorAll('.nmMng').forEach(b => b.onclick = () => openNameModal(b.dataset.n, b.dataset.r, b.dataset.p, b.dataset.d, b.dataset.v));
 }
 
 // Manage a name: ONE modal with both actions (revalue/top-up + repoint), replacing the two
 // per-row icon buttons and their browser prompt() dialogs.
-async function openNameModal(name, resolve, price, deposit) {
+async function openNameModal(name, resolve, price, deposit, declared) {
   if ($('#modal')) return;
   const cov = isCovenantNet();   // the covenant has no resolve field — hide that section
   const L = await nameMod();
@@ -1619,7 +1619,8 @@ async function openNameModal(name, resolve, price, deposit) {
       <div>
         ${kv(tr('Name'), mono(name))}
         ${kv(tr('Property type'), tr('Holding'))}
-        ${kv(tr('Self-assessed value'), (price ? fmtFrcN(price) : '—') + ' FRC')}
+        ${declared ? kv(tr('Self-assessed value'), Number(declared).toLocaleString(getLang(), { maximumFractionDigits: 8 }) + ' FRC') : ''}
+        ${kv(tr('Forced-buy price'), (price ? fmtFrcN(price) : '—') + ' FRC')}
         ${cov && deposit ? kv(tr('deposit'), fmtFrcN(deposit) + ' FRC') : ''}
         ${showRent ? kv(tr('rent burned'), rentStr + ' FRC') : ''}
       </div>
