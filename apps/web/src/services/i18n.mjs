@@ -2,6 +2,12 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  "New world": "Новый мир",
+  "World name": "Название мира",
+  "Create the world": "Создать мир",
+  "world created ✅": "мир создан ✅",
+  "no worlds yet — create one": "миров пока нет — создайте",
+  "A world is a map held from the community: whoever holds it sets its rules, pays rent on it, and can be replaced by buying it out at their own price.": "Мир — это карта, взятая «в аренду у общины»: держатель задаёт её правила, платит за неё ренту, и его можно сменить, выкупив мир по его же цене.",
   "overlaps": "пересекается с",
   "tap «Where I am» or type a cell — longer means smaller": "нажмите «Где я» или введите ячейку — чем длиннее, тем меньше участок",
   "Plot": "Участок",
@@ -384,6 +390,12 @@ const RU = {
 };
 
 const ES = {
+  "New world": "Nuevo mundo",
+  "World name": "Nombre del mundo",
+  "Create the world": "Crear el mundo",
+  "world created ✅": "mundo creado ✅",
+  "no worlds yet — create one": "aún no hay mundos: crea uno",
+  "A world is a map held from the community: whoever holds it sets its rules, pays rent on it, and can be replaced by buying it out at their own price.": "Un mundo es un mapa tenido en arriendo de la comunidad: quien lo tiene fija sus reglas, paga renta por él y puede ser reemplazado comprándoselo a su propio precio.",
   "overlaps": "se solapa con",
   "tap «Where I am» or type a cell — longer means smaller": "pulsa «Dónde estoy» o escribe una celda: cuanto más larga, más pequeña",
   "Plot": "Parcela",
@@ -944,6 +956,12 @@ const ES = {
 };
 
 const DE = {
+  "New world": "Neue Welt",
+  "World name": "Name der Welt",
+  "Create the world": "Welt erstellen",
+  "world created ✅": "Welt erstellt ✅",
+  "no worlds yet — create one": "noch keine Welten — erstelle eine",
+  "A world is a map held from the community: whoever holds it sets its rules, pays rent on it, and can be replaced by buying it out at their own price.": "Eine Welt ist eine Karte, von der Gemeinschaft gehalten: wer sie hält, setzt ihre Regeln, zahlt Miete dafür und kann durch Auskauf zum eigenen Preis ersetzt werden.",
   "overlaps": "überschneidet",
   "tap «Where I am» or type a cell — longer means smaller": "tippe «Wo ich bin» oder gib eine Zelle ein — je länger, desto kleiner",
   "Plot": "Parzelle",
@@ -1504,6 +1522,12 @@ const DE = {
 };
 
 const FR = {
+  "New world": "Nouveau monde",
+  "World name": "Nom du monde",
+  "Create the world": "Créer le monde",
+  "world created ✅": "monde créé ✅",
+  "no worlds yet — create one": "aucun monde — créez-en un",
+  "A world is a map held from the community: whoever holds it sets its rules, pays rent on it, and can be replaced by buying it out at their own price.": "Un monde est une carte tenue en location auprès de la communauté : son détenteur fixe ses règles, en paie le loyer, et peut être remplacé en le rachetant à son propre prix.",
   "overlaps": "chevauche",
   "tap «Where I am» or type a cell — longer means smaller": "touchez «Où je suis» ou saisissez une cellule — plus elle est longue, plus elle est petite",
   "Plot": "Parcelle",
@@ -2064,6 +2088,12 @@ const FR = {
 };
 
 const PT = {
+  "New world": "Novo mundo",
+  "World name": "Nome do mundo",
+  "Create the world": "Criar o mundo",
+  "world created ✅": "mundo criado ✅",
+  "no worlds yet — create one": "ainda não há mundos — crie um",
+  "A world is a map held from the community: whoever holds it sets its rules, pays rent on it, and can be replaced by buying it out at their own price.": "Um mundo é um mapa mantido em arrendamento da comunidade: quem o detém define suas regras, paga aluguel por ele e pode ser substituído comprando-o pelo próprio preço.",
   "overlaps": "sobrepõe",
   "tap «Where I am» or type a cell — longer means smaller": "toque «Onde estou» ou digite uma célula — quanto mais longa, menor",
   "Plot": "Parcela",
@@ -2624,6 +2654,12 @@ const PT = {
 };
 
 const ZH = {
+  "New world": "新世界",
+  "World name": "世界名称",
+  "Create the world": "创建世界",
+  "world created ✅": "世界已创建 ✅",
+  "no worlds yet — create one": "还没有世界 — 创建一个",
+  "A world is a map held from the community: whoever holds it sets its rules, pays rent on it, and can be replaced by buying it out at their own price.": "世界是一张向社区租用的地图：持有者制定规则、为其支付租金，并可被人按其自设价格接手替换。",
   "overlaps": "重叠于",
   "tap «Where I am» or type a cell — longer means smaller": "点「我的位置」或输入单元 — 越长地块越小",
   "Plot": "地块",

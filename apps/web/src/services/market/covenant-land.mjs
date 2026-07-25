@@ -15,7 +15,7 @@
 import { ctx, api, HOST_TAG } from '@/state/market-ctx.mjs';
 import { sha256 } from '@core/crypto.mjs';
 import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
-import { annualRent, validLandName, validHoldingId, tickerId, isTickerId, isPlotId, plotsOverlap, holdingLabel, validTicker, validPlot, frcWpkSpk } from '@core/freiland.mjs';
+import { annualRent, validLandName, validHoldingId, tickerId, isTickerId, isPlotId, isWorldId, worldId, plotsOverlap, holdingLabel, validTicker, validPlot, frcWpkSpk } from '@core/freiland.mjs';
 import { covenantSpk, ownerHashOf, covenantPrice, readCovenant, nameHashOf } from '@core/covenant.mjs';
 import { sendFrcToSpk, signInput, myCoinsOf, opIn } from '@/services/market/swap-lib.mjs';
 import { serializeTx, parseTx, NV3_TX_VERSION } from '@core/tx.mjs';
@@ -25,7 +25,7 @@ import { encodeWitness } from '@core/address.mjs';
 import { currentNet } from '@/services/wallet.mjs';
 import { Buffer } from 'buffer';
 
-export { validLandName, validHoldingId, tickerId, isTickerId, isPlotId, holdingLabel, validTicker, validPlot, annualRent };
+export { validLandName, validHoldingId, tickerId, isTickerId, isPlotId, isWorldId, worldId, holdingLabel, validTicker, validPlot, annualRent };
 
 export const NEEDS_INDEXER = 'covenant-needs-indexer';
 // The covenant's trailing 8 bytes are RESERVED padding (see core/asset-spk.mjs): they keep the
@@ -98,6 +98,23 @@ const readPlot = tx => {
   return null;
 };
 
+// A WORLD announces itself in clear too, for the same reason a plot does: a map nobody can
+// enumerate is not a map. Later this memo also carries the world's parameters (the community fund
+// its plots pay rent to); today it is the name, self-certified by hashing back to the registry key.
+const WRL1 = '57524c31';                                  // 'WRL1' — this holding is that world
+const worldOut = id => {
+  const b = Buffer.from(String(id), 'utf8').toString('hex');
+  return { value: 0n, scriptPubKey: '6a' + (4 + b.length / 2).toString(16).padStart(2, '0') + WRL1 + b, assetTag: HOST_TAG };
+};
+const readWorld = tx => {
+  for (const o of tx.vout || []) {
+    const spk = o.scriptPubKey || '';
+    const i = spk.indexOf(WRL1);
+    if (spk.startsWith('6a') && i > 0) { const id = Buffer.from(spk.slice(i + 8), 'hex').toString('utf8'); if (id) return id; }
+  }
+  return null;
+};
+
 const TKR1 = '544b5231';                                  // 'TKR1' — «this symbol stands for that asset»
 // Payload: TKR1 ‖ assetTag(20) ‖ symbol(utf8). The symbol travels IN CLEAR and is self-certifying:
 // a reader checks sha256('ticker:'+symbol) against the registry entry the announcement was found
@@ -144,7 +161,8 @@ export async function registerName({ name, valueFrc, bind = null, progress = () 
   // (it getting cheaper is exactly the signal to top up).
   const deposit = V;
   progress('lock');
-  const extra = [await frlnOut(name), ...(bind ? [bindOut(bind, holdingLabel(name))] : []), ...(isPlotId(name) ? [plotOut(name)] : [])];
+  const extra = [await frlnOut(name), ...(bind ? [bindOut(bind, holdingLabel(name))] : []),
+    ...(isPlotId(name) ? [plotOut(name)] : []), ...(isWorldId(name) ? [worldOut(name)] : [])];
   const { txid } = await sendFrcToSpk(covSpkOf(name), deposit, extra);
   const rec = { name, value: Number(valueFrc), bind, claimTxid: txid, at: Date.now() };
   save(load().filter(x => x.name !== name).concat(rec));
@@ -172,7 +190,7 @@ const _sweptOps = new Set();     // outpoints already swept this session (a broa
 // Chain reads are cached (the map and the symbol table are re-read on every render), so anything
 // that CHANGES the registry has to drop them — otherwise a fresh claim is invisible to the very
 // overlap warning that is supposed to notice it.
-const invalidateChainCaches = () => { _plotCache = { at: 0, list: [] }; _vCache = { at: 0, map: new Map() }; };
+const invalidateChainCaches = () => { _plotCache = { at: 0, list: [] }; _worldCache = { at: 0, list: [] }; _vCache = { at: 0, map: new Map() }; };
 
 /** RECOVER path-A payouts stranded on a name's own covenant address. Consensus pays a raise (and a
  *  forced buy) to 0014{owner}; for a name we hold that is OUR per-name covenant key — derived from
@@ -234,6 +252,26 @@ export async function recoverFromChain() {
     have.add(name); added++;
   }
   return added;
+}
+
+/** Live worlds: [{id, name, price, mine}] — the maps anyone may claim plots in. Same self-certifying
+ *  read as plots: the holding's own transaction announces the id, and it must hash to the registry
+ *  key it was found under. */
+let _worldCache = { at: 0, list: [] };
+export async function liveWorlds() {
+  if (Date.now() - _worldCache.at < 30000) return _worldCache.list;
+  const list = [];
+  try {
+    for (const e of (await idx()) || []) {
+      const txid = (e.outpoint || '').split(':')[0]; if (!txid) continue;
+      let id; try { id = readWorld(parseTx((await api('rawFrcTx', { txid })).rawtx)); } catch { continue; }
+      if (!id || !isWorldId(id) || nameHashOf(id) !== e.namehash) continue;
+      list.push({ id, name: holdingLabel(id), price: BigInt(e.price),
+        mine: e.owner === ownerHashOf(covOwnerPub(id)) });
+    }
+    _worldCache = { at: Date.now(), list };
+  } catch {}
+  return _worldCache.list;
 }
 
 /** Live plots, straight from the chain: [{id, world, cell, price, mine}]. Each holding's own
