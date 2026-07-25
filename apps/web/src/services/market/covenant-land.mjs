@@ -97,6 +97,29 @@ const readPlotShape = tx => {
   }
   return null;
 };
+const PLN1 = '504c4e31';                                  // 'PLN1' — what its HOLDER calls this plot
+/** The plot's name is a LABEL, not its identity: the ground is the boundary, and two holders may
+ *  well call neighbouring fields the same thing. It is authentic the way a ticker binding is —
+ *  written by whoever held the plot when the transaction was made — and a forced buy therefore does
+ *  NOT carry it over: the taker writes their own, or none. Kept to 40 bytes so it fits one memo. */
+export const MAX_PLOT_LABEL = 40;
+export const plotLabelBytes = text => Buffer.from(String(text ?? ''), 'utf8').length;
+const labelOut = text => {
+  const b = Buffer.from(String(text), 'utf8');
+  if (!b.length || b.length > MAX_PLOT_LABEL) throw new Error('bad plot name');
+  return { value: 0n, scriptPubKey: '6a' + (4 + b.length).toString(16).padStart(2, '0') + PLN1 + b.toString('hex'), assetTag: HOST_TAG };
+};
+const readPlotLabel = tx => {
+  for (const o of tx.vout || []) {
+    const spk = o.scriptPubKey || '';
+    const i = spk.indexOf(PLN1);
+    if (!spk.startsWith('6a') || i <= 0) continue;
+    const text = Buffer.from(spk.slice(i + 8), 'hex').toString('utf8').trim();
+    if (text) return text;
+  }
+  return null;
+};
+
 /** The id a boundary commits to: plot:sha256(canonical bytes). */
 export const plotIdOf = points => plotId(sha256(Buffer.from(encodePolygon(points), 'hex')).toString('hex'));
 
@@ -136,8 +159,9 @@ const pickFrc = (need, L) => {
 
 /** CLAIM a free name: fund a covenant output to my owner-key with a deposit that holds V for ~a week
  *  (a HRBG output is just host FRC paid to the covenant script, so this reuses the ordinary FRC send).
- *  @param {{name:string, valueFrc:number|string, bind?:string|null, shape?:string|null, progress?:(p:string)=>void}} o */
-export async function registerName({ name, valueFrc, bind = null, shape = null, progress = () => {} }) {
+ *  @param {{name:string, valueFrc:number|string, bind?:string|null, shape?:string|null,
+ *           label?:string|null, progress?:(p:string)=>void}} o */
+export async function registerName({ name, valueFrc, bind = null, shape = null, label = null, progress = () => {} }) {
   if (!validHoldingId(name)) throw new Error('bad name');
   const V = frcToKria(valueFrc);
   // The deposit IS the declaration — no rent buffer on top. A buffer would lock more than the holder
@@ -151,9 +175,10 @@ export async function registerName({ name, valueFrc, bind = null, shape = null, 
   // the 48-byte memo. Plots recover from their public boundary instead (see recoverFromChain).
   const extra = [...(isPlotId(name) ? [] : [await frlnOut(name)]),
     ...(bind ? [bindOut(bind, holdingLabel(name))] : []),
-    ...(shape ? [plotOut(shape)] : [])];
+    ...(shape ? [plotOut(shape)] : []),
+    ...(label ? [labelOut(label)] : [])];
   const { txid } = await sendFrcToSpk(covSpkOf(name), deposit, extra);
-  const rec = { name, value: Number(valueFrc), bind, claimTxid: txid, at: Date.now() };
+  const rec = { name, value: Number(valueFrc), bind, label, claimTxid: txid, at: Date.now() };
   save(load().filter(x => x.name !== name).concat(rec));
   invalidateChainCaches();
   progress('done');
@@ -167,14 +192,18 @@ export async function registerName({ name, valueFrc, bind = null, shape = null, 
  *  checked here before the bytes are re-announced. (A plot gets no FRLN: its id is a 76-character
  *  commitment that would overflow the 48-byte memo, and its boundary is public anyway.)
  *  @param {string} name */
-async function carryMemos(name) {
+async function carryMemos(name, { keepLabel = true, label = undefined } = {}) {
   if (!isPlotId(name)) return [await frlnOut(name)];
   const c = await nameCoin(name);
   if (!c) return [];
-  let hex = null;
-  try { hex = readPlotShape(parseTx((await api('rawFrcTx', { txid: c.txid })).rawtx)); } catch {}
+  let tx = null;
+  try { tx = parseTx((await api('rawFrcTx', { txid: c.txid })).rawtx); } catch {}
+  if (!tx) return [];
+  const hex = readPlotShape(tx);
   if (!hex || plotId(sha256(Buffer.from(hex, 'hex')).toString('hex')) !== name) return [];
-  return [plotOut(hex)];
+  // `label === undefined` means «whatever it is now»; null clears it; a string replaces it
+  const text = label !== undefined ? label : keepLabel ? readPlotLabel(tx) : null;
+  return [plotOut(hex), ...(text ? [labelOut(text)] : [])];
 }
 
 // the live covenant coin backing one of my names, read via the relay's utxo view of my own spk
@@ -271,13 +300,14 @@ export async function livePlots() {
   try {
     for (const e of (await idx()) || []) {
       const txid = (e.outpoint || '').split(':')[0]; if (!txid) continue;
-      let hex; try { hex = readPlotShape(parseTx((await api('rawFrcTx', { txid })).rawtx)); } catch { continue; }
+      let tx, hex;
+      try { tx = parseTx((await api('rawFrcTx', { txid })).rawtx); hex = readPlotShape(tx); } catch { continue; }
       if (!hex) continue;
       let points; try { points = decodePolygon(hex); } catch { continue; }
       // the boundary self-certifies: hash it and it must reproduce the registry key it was found under
       const id = plotId(sha256(Buffer.from(hex, 'hex')).toString('hex'));
       if (nameHashOf(id) !== e.namehash) continue;
-      list.push({ id, points, area: polygonArea(points), centre: polygonCentre(points),
+      list.push({ id, points, label: readPlotLabel(tx), area: polygonArea(points), centre: polygonCentre(points),
         price: BigInt(e.price), outpoint: e.outpoint, owner: e.owner,
         mine: e.owner === ownerHashOf(covOwnerPub(id)) });
     }
@@ -435,8 +465,9 @@ async function ownerPathSpend({ name, successor, progress }) {
 /** REVALUE (top up) my own name to a higher self-assessment via the path-A buy-your-own: spend the
  *  HRBG (anyone-can-spend) plus my FRC coins, pay V to myself, carry newDeposit into the successor.
  *  Only raising is possible (consensus: successor >= current price V); lowering happens via demurrage.
- *  @param {{name:string, valueFrc:number|string|null, bind?:string|null, progress?:(p:string)=>void}} o */
-export async function revalueName({ name, valueFrc, bind = undefined, progress = () => {} }) {
+ *  @param {{name:string, valueFrc:number|string|null, bind?:string|null, label?:string|null,
+ *           progress?:(p:string)=>void}} o */
+export async function revalueName({ name, valueFrc, bind = undefined, label = undefined, progress = () => {} }) {
   const rec = load().find(x => x.name === name);
   if (!rec) throw new Error('not my name');
   const c = await nameCoin(name);
@@ -457,7 +488,7 @@ export async function revalueName({ name, valueFrc, bind = undefined, progress =
   const tx = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, nExpireTime: 0, lockHeight: L,
     vin: [opIn(`${c.txid}:${c.vout}`), ...picked.map(p => opIn(p.outpoint))],
     vout: [ out(V, '0014' + owner), out(newDeposit, covSpkOf(name)),
-            ...(await carryMemos(name)),                      // name book, or a plot's boundary
+            ...(await carryMemos(name, { label })),           // name book, or a plot's boundary + name
             ...(((bind === undefined ? rec.bind : bind)) ? [bindOut(bind === undefined ? rec.bind : bind, holdingLabel(name))] : []),
             ...(change > 0n ? [out(change, ctx.spks[0])] : []) ] };
   tx.vin[0].witness = [];                                   // HRBG: anyone-can-spend
@@ -473,10 +504,19 @@ export async function revalueName({ name, valueFrc, bind = undefined, progress =
   const sh = segwitV0Sighash(sweep, 0, ownerLeaf, V, L, SIGHASH_ALL);
   sweep.vin[0].witness = [signEcdsa(ownerKey, sh) + '01', '00' + ownerLeaf, ''];
   await api('tx', { rawtx: serializeTx(sweep), kind: 'send' });
-  save(load().map(x => x.name === name ? { ...x, ...(valueFrc == null ? {} : { value: Number(valueFrc) }), ...(bind === undefined ? {} : { bind }) } : x));
+  save(load().map(x => x.name === name ? { ...x, ...(valueFrc == null ? {} : { value: Number(valueFrc) }), ...(bind === undefined ? {} : { bind }), ...(label === undefined ? {} : { label }) } : x));
   invalidateChainCaches();
   progress('done');
   return { txid, price: V };
+}
+
+/** RENAME a plot: republish at today's price with a new label (or none). The price is untouched —
+ *  `valueFrc: null` locks exactly what the plot is worth right now, so only the announcement moves.
+ *  @param {{name:string, label:string|null, progress?:(p:string)=>void}} o */
+export async function renamePlot({ name, label, progress = () => {} }) {
+  if (!isPlotId(name)) throw new Error('not a plot');
+  if (label && plotLabelBytes(label) > MAX_PLOT_LABEL) throw new Error('bad plot name');
+  return revalueName({ name, valueFrc: null, label: label || null, progress });
 }
 
 /** Minimum self-assessed value (FRC) — the Gesell dust floor, so a name's deposit can't be dust. */
@@ -504,8 +544,8 @@ export async function buyName({ name, progress = () => {} }) {
     vin: [opIn(info.outpoint), ...picked.map(p => opIn(p.outpoint))],
     vout: [ out(V, '0014' + info.owner),                      // pay the current owner V
             out(V, covSpkOf(name)),                           // successor owned by me (carries V)
-            ...(await carryMemos(name)),                      // name book, or a plot's boundary
-            // deliberately NO binding: taking a symbol does not inherit the previous holder's claim
+            ...(await carryMemos(name, { keepLabel: false })),   // name book, or a plot's boundary
+            // deliberately NO binding, and no inherited plot name: taking a symbol does not inherit the previous holder's claim
             // about which asset it stands for — the new holder announces their own (or none).
             ...(change > 0n ? [out(change, ctx.spks[0])] : []) ] };
   tx.vin[0].witness = [];                                     // HRBG: anyone-can-spend

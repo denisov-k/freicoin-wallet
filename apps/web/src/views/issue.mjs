@@ -39,11 +39,15 @@ async function issue() {
       const L = isCovenantNet()
         ? await import('@/services/market/covenant-land.mjs')
         : await import('@/services/market/land.mjs');
-      let shape = null, id = name;
+      let shape = null, label = null, id = name;
       if (kind === 'plot') {
         if (plotPoints.length < 3) throw new Error(tr('no plot drawn yet'));
         shape = encodePolygon(plotPoints);
         id = plotId(sha256(Buffer.from(shape, 'hex')).toString('hex'));
+        // a plot's name is a label its holder publishes, not part of what the plot IS
+        label = ($('#iPlotName')?.value || '').trim() || null;
+        const LC = /** @type {any} */ (L);
+        if (label && LC.plotLabelBytes?.(label) > (LC.MAX_PLOT_LABEL ?? 40)) throw new Error(tr('the name is too long'));
       }
       if (!L.validHoldingId(id)) throw new Error(tr(kind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : 'bad name (1–32: a-z 0-9 _ -)'));
       const v = num($('#iVal')?.value ?? '');
@@ -52,14 +56,14 @@ async function issue() {
       const log = t => { const el = $('#iLog'); if (el) el.textContent = t; };
       const btn = $('#issueBtn'); if (btn) btn.disabled = true;
       try {
-        await L.registerName({ name: id, valueFrc: v, shape, progress: p => log(
+        await L.registerName(/** @type {any} */ ({ name: id, valueFrc: v, shape, label, progress: p => log(
           p === 'mint' ? tr('minting the name token…')
           : p === 'lock' ? tr('locking the deposit…')
           : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…')
           : p === 'offer' ? tr('signing the standing sale offer…')
-          : tr('registered ✅')) });
+          : tr('registered ✅')) }));
         $('#modal')?.remove();
-        toast(`${kind === 'plot' ? tr('Plot') : raw}: ${tr('name claimed ✅')}`, 'ok'); mvRefresh(); paintMyNames();
+        toast(`${kind === 'plot' ? (label || tr('Plot')) : raw}: ${tr('name claimed ✅')}`, 'ok'); mvRefresh(); paintMyNames();
       } catch (e) { log(e.message); throw e; }
       finally { const b = $('#issueBtn'); if (b) b.disabled = false; }
       return;
@@ -103,6 +107,7 @@ export function openIssueModal() {
     <div id="iPlotBox" class="stack" hidden>
       <button id="iPickPlot" class="ghost">${tr('Choose the plot')}</button>
       <div class="sub" id="iCellInfo" style="font-size:12px"></div>
+      <label>${tr('Name')} <span class="sub">(${tr('optional')})</span><input id="iPlotName" type="text" maxlength="24" autocomplete="off" spellcheck="false" placeholder="${tr('e.g. the field by the river')}"></label>
     </div>
     <div id="iMapScreen" class="stack" hidden>
       <div class="mapwrap">
@@ -263,7 +268,7 @@ export function openIssueModal() {
       <div class="rrow"><span>${tr('Area')}</span><b>≈ ${Math.round(plot.area).toLocaleString(getLang())} ${tr('m²')}</b></div>
       <div class="rrow"><span>${tr('Forced-buy price')}</span><b>${price} FRC</b></div>
       <div class="sub" id="ipcLog" style="font-size:12px"></div>
-      <div class="stack" id="ipcAct">${plot.mine ? '' : `<button id="ipcBuy">${tr('Take it over for')} ${price} FRC</button>`}</div>`;
+      <div class="stack" id="ipcAct">${plot.mine ? '' : `<button id="ipcBuy">${tr('Take it over')}</button>`}</div>`;
     const x = $('#ipcX'); if (x) x.onclick = closePlotCard;
     const log = t => { const el = $('#ipcLog'); if (el) el.textContent = t; };
     const act = $('#ipcAct');

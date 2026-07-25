@@ -1621,9 +1621,10 @@ const latlon = c => `${c.lat.toFixed(4)}, ${c.lon.toFixed(4)}`;
 const nameLabel = id => {
   if (!isPlotId(id)) return holdingLabel(id);
   const pl = plotInfo.get(id);
-  // no boundary read back yet (a claim the map's cache has not caught up with): the id prefix is
-  // wrong-looking but at least it is the plot's own, not a label that fits every plot alike
-  return pl ? `${tr('Plot')} ${latlon(pl.centre)}` : holdingLabel(id);
+  // what its holder calls it, if they called it anything; else where it is. No boundary read back
+  // yet (a claim the map's cache has not caught up with) leaves only the id prefix — wrong-looking,
+  // but the plot's own, unlike a label that fits every plot alike.
+  return pl?.label ? pl.label : pl ? `${tr('Plot')} ${latlon(pl.centre)}` : holdingLabel(id);
 };
 
 // Manage a name: ONE modal with both actions (revalue/top-up + repoint), replacing the two
@@ -1657,6 +1658,7 @@ async function openNameModal(name, resolve, price, deposit) {
           ? (plotInfo.get(name) ? kv(tr('Where'), mono(latlon(plotInfo.get(name).centre))) : '')
           : kv(tr('Name'), mono(nameLabel(name)))}
         ${kv(tr('Property type'), tr(isTickerId(name) ? 'Ticker' : isPlotId(name) ? 'Plot' : 'Holding'))}
+        ${isPlotId(name) && plotInfo.get(name)?.label ? kv(tr('Name'), plotInfo.get(name).label) : ''}
         ${isPlotId(name) && plotInfo.get(name) ? kv(tr('Area'), '≈ ' + Math.round(plotInfo.get(name).area).toLocaleString(getLang()) + ' ' + tr('m²')) : ''}
         ${kv(tr('Forced-buy price'), (price ? fmtFrc8(price) : '—') + ' FRC')}
         ${cov && deposit ? kv(tr('deposit'), fmtFrc8(deposit) + ' FRC') : ''}
@@ -1664,6 +1666,7 @@ async function openNameModal(name, resolve, price, deposit) {
       </div>
       <button id="nmMEdit" class="ghost">${tr('Change price')}</button>
       ${isTickerId(name) ? `<button id="nmMBind" class="ghost">${tr('Link an asset')}</button>` : ''}
+      ${isPlotId(name) && cov ? `<button id="nmMName" class="ghost">${tr('Change the name')}</button>` : ''}
       ${cov ? '' : `<label>${tr('Points to address')}<input id="nmMRes" type="text" autocomplete="off" spellcheck="false" value="${resolve || ''}"></label>
       <button id="nmMResBtn" class="ghost">${tr('Update address')}</button>`}
       ${cov ? `<button id="nmMRelease" class="ghost" style="color:var(--err)">${tr('Free the holding')}</button>` : ''}
@@ -1685,6 +1688,13 @@ async function openNameModal(name, resolve, price, deposit) {
       <button id="nmBindGo">${tr('Confirm')}</button>
       <div id="nmBindLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
     </div>
+    <div id="nmScreen5" class="nmScr" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack5" class="icon">←</button><b style="flex:1;text-align:center">${tr('Change the name')}</b><button id="nmX5" class="icon">✕</button></div>
+      <div class="sub" style="font-size:13px">${tr('A plot is the ground inside its boundary — the name is only what you call it. It travels in the transaction holding the plot, so anyone can read it and only you can write it; whoever takes the plot over writes their own.')}</div>
+      <label>${tr('Name')}<input id="nmPName" type="text" maxlength="24" autocomplete="off" spellcheck="false" value="${(plotInfo.get(name)?.label || '').replace(/"/g, '&quot;')}" placeholder="${tr('e.g. the field by the river')}"></label>
+      <button id="nmPNameGo">${tr('Confirm')}</button>
+      <div id="nmPNameLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
+    </div>
     <div id="nmScreen3" class="nmScr" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack3" class="icon">←</button><b style="flex:1;text-align:center">${tr('Free the holding')}</b><button id="nmX3" class="icon">✕</button></div>
       <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${nameLabel(name)}</div>
@@ -1697,8 +1707,8 @@ async function openNameModal(name, resolve, price, deposit) {
   const log = t => { const el = $('#nmMLog'); if (el) el.textContent = t; };
   const logE = t => { const el = $('#nmEditLog'); if (el) el.textContent = t; };
   const logR = t => { const el = $('#nmRelLog'); if (el) el.textContent = t; };
-  const showScreen = n => { for (const i of [1, 2, 3, 4]) { const s = $('#nmScreen' + i); if (s) s.style.display = i === n ? '' : 'none'; } };
-  ['#nmX', '#nmX2', '#nmX3', '#nmX4'].forEach(id => { const b = q(m, id); if (b) b.onclick = () => closeOverlay(m); });
+  const showScreen = n => { for (const i of [1, 2, 3, 4, 5]) { const s = $('#nmScreen' + i); if (s) s.style.display = i === n ? '' : 'none'; } };
+  ['#nmX', '#nmX2', '#nmX3', '#nmX4', '#nmX5'].forEach(id => { const b = q(m, id); if (b) b.onclick = () => closeOverlay(m); });
   // live «Изменение: +/− X FRC» against what the holding is worth now, so raising and lowering read
   // the same way (lowering is legitimate in Harberger — less rent, but cheaper for others to take).
   const baseV = price ? Number(price) / 1e8 : 0;
@@ -1733,6 +1743,23 @@ async function openNameModal(name, resolve, price, deposit) {
       toast(`${name}: ${tr('revalued ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
     } catch (e) { toast(e.message, 'err'); logE(e.message); btn.disabled = false; }
   };
+  const nameBtn = q(m, '#nmMName');
+  if (nameBtn) nameBtn.onclick = () => { showScreen(5); $('#nmPName')?.focus(); };
+  const back5 = q(m, '#nmBack5'); if (back5) back5.onclick = () => showScreen(1);
+  const nameGo = q(m, '#nmPNameGo');
+  if (nameGo) nameGo.onclick = async () => {
+    const logN = t => { const el = $('#nmPNameLog'); if (el) el.textContent = t; };
+    const text = ($('#nmPName')?.value || '').trim();
+    if (L.plotLabelBytes?.(text) > (L.MAX_PLOT_LABEL ?? 40)) return logN(tr('the name is too long'));
+    nameGo.disabled = true;
+    try {
+      // renaming republishes the plot at exactly today's price: only the announcement moves
+      await L.renamePlot({ name, label: text, progress: p => logN(p === 'confirm'
+        ? tr('waiting for confirmation (this can take a few minutes)…') : tr('registered ✅')) });
+      toast(`${text || nameLabel(name)}: ${tr('name changed ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
+    } catch (e) { logN(e.message); nameGo.disabled = false; }
+  };
+
   const resBtn = q(m, '#nmMResBtn');
   if (resBtn) resBtn.onclick = async () => {
     const to = $('#nmMRes').value.trim(); if (!to || to === resolve) return;
