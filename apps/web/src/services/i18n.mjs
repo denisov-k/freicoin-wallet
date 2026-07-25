@@ -2,6 +2,8 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  'Change': 'Изменение',
+  'applying the new value…': 'применяю новую ценность…',
   'Forced-buy price': 'Цена выкупа',
   'fc1… or a name': 'fc1… или имя',
   'name not found': 'имя не найдено',
@@ -356,6 +358,8 @@ const RU = {
 };
 
 const ES = {
+  'Change': 'Cambio',
+  'applying the new value…': 'aplicando el nuevo valor…',
   'Forced-buy price': 'Precio de recompra',
   'yours': 'tuyo',
   'no names registered yet': 'aún no hay nombres registrados',
@@ -888,6 +892,8 @@ const ES = {
 };
 
 const DE = {
+  'Change': 'Änderung',
+  'applying the new value…': 'neuer Wert wird angewendet…',
   'Forced-buy price': 'Rückkaufpreis',
   'yours': 'deins',
   'no names registered yet': 'noch keine Namen registriert',
@@ -1420,6 +1426,8 @@ const DE = {
 };
 
 const FR = {
+  'Change': 'Variation',
+  'applying the new value…': 'application de la nouvelle valeur…',
   'Forced-buy price': 'Prix de rachat',
   'yours': 'à vous',
   'no names registered yet': 'aucun nom enregistré pour l’instant',
@@ -1952,6 +1960,8 @@ const FR = {
 };
 
 const PT = {
+  'Change': 'Alteração',
+  'applying the new value…': 'aplicando o novo valor…',
   'Forced-buy price': 'Preço de recompra',
   'yours': 'seu',
   'no names registered yet': 'ainda não há nomes registrados',
@@ -2484,6 +2494,8 @@ const PT = {
 };
 
 const ZH = {
+  'Change': '变动',
+  'applying the new value…': '正在应用新价值…',
   'Forced-buy price': '赎买价格',
   'yours': '你的',
   'no names registered yet': '尚无已注册的名称',

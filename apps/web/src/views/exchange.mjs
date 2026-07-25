@@ -1642,6 +1642,7 @@ async function openNameModal(name, resolve, price, deposit, declared) {
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="nmBack" class="icon">←</button><b style="flex:1;text-align:center">${tr('Change value')}</b><button id="nmX2" class="icon">✕</button></div>
       <div class="sub" style="font-family:ui-monospace,monospace;font-size:14px">${name}</div>
       <label>${tr('Self-assessed value')} (FRC)<input id="nmMV" type="text" inputmode="decimal" value="${curV}"></label>
+      <div id="nmVDelta" style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:14px"></div>
       <button id="nmMReval">${tr('Confirm')}</button>
       <div id="nmEditLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
     </div>
@@ -1659,7 +1660,20 @@ async function openNameModal(name, resolve, price, deposit, declared) {
   const logR = t => { const el = $('#nmRelLog'); if (el) el.textContent = t; };
   const showScreen = n => { for (const i of [1, 2, 3]) { const s = $('#nmScreen' + i); if (s) s.style.display = i === n ? '' : 'none'; } };
   ['#nmX', '#nmX2', '#nmX3'].forEach(id => { const b = q(m, id); if (b) b.onclick = () => closeOverlay(m); });
-  q(m, '#nmMEdit').onclick = () => { showScreen(2); $('#nmMV')?.focus(); };
+  // live «Изменение: +/− X FRC» against what the holding is worth now, so raising and lowering read
+  // the same way (lowering is legitimate in Harberger — less rent, but cheaper for others to take).
+  const baseV = Number(declared ?? (price ? Number(price) / 1e8 : 0));
+  const paintDelta = () => {
+    const el = $('#nmVDelta'); if (!el) return;
+    const nv = num($('#nmMV')?.value ?? '');
+    const d = (Number.isFinite(nv) ? nv : baseV) - baseV;
+    const s = Math.abs(d) < 1e-8
+      ? '<span class="sub">—</span>'
+      : `<b style="color:var(--${d > 0 ? 'ok' : 'err'})">${d > 0 ? '+' : '−'}${Math.abs(d).toLocaleString(getLang(), { maximumFractionDigits: 8 })} FRC</b>`;
+    el.innerHTML = `<span style="color:var(--sub)">${tr('Change')}</span>${s}`;
+  };
+  q(m, '#nmMV').addEventListener('input', paintDelta);
+  q(m, '#nmMEdit').onclick = () => { showScreen(2); paintDelta(); $('#nmMV')?.focus(); };
   q(m, '#nmBack').onclick = () => { logE(''); showScreen(1); };
   q(m, '#nmBack3').onclick = () => { logR(''); showScreen(1); };
   q(m, '#nmMReval').onclick = async () => {
@@ -1667,10 +1681,15 @@ async function openNameModal(name, resolve, price, deposit, declared) {
     if (!(nv >= rmin)) return toast(`${tr('minimum value is')} ${rmin} FRC`, 'err');
     const btn = $('#nmMReval'); btn.disabled = true;
     try {
-      await L.revalueName({ name, valueFrc: nv, progress: p => logE(
+      // raising goes through path-A (buy your own); lowering must take the owner path, which
+      // consensus allows precisely because there is no successor worth the current price
+      const lower = cov && price && BigInt(Math.round(nv * 1e8)) < BigInt(price);
+      await (lower ? L.lowerName : L.revalueName)({ name, valueFrc: nv, progress: p => logE(
         p === 'rebond' ? tr('rebonding the deposit…')
         : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…')
         : p === 'offer' ? tr('signing the standing sale offer…')
+        : p === 'fund' ? tr('authorizing (funding the owner address)…')
+        : p === 'lower' ? tr('applying the new value…')
         : tr('registered ✅')) });
       toast(`${name}: ${tr('revalued ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
     } catch (e) { toast(e.message, 'err'); logE(e.message); btn.disabled = false; }

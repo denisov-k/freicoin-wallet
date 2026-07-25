@@ -196,6 +196,29 @@ export async function recoverName(name) {
  *  0014{owner} from my FRC, (2) spend HRBG + that owner coin back to my wallet. A forced buyer cannot
  *  do this (no owner key), so only the holder frees a name. @param {{name:string, progress?:(p:string)=>void}} o */
 export async function releaseName({ name, progress = () => {} }) {
+  const { txid, reclaimed } = await ownerPathSpend({ name, successor: null, progress });
+  save(load().filter(x => x.name !== name));
+  progress('done');
+  return { txid, reclaimed };
+}
+
+/** LOWER the self-assessment. Path-A («buy your own») cannot do this — consensus caps the successor
+ *  at >= the current price V there. The OWNER path can: with no successor worth >= V the rule only
+ *  asks for a co-spent 0014{owner} input, so a smaller successor is legal and the freed difference
+ *  comes back. Lowering is part of Harberger, not a loophole: cheaper to hold, cheaper to take away.
+ *  @param {{name:string, valueFrc:number|string, progress?:(p:string)=>void}} o */
+export async function lowerName({ name, valueFrc, progress = () => {} }) {
+  const newV = frcToKria(valueFrc);
+  const r = await ownerPathSpend({ name, successor: newV, progress });
+  save(load().map(x => x.name === name ? { ...x, value: Number(valueFrc) } : x));
+  progress('done');
+  return r;
+}
+
+/** The owner path in one place: fund 0014{owner}, then spend the HRBG together with that coin.
+ *  `successor === null` frees the name; a value creates a smaller successor (a lowered assessment).
+ *  @param {{name:string, successor:bigint|null, progress:(p:string)=>void}} o */
+async function ownerPathSpend({ name, successor, progress }) {
   const rec = load().find(x => x.name === name);
   const c = await nameCoin(name, rec?.floorV ?? FLOOR);
   if (!c) throw new Error('name coin not found');
@@ -218,17 +241,20 @@ export async function releaseName({ name, progress = () => {} }) {
   // 2) release: HRBG (anyone-can-spend) + the owner coin (signed with the covenant key), NO successor.
   //    Present value V of the melting deposit is what the HRBG input is worth at L; reclaim V + FUND − fee.
   const V = covenantPrice(c.value, c.refheight, L);
+  // A successor worth >= V would flip consensus into the forced-buy branch (which then demands a
+  // payout to the owner) — the owner path only covers freeing the name or lowering it.
+  if (successor !== null && successor >= V) throw new Error('use revalue to raise the value');
+  const back = V + FUND - FEE - (successor ?? 0n);         // what returns to the wallet
   const rel = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, nExpireTime: 0, lockHeight: L,
     vin: [opIn(`${c.txid}:${c.vout}`), opIn(`${fundTxid}:0`)],
-    vout: [ out(V + FUND - FEE, ctx.spks[0]) ] };
+    vout: [ ...(successor !== null ? [out(successor, covSpkOf(name, rec?.floorV ?? FLOOR))] : []),
+            out(back, ctx.spks[0]) ] };
   rel.vin[0].witness = [];                                 // HRBG: anyone-can-spend
   const sh = segwitV0Sighash(rel, 1, ownerLeaf, FUND, L, SIGHASH_ALL);
   rel.vin[1].witness = [signEcdsa(ownerKey, sh) + '01', '00' + ownerLeaf, ''];
-  progress('release');
+  progress(successor === null ? 'release' : 'lower');
   const { txid } = await api('tx', { rawtx: serializeTx(rel), kind: 'send' });
-  save(load().filter(x => x.name !== name));
-  progress('done');
-  return { txid, reclaimed: V };
+  return { txid, reclaimed: back };
 }
 
 /** REVALUE (top up) my own name to a higher self-assessment via the path-A buy-your-own: spend the
