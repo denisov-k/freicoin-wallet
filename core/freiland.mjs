@@ -92,33 +92,19 @@ export const validTicker = sym => typeof sym === 'string' && TICKER_RE.test(sym)
 /** Strip the namespace for display: `ticker:USD` → `USD`, a plain name unchanged. */
 export const holdingLabel = id =>
   isTickerId(id) ? id.slice(TICKER_NS.length)
-  : isPlotId(id) ? (parsePlotId(id) ? parsePlotId(id).world + '/' + parsePlotId(id).shape.slice(0, 8) : id)
-  : isWorldId(id) ? id.slice(WORLD_NS.length)
+  : isPlotId(id) ? (plotShapeOf(id) || '').slice(0, 8)
   : id;
-// A PLOT is a cell of the geohash grid inside a WORLD: `plot:sunnyvale:ucfv0n01`. Fixed precision is
-// what makes the covenant enough on its own — same-size cells are either identical or disjoint, so
-// the registry's uniqueness of an id IS uniqueness of the ground, with no geometry in consensus.
-// A WORLD (`world:sunnyvale`) is a holding too: whoever holds it publishes the map's parameters and
-// can be replaced by buying it out, so stewardship needs no committee.
+// A PLOT is a piece of ground, named by its own boundary: `plot:<sha256 of the polygon>`. There is
+// one map — the Earth — and no «world» holding above it: a second map would not settle a single
+// dispute about the ground, it would only let two registries claim the same field.
 export const PLOT_NS = 'plot:';
-export const WORLD_NS = 'world:';
-export const worldId = name => WORLD_NS + String(name ?? '').trim().toLowerCase();
-/** `plot:<world>:<sha256 of the canonical boundary>` — the id COMMITS to the shape; the shape
- *  itself travels in the holding's own transaction (see covenant-land), so anyone can read it back
- *  and check that it hashes to this id. */
-export const plotId = (world, shapeHash) => PLOT_NS + String(world).toLowerCase() + ':' + String(shapeHash).toLowerCase();
+/** `plot:<sha256 of the canonical boundary>` — the id COMMITS to the shape; the shape itself
+ *  travels in the holding's own transaction, so anyone can read it back and check it hashes here. */
+export const plotId = shapeHash => PLOT_NS + String(shapeHash).toLowerCase();
 export const isPlotId = id => typeof id === 'string' && id.startsWith(PLOT_NS);
-export const isWorldId = id => typeof id === 'string' && id.startsWith(WORLD_NS);
-/** `plot:<world>:<hash>` → {world, shape}; null if it is not a plot id. */
-export const parsePlotId = id => {
-  if (!isPlotId(id)) return null;
-  const [world, shape, ...rest] = id.slice(PLOT_NS.length).split(':');
-  return (world && shape && !rest.length) ? { world, shape } : null;
-};
-export const validPlot = id => {
-  const p = parsePlotId(id);
-  return !!p && validLandName(p.world) && /^[0-9a-f]{64}$/.test(p.shape);
-};
+/** `plot:<hash>` → the boundary commitment; null if it is not a plot id. */
+export const plotShapeOf = id => isPlotId(id) ? id.slice(PLOT_NS.length) : null;
+export const validPlot = id => /^[0-9a-f]{64}$/.test(plotShapeOf(id) || '');
 
 // Overlap is a question about SHAPES, so it is answered where the shapes are (covenant-land reads
 // them off the chain and compares with geopoly). The chain does not adjudicate it: a name is created
@@ -130,5 +116,4 @@ export const validPlot = id => {
 export const validHoldingId = id =>
   isTickerId(id) ? validTicker(id.slice(TICKER_NS.length))
   : isPlotId(id) ? validPlot(id)
-  : isWorldId(id) ? validLandName(id.slice(WORLD_NS.length))
   : validLandName(id);

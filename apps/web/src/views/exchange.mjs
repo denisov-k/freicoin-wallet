@@ -1797,7 +1797,7 @@ async function covNameSearch() {
   const ids = [];
   if (covKind === 'ticker') { if (validTicker(name.toUpperCase())) ids.push(tickerId(name)); }
   else if (L.validLandName(name.toLowerCase())) ids.push(name.toLowerCase());
-  if (!ids.length) { res.innerHTML = `<div class="sub">${tr(covKind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : covKind === 'plot' ? 'bad cell' : 'bad name (1–32: a-z 0-9 _ -)')}</div>`; return; }
+  if (!ids.length) { res.innerHTML = `<div class="sub">${tr(covKind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : 'bad name (1–32: a-z 0-9 _ -)')}</div>`; return; }
   res.innerHTML = `<div class="sub">${tr('looking up…')}</div>`;
   try {
     const found = [];
@@ -1857,7 +1857,7 @@ async function buyName(name, price) {
 let mktClass = 'cur';   // 'cur' | 'tok' | 'hold'
 // Which holding namespace the Exchange looks in — mirrors the sub-switch in «Issue» so the two
 // forms read the same. The registry is keyed by hash, so a lookup has to know WHICH id to hash.
-let covKind = 'name';   // 'name' | 'ticker' (plot pending)
+let covKind = 'name';   // 'name' | 'ticker' — a plot is not searched by id, it is found on the map
 export function renderExchange(el) {
   const fopt = cachedFilterOpts();
   const nv3 = currentNet() === 'nv3';
@@ -1885,7 +1885,6 @@ export function renderExchange(el) {
         <button data-k="plot" disabled title="${tr('plots are found on the map')}">${tr('plot')}</button>
       </div>
       <div class="sub" id="covKindHint" style="font-size:12px;margin:2px 0">🗺️ ${tr('Find a name to buy — the covenant registry is keyed by name, there is no public browse.')}</div>
-      <label id="covWorldLbl" hidden>${tr('World')}<input id="covWorld" type="text" value="demo" autocomplete="off" spellcheck="false"></label>
       <div class="row"><input id="covNameQ" type="text" autocomplete="off" spellcheck="false" placeholder="${tr('name')}"><button id="covNameFind">${tr('Find')}</button></div>
       <div id="covNameRes"></div>
       <div id="nameMktLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`
@@ -1913,17 +1912,16 @@ export function renderExchange(el) {
         if (qin.value !== want) { const p = qin.selectionStart; qin.value = want; try { qin.setSelectionRange(p, p); } catch {} }
       };
       const paintCovKind = () => {
-        const tick = covKind === 'ticker', plot = covKind === 'plot';
-        const wl = $('#covWorldLbl'); if (wl) wl.hidden = !plot;
+        const tick = covKind === 'ticker';
         if (qin) {
-          qin.placeholder = tick ? 'USD' : plot ? 'ucfv0n01' : tr('name');
-          qin.maxLength = tick ? 10 : plot ? 12 : 32;
+          qin.placeholder = tick ? 'USD' : tr('name');
+          qin.maxLength = tick ? 10 : 32;
           qin.setAttribute('autocapitalize', tick ? 'characters' : 'none');
           qin.value = ''; qin.dispatchEvent(new Event('input'));
         }
         const res = $('#covNameRes'); if (res) res.innerHTML = '';
         const hint = $('#covKindHint');
-        if (hint) hint.textContent = (tick ? '🏷 ' : '🗺️ ') + tr(plot ? 'Find a plot to buy — a cell is held from the community, so it can be taken over at the price its holder set.' : tick
+        if (hint) hint.textContent = (tick ? '🏷 ' : '🗺️ ') + tr(tick
           ? 'Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.'
           : 'Find a name to buy — the covenant registry is keyed by name, there is no public browse.');
       };

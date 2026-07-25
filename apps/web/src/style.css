@@ -133,3 +133,18 @@ table.mkt .act-cell .p2pstatus { border-color:var(--accent); color:var(--accent)
 .fillbox { display:inline-flex; align-items:center; gap:6px; }
 .fillbox input.rfill { width:60px; padding:7px 8px; font-size:14px; text-align:right; border-radius:8px; }
 .fillbox .rbtn { padding:7px 12px; font-size:13px; font-weight:600; border-radius:8px; white-space:nowrap; }
+
+/* plot map: the controls belong ON the map — they act on what you are looking at, and the space
+   below the map is for what you do with the boundary you drew */
+.mapwrap { position: relative; }
+.map-ctl { position: absolute; display: flex; flex-direction: column; gap: 6px; z-index: 2; }
+.map-ctl-z { top: 10px; right: 10px; }
+.map-ctl-here { left: 10px; bottom: 30px; }
+.mapwrap .map-ctl button {
+  width: 38px; height: 38px; padding: 0; flex: 0 0 auto;
+  font-size: 18px; line-height: 1; font-weight: 600;
+  background: var(--card); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.25);
+}
+.mapwrap .map-ctl button:active { background: var(--line); }

@@ -41,11 +41,9 @@ async function issue() {
         : await import('@/services/market/land.mjs');
       let shape = null, id = name;
       if (kind === 'plot') {
-        const world = ($('#iWorld')?.value || '').trim();
-        if (!world) throw new Error(tr('choose a world first'));
         if (plotPoints.length < 3) throw new Error(tr('no plot drawn yet'));
         shape = encodePolygon(plotPoints);
-        id = plotId(world, sha256(Buffer.from(shape, 'hex')).toString('hex'));
+        id = plotId(sha256(Buffer.from(shape, 'hex')).toString('hex'));
       }
       if (!L.validHoldingId(id)) throw new Error(tr(kind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : 'bad name (1–32: a-z 0-9 _ -)'));
       const v = num($('#iVal')?.value ?? '');
@@ -103,17 +101,15 @@ export function openIssueModal() {
     </div>
     <p class="sub" id="iModeHint" style="font-size:12px">${tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.')}</p>
     <div id="iPlotBox" class="stack" hidden>
-      <label>${tr('World')}<div class="row"><select id="iWorld" style="flex:1"></select><button id="iNewWorld" class="ghost" style="flex:0 0 auto;padding:12px 16px" title="${tr('New world')}">＋</button></div></label>
       <button id="iPickPlot" class="ghost">${tr('Draw the plot on the map')}</button>
       <div class="sub" id="iCellInfo" style="font-size:12px"></div>
     </div>
     <div id="iMapScreen" class="stack" hidden>
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="imBack" class="icon">←</button><b style="flex:1;text-align:center">${tr('Choose a plot')}</b><span style="width:32px"></span></div>
-      <div id="iMap"></div>
-      <div class="row">
-        <button id="iHere" class="ghost">${tr('📍 Where I am')}</button>
-        <button id="iZoomOut" class="ghost" style="flex:0 0 auto;padding:12px 16px">−</button>
-        <button id="iZoomIn" class="ghost" style="flex:0 0 auto;padding:12px 16px">+</button>
+      <b style="text-align:center">${tr('Choose a plot')}</b>
+      <div class="mapwrap">
+        <div id="iMap"></div>
+        <div class="map-ctl map-ctl-z"><button id="iZoomIn" title="+">+</button><button id="iZoomOut" title="−">−</button></div>
+        <div class="map-ctl map-ctl-here"><button id="iHere" title="${tr('📍 Where I am')}">📍</button></div>
       </div>
       <div class="row">
         <button id="imUndo" class="ghost">${tr('Undo corner')}</button>
@@ -121,15 +117,9 @@ export function openIssueModal() {
       </div>
       <div class="sub" id="iMapInfo" style="font-size:12px">${tr('Tap the corners of your plot; tap the first corner to close it.')}</div>
       <button id="imDone">${tr('Choose')}</button>
+      <button id="imBack" class="ghost">${tr('← Back')}</button>
     </div>
-    <div id="iWorldNew" class="stack" hidden>
-      <div class="sub" style="font-size:12px">${tr('A world is a map held from the community: whoever holds it sets its rules, pays rent on it, and can be replaced by buying it out at their own price.')}</div>
-      <label>${tr('World name')}<input id="iwName" type="text" placeholder="sunnyvale" autocomplete="off" spellcheck="false"></label>
-      <label>${tr('Self-assessed value')} (FRC)<input id="iwVal" type="text" inputmode="decimal" placeholder="0.01+"></label>
-      <div class="row"><button id="iwCreate">${tr('Create the world')}</button><button id="iwBack" class="ghost">${tr('Cancel')}</button></div>
-      <div id="iwLog" class="sub" style="font-size:12px;white-space:pre-line"></div>
-    </div>
-    <label>${tr('Name')}<input id="iName" maxlength="24" placeholder="${tr('e.g. labor-hours')}"></label>
+    <label id="iNameLbl">${tr('Name')}<input id="iName" maxlength="24" placeholder="${tr('e.g. labor-hours')}"></label>
     <div id="iFungible" class="stack">
       <div class="row">
         <label>${tr('Type')}<select id="iKind"><option value="c">${tr('constant')}</option><option value="d">${tr('melts')}</option><option value="i">${tr('grows')}</option></select></label>
@@ -182,14 +172,15 @@ export function openIssueModal() {
     const tick = mode === 'n' && kind === 'ticker';
     const plot = mode === 'n' && kind === 'plot';
     const box = $('#iPlotBox'); if (box) box.hidden = !plot;
+    const nl = $('#iNameLbl'); if (nl) nl.hidden = plot;   // a plot has no name: its id IS its boundary
     const inp = /** @type {HTMLInputElement} */ ($('#iName'));
     inp.maxLength = mode !== 'n' ? 24 : tick ? 10 : 32;
-    inp.placeholder = mode !== 'n' ? tr('e.g. labor-hours') : tick ? 'USD' : plot ? 'ucfv0n01' : 'alice';
+    inp.placeholder = mode !== 'n' ? tr('e.g. labor-hours') : tick ? 'USD' : 'alice';
     // A holding id is canonical, and the mobile keyboard fights it: it capitalises the first letter
     // of a name (which must be lower-case) and offers lower-case for a ticker (which must be upper).
     // Force the right shape instead of scolding the user.
     inp.setAttribute('autocapitalize', mode !== 'n' ? 'sentences' : tick ? 'characters' : 'none');
-    if (plot) { fillWorlds(); paintCell(); }
+    if (plot) { mountMap(); paintCell(); syncPlotState(); }
     inp.setAttribute('autocorrect', 'off');
     inp.setAttribute('spellcheck', 'false');
     $('#issueBtn').textContent = mode === 'n' ? tr(tick ? 'Claim the ticker' : plot ? 'Claim the plot' : 'Claim the name') : tr('Issue asset');
@@ -197,14 +188,13 @@ export function openIssueModal() {
       ? tr('Unique named items — tickets, memberships, keys. They do not melt, travel whole on one coin, and names must not repeat.')
       : mode === 'n'
         ? (plot
-          ? tr('🗺 A plot is one cell of the map, held from the community: the id IS the place, so same-size cells never overlap. Your deposit melts as rent and anyone can take the cell at the price you set.')
+          ? tr('🗺 A plot is a boundary you draw on the map, held from the community: the id IS the shape, so a plot names the exact ground. Your deposit melts as rent and anyone can take the plot at the price you set.')
           : tick
           ? tr('🏷 A ticker is the short symbol an asset trades under. Held from the community like a name: nothing stops two issuers picking «USD», so the symbol goes to whoever values it enough to pay the rent.')
           : tr('🗺️ Freiland — a name held from the community: your deposit melts as rent, and anyone can buy it at your self-assessed price.'))
         : tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.');
     if (mode === 'n') $('#iName').dispatchEvent(new Event('input'));   // сразу проверить занятость
   }
-  // what the typed cell actually IS — a place on the ground, not a code
   // what the drawn boundary is, in the form: size and whether it clashes with someone
   function paintCell() {
     const el = $('#iCellInfo'); if (!el) return;
@@ -216,15 +206,13 @@ export function openIssueModal() {
     el.style.color = clash ? 'var(--warn)' : '';
   }
 
-  // ── plot flow: choose a world, draw a boundary on the map, claim it ────────────────────────────
+  // ── plot flow: draw a boundary on the map, claim the ground it encloses ───────────────────────
   let map = null, mapPlots = [];
   async function mountMap(lat = 55.7558, lon = 37.6173) {
     const host = $('#iMap'); if (!host) return;
-    const w0 = ($('#iWorld')?.value || '').trim(); if (!w0) { host.innerHTML = ''; map = null; return; }
     if (isCovenantNet()) {
       const L = await import('@/services/market/covenant-land.mjs');
-      mapPlots = (await L.livePlots().catch(() => [])).filter(x => x.world === w0)
-        .map(x => ({ points: x.points, mine: x.mine }));
+      mapPlots = (await L.livePlots().catch(() => [])).map(x => ({ points: x.points, mine: x.mine }));
     }
     map = mountPlotMap({ el: host, lat, lon, taken: () => mapPlots, onChange: pts => {
       plotPoints = pts;
@@ -242,65 +230,20 @@ export function openIssueModal() {
     } });
   }
 
-  // The worlds you may claim in are read from the chain (each announces itself), never typed — and
-  // never auto-picked: claiming ground in a map you did not choose is the mistake to avoid.
-  async function fillWorlds(select = null) {
-    const sel = /** @type {HTMLSelectElement} */ ($('#iWorld')); if (!sel) return;
-    let worlds = [];
-    if (isCovenantNet()) { const L = await import('@/services/market/covenant-land.mjs'); worlds = await L.liveWorlds().catch(() => []); }
-    const cur = select || sel.value;
-    sel.innerHTML = `<option value="">${tr(worlds.length ? 'Choose a world' : 'no worlds yet — create one')}</option>`
-      + worlds.map(w => `<option value="${w.name}">${w.name}${w.mine ? ' · ' + tr('yours') : ''}</option>`).join('');
-    sel.value = (cur && worlds.some(w => w.name === cur)) ? cur : '';
-    syncPlotState();
-  }
-
-  // one place that decides what the plot form allows: no world ⇒ nothing to draw, no boundary ⇒
-  // nothing to claim, said plainly instead of failing later on a malformed id
+  // one place that decides what the plot form allows: no boundary ⇒ nothing to claim, said
+  // plainly instead of failing later on a malformed id
   function syncPlotState() {
     if (kind !== 'plot') return;
-    const world = ($('#iWorld')?.value || '').trim();
-    const pick = $('#iPickPlot'); if (pick) pick.disabled = !world;
-    const btn = $('#issueBtn'); if (btn) btn.disabled = !world || plotPoints.length < 3;
+    const btn = $('#issueBtn'); if (btn) btn.disabled = plotPoints.length < 3;
     const info = $('#iCellInfo');
-    if (info && plotPoints.length < 3) info.textContent = world ? tr('no plot drawn yet') : tr('choose a world first');
+    if (info && plotPoints.length < 3) info.textContent = tr('no plot drawn yet');
   }
 
-  const mainEls = () => [$('#iPlotBox'), $('#iName')?.closest('label'), $('#iLandBox'), $('#iLandKind'), $('#iMode'), $('#issueBtn')];
-  const showWorldForm = on => { mainEls().forEach(x => { if (x) x.hidden = on; }); const a = $('#iWorldNew'); if (a) a.hidden = !on; };
+  const mainEls = () => [$('#iPlotBox'), $('#iNameLbl'), $('#iLandBox'), $('#iLandKind'), $('#iMode'), $('#iModeHint'), $('#issueBtn')];
   const showMapScreen = on => {
     mainEls().forEach(x => { if (x) x.hidden = on; });
     const scr = $('#iMapScreen'); if (scr) scr.hidden = !on;
     if (on) { if (!map) mountMap(); else map.draw(); }
-  };
-
-  const wsel = q(m, '#iWorld'); if (wsel) wsel.onchange = () => { syncPlotState(); mountMap(); };
-  const nwBtn = q(m, '#iNewWorld'); if (nwBtn) nwBtn.onclick = () => showWorldForm(true);
-  const iwBack = q(m, '#iwBack'); if (iwBack) iwBack.onclick = () => showWorldForm(false);
-  const iwCreate = q(m, '#iwCreate');
-  if (iwCreate) iwCreate.onclick = async () => {
-    const logW = t => { const el = $('#iwLog'); if (el) el.textContent = t; };
-    const name = ($('#iwName')?.value || '').trim().toLowerCase();
-    const v = num($('#iwVal')?.value ?? '');
-    try {
-      const L = await import('@/services/market/covenant-land.mjs');
-      if (!L.validLandName(name)) throw new Error(tr('bad name (1–32: a-z 0-9 _ -)'));
-      const min = await L.minValueFrc();
-      if (!(v >= min)) throw new Error(`${tr('minimum value is')} ${min} FRC`);
-      iwCreate.disabled = true;
-      await L.registerName({ name: L.worldId(name), valueFrc: v, progress: p2 => logW(
-        p2 === 'lock' ? tr('locking the deposit…') : tr('registered ✅')) });
-      toast(`${name}: ${tr('world created ✅')}`, 'ok');
-      showWorldForm(false); paintMyNames();
-      // the registry lists CONFIRMED holdings only, so the new world lands a block later
-      logW(tr('waiting for confirmation (this can take a few minutes)…'));
-      for (let i = 0; i < 40; i++) {
-        await fillWorlds(name);
-        if (/** @type {HTMLSelectElement} */ ($('#iWorld'))?.value === name) { logW(''); mountMap(); break; }
-        await new Promise(r => setTimeout(r, 5000));
-      }
-    } catch (e) { logW(e.message); toast(e.message, 'err'); }
-    finally { iwCreate.disabled = false; }
   };
 
   const pickBtn = q(m, '#iPickPlot'); if (pickBtn) pickBtn.onclick = () => showMapScreen(true);
@@ -317,7 +260,7 @@ export function openIssueModal() {
     const el = $('#iCellInfo'); if (el) el.textContent = tr('locating…');
     navigator.geolocation.getCurrentPosition(
       pos => map?.centre(pos.coords.latitude, pos.coords.longitude),
-      () => { const e2 = $('#iCellInfo'); if (e2) e2.textContent = tr('could not get your position — type a cell instead'); },
+      () => { const e2 = $('#iCellInfo'); if (e2) e2.textContent = tr('could not get your position — pan the map instead'); },
       { enableHighAccuracy: true, timeout: 10000 });
   };
 
@@ -344,7 +287,7 @@ export function openIssueModal() {
         ? await import('@/services/market/covenant-land.mjs')
         : await import('@/services/market/land.mjs');
       const id = holdingId(name);
-      if (!L.validHoldingId(id)) { const e2 = $('#iAvail'); if (e2) { e2.textContent = tr(kind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : kind === 'plot' ? 'bad cell' : 'bad name (1–32: a-z 0-9 _ -)'); e2.style.color = 'var(--err)'; } return; }
+      if (!L.validHoldingId(id)) { const e2 = $('#iAvail'); if (e2) { e2.textContent = tr(kind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : 'bad name (1–32: a-z 0-9 _ -)'); e2.style.color = 'var(--err)'; } return; }
       const addr = await L.resolveName(id); if (q(m, '#iName').value.trim() !== name) return;
       const e2 = $('#iAvail'); if (!e2) return;
       // A name taken by THIS seed (mine) is not "taken" from the owner's view — the chain keeps only

@@ -4,7 +4,7 @@
 // it), the grid was only deforming boundaries to fit the data structure. A boundary follows a river
 // or a fence, so the wallet stores the boundary.
 //
-// The id commits to the shape: plot:<world>:<sha256 of the canonical encoding>. The shape itself
+// The id commits to the shape: plot:<sha256 of the canonical encoding>. The shape itself
 // rides in the holding's own transaction, so anyone can read it back and check it hashes to the id.
 // Everything here is exact integer arithmetic on 1e-6 degrees (≈11 cm) — the same bytes always
 // produce the same hash, which is what makes the commitment work.
