@@ -1598,7 +1598,7 @@ export async function paintMyNames() {
   box.innerHTML = mine.length
     ? mine.map(n =>
         `<tr><td style="font-family:ui-monospace,monospace">${n.name}${n.lapsed ? ' ⚠' : ''}</td>
-           <td class="r">${(n.price || n.value) ? fmtFrcN(n.price || n.value) : '—'} FRC</td>
+           <td class="r">${(n.price || n.value) ? fmtFrc8(n.price || n.value) : '—'} FRC</td>
            <td class="act-cell"><button class="icon nmMng" data-n="${n.name}" data-r="${n.resolve || ''}" data-p="${n.price || ''}" data-d="${n.value || ''}" data-v="${n.declared ?? ''}" title="${tr('Manage')}">⋯</button></td></tr>`).join('')
     : `<tr><td colspan="3" class="sub">${tr('no names yet — claim one in Issue → Holdings')}</td></tr>`;
   box.querySelectorAll('.nmMng').forEach(b => b.onclick = () => openNameModal(b.dataset.n, b.dataset.r, b.dataset.p, b.dataset.d, b.dataset.v));
@@ -1758,7 +1758,7 @@ async function covNameSearch() {
     if (!info) { res.innerHTML = `<div class="sub">${tr('free — claim it in Issue → Holdings')}</div>`; return; }
     res.innerHTML = `<table class="mkt"><tbody><tr>
       <td style="font-family:ui-monospace,monospace">${name}${info.mine ? ' · ' + tr('yours') : ''}</td>
-      <td class="r">${fmtFrcN(info.price)} FRC</td>
+      <td class="r">${fmtFrc8(info.price)} FRC</td>
       <td class="act-cell">${info.mine ? '' : `<button id="covBuy" class="rbtn" title="${tr('Buy')}" aria-label="${tr('Buy')}">${SVG.buy}</button>`}</td>
     </tr></tbody></table>`;
     const bb = $('#covBuy'); if (bb) bb.onclick = () => buyName(name, String(info.price));
