@@ -88,7 +88,7 @@ export function openIssueModal() {
   mode = 'a';
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Issue asset')}</b><button id="issClose" class="icon">✕</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b id="issTitle">${tr('Issue asset')}</b><button id="issClose" class="icon">✕</button></div>
     <div class="seg" id="iMode">
       <button data-m="a" class="on">${tr('Currency')}</button>
       <button data-m="t">${tr('Token')}</button>
@@ -105,7 +105,6 @@ export function openIssueModal() {
       <div class="sub" id="iCellInfo" style="font-size:12px"></div>
     </div>
     <div id="iMapScreen" class="stack" hidden>
-      <b style="text-align:center">${tr('Choose a plot')}</b>
       <div class="mapwrap">
         <div id="iMap"></div>
         <div class="map-ctl map-ctl-z"><button id="iZoomIn" title="+">+</button><button id="iZoomOut" title="−">−</button></div>
@@ -242,6 +241,7 @@ export function openIssueModal() {
   const mainEls = () => [$('#iPlotBox'), $('#iNameLbl'), $('#iLandBox'), $('#iLandKind'), $('#iMode'), $('#iModeHint'), $('#issueBtn')];
   const showMapScreen = on => {
     mainEls().forEach(x => { if (x) x.hidden = on; });
+    const ttl = $('#issTitle'); if (ttl) ttl.textContent = on ? tr('Choose a plot') : tr('Issue asset');
     const scr = $('#iMapScreen'); if (scr) scr.hidden = !on;
     if (on) { if (!map) mountMap(); else map.draw(); }
   };
