@@ -2,6 +2,7 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  "Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.": "Найдите символ для выкупа. Тикер тоже держится «в аренду у общины», поэтому его можно перехватить по цене, которую назначил держатель.",
   "you hold no assets yet": "у вас пока нет активов",
   "Link an asset": "Привязать актив",
   "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "Объявите, какой актив обозначает этот символ. После этого любой сможет проверить связь по цепи: объявление едет в той же транзакции, что держит тикер, поэтому сделать его может только держатель.",
@@ -368,6 +369,7 @@ const RU = {
 };
 
 const ES = {
+  "Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.": "Busca un símbolo para comprar. El símbolo también se tiene en arriendo de la comunidad, así que puede tomarse al precio que fijó su tenedor.",
   "you hold no assets yet": "aún no tienes activos",
   "Link an asset": "Vincular un activo",
   "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "Declara qué activo representa este símbolo. Cualquiera podrá verificarlo contra la cadena: la declaración viaja en la transacción que sostiene el símbolo, así que solo su tenedor puede hacerla.",
@@ -912,6 +914,7 @@ const ES = {
 };
 
 const DE = {
+  "Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.": "Suche ein Kürzel zum Übernehmen. Auch ein Kürzel wird von der Gemeinschaft gehalten — man kann es zu dem Preis übernehmen, den sein Inhaber gesetzt hat.",
   "you hold no assets yet": "du hältst noch keine Assets",
   "Link an asset": "Asset verknüpfen",
   "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "Gib bekannt, für welches Asset dieses Kürzel steht. Danach kann es jeder gegen die Kette prüfen: die Bekanntgabe reist in der Transaktion, die das Kürzel hält — nur der Inhaber kann sie machen.",
@@ -1456,6 +1459,7 @@ const DE = {
 };
 
 const FR = {
+  "Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.": "Cherchez un symbole à racheter. Un symbole se tient aussi en location auprès de la communauté : on peut le reprendre au prix fixé par son détenteur.",
   "you hold no assets yet": "vous ne détenez encore aucun actif",
   "Link an asset": "Lier un actif",
   "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "Annoncez quel actif ce symbole désigne. Chacun pourra le vérifier sur la chaîne : l’annonce voyage dans la transaction qui détient le symbole, seul son détenteur peut donc la faire.",
@@ -2000,6 +2004,7 @@ const FR = {
 };
 
 const PT = {
+  "Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.": "Busque um símbolo para comprar. O símbolo também é mantido em arrendamento da comunidade, então pode ser tomado pelo preço que seu detentor definiu.",
   "you hold no assets yet": "você ainda não tem ativos",
   "Link an asset": "Vincular um ativo",
   "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "Anuncie qual ativo este símbolo representa. Qualquer um poderá verificar na cadeia: o anúncio viaja na transação que mantém o símbolo, então só o detentor pode fazê-lo.",
@@ -2544,6 +2549,7 @@ const PT = {
 };
 
 const ZH = {
+  "Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.": "查找可购买的代号。代号同样向社区租用，因此可以按持有者设定的价格接手。",
   "you hold no assets yet": "你还没有资产",
   "Link an asset": "关联资产",
   "Announce which asset this symbol stands for. Anyone can then verify it against the chain — the announcement rides in the transaction holding the ticker, so only its holder can make it.": "声明该代号代表哪个资产。之后任何人都能对链验证：声明随持有代号的交易一起写入，因此只有持有者才能做出。",

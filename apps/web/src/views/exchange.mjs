@@ -1791,12 +1791,12 @@ async function covNameSearch() {
   const res = $('#covNameRes'); if (!res) return;
   const L = await covMod();
   if (!name) { res.innerHTML = ''; return; }
-  // One field, both namespaces: a bare name and — when the input could be a symbol — the ticker id.
-  // The registry is keyed by hash, so we simply look up each candidate the input could canonically be.
+  // Look in the namespace the switch selects — the registry is keyed by hash, so the lookup has to
+  // know which id to hash. Canonical case per kind, same as the claim form.
   const ids = [];
-  if (L.validLandName(name.toLowerCase())) ids.push(name.toLowerCase());
-  if (validTicker(name.toUpperCase())) ids.push(tickerId(name));
-  if (!ids.length) { res.innerHTML = `<div class="sub">${tr('bad name (1–32: a-z 0-9 _ -)')}</div>`; return; }
+  if (covKind === 'ticker') { if (validTicker(name.toUpperCase())) ids.push(tickerId(name)); }
+  else if (L.validLandName(name.toLowerCase())) ids.push(name.toLowerCase());
+  if (!ids.length) { res.innerHTML = `<div class="sub">${tr(covKind === 'ticker' ? 'bad ticker (2–10: A-Z 0-9)' : 'bad name (1–32: a-z 0-9 _ -)')}</div>`; return; }
   res.innerHTML = `<div class="sub">${tr('looking up…')}</div>`;
   try {
     const found = [];
@@ -1854,6 +1854,9 @@ async function buyName(name, price) {
 // Токены (пользовательские токены/тикеты), Владения (Freiland-имена — доска + выкуп). Имена-NFT
 // исключены из книги (у них есть tokenHash — иначе попали бы в «Токены») и живут только в «Владениях».
 let mktClass = 'cur';   // 'cur' | 'tok' | 'hold'
+// Which holding namespace the Exchange looks in — mirrors the sub-switch in «Issue» so the two
+// forms read the same. The registry is keyed by hash, so a lookup has to know WHICH id to hash.
+let covKind = 'name';   // 'name' | 'ticker' (plot pending)
 export function renderExchange(el) {
   const fopt = cachedFilterOpts();
   const nv3 = currentNet() === 'nv3';
@@ -1875,7 +1878,12 @@ export function renderExchange(el) {
       <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>
     </div>
     ${nv3 ? `<div id="mktHold" hidden>
-      ${cov ? `<div class="sub" style="font-size:12px;margin:2px 0">🗺️ ${tr('Find a name to buy — the covenant registry is keyed by name, there is no public browse.')}</div>
+      ${cov ? `<div class="seg" id="covKind">
+        <button data-k="name" class="on">${tr('name (human-readable)')}</button>
+        <button data-k="ticker">${tr('ticker')}</button>
+        <button data-k="plot" disabled title="${tr('coming soon')}">${tr('plot')}</button>
+      </div>
+      <div class="sub" id="covKindHint" style="font-size:12px;margin:2px 0">🗺️ ${tr('Find a name to buy — the covenant registry is keyed by name, there is no public browse.')}</div>
       <div class="row"><input id="covNameQ" type="text" autocomplete="off" spellcheck="false" placeholder="${tr('name')}"><button id="covNameFind">${tr('Find')}</button></div>
       <div id="covNameRes"></div>
       <div id="nameMktLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`
@@ -1897,6 +1905,33 @@ export function renderExchange(el) {
       const find = $('#covNameFind'), qin = $('#covNameQ');
       if (find) find.onclick = covNameSearch;
       if (qin) qin.onkeydown = e => { if (e.key === 'Enter') covNameSearch(); };
+      // the id is canonical per kind and the keyboard offers the wrong case for both — fold as you type
+      if (qin) qin.oninput = () => {
+        const want = covKind === 'ticker' ? qin.value.toUpperCase() : qin.value.toLowerCase();
+        if (qin.value !== want) { const p = qin.selectionStart; qin.value = want; try { qin.setSelectionRange(p, p); } catch {} }
+      };
+      const paintCovKind = () => {
+        const tick = covKind === 'ticker';
+        if (qin) {
+          qin.placeholder = tick ? 'USD' : tr('name');
+          qin.maxLength = tick ? 10 : 32;
+          qin.setAttribute('autocapitalize', tick ? 'characters' : 'none');
+          qin.value = ''; qin.dispatchEvent(new Event('input'));
+        }
+        const res = $('#covNameRes'); if (res) res.innerHTML = '';
+        const hint = $('#covKindHint');
+        if (hint) hint.textContent = (tick ? '🏷 ' : '🗺️ ') + tr(tick
+          ? 'Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.'
+          : 'Find a name to buy — the covenant registry is keyed by name, there is no public browse.');
+      };
+      el.querySelectorAll('#covKind button').forEach((/** @type {HTMLButtonElement} */ b) => {
+        if (b.disabled) return;
+        b.onclick = () => {
+          covKind = b.dataset.k;
+          el.querySelectorAll('#covKind button').forEach(x => x.classList.toggle('on', x === b));
+          paintCovKind();
+        };
+      });
     } else {
       paintNameMarket();   // relay only: populate the name-tag set (book exclusion) + the board
     }
