@@ -1738,8 +1738,10 @@ async function openNameModal(name, resolve, price, deposit) {
     const logB = t => { const el = $('#nmBindLog'); if (el) el.textContent = t; };
     bindGo.disabled = true;
     try {
-      // republish the holding at its CURRENT price, carrying the announcement — costs fees only
-      // (path A pays the price to the owner address, which the service sweeps straight back)
+      // republish at TODAY'S price, carrying the announcement — that is what leaves the price alone:
+      // the price IS the present value, so a deposit set to it keeps the number a buyer sees exactly
+      // where it was. (Republishing at the old nominal would instead undo the rent burned so far,
+      // raising the price and charging for it.) Costs fees only; the payout comes straight back.
       await L.revalueName({ name, valueFrc: null, bind: tag, progress: p => logB(
         p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…') : tr('registered ✅')) });
       toast(`${holdingLabel(name)}: ${tr('asset linked ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
