@@ -2,6 +2,13 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  "Choose a world": "Выберите мир",
+  "Choose a plot on the map": "Выбрать участок на карте",
+  "Choose a plot": "Выбор участка",
+  "Choose": "Выбрать",
+  "Cell": "Ячейка",
+  "no plot chosen yet": "участок не выбран",
+  "choose a world first": "сначала выберите мир",
   "New world": "Новый мир",
   "World name": "Название мира",
   "Create the world": "Создать мир",
@@ -390,6 +397,13 @@ const RU = {
 };
 
 const ES = {
+  "Choose a world": "Elige un mundo",
+  "Choose a plot on the map": "Elegir parcela en el mapa",
+  "Choose a plot": "Elegir parcela",
+  "Choose": "Elegir",
+  "Cell": "Celda",
+  "no plot chosen yet": "aún no hay parcela elegida",
+  "choose a world first": "elige primero un mundo",
   "New world": "Nuevo mundo",
   "World name": "Nombre del mundo",
   "Create the world": "Crear el mundo",
@@ -956,6 +970,13 @@ const ES = {
 };
 
 const DE = {
+  "Choose a world": "Welt wählen",
+  "Choose a plot on the map": "Parzelle auf der Karte wählen",
+  "Choose a plot": "Parzelle wählen",
+  "Choose": "Wählen",
+  "Cell": "Zelle",
+  "no plot chosen yet": "noch keine Parzelle gewählt",
+  "choose a world first": "wähle zuerst eine Welt",
   "New world": "Neue Welt",
   "World name": "Name der Welt",
   "Create the world": "Welt erstellen",
@@ -1522,6 +1543,13 @@ const DE = {
 };
 
 const FR = {
+  "Choose a world": "Choisissez un monde",
+  "Choose a plot on the map": "Choisir une parcelle sur la carte",
+  "Choose a plot": "Choisir une parcelle",
+  "Choose": "Choisir",
+  "Cell": "Cellule",
+  "no plot chosen yet": "aucune parcelle choisie",
+  "choose a world first": "choisissez d’abord un monde",
   "New world": "Nouveau monde",
   "World name": "Nom du monde",
   "Create the world": "Créer le monde",
@@ -2088,6 +2116,13 @@ const FR = {
 };
 
 const PT = {
+  "Choose a world": "Escolha um mundo",
+  "Choose a plot on the map": "Escolher parcela no mapa",
+  "Choose a plot": "Escolher parcela",
+  "Choose": "Escolher",
+  "Cell": "Célula",
+  "no plot chosen yet": "nenhuma parcela escolhida",
+  "choose a world first": "escolha primeiro um mundo",
   "New world": "Novo mundo",
   "World name": "Nome do mundo",
   "Create the world": "Criar o mundo",
@@ -2654,6 +2689,13 @@ const PT = {
 };
 
 const ZH = {
+  "Choose a world": "选择世界",
+  "Choose a plot on the map": "在地图上选择地块",
+  "Choose a plot": "选择地块",
+  "Choose": "选择",
+  "Cell": "单元",
+  "no plot chosen yet": "尚未选择地块",
+  "choose a world first": "请先选择世界",
   "New world": "新世界",
   "World name": "世界名称",
   "Create the world": "创建世界",

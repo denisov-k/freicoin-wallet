@@ -95,13 +95,20 @@ export function openIssueModal() {
     <p class="sub" id="iModeHint" style="font-size:12px">${tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.')}</p>
     <div id="iPlotBox" class="stack" hidden>
       <label>${tr('World')}<div class="row"><select id="iWorld" style="flex:1"></select><button id="iNewWorld" class="ghost" style="flex:0 0 auto;padding:12px 16px" title="${tr('New world')}">＋</button></div></label>
+      <button id="iPickPlot" class="ghost">${tr('Choose a plot on the map')}</button>
+      <div class="sub" id="iCellInfo" style="font-size:12px"></div>
+    </div>
+    <div id="iMapScreen" class="stack" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button id="imBack" class="icon">←</button><b style="flex:1;text-align:center">${tr('Choose a plot')}</b><span style="width:32px"></span></div>
       <div id="iMap"></div>
       <div class="row">
         <button id="iHere" class="ghost">${tr('📍 Where I am')}</button>
         <button id="iZoomOut" class="ghost" style="flex:0 0 auto;padding:12px 16px">−</button>
         <button id="iZoomIn" class="ghost" style="flex:0 0 auto;padding:12px 16px">+</button>
       </div>
-      <div class="sub" id="iCellInfo" style="font-size:12px"></div>
+      <label>${tr('Cell')}<input id="iCellManual" type="text" autocomplete="off" spellcheck="false" placeholder="ucfv0n01" maxlength="12"></label>
+      <div class="sub" id="iMapInfo" style="font-size:12px"></div>
+      <button id="imDone">${tr('Choose')}</button>
     </div>
     <div id="iWorldNew" class="stack" hidden>
       <div class="sub" style="font-size:12px">${tr('A world is a map held from the community: whoever holds it sets its rules, pays rent on it, and can be replaced by buying it out at their own price.')}</div>
@@ -170,7 +177,7 @@ export function openIssueModal() {
     // of a name (which must be lower-case) and offers lower-case for a ticker (which must be upper).
     // Force the right shape instead of scolding the user.
     inp.setAttribute('autocapitalize', mode !== 'n' ? 'sentences' : tick ? 'characters' : 'none');
-    if (plot) { fillWorlds().then(() => mountMap()); paintCell(); }
+    if (plot) { fillWorlds(); paintCell(); }
     inp.setAttribute('autocorrect', 'off');
     inp.setAttribute('spellcheck', 'false');
     $('#issueBtn').textContent = mode === 'n' ? tr(tick ? 'Claim the ticker' : plot ? 'Claim the plot' : 'Claim the name') : tr('Issue asset');
@@ -216,17 +223,30 @@ export function openIssueModal() {
     let worlds = [];
     if (isCovenantNet()) { const L = await import('@/services/market/covenant-land.mjs'); worlds = await L.liveWorlds().catch(() => []); }
     const cur = select || sel.value;
-    sel.innerHTML = worlds.length
-      ? worlds.map(w => `<option value="${w.name}">${w.name}${w.mine ? ' · ' + tr('yours') : ''}</option>`).join('')
-      : `<option value="">${tr('no worlds yet — create one')}</option>`;
-    if (cur && worlds.some(w => w.name === cur)) sel.value = cur;
-    const btn = $('#issueBtn'); if (btn && kind === 'plot') btn.disabled = !worlds.length;
+    // never auto-pick: claiming ground in a map you did not choose is exactly the mistake the
+    // free-text field invited. The placeholder stays selected until the user says which world.
+    sel.innerHTML = `<option value="">${tr(worlds.length ? 'Choose a world' : 'no worlds yet — create one')}</option>`
+      + worlds.map(w => `<option value="${w.name}">${w.name}${w.mine ? ' · ' + tr('yours') : ''}</option>`).join('');
+    sel.value = (cur && worlds.some(w => w.name === cur)) ? cur : '';
+    syncPlotState();
+  }
+  // one place that decides what the plot form allows: no world chosen ⇒ nothing to pick and nothing
+  // to claim, so both are disabled rather than failing later with a cryptic id error.
+  function syncPlotState() {
+    if (kind !== 'plot') return;
+    const world = ($('#iWorld')?.value || '').trim();
+    const pick = $('#iPickPlot'); if (pick) pick.disabled = !world;
+    const cell = ($('#iName')?.value || '').trim();
+    const btn = $('#issueBtn'); if (btn) btn.disabled = !world || !cell;
+    const info = $('#iCellInfo');
+    if (info && !cell) info.textContent = world ? tr('no plot chosen yet') : tr('choose a world first');
   }
   const showWorldForm = on => {
     const a = $('#iWorldNew'), b2 = $('#iPlotBox'), nm = $('#iName')?.closest('label'), v = $('#iLandBox'), sw = $('#iLandKind'), md = $('#iMode'), btn = $('#issueBtn');
     [b2, nm, v, sw, md, btn].forEach(x => { if (x) x.hidden = on; });
     if (a) a.hidden = !on;
   };
+  const wsel = q(m, '#iWorld'); if (wsel) wsel.onchange = () => { syncPlotState(); mountMap(); };
   const nwBtn = q(m, '#iNewWorld'); if (nwBtn) nwBtn.onclick = () => showWorldForm(true);
   const iwBack = q(m, '#iwBack'); if (iwBack) iwBack.onclick = () => showWorldForm(false);
   const iwCreate = q(m, '#iwCreate');
@@ -261,6 +281,7 @@ export function openIssueModal() {
   let map = null, mapPlots = [];
   async function mountMap(lat = 55.7558, lon = 37.6173) {
     const host = $('#iMap'); if (!host) return;
+    const w0 = ($('#iWorld')?.value || '').trim(); if (!w0) { host.innerHTML = ''; map = null; return; }
     if (isCovenantNet()) {
       const L = await import('@/services/market/covenant-land.mjs');
       const world = ($('#iWorld')?.value || '').trim();
@@ -271,10 +292,35 @@ export function openIssueModal() {
     }
     map = mountPlotMap({ el: host, lat, lon, precision: PLOT_PRECISION,
       taken: () => mapPlots,
-      onPick: cell => { const i = /** @type {HTMLInputElement} */ ($('#iName')); i.value = cell; i.dispatchEvent(new Event('input', { bubbles: true })); } });
+      onPick: cell => {
+        const i = /** @type {HTMLInputElement} */ ($('#iName'));
+        i.value = cell; i.dispatchEvent(new Event('input', { bubbles: true }));
+        const mi = /** @type {HTMLInputElement} */ ($('#iCellManual')); if (mi) mi.value = cell;
+        const info = $('#iMapInfo');
+        if (info) { try { const c = geohashDecode(cell), z = geohashSize(cell);
+          info.textContent = `${cell} · ${c.lat.toFixed(5)}, ${c.lon.toFixed(5)} · ≈ ${z.widthM}×${z.heightM} ${tr('m')}`; } catch {} }
+      } });
   }
   const zi = q(m, '#iZoomIn'); if (zi) zi.onclick = () => map?.zoom(1);
   const zo = q(m, '#iZoomOut'); if (zo) zo.onclick = () => map?.zoom(-1);
+  const showMapScreen = on => {
+    const scr = $('#iMapScreen');
+    [$('#iPlotBox'), $('#iName')?.closest('label'), $('#iLandBox'), $('#iLandKind'), $('#iMode'), $('#issueBtn')]
+      .forEach(x => { if (x) x.hidden = on; });
+    if (scr) scr.hidden = !on;
+    if (on) { mountMap(); map?.draw(); }
+  };
+  const pickBtn = q(m, '#iPickPlot'); if (pickBtn) pickBtn.onclick = () => showMapScreen(true);
+  const imBack = q(m, '#imBack'); if (imBack) imBack.onclick = () => showMapScreen(false);
+  const imDone = q(m, '#imDone'); if (imDone) imDone.onclick = () => { showMapScreen(false); paintCell(); };
+  const manual = q(m, '#iCellManual');
+  if (manual) manual.oninput = () => {
+    const v = manual.value.trim().toLowerCase();
+    if (manual.value !== v) manual.value = v;
+    const inp = /** @type {HTMLInputElement} */ ($('#iName'));
+    inp.value = v; inp.dispatchEvent(new Event('input', { bubbles: true }));
+    if (v.length >= 1) map?.select(v);
+  };
 
   const hereBtn = q(m, '#iHere');
   if (hereBtn) hereBtn.onclick = () => {
@@ -307,7 +353,7 @@ export function openIssueModal() {
       try { inp.setSelectionRange(pos, pos); } catch {}
     }
     const el = $('#iAvail'); if (el) { el.textContent = ''; el.style.color = ''; }
-    if (kind === 'plot') paintCell();
+    if (kind === 'plot') { paintCell(); syncPlotState(); }
     clearTimeout(availT);
     const name = inp.value.trim();
     if (!name) return;
