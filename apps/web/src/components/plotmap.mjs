@@ -141,6 +141,14 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange }) {
     st.pts.push(p); draw(); onChange(st.pts.slice());
   };
   cv.onwheel = e => { e.preventDefault(); setZoom(Math.round(st.z) + (e.deltaY > 0 ? -1 : 1)); };
+  // Safari zooms the PAGE on a double tap and honours touch-action for it only sometimes — on a map
+  // you tap corner after corner, so swallow the second tap of a pair outright
+  let lastTap = 0;
+  cv.addEventListener('touchend', e => {
+    const now = e.timeStamp;
+    if (now - lastTap < 400) e.preventDefault();
+    lastTap = now;
+  }, { passive: false });
   // the buttons step whole levels, so they snap a pinched view back onto a crisp tile level
   function setZoom(z) { const nz = Math.max(3, Math.min(19, z)); if (nz === st.z) return; st.z = nz; draw(); }
 
