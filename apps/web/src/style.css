@@ -119,7 +119,9 @@ table.mkt .r { text-align:right; }
 table.mkt .act-cell { text-align:right; white-space:nowrap; }   /* Buy/Cancel hug the right edge */
 table.mkt .act-cell span { white-space:normal; display:inline-block; }   /* text statuses wrap instead of stretching the table past the screen */
 /* action column = one compact icon per row (buy/pay = accent, cancel/status = outline) so nothing overflows */
-table.mkt .act-cell button { width:34px; height:34px; padding:0; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; vertical-align:middle; }
+/* icon buttons stay square (18px glyph + 8px each side = 34), but a TEXT action — «Cancel», which
+   is «Отмена» in Russian and longer still elsewhere — has to grow instead of spilling out of the box */
+table.mkt .act-cell button { min-width:34px; height:34px; padding:0 8px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; vertical-align:middle; white-space:nowrap; }
 table.mkt .act-cell button svg { width:18px; height:18px; display:block; }
 table.mkt .act-cell button:not(.rbtn) { background:none; border:1px solid var(--line); color:var(--fg); }
 table.mkt .act-cell .p2pstatus { border-color:var(--accent); color:var(--accent); }   /* in-flight: tap for status + cancel */
