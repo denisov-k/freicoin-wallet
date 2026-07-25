@@ -4,10 +4,15 @@
 // usable, and the server that serves them learns which area you are looking at. Nothing else about
 // the wallet changes — no key, balance or transaction ever goes near it, and the tile URL is a
 // setting, so it can be pointed at a community's own server (or switched off) later.
-import { polygonArea, polygonCentre, polygonsOverlap, pointInPolygon, MAX_VERTICES } from '@core/geopoly.mjs';
+import { polygonArea, polygonCentre, polygonsOverlap, MAX_VERTICES } from '@core/geopoly.mjs';
 
 const TILE = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const TS = 256;
+const MAX_TILE_Z = 19;   // the deepest level the tile server has
+// …but a plot can be a few metres across, so the view goes deeper than the tiles do and the last
+// level is simply stretched: blurrier ground, and corners you can actually place apart.
+const MAX_Z = 21;
+const BADGE = 13;        // radius of a taken plot's «what is this?» badge
 const lon2x = (lon, z) => (lon + 180) / 360 * Math.pow(2, z);
 const lat2y = (lat, z) => (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, z);
 const x2lon = (x, z) => x / Math.pow(2, z) * 360 - 180;
@@ -24,7 +29,7 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
   cv.style.cssText = 'width:100%;height:300px;border:1px solid var(--line);border-radius:10px;touch-action:none;'
     + 'user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;display:block;cursor:crosshair';
   el.innerHTML = ''; el.appendChild(cv);
-  const st = { lat, lon, z: zoom, pts: [], sel: null };   // z is fractional — a pinch zooms between tile levels
+  const st = { lat, lon, z: zoom, pts: [], sel: null, badges: [] };   // z is fractional — a pinch zooms between tile levels
   const tiles = new Map();                                   // cached tile images, keyed z/x/y
 
   const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
@@ -55,7 +60,7 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
     g.fillStyle = css('--card'); g.fillRect(0, 0, w, h);
     // basemap: a pinch zooms continuously, tiles only exist at whole levels — so take the nearest
     // level and scale it by the remainder (ts), which is what keeps the map still under the fingers
-    const zi = Math.max(0, Math.min(19, Math.round(st.z)));
+    const zi = Math.max(0, Math.min(MAX_TILE_Z, Math.round(st.z)));
     const ts = TS * Math.pow(2, st.z - zi);
     const cx = lon2x(st.lon, zi), cy = lat2y(st.lat, zi);
     const x0 = Math.floor(cx - w / 2 / ts), x1 = Math.floor(cx + w / 2 / ts);
@@ -76,12 +81,24 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
       if (fill) { g.fillStyle = fill; g.globalAlpha = .35; g.fill(); g.globalAlpha = 1; }
       g.strokeStyle = stroke; g.lineWidth = 2; g.stroke();
     };
+    st.badges = [];
     for (const t of taken() || []) {
       const c = t.mine ? css('--ok') : css('--warn');
       poly(t.points, c, c);
       if (t === st.sel) {                                        // the one being looked at, outlined
         g.lineWidth = 4; g.strokeStyle = c; g.setLineDash([6, 4]); g.stroke(); g.setLineDash([]);
       }
+      // a taken plot asks to be asked about through its own badge, not by swallowing taps: zoomed
+      // inside someone's plot, every first tap would open a card and drawing would be impossible
+      if (!onInspect) continue;
+      const m = toScreen(polygonCentre(t.points));
+      if (m.x < -BADGE || m.y < -BADGE || m.x > w + BADGE || m.y > h + BADGE) continue;
+      g.beginPath(); g.arc(m.x, m.y, BADGE, 0, 7);
+      g.fillStyle = css('--card'); g.fill(); g.lineWidth = 2; g.strokeStyle = c; g.stroke();
+      g.fillStyle = c; g.font = 'bold 15px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('i', m.x, m.y + 0.5);
+      g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+      st.badges.push({ x: m.x, y: m.y, plot: t });
     }
     poly(st.pts, css('--accent'), css('--accent'));
     for (const p of st.pts) { const s = toScreen(p);
@@ -133,7 +150,7 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
     if (pinch && ptrs.size >= 2) {
       const p = two(), d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
       if (!d || !pinch.d) return;
-      st.z = Math.max(3, Math.min(19, pinch.z + Math.log2(d / pinch.d)));
+      st.z = Math.max(3, Math.min(MAX_Z, pinch.z + Math.log2(d / pinch.d)));
       const m = midOf(p), cur = toWorld(m.x, m.y);               // hold the anchored ground still
       st.lon = x2lon(lon2x(st.lon, st.z) + lon2x(pinch.anchor.lon, st.z) - lon2x(cur.lon, st.z), st.z);
       st.lat = y2lat(lat2y(st.lat, st.z) + lat2y(pinch.anchor.lat, st.z) - lat2y(cur.lat, st.z), st.z);
@@ -165,12 +182,10 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
       if (Math.hypot(f.x - (e.clientX - b.left), f.y - (e.clientY - b.top)) < 14) { draw(); onChange(st.pts.slice()); return; }
     }
     if (onVertex) return;                                       // tapped a corner you already have
-    if (onInspect && !st.pts.length) {
-      // plots may lie on top of each other (the chain does not forbid it), so answer with the
-      // SMALLEST one under the finger — otherwise a small plot inside a big one is unreachable
-      const hit = (taken() || []).filter(t => pointInPolygon(p, t.points))
-        .sort((a, b) => (a.area ?? polygonArea(a.points)) - (b.area ?? polygonArea(b.points)))[0];
-      if (hit) { st.sel = hit; draw(); onInspect(hit); return; }
+    if (onInspect) {                                            // tapped a plot's badge: what is it?
+      const lx = e.clientX - b.left, ly = e.clientY - b.top;
+      const hit = st.badges.find(bd => Math.hypot(bd.x - lx, bd.y - ly) <= BADGE + 4);
+      if (hit) { st.sel = hit.plot; draw(); onInspect(hit.plot); return; }
     }
     if (st.pts.length >= MAX_VERTICES) return;
     st.pts.push(p); draw(); onChange(st.pts.slice());
@@ -185,7 +200,7 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
     lastTap = now;
   }, { passive: false });
   // the buttons step whole levels, so they snap a pinched view back onto a crisp tile level
-  function setZoom(z) { const nz = Math.max(3, Math.min(19, z)); if (nz === st.z) return; st.z = nz; draw(); }
+  function setZoom(z) { const nz = Math.max(3, Math.min(MAX_Z, z)); if (nz === st.z) return; st.z = nz; draw(); }
 
   const api = {
     draw, zoom: d => setZoom(Math.round(st.z) + d),

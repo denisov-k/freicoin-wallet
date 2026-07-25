@@ -3,8 +3,9 @@
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
   "Choose the plot": "Выбрать участок",
-  "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "Тап по занятому участку покажет, что это; тапами отмечайте углы своего — тап по первому углу замкнёт контур. Угол можно перетащить.",
+  "Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.": "Тапами отмечайте углы участка; тап по первому углу замкнёт контур. Угол можно перетащить, а значок ⓘ на занятом участке расскажет, что это.",
   "Undo corner": "Убрать угол",
+  "to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.": "текущему владельцу и забрать участок? Заявленная ценность — она же цена, по которой участок могут забрать уже у вас, — станет вашей.",
   "Find a place": "Найти место",
   "searching…": "ищем…",
   "nothing found": "ничего не найдено",
@@ -421,8 +422,9 @@ const RU = {
 
 const ES = {
   "Choose the plot": "Elegir la parcela",
-  "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "Toca una parcela ocupada para ver qué es, o marca las esquinas de la tuya; toca la primera esquina para cerrarla. Una esquina se puede arrastrar.",
+  "Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.": "Marca las esquinas de tu parcela; toca la primera para cerrarla. Una esquina se puede arrastrar, y la ⓘ de una parcela ocupada dice qué es.",
   "Undo corner": "Quitar esquina",
+  "to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.": "al titular actual y quedarte con la parcela? El valor declarado —que es también el precio al que cualquiera puede quitártela— pasa a fijarlo tú.",
   "Find a place": "Buscar un lugar",
   "searching…": "buscando…",
   "nothing found": "no se encontró nada",
@@ -1017,8 +1019,9 @@ const ES = {
 
 const DE = {
   "Choose the plot": "Parzelle wählen",
-  "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "Tippe eine belegte Parzelle an, um zu sehen, was sie ist, oder setze die Ecken deiner eigenen; ein Tipp auf die erste schließt sie. Eine Ecke lässt sich ziehen.",
+  "Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.": "Tippe die Ecken deiner Parzelle an; ein Tipp auf die erste schließt sie. Eine Ecke lässt sich ziehen, und das ⓘ auf einer belegten Parzelle sagt, was sie ist.",
   "Undo corner": "Ecke zurück",
+  "to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.": "an den jetzigen Halter und die Parzelle übernehmen? Der angegebene Wert — zugleich der Preis, zu dem sie dir jeder abnehmen kann — liegt dann bei dir.",
   "Find a place": "Ort suchen",
   "searching…": "wird gesucht…",
   "nothing found": "nichts gefunden",
@@ -1613,8 +1616,9 @@ const DE = {
 
 const FR = {
   "Choose the plot": "Choisir la parcelle",
-  "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "Touchez une parcelle occupée pour voir ce qu’elle est, ou placez les coins de la vôtre ; touchez le premier coin pour la fermer. Un coin peut être déplacé.",
+  "Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.": "Touchez les coins de votre parcelle ; touchez le premier pour la fermer. Un coin peut être déplacé, et le ⓘ d’une parcelle occupée dit ce qu’elle est.",
   "Undo corner": "Annuler le coin",
+  "to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.": "au détenteur actuel et reprendre la parcelle ? La valeur déclarée — qui est aussi le prix auquel on peut vous la reprendre — devient la vôtre à fixer.",
   "Find a place": "Rechercher un lieu",
   "searching…": "recherche…",
   "nothing found": "rien trouvé",
@@ -2209,8 +2213,10 @@ const FR = {
 
 const PT = {
   "Choose the plot": "Escolher a parcela",
-  "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "Toque numa parcela ocupada para ver o que é, ou marque os cantos da sua; toque no primeiro canto para fechá-la. Um canto pode ser arrastado.",
+  "Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.": "Toque nos cantos da sua parcela; toque no primeiro para fechá-la. Um canto pode ser arrastado, e o ⓘ de uma parcela ocupada diz o que ela é.",
   "Undo corner": "Remover canto",
+  "Pay": "Pagar",
+  "to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.": "ao titular atual e assumir a parcela? O valor declarado — que é também o preço pelo qual qualquer um pode tomá-la de você — passa a ser definido por você.",
   "Find a place": "Procurar um lugar",
   "searching…": "procurando…",
   "nothing found": "nada encontrado",
@@ -2530,7 +2536,6 @@ const PT = {
   "Order": "Pedido",
   "From wallet": "Da carteira",
   "External payment": "Pagamento externo",
-  "Pay": "Pagar",
   "awaiting the seller": "Aguardando o vendedor",
   "claiming your funds…": "resgatando seus fundos…",
   "BTC refunded (seller offline)": "BTC reembolsado (vendedor offline)",
@@ -2805,8 +2810,9 @@ const PT = {
 
 const ZH = {
   "Choose the plot": "选择地块",
-  "Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.": "点按已占用的地块可查看详情；点按可依次标出自己地块的角，点第一个角即可闭合。角可以拖动。",
+  "Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.": "点按标出地块的角，点第一个角即可闭合。角可以拖动；已占用地块上的 ⓘ 会说明它是什么。",
   "Undo corner": "撤销角点",
+  "to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.": "给当前持有人并接手这块地？申报价值（也就是别人能从你手里接手的价格）将由你来设定。",
   "Find a place": "搜索地点",
   "searching…": "搜索中…",
   "nothing found": "没有找到",

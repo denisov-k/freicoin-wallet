@@ -106,12 +106,12 @@ export function openIssueModal() {
     </div>
     <div id="iMapScreen" class="stack" hidden>
       <div class="mapwrap">
+        <div class="map-search">
+          <input id="iSearch" type="search" enterkeyhint="search" autocomplete="off" spellcheck="false" placeholder="${tr('Find a place')}">
+          <div class="map-search-res" id="iSearchRes" hidden></div>
+        </div>
         <div class="mapbox">
           <div id="iMap"></div>
-          <div class="map-search">
-            <input id="iSearch" type="search" enterkeyhint="search" autocomplete="off" spellcheck="false" placeholder="${tr('Find a place')}">
-            <div class="map-search-res" id="iSearchRes" hidden></div>
-          </div>
           <div class="map-ctl map-ctl-z"><button id="iZoomIn" title="+">+</button><button id="iZoomOut" title="−">−</button></div>
           <div class="map-ctl map-ctl-edit"><button id="imUndo" title="${tr('Undo corner')}" disabled>↶</button><button id="imClear" title="${tr('Clear')}" disabled>🗑</button></div>
           <div class="map-ctl map-ctl-here"><button id="iHere" title="${tr('📍 Where I am')}">📍</button></div>
@@ -120,7 +120,7 @@ export function openIssueModal() {
         </div>
         <div class="map-sheet" id="iPlotCard" hidden></div>
       </div>
-      <div class="sub" id="iMapInfo" style="font-size:12px">${tr('Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.')}</div>
+      <div class="sub" id="iMapInfo" style="font-size:12px">${tr('Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.')}</div>
       <button id="imDone">${tr('Accept')}</button>
       <button id="imBack" class="ghost">${tr('← Back')}</button>
     </div>
@@ -232,7 +232,7 @@ export function openIssueModal() {
   function paintMapInfo(pts) {
     const clash = pts.length >= 3 && !!map?.overlapsAny();
     const txt = pts.length < 3
-      ? tr('Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.')
+      ? tr('Tap the corners of your plot; tap the first corner to close it. A corner can be dragged, and the ⓘ on a taken plot says what it is.')
       : `${pts.length} ${tr('corners')} · ≈ ${Math.round(map?.area || 0).toLocaleString(getLang())} ${tr('m²')}`
         + (clash ? ' · ' + tr('overlaps a taken plot') : '');
     for (const el of [$('#iMapInfo'), $('#iMapPill')]) if (el) { el.textContent = txt; el.style.color = clash ? 'var(--warn)' : ''; }
@@ -264,20 +264,30 @@ export function openIssueModal() {
       <div class="rrow"><span>${tr('Area')}</span><b>≈ ${Math.round(plot.area).toLocaleString(getLang())} ${tr('m²')}</b></div>
       <div class="rrow"><span>${tr('Forced-buy price')}</span><b>${price} FRC</b></div>
       <div class="sub" id="ipcLog" style="font-size:12px"></div>
-      ${plot.mine ? '' : `<button id="ipcBuy">${tr('Take it over for')} ${price} FRC</button>`}`;
+      <div class="stack" id="ipcAct">${plot.mine ? '' : `<button id="ipcBuy">${tr('Take it over for')} ${price} FRC</button>`}</div>`;
     const x = $('#ipcX'); if (x) x.onclick = closePlotCard;
+    const log = t => { const el = $('#ipcLog'); if (el) el.textContent = t; };
+    const act = $('#ipcAct');
+    // A forced buy spends real money on one tap, so it asks first — and says what it actually does:
+    // the plot changes hands at the price its holder declared, and that declaration becomes yours.
     const buy = $('#ipcBuy');
-    if (buy) buy.onclick = async () => {
-      const log = t => { const el = $('#ipcLog'); if (el) el.textContent = t; };
-      buy.disabled = true;
-      try {
-        const L = await import('@/services/market/covenant-land.mjs');
-        await L.buyName({ name: plot.id, progress: p => log(p === 'done' ? tr('the plot is yours ✅') : tr('taking it over…')) });
-        closePlotCard();
-        toast(tr('the plot is yours ✅'), 'ok');
-        await mountMap(plot.centre.lat, plot.centre.lon);   // redraw the map off the new chain state
-        paintMyNames();
-      } catch (e) { log(e.message); buy.disabled = false; }
+    if (buy) buy.onclick = () => {
+      if (!act) return;
+      act.innerHTML = `<div class="sub" style="font-size:12px">${tr('Pay')} ${price} FRC ${tr('to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.')}</div>
+        <div class="row"><button id="ipcYes">${tr('Confirm')}</button><button id="ipcNo" class="ghost">${tr('Cancel')}</button></div>`;
+      const no = $('#ipcNo'); if (no) no.onclick = () => showPlotCard(plot);
+      const yes = /** @type {HTMLButtonElement} */ ($('#ipcYes'));
+      if (yes) yes.onclick = async () => {
+        yes.disabled = true;
+        try {
+          const L = await import('@/services/market/covenant-land.mjs');
+          await L.buyName({ name: plot.id, progress: p => log(p === 'done' ? tr('the plot is yours ✅') : tr('taking it over…')) });
+          closePlotCard();
+          toast(tr('the plot is yours ✅'), 'ok');
+          await mountMap(plot.centre.lat, plot.centre.lon);   // redraw the map off the new chain state
+          paintMyNames();
+        } catch (e) { log(e.message); yes.disabled = false; }
+      };
     };
   }
 
