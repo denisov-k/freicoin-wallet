@@ -129,6 +129,7 @@ export function openIssueModal() {
       <button id="imDone">${tr('Accept')}</button>
       <button id="imBack" class="ghost">${tr('← Back')}</button>
     </div>
+    <div id="iBuyScreen" class="stack" hidden></div>
     <label id="iNameLbl">${tr('Name')}<input id="iName" maxlength="24" placeholder="${tr('e.g. labor-hours')}"></label>
     <div id="iFungible" class="stack">
       <div class="row">
@@ -218,12 +219,20 @@ export function openIssueModal() {
 
   // ── plot flow: draw a boundary on the map, claim the ground it encloses ───────────────────────
   let map = null, mapPlots = [];
+  // The map without the taken plots is a map that lies: it would warn about no overlap and answer
+  // no questions. One load can come back empty (the registry hiccuped, the session was not awake
+  // yet), so the list is refreshed whenever the map is shown and retried once if it came back bare.
+  async function loadPlots({ retry = true } = {}) {
+    if (!isCovenantNet()) return;
+    const L = await import('@/services/market/covenant-land.mjs');
+    const list = await L.livePlots().catch(() => []);
+    if (list.length || !mapPlots.length) { mapPlots = list; map?.draw(); }
+    if (!list.length && retry) setTimeout(() => loadPlots({ retry: false }), 2500);
+  }
+
   async function mountMap(lat = 55.7558, lon = 37.6173) {
     const host = $('#iMap'); if (!host) return;
-    if (isCovenantNet()) {
-      const L = await import('@/services/market/covenant-land.mjs');
-      mapPlots = await L.livePlots().catch(() => []);
-    }
+    await loadPlots();
     map = mountPlotMap({ el: host, lat, lon, taken: () => mapPlots, onInspect: showPlotCard, onChange: pts => {
       plotPoints = pts;
       paintMapInfo(pts);
@@ -267,31 +276,44 @@ export function openIssueModal() {
     card.innerHTML = `<div class="rrow"><b>${plot.mine ? tr('Your plot') : tr('Taken plot')}</b><button id="ipcX" class="icon">✕</button></div>
       <div class="rrow"><span>${tr('Area')}</span><b>≈ ${Math.round(plot.area).toLocaleString(getLang())} ${tr('m²')}</b></div>
       <div class="rrow"><span>${tr('Forced-buy price')}</span><b>${price} FRC</b></div>
-      <div class="sub" id="ipcLog" style="font-size:12px"></div>
-      <div class="stack" id="ipcAct">${plot.mine ? '' : `<button id="ipcBuy">${tr('Take it over')}</button>`}</div>`;
+      ${plot.mine ? '' : `<button id="ipcBuy">${tr('Take it over')}</button>`}`;
     const x = $('#ipcX'); if (x) x.onclick = closePlotCard;
-    const log = t => { const el = $('#ipcLog'); if (el) el.textContent = t; };
-    const act = $('#ipcAct');
-    // A forced buy spends real money on one tap, so it asks first — and says what it actually does:
-    // the plot changes hands at the price its holder declared, and that declaration becomes yours.
     const buy = $('#ipcBuy');
-    if (buy) buy.onclick = () => {
-      if (!act) return;
-      act.innerHTML = `<div class="sub" style="font-size:12px">${tr('Pay')} ${price} FRC ${tr('to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.')}</div>
-        <div class="row"><button id="ipcYes">${tr('Confirm')}</button><button id="ipcNo" class="ghost">${tr('Cancel')}</button></div>`;
-      const no = $('#ipcNo'); if (no) no.onclick = () => showPlotCard(plot);
-      const yes = /** @type {HTMLButtonElement} */ ($('#ipcYes'));
-      if (yes) yes.onclick = async () => {
-        yes.disabled = true;
-        try {
-          const L = await import('@/services/market/covenant-land.mjs');
-          await L.buyName({ name: plot.id, progress: p => log(p === 'done' ? tr('the plot is yours ✅') : tr('taking it over…')) });
-          closePlotCard();
-          toast(tr('the plot is yours ✅'), 'ok');
-          await mountMap(plot.centre.lat, plot.centre.lon);   // redraw the map off the new chain state
-          paintMyNames();
-        } catch (e) { log(e.message); yes.disabled = false; }
-      };
+    if (buy) buy.onclick = () => showBuyScreen(plot);
+  }
+
+  // Spending real money is not a thing to confirm in a corner of the map: the takeover gets the
+  // whole modal, says what the plot is, what it costs, and what changes hands.
+  function showBuyScreen(plot) {
+    const scr = $('#iBuyScreen'), mapScr = $('#iMapScreen'); if (!scr || !mapScr) return;
+    m.querySelector('.mapwrap')?.classList.remove('full'); document.body.classList.remove('map-full');
+    mapScr.hidden = true; scr.hidden = false;
+    const ttl = $('#issTitle'); if (ttl) ttl.textContent = tr('Take the plot over');
+    const price = frc(plot.price);
+    const row = (k, v) => `<div class="rrow"><span>${k}</span><b>${v}</b></div>`;
+    scr.innerHTML = `${plot.label ? row(tr('Name'), plot.label) : ''}
+      ${row(tr('Where'), `${plot.centre.lat.toFixed(4)}, ${plot.centre.lon.toFixed(4)}`)}
+      ${row(tr('Area'), `≈ ${Math.round(plot.area).toLocaleString(getLang())} ${tr('m²')}`)}
+      ${row(tr('Forced-buy price'), `${price} FRC`)}
+      <p class="sub" style="font-size:13px">${tr('Pay')} ${price} FRC ${tr('to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.')}</p>
+      <div class="sub" id="ipbLog" style="font-size:12px;white-space:pre-line"></div>
+      <button id="ipbYes">${tr('Confirm')}</button>
+      <button id="ipbNo" class="ghost">${tr('Cancel')}</button>`;
+    const back = () => { scr.hidden = true; scr.innerHTML = ''; mapScr.hidden = false;
+      const t2 = $('#issTitle'); if (t2) t2.textContent = tr('Choose a plot'); map?.draw(); };
+    const no = $('#ipbNo'); if (no) no.onclick = back;
+    const yes = /** @type {HTMLButtonElement} */ ($('#ipbYes'));
+    if (yes) yes.onclick = async () => {
+      const log = t => { const el = $('#ipbLog'); if (el) el.textContent = t; };
+      yes.disabled = true;
+      try {
+        const L = await import('@/services/market/covenant-land.mjs');
+        await L.buyName({ name: plot.id, progress: p => log(p === 'done' ? tr('the plot is yours ✅') : tr('taking it over…')) });
+        back(); closePlotCard();
+        toast(tr('the plot is yours ✅'), 'ok');
+        await mountMap(plot.centre.lat, plot.centre.lon);   // redraw the map off the new chain state
+        paintMyNames();
+      } catch (e) { log(e.message); yes.disabled = false; }
     };
   }
 
@@ -307,12 +329,13 @@ export function openIssueModal() {
   const mainEls = () => [$('#iPlotBox'), $('#iNameLbl'), $('#iLandBox'), $('#iLandKind'), $('#iMode'), $('#iModeHint'), $('#issueBtn')];
   const showMapScreen = on => {
     if (!on) { closePlotCard();
+      const bs = $('#iBuyScreen'); if (bs) { bs.hidden = true; bs.innerHTML = ''; }
       m.querySelector('.mapwrap')?.classList.remove('full'); document.body.classList.remove('map-full');
       const fb = $('#imFull'); if (fb) { fb.textContent = '⤢'; fb.title = tr('Full screen'); } }
     mainEls().forEach(x => { if (x) x.hidden = on; });
     const ttl = $('#issTitle'); if (ttl) ttl.textContent = on ? tr('Choose a plot') : tr('Issue asset');
     const scr = $('#iMapScreen'); if (scr) scr.hidden = !on;
-    if (on) { if (!map) mountMap(); else map.draw(); }
+    if (on) { if (!map) mountMap(); else { map.draw(); loadPlots(); } }
   };
 
   const pickBtn = q(m, '#iPickPlot'); if (pickBtn) pickBtn.onclick = () => showMapScreen(true);

@@ -4,7 +4,7 @@
 // usable, and the server that serves them learns which area you are looking at. Nothing else about
 // the wallet changes — no key, balance or transaction ever goes near it, and the tile URL is a
 // setting, so it can be pointed at a community's own server (or switched off) later.
-import { polygonArea, polygonCentre, polygonsOverlap, MAX_VERTICES } from '@core/geopoly.mjs';
+import { polygonArea, polygonCentre, polygonsOverlap, pointInPolygon, MAX_VERTICES } from '@core/geopoly.mjs';
 
 const TILE = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const TS = 256;
@@ -178,10 +178,20 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
       if (Math.hypot(f.x - (e.clientX - b.left), f.y - (e.clientY - b.top)) < 14) { draw(); onChange(st.pts.slice()); return; }
     }
     if (onVertex) return;                                       // tapped a corner you already have
-    if (onInspect) {                                            // tapped a plot's badge: what is it?
+    // Asking about a taken plot without putting any mark on the map: its centre always answers, and
+    // so does anywhere inside it while you have not started drawing. Tapping the same plot again —
+    // its card already open — places a corner instead, so being zoomed inside someone's plot never
+    // leaves you unable to draw.
+    if (onInspect) {
       const lx = e.clientX - b.left, ly = e.clientY - b.top;
-      const hit = st.badges.find(bd => Math.hypot(bd.x - lx, bd.y - ly) <= BADGE + 4);
-      if (hit) { st.sel = hit.plot; draw(); onInspect(hit.plot); return; }
+      let hit = st.badges.find(bd => Math.hypot(bd.x - lx, bd.y - ly) <= BADGE + 4)?.plot;
+      if (!hit && !st.pts.length) {
+        // plots may lie on top of each other (the chain does not forbid it), so answer with the
+        // SMALLEST one under the finger — otherwise a small plot inside a big one is unreachable
+        hit = (taken() || []).filter(t => pointInPolygon(p, t.points))
+          .sort((a, b2) => (a.area ?? polygonArea(a.points)) - (b2.area ?? polygonArea(b2.points)))[0];
+      }
+      if (hit && hit !== st.sel) { st.sel = hit; draw(); onInspect(hit); return; }
     }
     if (st.pts.length >= MAX_VERTICES) return;
     st.pts.push(p); draw(); onChange(st.pts.slice());

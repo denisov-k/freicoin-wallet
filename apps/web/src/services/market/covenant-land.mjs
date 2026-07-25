@@ -307,11 +307,16 @@ export async function livePlots() {
       // the boundary self-certifies: hash it and it must reproduce the registry key it was found under
       const id = plotId(sha256(Buffer.from(hex, 'hex')).toString('hex'));
       if (nameHashOf(id) !== e.namehash) continue;
+      // «is it mine» needs the seed; a locked or half-woken session must still get the MAP — knowing
+      // what ground is taken does not depend on knowing whose it is
+      let mine = false;
+      try { mine = e.owner === ownerHashOf(covOwnerPub(id)); } catch {}
       list.push({ id, points, label: readPlotLabel(tx), area: polygonArea(points), centre: polygonCentre(points),
-        price: BigInt(e.price), outpoint: e.outpoint, owner: e.owner,
-        mine: e.owner === ownerHashOf(covOwnerPub(id)) });
+        price: BigInt(e.price), outpoint: e.outpoint, owner: e.owner, mine });
     }
-    _plotCache = { at: Date.now(), list };
+    // never cache «no plots»: an empty answer is what a hiccuped registry read looks like, and
+    // caching it would keep the map blank for the next half minute of taps
+    if (list.length) _plotCache = { at: Date.now(), list };
   } catch {}
   return _plotCache.list;
 }
