@@ -106,12 +106,14 @@ export function openIssueModal() {
     </div>
     <div id="iMapScreen" class="stack" hidden>
       <div class="mapwrap">
-        <div id="iMap"></div>
-        <div class="map-ctl map-ctl-z"><button id="iZoomIn" title="+">+</button><button id="iZoomOut" title="−">−</button></div>
-        <div class="map-ctl map-ctl-edit"><button id="imUndo" title="${tr('Undo corner')}" disabled>↶</button><button id="imClear" title="${tr('Clear')}" disabled>🗑</button></div>
-        <div class="map-ctl map-ctl-here"><button id="iHere" title="${tr('📍 Where I am')}">📍</button></div>
-        <div class="map-ctl map-ctl-full"><button id="imFull" title="${tr('Full screen')}">⤢</button></div>
-        <div class="map-pill" id="iMapPill"></div>
+        <div class="mapbox">
+          <div id="iMap"></div>
+          <div class="map-ctl map-ctl-z"><button id="iZoomIn" title="+">+</button><button id="iZoomOut" title="−">−</button></div>
+          <div class="map-ctl map-ctl-edit"><button id="imUndo" title="${tr('Undo corner')}" disabled>↶</button><button id="imClear" title="${tr('Clear')}" disabled>🗑</button></div>
+          <div class="map-ctl map-ctl-here"><button id="iHere" title="${tr('📍 Where I am')}">📍</button></div>
+          <div class="map-ctl map-ctl-full"><button id="imFull" title="${tr('Full screen')}">⤢</button></div>
+          <div class="map-pill" id="iMapPill"></div>
+        </div>
         <div class="map-sheet" id="iPlotCard" hidden></div>
       </div>
       <div class="sub" id="iMapInfo" style="font-size:12px">${tr('Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.')}</div>
@@ -215,17 +217,21 @@ export function openIssueModal() {
     }
     map = mountPlotMap({ el: host, lat, lon, taken: () => mapPlots, onInspect: showPlotCard, onChange: pts => {
       plotPoints = pts;
-      const info = $('#iMapInfo'), pill = $('#iMapPill');
-      const clash = pts.length >= 3 && map.overlapsAny();
-      const txt = pts.length < 3
-        ? tr('Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.')
-        : `${pts.length} ${tr('corners')} · ≈ ${Math.round(map.area).toLocaleString(getLang())} ${tr('m²')}`
-          + (clash ? ' · ' + tr('overlaps a taken plot') : '');
-      for (const el of [info, pill]) if (el) { el.textContent = txt; el.style.color = clash ? 'var(--warn)' : ''; }
+      paintMapInfo(pts);
       if (pts.length) closePlotCard();   // you started drawing: the card is in the way now
       paintCell(); syncPlotState(); syncMapCtl();
     } });
-    syncMapCtl();
+    paintMapInfo(map.points()); syncMapCtl();
+  }
+
+  // the same readout under the map and on it — in full screen the line below is off-screen
+  function paintMapInfo(pts) {
+    const clash = pts.length >= 3 && !!map?.overlapsAny();
+    const txt = pts.length < 3
+      ? tr('Tap a taken plot to see what it is, or tap the corners of your own; tap the first corner to close it. A corner can be dragged.')
+      : `${pts.length} ${tr('corners')} · ≈ ${Math.round(map?.area || 0).toLocaleString(getLang())} ${tr('m²')}`
+        + (clash ? ' · ' + tr('overlaps a taken plot') : '');
+    for (const el of [$('#iMapInfo'), $('#iMapPill')]) if (el) { el.textContent = txt; el.style.color = clash ? 'var(--warn)' : ''; }
   }
 
   const syncMapCtl = () => ['#imUndo', '#imClear'].forEach(sel => {
@@ -238,11 +244,13 @@ export function openIssueModal() {
   function closePlotCard() {
     const card = $('#iPlotCard'); if (!card || card.hidden) return;
     card.hidden = true; card.innerHTML = ''; map?.deselect();
+    m.querySelector('.mapwrap')?.classList.remove('carded');
   }
   function showPlotCard(plot) {
     const card = $('#iPlotCard'); if (!card) return;
     const price = frc(plot.price);
     card.hidden = false;
+    m.querySelector('.mapwrap')?.classList.add('carded');   // in full screen the card takes the pill's place
     card.innerHTML = `<div class="rrow"><b>${plot.mine ? tr('Your plot') : tr('Taken plot')}</b><button id="ipcX" class="icon">✕</button></div>
       <div class="rrow"><span>${tr('Area')}</span><b>≈ ${Math.round(plot.area).toLocaleString(getLang())} ${tr('m²')}</b></div>
       <div class="rrow"><span>${tr('Forced-buy price')}</span><b>${price} FRC</b></div>

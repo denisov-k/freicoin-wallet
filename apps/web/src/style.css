@@ -137,20 +137,24 @@ table.mkt .act-cell .p2pstatus { border-color:var(--accent); color:var(--accent)
 /* plot map: the controls belong ON the map — they act on what you are looking at, and the space
    below the map is for what you do with the boundary you drew */
 .mapwrap { position: relative; }
+/* the controls belong to the MAP's edges, so they hang off this box and not off the wrapper —
+   which also holds the card below the map and would drag them down with it */
+.mapbox { position: relative; }
+.mapwrap.full .mapbox { height: 100%; }
 .map-ctl { position: absolute; display: flex; flex-direction: column; gap: 6px; z-index: 2; }
 .map-ctl-z { top: 10px; right: 10px; }
 .map-ctl-edit { top: 10px; left: 10px; }
 .map-ctl-here { left: 10px; bottom: 30px; }
 .map-ctl-full { right: 10px; bottom: 30px; }
-.mapwrap .map-ctl button {
+.mapbox .map-ctl button {
   width: 38px; height: 38px; padding: 0; flex: 0 0 auto;
   font-size: 18px; line-height: 1; font-weight: 600;
   background: var(--card); color: var(--fg);
   border: 1px solid var(--line); border-radius: 10px;
   box-shadow: 0 1px 4px rgba(0,0,0,.25);
 }
-.mapwrap .map-ctl button:active { background: var(--line); }
-.mapwrap .map-ctl button:disabled { opacity: .4; }
+.mapbox .map-ctl button:active { background: var(--line); }
+.mapbox .map-ctl button:disabled { opacity: .4; }
 
 /* the map given the whole screen: the wrapper leaves the modal's flow and covers the viewport,
    controls keep clear of the notch and the home indicator */
@@ -161,14 +165,18 @@ table.mkt .act-cell .p2pstatus { border-color:var(--accent); color:var(--accent)
 .mapwrap.full .map-ctl-here, .mapwrap.full .map-ctl-full { bottom: calc(30px + env(safe-area-inset-bottom)); }
 /* what a taken plot is, asked for by holding still over it */
 .map-sheet {
-  position: absolute; z-index: 3; left: 10px; right: 10px; bottom: 10px;
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column; gap: 8px; margin-top: 10px;
   background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-  padding: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.35);
+  padding: 12px;
 }
-.mapwrap.full .map-sheet { bottom: calc(80px + env(safe-area-inset-bottom)); }
+/* full screen has no «below the map» to sit in, so there the card lies on its bottom edge */
+.mapwrap.full .map-sheet {
+  position: absolute; z-index: 3; left: 10px; right: 10px; margin: 0;
+  bottom: calc(80px + env(safe-area-inset-bottom)); box-shadow: 0 6px 24px rgba(0,0,0,.35);
+}
 .map-sheet .rrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .map-pill { display: none; }
+.mapwrap.full .map-pill:empty, .mapwrap.full.carded .map-pill { display: none; }
 .mapwrap.full .map-pill {
   display: block; position: absolute; z-index: 2;
   left: 60px; right: 60px; bottom: calc(34px + env(safe-area-inset-bottom));
