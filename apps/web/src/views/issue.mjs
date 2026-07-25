@@ -112,8 +112,9 @@ export function openIssueModal() {
         <div class="map-ctl map-ctl-here"><button id="iHere" title="${tr('📍 Where I am')}">📍</button></div>
         <div class="map-ctl map-ctl-full"><button id="imFull" title="${tr('Full screen')}">⤢</button></div>
         <div class="map-pill" id="iMapPill"></div>
+        <div class="map-sheet" id="iPlotCard" hidden></div>
       </div>
-      <div class="sub" id="iMapInfo" style="font-size:12px">${tr('Tap the corners of your plot; tap the first corner to close it.')}</div>
+      <div class="sub" id="iMapInfo" style="font-size:12px">${tr('Tap the corners of your plot; tap the first corner to close it. Drag a corner to move it, hold on a taken plot to see what it is.')}</div>
       <button id="imDone">${tr('Choose')}</button>
       <button id="imBack" class="ghost">${tr('← Back')}</button>
     </div>
@@ -210,14 +211,14 @@ export function openIssueModal() {
     const host = $('#iMap'); if (!host) return;
     if (isCovenantNet()) {
       const L = await import('@/services/market/covenant-land.mjs');
-      mapPlots = (await L.livePlots().catch(() => [])).map(x => ({ points: x.points, mine: x.mine }));
+      mapPlots = await L.livePlots().catch(() => []);
     }
-    map = mountPlotMap({ el: host, lat, lon, taken: () => mapPlots, onChange: pts => {
+    map = mountPlotMap({ el: host, lat, lon, taken: () => mapPlots, onInspect: showPlotCard, onChange: pts => {
       plotPoints = pts;
       const info = $('#iMapInfo'), pill = $('#iMapPill');
       const clash = pts.length >= 3 && map.overlapsAny();
       const txt = pts.length < 3
-        ? tr('Tap the corners of your plot; tap the first corner to close it.')
+        ? tr('Tap the corners of your plot; tap the first corner to close it. Drag a corner to move it, hold on a taken plot to see what it is.')
         : `${pts.length} ${tr('corners')} · ≈ ${Math.round(map.area).toLocaleString(getLang())} ${tr('m²')}`
           + (clash ? ' · ' + tr('overlaps a taken plot') : '');
       for (const el of [info, pill]) if (el) { el.textContent = txt; el.style.color = clash ? 'var(--warn)' : ''; }
@@ -230,6 +231,35 @@ export function openIssueModal() {
     const b = /** @type {HTMLButtonElement} */ ($(sel)); if (b) b.disabled = !plotPoints.length;
   });
 
+  // a taken plot is a holding like any other: it says what it is, what it would cost to take over,
+  // and lets you do it right here — «occupied» with no way to ask about it is just a coloured blob
+  const frc = v => (Number(v) / 1e8).toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
+  function showPlotCard(plot) {
+    const card = $('#iPlotCard'); if (!card) return;
+    const price = frc(plot.price);
+    card.hidden = false;
+    card.innerHTML = `<div class="rrow"><b>${plot.mine ? tr('Your plot') : tr('Taken plot')}</b><button id="ipcX" class="icon">✕</button></div>
+      <div class="rrow"><span>${tr('Area')}</span><b>≈ ${Math.round(plot.area).toLocaleString(getLang())} ${tr('m²')}</b></div>
+      <div class="rrow"><span>${tr('Forced-buy price')}</span><b>${price} FRC</b></div>
+      <div class="sub" id="ipcLog" style="font-size:12px"></div>
+      ${plot.mine ? '' : `<button id="ipcBuy">${tr('Take it over for')} ${price} FRC</button>`}`;
+    const close = () => { card.hidden = true; card.innerHTML = ''; map?.deselect(); };
+    const x = $('#ipcX'); if (x) x.onclick = close;
+    const buy = $('#ipcBuy');
+    if (buy) buy.onclick = async () => {
+      const log = t => { const el = $('#ipcLog'); if (el) el.textContent = t; };
+      buy.disabled = true;
+      try {
+        const L = await import('@/services/market/covenant-land.mjs');
+        await L.buyName({ name: plot.id, progress: p => log(p === 'done' ? tr('the plot is yours ✅') : tr('taking it over…')) });
+        close();
+        toast(tr('the plot is yours ✅'), 'ok');
+        await mountMap(plot.centre.lat, plot.centre.lon);   // redraw the map off the new chain state
+        paintMyNames();
+      } catch (e) { log(e.message); buy.disabled = false; }
+    };
+  }
+
   // one place that decides what the plot form allows: no boundary ⇒ nothing to claim, said
   // plainly instead of failing later on a malformed id
   function syncPlotState() {
@@ -241,7 +271,8 @@ export function openIssueModal() {
 
   const mainEls = () => [$('#iPlotBox'), $('#iNameLbl'), $('#iLandBox'), $('#iLandKind'), $('#iMode'), $('#iModeHint'), $('#issueBtn')];
   const showMapScreen = on => {
-    if (!on) { m.querySelector('.mapwrap')?.classList.remove('full'); document.body.classList.remove('map-full');
+    if (!on) { const card = $('#iPlotCard'); if (card) { card.hidden = true; card.innerHTML = ''; } map?.deselect();
+      m.querySelector('.mapwrap')?.classList.remove('full'); document.body.classList.remove('map-full');
       const fb = $('#imFull'); if (fb) { fb.textContent = '⤢'; fb.title = tr('Full screen'); } }
     mainEls().forEach(x => { if (x) x.hidden = on; });
     const ttl = $('#issTitle'); if (ttl) ttl.textContent = on ? tr('Choose a plot') : tr('Issue asset');

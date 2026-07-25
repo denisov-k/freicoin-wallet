@@ -4,7 +4,7 @@
 // usable, and the server that serves them learns which area you are looking at. Nothing else about
 // the wallet changes — no key, balance or transaction ever goes near it, and the tile URL is a
 // setting, so it can be pointed at a community's own server (or switched off) later.
-import { polygonArea, polygonCentre, polygonsOverlap, MAX_VERTICES } from '@core/geopoly.mjs';
+import { polygonArea, polygonCentre, polygonsOverlap, pointInPolygon, MAX_VERTICES } from '@core/geopoly.mjs';
 
 const TILE = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const TS = 256;
@@ -15,13 +15,14 @@ const y2lat = (y, z) => { const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z); 
 
 /** Mount a plot drawer.
  *  @param {{el:HTMLElement, lat:number, lon:number, zoom?:number,
- *           taken:()=>{points:{lat:number,lon:number}[], mine:boolean}[],
- *           onChange:(pts:{lat:number,lon:number}[])=>void}} o */
-export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange }) {
+ *           taken:()=>{points:{lat:number,lon:number}[], mine:boolean, area?:number}[],
+ *           onChange:(pts:{lat:number,lon:number}[])=>void,
+ *           onInspect?:(plot:any)=>void}} o */
+export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspect = null }) {
   const cv = document.createElement('canvas');
   cv.style.cssText = 'width:100%;height:300px;border:1px solid var(--line);border-radius:10px;touch-action:none;display:block;cursor:crosshair';
   el.innerHTML = ''; el.appendChild(cv);
-  const st = { lat, lon, z: zoom, pts: [] };   // z is fractional — a pinch zooms between tile levels
+  const st = { lat, lon, z: zoom, pts: [], sel: null };   // z is fractional — a pinch zooms between tile levels
   const tiles = new Map();                                   // cached tile images, keyed z/x/y
 
   const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
@@ -73,7 +74,13 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange }) {
       if (fill) { g.fillStyle = fill; g.globalAlpha = .35; g.fill(); g.globalAlpha = 1; }
       g.strokeStyle = stroke; g.lineWidth = 2; g.stroke();
     };
-    for (const t of taken() || []) poly(t.points, t.mine ? css('--ok') : css('--warn'), t.mine ? css('--ok') : css('--warn'));
+    for (const t of taken() || []) {
+      const c = t.mine ? css('--ok') : css('--warn');
+      poly(t.points, c, c);
+      if (t === st.sel) {                                        // the one being looked at, outlined
+        g.lineWidth = 4; g.strokeStyle = c; g.setLineDash([6, 4]); g.stroke(); g.setLineDash([]);
+      }
+    }
     poly(st.pts, css('--accent'), css('--accent'));
     for (const p of st.pts) { const s = toScreen(p);
       g.beginPath(); g.arc(s.x, s.y, 5, 0, 7); g.fillStyle = css('--accent'); g.fill();
@@ -86,7 +93,8 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange }) {
   // two fingers: pinch zooms, and the ground under the midpoint stays put — a map you can zoom
   // only in whole steps from a button is a map you cannot frame a plot with.
   const ptrs = new Map();
-  let pan = null, pinch = null, moved = false;
+  let pan = null, pinch = null, moved = false, vdrag = null, lpTimer = null;
+  const cancelPress = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
   const two = () => [...ptrs.values()];
   const local = pt => { const b = cv.getBoundingClientRect(); return { x: pt.x - b.left, y: pt.y - b.top }; };
   const midOf = p => local({ x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 });
@@ -94,8 +102,31 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange }) {
   cv.onpointerdown = e => {
     try { cv.setPointerCapture(e.pointerId); } catch {}   // synthetic events have no live pointer
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (ptrs.size === 1) { pan = { x: e.clientX, y: e.clientY, lat: st.lat, lon: st.lon }; moved = false; }
+    if (ptrs.size === 1) {
+      pan = { x: e.clientX, y: e.clientY, lat: st.lat, lon: st.lon }; moved = false;
+      const b = cv.getBoundingClientRect(), lx = e.clientX - b.left, ly = e.clientY - b.top;
+      // a corner in the wrong place should be movable, not only removable: grab the one under the
+      // finger and the drag edits the boundary instead of panning the map
+      vdrag = null;
+      for (let i = 0; i < st.pts.length; i++) { const sc = toScreen(st.pts[i]);
+        if (Math.hypot(sc.x - lx, sc.y - ly) < 16) { vdrag = { i }; break; } }
+      // holding still over someone's plot asks about it — a plain tap has to stay «add a corner»,
+      // and ground you cannot draw on is ground you cannot ask about
+      cancelPress();
+      if (onInspect && !vdrag) lpTimer = setTimeout(() => {
+        lpTimer = null;
+        const here = toWorld(lx, ly);
+        // plots may lie on top of each other (the chain does not forbid it), so answer with the
+        // SMALLEST one under the finger — otherwise a small plot inside a big one is unreachable
+        const hit = (taken() || []).filter(t => pointInPolygon(here, t.points))
+          .sort((a, b) => (a.area ?? polygonArea(a.points)) - (b.area ?? polygonArea(b.points)))[0];
+        if (!hit) return;
+        moved = true;                                            // this press is not a corner
+        st.sel = hit; draw(); onInspect(hit);
+      }, 500);
+    }
     else if (ptrs.size === 2) {
+      cancelPress(); vdrag = null;
       pan = null; moved = true;                                  // a pinch is never a tap
       const p = two(), m = midOf(p);
       pinch = { d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), z: st.z, anchor: toWorld(m.x, m.y) };
@@ -104,6 +135,14 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange }) {
   cv.onpointermove = e => {
     if (!ptrs.has(e.pointerId)) return;
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (vdrag) {
+      const b = cv.getBoundingClientRect();
+      if (Math.abs(e.clientX - pan.x) + Math.abs(e.clientY - pan.y) > 4) moved = true;
+      if (!moved) return;
+      st.pts[vdrag.i] = toWorld(e.clientX - b.left, e.clientY - b.top);
+      draw(); onChange(st.pts.slice());
+      return;
+    }
     if (pinch && ptrs.size >= 2) {
       const p = two(), d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
       if (!d || !pinch.d) return;
@@ -115,7 +154,7 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange }) {
       return;
     }
     if (!pan) return;
-    if (Math.abs(e.clientX - pan.x) + Math.abs(e.clientY - pan.y) > 6) moved = true;
+    if (Math.abs(e.clientX - pan.x) + Math.abs(e.clientY - pan.y) > 6) { moved = true; cancelPress(); }
     if (!moved) return;
     st.lon = x2lon(lon2x(pan.lon, st.z) - (e.clientX - pan.x) / TS, st.z);
     st.lat = y2lat(lat2y(pan.lat, st.z) - (e.clientY - pan.y) / TS, st.z);
@@ -123,13 +162,15 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange }) {
   };
   cv.onpointercancel = cv.onpointerup = e => {
     ptrs.delete(e.pointerId);
+    cancelPress();
     if (ptrs.size === 1) {                                       // lifted one finger of a pinch:
       pinch = null;                                              // carry on panning with the other
       const [p] = two(); pan = { x: p.x, y: p.y, lat: st.lat, lon: st.lon };
       return;
     }
     if (ptrs.size > 1) return;
-    const wasDrag = moved || !!pinch; pan = null; pinch = null;
+    const wasDrag = moved || !!pinch; const onVertex = !!vdrag;
+    pan = null; pinch = null; vdrag = null;
     if (wasDrag) return;
     const b = cv.getBoundingClientRect();
     const p = toWorld(e.clientX - b.left, e.clientY - b.top);
@@ -137,6 +178,7 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange }) {
       const f = toScreen(st.pts[0]);
       if (Math.hypot(f.x - (e.clientX - b.left), f.y - (e.clientY - b.top)) < 14) { draw(); onChange(st.pts.slice()); return; }
     }
+    if (onVertex) return;                                       // tapped a corner you already have
     if (st.pts.length >= MAX_VERTICES) return;
     st.pts.push(p); draw(); onChange(st.pts.slice());
   };
@@ -158,6 +200,7 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange }) {
     clear() { st.pts = []; draw(); onChange([]); },
     undo() { st.pts.pop(); draw(); onChange(st.pts.slice()); },
     points: () => st.pts.slice(),
+    deselect() { if (!st.sel) return; st.sel = null; draw(); },
     get area() { return st.pts.length >= 3 ? polygonArea(st.pts) : 0; },
     get centreOfPlot() { return st.pts.length ? polygonCentre(st.pts) : { lat: st.lat, lon: st.lon }; },
     overlapsAny: () => st.pts.length >= 3 && (taken() || []).some(t => polygonsOverlap(st.pts, t.points)),

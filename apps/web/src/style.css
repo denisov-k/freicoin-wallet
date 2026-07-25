@@ -159,6 +159,15 @@ table.mkt .act-cell .p2pstatus { border-color:var(--accent); color:var(--accent)
 .mapwrap.full #iMap canvas { height: 100% !important; border-radius: 0; border: 0; }
 .mapwrap.full .map-ctl-z, .mapwrap.full .map-ctl-edit { top: calc(10px + env(safe-area-inset-top)); }
 .mapwrap.full .map-ctl-here, .mapwrap.full .map-ctl-full { bottom: calc(30px + env(safe-area-inset-bottom)); }
+/* what a taken plot is, asked for by holding still over it */
+.map-sheet {
+  position: absolute; z-index: 3; left: 10px; right: 10px; bottom: 10px;
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.35);
+}
+.mapwrap.full .map-sheet { bottom: calc(80px + env(safe-area-inset-bottom)); }
+.map-sheet .rrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .map-pill { display: none; }
 .mapwrap.full .map-pill {
   display: block; position: absolute; z-index: 2;

@@ -160,6 +160,23 @@ export async function registerName({ name, valueFrc, bind = null, shape = null, 
   return rec;
 }
 
+/** The memos a SUCCESSOR must carry. For a name that is the encrypted name book; for a plot it is
+ *  the boundary — which lives in the transaction that created the plot's current output, so every
+ *  spend has to republish it or the plot silently falls off the map. Copying it is not taking the
+ *  previous holder's word for anything: the id IS the hash of exactly these bytes, and that is
+ *  checked here before the bytes are re-announced. (A plot gets no FRLN: its id is a 76-character
+ *  commitment that would overflow the 48-byte memo, and its boundary is public anyway.)
+ *  @param {string} name */
+async function carryMemos(name) {
+  if (!isPlotId(name)) return [await frlnOut(name)];
+  const c = await nameCoin(name);
+  if (!c) return [];
+  let hex = null;
+  try { hex = readPlotShape(parseTx((await api('rawFrcTx', { txid: c.txid })).rawtx)); } catch {}
+  if (!hex || plotId(sha256(Buffer.from(hex, 'hex')).toString('hex')) !== name) return [];
+  return [plotOut(hex)];
+}
+
 // the live covenant coin backing one of my names, read via the relay's utxo view of my own spk
 async function nameCoin(name) {
   // read from the AUTHORITATIVE registry indexer (getharbergernames), NOT the relay's utxo index —
@@ -405,7 +422,7 @@ async function ownerPathSpend({ name, successor, progress }) {
   const back = V + FUND - FEE - (successor ?? 0n);         // what returns to the wallet
   const rel = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, nExpireTime: 0, lockHeight: L,
     vin: [opIn(`${c.txid}:${c.vout}`), opIn(`${fundTxid}:0`)],
-    vout: [ ...(successor !== null ? [out(successor, covSpkOf(name))] : []),
+    vout: [ ...(successor !== null ? [out(successor, covSpkOf(name)), ...(await carryMemos(name))] : []),
             out(back, ctx.spks[0]) ] };
   rel.vin[0].witness = [];                                 // HRBG: anyone-can-spend
   const sh = segwitV0Sighash(rel, 1, ownerLeaf, FUND, L, SIGHASH_ALL);
@@ -440,7 +457,7 @@ export async function revalueName({ name, valueFrc, bind = undefined, progress =
   const tx = { version: NV3_TX_VERSION, hasWitness: true, flags: 1, nLockTime: 0, nExpireTime: 0, lockHeight: L,
     vin: [opIn(`${c.txid}:${c.vout}`), ...picked.map(p => opIn(p.outpoint))],
     vout: [ out(V, '0014' + owner), out(newDeposit, covSpkOf(name)),
-            await frlnOut(name),                              // encrypted name book (cross-device recovery)
+            ...(await carryMemos(name)),                      // name book, or a plot's boundary
             ...(((bind === undefined ? rec.bind : bind)) ? [bindOut(bind === undefined ? rec.bind : bind, holdingLabel(name))] : []),
             ...(change > 0n ? [out(change, ctx.spks[0])] : []) ] };
   tx.vin[0].witness = [];                                   // HRBG: anyone-can-spend
@@ -487,7 +504,7 @@ export async function buyName({ name, progress = () => {} }) {
     vin: [opIn(info.outpoint), ...picked.map(p => opIn(p.outpoint))],
     vout: [ out(V, '0014' + info.owner),                      // pay the current owner V
             out(V, covSpkOf(name)),                           // successor owned by me (carries V)
-            await frlnOut(name),                              // encrypted name book (cross-device recovery)
+            ...(await carryMemos(name)),                      // name book, or a plot's boundary
             // deliberately NO binding: taking a symbol does not inherit the previous holder's claim
             // about which asset it stands for — the new holder announces their own (or none).
             ...(change > 0n ? [out(change, ctx.spks[0])] : []) ] };
