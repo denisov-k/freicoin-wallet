@@ -1740,7 +1740,7 @@ async function openNameModal(name, resolve, price, deposit) {
         : p === 'fund' ? tr('authorizing (funding the owner address)…')
         : p === 'lower' ? tr('applying the new value…')
         : tr('registered ✅')) });
-      toast(`${name}: ${tr('revalued ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
+      toast(`${nameLabel(name)}: ${tr('revalued ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
     } catch (e) { toast(e.message, 'err'); logE(e.message); btn.disabled = false; }
   };
   const nameBtn = q(m, '#nmMName');
@@ -1804,7 +1804,7 @@ async function openNameModal(name, resolve, price, deposit) {
         p === 'fund' ? tr('authorizing (funding the owner address)…')
         : p === 'release' ? tr('releasing the name…')
         : tr('released ✅')) });
-      toast(`${name}: ${tr('released — deposit reclaimed ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
+      toast(`${nameLabel(name)}: ${tr('released — deposit reclaimed ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
     } catch (e) { toast(e.message, 'err'); logR(e.message); relGo.disabled = false; }
   };
 }
@@ -1864,7 +1864,7 @@ async function buyName(name, price) {
     const log = t => nameLog('#nameMktLog', t);
     try {
       await L.buyName({ name, progress: p => log(p === 'done' ? tr('name is yours ✅') : tr('buying the name…')) });
-      log(''); toast(`${name}: ${tr('name is yours ✅')}`, 'ok');
+      log(''); toast(`${nameLabel(name)}: ${tr('name is yours ✅')}`, 'ok');
       const res = $('#covNameRes'); if (res) res.innerHTML = ''; const qin = $('#covNameQ'); if (qin) qin.value = '';
       paintMyNames();
     } catch (e) { toast(e.message, 'err'); log(e.message); }
@@ -1893,7 +1893,7 @@ async function buyName(name, price) {
       : p === 'confirm' ? tr('waiting for confirmation (this can take a few minutes)…')
       : p === 'offer' ? tr('signing the standing sale offer…')
       : tr('registered ✅')) });
-    log(''); toast(`${name}: ${tr('name is yours ✅')}`, 'ok'); paintNameMarket(); paintMyNames();
+    log(''); toast(`${nameLabel(name)}: ${tr('name is yours ✅')}`, 'ok'); paintNameMarket(); paintMyNames();
   } catch (e) { toast(e.message, 'err'); log(e.message); }
 }
 
