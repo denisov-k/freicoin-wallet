@@ -86,7 +86,11 @@ const pickFrc = (need, L) => {
 export async function registerName({ name, valueFrc, progress = () => {} }) {
   if (!validLandName(name)) throw new Error('bad name');
   const V = frcToKria(valueFrc);
-  const deposit = V + annualRent(V) / 52n;               // week-of-rent buffer so it doesn't lapse next block
+  // The deposit IS the declaration — no rent buffer on top. A buffer would lock more than the holder
+  // asked for and make the forced-buy price start ABOVE the declared figure; letting the price sit at
+  // the declaration and slide down from there is both honest and the mechanism working as intended
+  // (it getting cheaper is exactly the signal to top up).
+  const deposit = V;
   progress('lock');
   const { txid } = await sendFrcToSpk(covSpkOf(name), deposit, [await frlnOut(name)]);   // + encrypted name book
   const rec = { name, floorV: FLOOR, value: Number(valueFrc), claimTxid: txid, at: Date.now() };
@@ -239,7 +243,7 @@ export async function revalueName({ name, valueFrc, progress = () => {} }) {
   const L = ctx.state.mine.height;
   const V = covenantPrice(c.value, c.refheight, L);      // consensus charges this now
   const newV = frcToKria(valueFrc);
-  const newDeposit = newV + annualRent(newV) / 52n;
+  const newDeposit = newV;                                 // same rule as the claim: deposit == declaration
   if (newDeposit < V) throw new Error('revalue below current price (lower only melts down over time)');
   const owner = ownerHashOf(covOwnerPub(name));
   const { picked, total } = pickFrc(newDeposit + FEE, L);   // funds the new deposit; payout V returns from the HRBG's own V
