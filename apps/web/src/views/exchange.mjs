@@ -1920,7 +1920,7 @@ export function renderExchange(el) {
         const wl = $('#covWorldLbl'); if (wl) wl.hidden = !plot;
         if (qin) {
           qin.placeholder = tick ? 'USD' : plot ? 'ucfv0n01' : tr('name');
-          qin.maxLength = tick ? 10 : plot ? PLOT_PRECISION : 32;
+          qin.maxLength = tick ? 10 : plot ? 12 : 32;
           qin.setAttribute('autocapitalize', tick ? 'characters' : 'none');
           qin.value = ''; qin.dispatchEvent(new Event('input'));
         }

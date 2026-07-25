@@ -2,6 +2,8 @@
 // through untouched, so new UI text degrades to English instead of breaking). Language
 // defaults to the browser's, overridable on the welcome screen and in Settings (fw_lang).
 const RU = {
+  "overlaps": "пересекается с",
+  "tap «Where I am» or type a cell — longer means smaller": "нажмите «Где я» или введите ячейку — чем длиннее, тем меньше участок",
   "Plot": "Участок",
   "World": "Мир",
   "Place": "Место",
@@ -382,6 +384,8 @@ const RU = {
 };
 
 const ES = {
+  "overlaps": "se solapa con",
+  "tap «Where I am» or type a cell — longer means smaller": "pulsa «Dónde estoy» o escribe una celda: cuanto más larga, más pequeña",
   "Plot": "Parcela",
   "World": "Mundo",
   "Place": "Lugar",
@@ -940,6 +944,8 @@ const ES = {
 };
 
 const DE = {
+  "overlaps": "überschneidet",
+  "tap «Where I am» or type a cell — longer means smaller": "tippe «Wo ich bin» oder gib eine Zelle ein — je länger, desto kleiner",
   "Plot": "Parzelle",
   "World": "Welt",
   "Place": "Ort",
@@ -1498,6 +1504,8 @@ const DE = {
 };
 
 const FR = {
+  "overlaps": "chevauche",
+  "tap «Where I am» or type a cell — longer means smaller": "touchez «Où je suis» ou saisissez une cellule — plus elle est longue, plus elle est petite",
   "Plot": "Parcelle",
   "World": "Monde",
   "Place": "Lieu",
@@ -2056,6 +2064,8 @@ const FR = {
 };
 
 const PT = {
+  "overlaps": "sobrepõe",
+  "tap «Where I am» or type a cell — longer means smaller": "toque «Onde estou» ou digite uma célula — quanto mais longa, menor",
   "Plot": "Parcela",
   "World": "Mundo",
   "Place": "Lugar",
@@ -2614,6 +2624,8 @@ const PT = {
 };
 
 const ZH = {
+  "overlaps": "重叠于",
+  "tap «Where I am» or type a cell — longer means smaller": "点「我的位置」或输入单元 — 越长地块越小",
   "Plot": "地块",
   "World": "世界",
   "Place": "位置",

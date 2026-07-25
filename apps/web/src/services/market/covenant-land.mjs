@@ -15,7 +15,7 @@
 import { ctx, api, HOST_TAG } from '@/state/market-ctx.mjs';
 import { sha256 } from '@core/crypto.mjs';
 import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
-import { annualRent, validLandName, validHoldingId, tickerId, isTickerId, holdingLabel, validTicker, frcWpkSpk } from '@core/freiland.mjs';
+import { annualRent, validLandName, validHoldingId, tickerId, isTickerId, isPlotId, plotsOverlap, holdingLabel, validTicker, validPlot, frcWpkSpk } from '@core/freiland.mjs';
 import { covenantSpk, ownerHashOf, covenantPrice, readCovenant, nameHashOf } from '@core/covenant.mjs';
 import { sendFrcToSpk, signInput, myCoinsOf, opIn } from '@/services/market/swap-lib.mjs';
 import { serializeTx, parseTx, NV3_TX_VERSION } from '@core/tx.mjs';
@@ -25,7 +25,7 @@ import { encodeWitness } from '@core/address.mjs';
 import { currentNet } from '@/services/wallet.mjs';
 import { Buffer } from 'buffer';
 
-export { validLandName, validHoldingId, tickerId, isTickerId, holdingLabel, validTicker, annualRent };
+export { validLandName, validHoldingId, tickerId, isTickerId, isPlotId, holdingLabel, validTicker, validPlot, annualRent };
 
 export const NEEDS_INDEXER = 'covenant-needs-indexer';
 // The covenant's trailing 8 bytes are RESERVED padding (see core/asset-spk.mjs): they keep the
@@ -79,6 +79,25 @@ async function decName(payloadHex) {
 // no signature: it rides in the very transaction that created the holding's current output, and the
 // author of that transaction IS the current holder (a forced buy replaces the output, so the new
 // owner writes their own). Verification is one registry lookup + one raw-tx read — no scanning.
+// A PLOT publishes its id IN CLEAR — a map has to be readable by everyone, and unlike a name (whose
+// text we deliberately encrypt) a plot's whole point is that others can see what is taken. Same
+// self-certification as everywhere here: hash the announced id and it must be the registry key the
+// announcement was found under. This is also what makes overlap VISIBLE — the chain refuses to
+// adjudicate it, so the wallet needs the neighbours' cells to warn about it.
+const PLT1 = '504c5431';                                  // 'PLT1' — this holding is that cell
+const plotOut = id => {
+  const b = Buffer.from(String(id), 'utf8').toString('hex');
+  return { value: 0n, scriptPubKey: '6a' + (4 + b.length / 2).toString(16).padStart(2, '0') + PLT1 + b, assetTag: HOST_TAG };
+};
+const readPlot = tx => {
+  for (const o of tx.vout || []) {
+    const spk = o.scriptPubKey || '';
+    const i = spk.indexOf(PLT1);
+    if (spk.startsWith('6a') && i > 0) { const id = Buffer.from(spk.slice(i + 8), 'hex').toString('utf8'); if (id) return id; }
+  }
+  return null;
+};
+
 const TKR1 = '544b5231';                                  // 'TKR1' — «this symbol stands for that asset»
 // Payload: TKR1 ‖ assetTag(20) ‖ symbol(utf8). The symbol travels IN CLEAR and is self-certifying:
 // a reader checks sha256('ticker:'+symbol) against the registry entry the announcement was found
@@ -125,10 +144,11 @@ export async function registerName({ name, valueFrc, bind = null, progress = () 
   // (it getting cheaper is exactly the signal to top up).
   const deposit = V;
   progress('lock');
-  const extra = [await frlnOut(name), ...(bind ? [bindOut(bind, holdingLabel(name))] : [])];
+  const extra = [await frlnOut(name), ...(bind ? [bindOut(bind, holdingLabel(name))] : []), ...(isPlotId(name) ? [plotOut(name)] : [])];
   const { txid } = await sendFrcToSpk(covSpkOf(name), deposit, extra);
   const rec = { name, value: Number(valueFrc), bind, claimTxid: txid, at: Date.now() };
   save(load().filter(x => x.name !== name).concat(rec));
+  invalidateChainCaches();
   progress('done');
   return rec;
 }
@@ -148,6 +168,11 @@ async function nameCoin(name) {
 // txids already inspected this session (skip re-fetching the same registry tx on every render)
 const _seenTx = new Set();
 const _sweptOps = new Set();     // outpoints already swept this session (a broadcast is not instant)
+
+// Chain reads are cached (the map and the symbol table are re-read on every render), so anything
+// that CHANGES the registry has to drop them — otherwise a fresh claim is invisible to the very
+// overlap warning that is supposed to notice it.
+const invalidateChainCaches = () => { _plotCache = { at: 0, list: [] }; _vCache = { at: 0, map: new Map() }; };
 
 /** RECOVER path-A payouts stranded on a name's own covenant address. Consensus pays a raise (and a
  *  forced buy) to 0014{owner}; for a name we hold that is OUR per-name covenant key — derived from
@@ -209,6 +234,33 @@ export async function recoverFromChain() {
     have.add(name); added++;
   }
   return added;
+}
+
+/** Live plots, straight from the chain: [{id, world, cell, price, mine}]. Each holding's own
+ *  transaction announces its id in clear, and the announcement is checked by hashing it back to the
+ *  registry key it was found under — so a plot cannot claim to be ground it does not hold. This is
+ *  the map, and the input to overlap warnings. Cached briefly; the registry is small. */
+let _plotCache = { at: 0, list: [] };
+export async function livePlots() {
+  if (Date.now() - _plotCache.at < 30000) return _plotCache.list;
+  const list = [];
+  try {
+    for (const e of (await idx()) || []) {
+      const txid = (e.outpoint || '').split(':')[0]; if (!txid) continue;
+      let id; try { id = readPlot(parseTx((await api('rawFrcTx', { txid })).rawtx)); } catch { continue; }
+      if (!id || !validPlot(id) || nameHashOf(id) !== e.namehash) continue;   // must hash to THIS entry
+      list.push({ id, price: BigInt(e.price), outpoint: e.outpoint, owner: e.owner,
+        mine: e.owner === ownerHashOf(covOwnerPub(id)) });
+    }
+    _plotCache = { at: Date.now(), list };
+  } catch {}
+  return _plotCache.list;
+}
+
+/** Live plots whose ground overlaps `id` (nesting either way). Empty when the cell is clear. */
+export async function overlapsOf(id) {
+  if (!validPlot(id)) return [];
+  return (await livePlots()).filter(p => p.id !== id && plotsOverlap(p.id, id));
 }
 
 /** VERIFIED symbols, straight from the chain: Map(assetTag → symbol). For every live holding we
@@ -290,6 +342,7 @@ export async function recoverName(name) {
 export async function releaseName({ name, progress = () => {} }) {
   const { txid, reclaimed } = await ownerPathSpend({ name, successor: null, progress });
   save(load().filter(x => x.name !== name));
+  invalidateChainCaches();
   progress('done');
   return { txid, reclaimed };
 }
@@ -391,6 +444,7 @@ export async function revalueName({ name, valueFrc, bind = undefined, progress =
   sweep.vin[0].witness = [signEcdsa(ownerKey, sh) + '01', '00' + ownerLeaf, ''];
   await api('tx', { rawtx: serializeTx(sweep), kind: 'send' });
   save(load().map(x => x.name === name ? { ...x, ...(valueFrc == null ? {} : { value: Number(valueFrc) }), ...(bind === undefined ? {} : { bind }) } : x));
+  invalidateChainCaches();
   progress('done');
   return { txid, price: V };
 }
@@ -429,6 +483,7 @@ export async function buyName({ name, progress = () => {} }) {
   progress('confirm');
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
   save(load().filter(x => x.name !== name).concat({ name, value: Number(V) / 1e8, claimTxid: txid, at: Date.now() }));
+  invalidateChainCaches();
   progress('done');
   return { txid, price: V };
 }

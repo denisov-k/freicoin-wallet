@@ -11,6 +11,7 @@ import { tr, getLang } from '@/services/i18n.mjs';
 import { api, ctx, isCovenantNet } from '@/state/market-ctx.mjs';
 import { mvRefresh, paintMyNames } from '@/views/exchange.mjs';
 import { tickerId, plotId, PLOT_PRECISION } from '@core/freiland.mjs';
+import { GEOHASH_MAX } from '@core/geohash.mjs';
 import { geohashEncode, geohashDecode, geohashSize } from '@core/geohash.mjs';
 
 let mode = 'a';   // 'a' = currency (amounts), 't' = tokens (unique items), 'n' = Freiland holding
@@ -150,7 +151,7 @@ export function openIssueModal() {
     const plot = mode === 'n' && kind === 'plot';
     const box = $('#iPlotBox'); if (box) box.hidden = !plot;
     const inp = /** @type {HTMLInputElement} */ ($('#iName'));
-    inp.maxLength = mode !== 'n' ? 24 : tick ? 10 : plot ? PLOT_PRECISION : 32;
+    inp.maxLength = mode !== 'n' ? 24 : tick ? 10 : plot ? GEOHASH_MAX : 32;
     inp.placeholder = mode !== 'n' ? tr('e.g. labor-hours') : tick ? 'USD' : plot ? 'ucfv0n01' : 'alice';
     // A holding id is canonical, and the mobile keyboard fights it: it capitalises the first letter
     // of a name (which must be lower-case) and offers lower-case for a ticker (which must be upper).
@@ -172,14 +173,28 @@ export function openIssueModal() {
     if (mode === 'n') $('#iName').dispatchEvent(new Event('input'));   // сразу проверить занятость
   }
   // what the typed cell actually IS — a place on the ground, not a code
-  function paintCell() {
+  // What the typed cell IS — a place and a size — plus who else already claims that ground. The
+  // chain does not forbid overlap (a coarse cell nests a fine one), so the warning is the wallet's job.
+  let overlapT = null;
+  async function paintCell() {
     const el = $('#iCellInfo'); if (!el) return;
     const cell = ($('#iName')?.value || '').trim().toLowerCase();
-    if (cell.length !== PLOT_PRECISION) { el.textContent = tr('a cell is 8 characters — tap «Where I am» or type one'); return; }
-    try {
-      const c = geohashDecode(cell), s = geohashSize(cell);
-      el.textContent = `${c.lat.toFixed(5)}, ${c.lon.toFixed(5)} · ≈ ${s.widthM}×${s.heightM} ${tr('m')}`;
-    } catch { el.textContent = tr('bad cell'); }
+    if (!cell) { el.textContent = tr('tap «Where I am» or type a cell — longer means smaller'); return; }
+    let c, z;
+    try { c = geohashDecode(cell); z = geohashSize(cell); } catch { el.textContent = tr('bad cell'); return; }
+    el.textContent = `${c.lat.toFixed(5)}, ${c.lon.toFixed(5)} · ≈ ${z.widthM}×${z.heightM} ${tr('m')}`;
+    el.style.color = '';
+    clearTimeout(overlapT);
+    overlapT = setTimeout(async () => {
+      if (!isCovenantNet()) return;
+      const L = await import('@/services/market/covenant-land.mjs');
+      const id = plotId(($('#iWorld')?.value || 'demo').trim(), cell);
+      const hits = await L.overlapsOf(id).catch(() => []);
+      if (($('#iName')?.value || '').trim().toLowerCase() !== cell) return;
+      const e2 = $('#iCellInfo'); if (!e2 || !hits.length) return;
+      e2.textContent += ' · ' + tr('overlaps') + ': ' + hits.map(h => h.id.split(':')[2]).join(', ');
+      e2.style.color = 'var(--warn)';
+    }, 500);
   }
   const hereBtn = q(m, '#iHere');
   if (hereBtn) hereBtn.onclick = () => {

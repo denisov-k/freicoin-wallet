@@ -50,5 +50,11 @@ export function geohashSize(hash) {
   return { widthM: Math.round(w), heightM: Math.round(h) };
 }
 
-export const validGeohash = (h, precision = 8) =>
-  typeof h === 'string' && h.length === precision && [...h].every(c => B32.includes(c));
+/** A cell of ANY resolution: 1 char ≈ 5000 km, 12 ≈ 4 cm. Length is the zoom, not a constraint —
+ *  the chain does not adjudicate overlaps (see freiland.mjs cellsOverlap), so a plot may be as
+ *  coarse as a field or as fine as a parking space. */
+export const GEOHASH_MIN = 1, GEOHASH_MAX = 12;
+export const validGeohash = (h, precision = null) =>
+  typeof h === 'string'
+  && (precision ? h.length === precision : h.length >= GEOHASH_MIN && h.length <= GEOHASH_MAX)
+  && [...h].every(c => B32.includes(c));

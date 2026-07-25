@@ -100,7 +100,7 @@ export const holdingLabel = id =>
 // the registry's uniqueness of an id IS uniqueness of the ground, with no geometry in consensus.
 // A WORLD (`world:sunnyvale`) is a holding too: whoever holds it publishes the map's parameters and
 // can be replaced by buying it out, so stewardship needs no committee.
-export const PLOT_PRECISION = 8;                 // ≈ 20×20 m — a yard, a building footprint
+export const PLOT_PRECISION = 8;                 // the DEFAULT «where I am» zoom (≈20×20 m); not a rule
 export const PLOT_NS = 'plot:';
 export const WORLD_NS = 'world:';
 export const worldId = name => WORLD_NS + String(name ?? '').trim().toLowerCase();
@@ -115,7 +115,20 @@ export const parsePlotId = id => {
 };
 export const validPlot = id => {
   const p = parsePlotId(id);
-  return !!p && validLandName(p.world) && validGeohash(p.cell, PLOT_PRECISION);
+  return !!p && validLandName(p.world) && validGeohash(p.cell);
+};
+
+// Cells of different zoom NEST, and nesting is a plain prefix — `ucfv0n` contains `ucfv0n01`. The
+// chain cannot see this (it only ever holds sha256 of an id) and, more to the point, SHOULD not:
+// a name is created by the registry, so uniqueness of the record is uniqueness of the thing, but
+// land exists whether or not anyone records it. Guaranteeing non-overlap would only deform the map
+// to fit the data structure while settling no real dispute. So overlap is surfaced, not forbidden:
+// the wallet shows it, the price reflects it, and the community resolves it.
+export const cellsOverlap = (a, b) => a === b || a.startsWith(b) || b.startsWith(a);
+/** Do two plot ids describe overlapping ground? (Different worlds never overlap — different maps.) */
+export const plotsOverlap = (idA, idB) => {
+  const a = parsePlotId(idA), b = parsePlotId(idB);
+  return !!a && !!b && a.world === b.world && cellsOverlap(a.cell, b.cell);
 };
 
 /** Is this a well-formed holding id of any kind? */
