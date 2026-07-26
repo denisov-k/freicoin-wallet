@@ -1627,6 +1627,43 @@ const nameLabel = id => {
   return pl?.label ? pl.label : pl ? `${tr('Plot')} ${latlon(pl.centre)}` : holdingLabel(id);
 };
 
+/** The plot board: every live plot, what it is called or where it is, how big, and the price anyone
+ *  may take it over for. Sorted by price — the cheapest ground to take is the first question a
+ *  Harberger market has to answer. */
+async function paintPlotBoard() {
+  const res = $('#covNameRes'); if (!res) return;
+  res.innerHTML = `<div class="sub">${tr('looking up…')}</div>`;
+  const L = await covMod();
+  let plots = [];
+  try { plots = await L.livePlots(); } catch {}
+  for (const pl of plots) plotInfo.set(pl.id, pl);
+  if (!plots.length) { res.innerHTML = `<div class="sub">${tr('no plots yet — claim one in Issue → Holdings')}</div>`; return; }
+  const rows = [...plots].sort((a, b) => (a.price < b.price ? -1 : a.price > b.price ? 1 : 0));
+  res.innerHTML = `<table class="mkt"><thead><tr><th>${tr('Plot')}</th><th class="r">${tr('Price')}</th><th></th></tr></thead><tbody>${
+    rows.map((pl, i) => `<tr><td style="font-family:system-ui,sans-serif">${pl.label || tr('Plot')}${pl.mine ? ' · ' + tr('yours') : ''}<div class="sub" style="font-size:12px;white-space:nowrap">${
+      latlon(pl.centre)} · ≈ ${Math.round(pl.area).toLocaleString(getLang())} ${tr('m²')}</div></td>
+      <td class="r" style="white-space:nowrap">${fmtFrc8(String(pl.price))} FRC</td>
+      <td class="act-cell">${pl.mine ? '' : `<button class="rbtn plotBuy" data-i="${i}">${tr('Take it over')}</button>`}</td></tr>`).join('')}</tbody></table>`;
+  res.querySelectorAll('.plotBuy').forEach((/** @type {HTMLButtonElement} */ b) =>
+    b.onclick = () => openPlotBuyModal(rows[+b.dataset.i]));
+}
+
+/** Taking a plot over from the board — the same screen the map picker shows, in its own modal. */
+async function openPlotBuyModal(plot) {
+  if ($('#modal')) return;
+  const { renderPlotBuy } = await import('@/views/plot-buy.mjs');
+  const m = document.createElement('div'); m.id = 'modal';
+  m.innerHTML = `<div class="review">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${tr('Take the plot over')}</b><button id="pbX" class="icon">✕</button></div>
+    <div class="stack" id="pbBody"></div></div>`;
+  document.body.appendChild(m);
+  armOverlay(m);
+  q(m, '#pbX').onclick = () => closeOverlay(m);
+  renderPlotBuy({ host: q(m, '#pbBody'), plot,
+    onCancel: () => closeOverlay(m),
+    onDone: () => { closeOverlay(m); toast(tr('the plot is yours ✅'), 'ok'); paintPlotBoard(); paintMyNames(); } });
+}
+
 // Manage a name: ONE modal with both actions (revalue/top-up + repoint), replacing the two
 // per-row icon buttons and their browser prompt() dialogs.
 async function openNameModal(name, resolve, price, deposit) {
@@ -1944,10 +1981,10 @@ export function renderExchange(el) {
       ${cov ? `<div class="seg" id="covKind">
         <button data-k="name" class="on">${tr('name (human-readable)')}</button>
         <button data-k="ticker">${tr('ticker')}</button>
-        <button data-k="plot" disabled title="${tr('plots are found on the map')}">${tr('plot')}</button>
+        <button data-k="plot">${tr('plot')}</button>
       </div>
       <div class="sub" id="covKindHint" style="font-size:12px;margin:2px 0">🗺️ ${tr('Find a name to buy — the covenant registry is keyed by name, there is no public browse.')}</div>
-      <div class="row"><input id="covNameQ" type="text" autocomplete="off" spellcheck="false" placeholder="${tr('name')}"><button id="covNameFind">${tr('Find')}</button></div>
+      <div class="row" id="covFindRow"><input id="covNameQ" type="text" autocomplete="off" spellcheck="false" placeholder="${tr('name')}"><button id="covNameFind">${tr('Find')}</button></div>
       <div id="covNameRes"></div>
       <div id="nameMktLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`
       : `<div class="sub" style="font-size:12px;margin:2px 0">🗺️ ${tr('Names for sale')}. ${tr('to claim a new name, use Issue → Holdings')}</div>
@@ -1974,16 +2011,23 @@ export function renderExchange(el) {
         if (qin.value !== want) { const p = qin.selectionStart; qin.value = want; try { qin.setSelectionRange(p, p); } catch {} }
       };
       const paintCovKind = () => {
-        const tick = covKind === 'ticker';
-        if (qin) {
+        const tick = covKind === 'ticker', plot = covKind === 'plot';
+        // A name has to be looked up (the registry is keyed by its hash — there is nothing to
+        // browse). A plot announces its own boundary in clear, so plots can simply be LISTED, and
+        // every one of them is for sale at the price its holder set. Hence a board, not a search.
+        const findRow = $('#covFindRow'); if (findRow) findRow.hidden = plot;
+        if (qin && !plot) {
           qin.placeholder = tick ? 'USD' : tr('name');
           qin.maxLength = tick ? 10 : 32;
           qin.setAttribute('autocapitalize', tick ? 'characters' : 'none');
           qin.value = ''; qin.dispatchEvent(new Event('input'));
         }
         const res = $('#covNameRes'); if (res) res.innerHTML = '';
+        if (plot) paintPlotBoard();
         const hint = $('#covKindHint');
-        if (hint) hint.textContent = (tick ? '🏷 ' : '🗺️ ') + tr(tick
+        if (hint) hint.textContent = (tick ? '🏷 ' : '🗺️ ') + tr(plot
+          ? 'Every plot on the chain, and every one of them is for sale: a plot is held from the community at the price its holder declared, so anyone may take it over for exactly that.'
+          : tick
           ? 'Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.'
           : 'Find a name to buy — the covenant registry is keyed by name, there is no public browse.');
       };

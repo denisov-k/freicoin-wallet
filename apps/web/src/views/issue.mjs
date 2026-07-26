@@ -12,6 +12,7 @@ import { api, ctx, isCovenantNet } from '@/state/market-ctx.mjs';
 import { mvRefresh, paintMyNames } from '@/views/exchange.mjs';
 import { tickerId } from '@core/freiland.mjs';
 import { mountPlotMap } from '@/components/plotmap.mjs';
+import { renderPlotBuy } from '@/views/plot-buy.mjs';
 import { encodePolygon } from '@core/geopoly.mjs';
 import { plotId } from '@core/freiland.mjs';
 import { sha256 } from '@core/crypto.mjs';
@@ -283,42 +284,21 @@ export function openIssueModal() {
   }
 
   // Spending real money is not a thing to confirm in a corner of the map: the takeover gets the
-  // whole modal, says what the plot is, what it costs, and what changes hands.
+  // whole modal — the screen itself is shared with the exchange board, so the same act reads the
+  // same way wherever it starts.
   function showBuyScreen(plot) {
     const scr = $('#iBuyScreen'), mapScr = $('#iMapScreen'); if (!scr || !mapScr) return;
     m.querySelector('.mapwrap')?.classList.remove('full'); document.body.classList.remove('map-full');
     mapScr.hidden = true; scr.hidden = false;
     const ttl = $('#issTitle'); if (ttl) ttl.textContent = tr('Take the plot over');
-    const price = frc(plot.price);
-    const row = (k, v) => `<div class="rrow"><span>${k}</span><b>${v}</b></div>`;
-    scr.innerHTML = `${plot.label ? row(tr('Name'), plot.label) : ''}
-      ${row(tr('Where'), `${plot.centre.lat.toFixed(4)}, ${plot.centre.lon.toFixed(4)}`)}
-      ${row(tr('Area'), `≈ ${Math.round(plot.area).toLocaleString(getLang())} ${tr('m²')}`)}
-      ${row(tr('Forced-buy price'), `${price} FRC`)}
-      <p class="sub" style="font-size:13px">${tr('Pay')} ${price} FRC ${tr('to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.')}</p>
-      <label><span>${tr('Name')} <span class="sub">(${tr('optional')})</span></span><input id="ipbName" type="text" maxlength="24" autocomplete="off" spellcheck="false" placeholder="${tr('e.g. the field by the river')}"></label>
-      <p class="sub" style="font-size:12px">${tr('The name is written by whoever holds the plot, so the previous one does not come with it — publish your own now or later.')}</p>
-      <div class="sub" id="ipbLog" style="font-size:12px;white-space:pre-line"></div>
-      <button id="ipbYes">${tr('Confirm')}</button>
-      <button id="ipbNo" class="ghost">${tr('Cancel')}</button>`;
     const back = () => { scr.hidden = true; scr.innerHTML = ''; mapScr.hidden = false;
       const t2 = $('#issTitle'); if (t2) t2.textContent = tr('Choose a plot'); map?.draw(); };
-    const no = $('#ipbNo'); if (no) no.onclick = back;
-    const yes = /** @type {HTMLButtonElement} */ ($('#ipbYes'));
-    if (yes) yes.onclick = async () => {
-      const log = t => { const el = $('#ipbLog'); if (el) el.textContent = t; };
-      yes.disabled = true;
-      try {
-        const L = await import('@/services/market/covenant-land.mjs');
-        const label = ($('#ipbName')?.value || '').trim() || null;
-        if (label && L.plotLabelBytes(label) > L.MAX_PLOT_LABEL) throw new Error(tr('the name is too long'));
-        await L.buyName({ name: plot.id, label, progress: p => log(p === 'done' ? tr('the plot is yours ✅') : tr('taking it over…')) });
-        back(); closePlotCard();
-        toast(tr('the plot is yours ✅'), 'ok');
-        await mountMap(plot.centre.lat, plot.centre.lon);   // redraw the map off the new chain state
-        paintMyNames();
-      } catch (e) { log(e.message); yes.disabled = false; }
-    };
+    renderPlotBuy({ host: scr, plot, onCancel: back, onDone: async () => {
+      back(); closePlotCard();
+      toast(tr('the plot is yours ✅'), 'ok');
+      await mountMap(plot.centre.lat, plot.centre.lon);   // redraw the map off the new chain state
+      paintMyNames();
+    } });
   }
 
   // one place that decides what the plot form allows: no boundary ⇒ nothing to claim, said
