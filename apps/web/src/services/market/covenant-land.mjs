@@ -274,6 +274,21 @@ export async function recoverFromChain() {
     if (!txid || _seenTx.has(txid)) continue;
     _seenTx.add(txid);
     let tx; try { tx = parseTx((await api('rawFrcTx', { txid })).rawtx); } catch { continue; }
+    // A PLOT carries no name book — its id is a 76-character commitment that would overflow the
+    // memo — but it does not need one: the boundary is published in clear, the id is the hash of
+    // exactly those bytes, and whether it is mine follows from the seed. So plots recover from the
+    // ground itself, which is why this device can be told «that plot is yours» and mean it.
+    const shape = readPlotShape(tx);
+    if (shape) {
+      const pid = plotId(sha256(Buffer.from(shape, 'hex')).toString('hex'));
+      if (nameHashOf(pid) !== e.namehash || have.has(pid)) continue;
+      let mine = false;
+      try { mine = e.owner === ownerHashOf(covOwnerPub(pid)); } catch {}
+      if (!mine) continue;
+      save(load().filter(x => x.name !== pid).concat({ name: pid, label: readPlotLabel(tx), claimTxid: txid, at: Date.now() }));
+      have.add(pid); added++;
+      continue;
+    }
     const memo = tx.vout.map(o => o.scriptPubKey || '').find(s => s.startsWith('6a') && s.indexOf(FRLN) > 0);
     if (!memo) continue;
     const name = await decName(memo.slice(memo.indexOf(FRLN)));
