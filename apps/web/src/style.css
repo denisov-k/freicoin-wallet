@@ -235,3 +235,7 @@ table.mkt .act-cell .p2pstatus { border-color:var(--accent); color:var(--accent)
   box-shadow: 0 1px 4px rgba(0,0,0,.25);
 }
 body.map-full { overflow: hidden; }
+
+/* a long board scrolls inside itself, header staying put, so what follows it stays reachable */
+.tbl-scroll { max-height: 38vh; overflow-y: auto; overscroll-behavior: contain; }
+.tbl-scroll table.mkt thead th { position: sticky; top: 0; z-index: 1; background: var(--bg); }

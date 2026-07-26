@@ -1632,7 +1632,9 @@ const nameLabel = id => {
  *  Harberger market has to answer. */
 async function paintPlotBoard() {
   const res = $('#covNameRes'); if (!res) return;
-  const table = body => `<table class="mkt"><thead><tr><th>${tr('Plot')}</th><th class="r">${tr('Price')}</th><th></th></tr></thead><tbody>${body}</tbody></table>`;
+  // the board scrolls on its own: the registry can be long, and «Choose on the map» has to stay
+  // reachable without scrolling the whole tab past it
+  const table = body => `<div class="tbl-scroll"><table class="mkt"><thead><tr><th>${tr('Plot')}</th><th class="r">${tr('Price')}</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
   res.innerHTML = table(skelRows(3)) + `<div class="row" style="margin-top:8px"><button id="plotOnMap" class="ghost">${tr('Choose on the map')}</button></div>`;
   wirePlotMapButton();
   const L = await covMod();
