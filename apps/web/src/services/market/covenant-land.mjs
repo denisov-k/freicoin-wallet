@@ -374,6 +374,15 @@ export async function verifiedSymbols() {
  *  «not yours» and «not yours yet». */
 export const localHoldings = () => load();
 
+/** Forget a holding this device recorded but the chain never gave us — a takeover that lost the
+ *  race, a transaction that never confirmed. Nothing is destroyed by this: the record is local
+ *  bookkeeping, and if the holding IS ours the chain says so and recovery brings it back. */
+export const forgetHolding = name => save(load().filter(x => x.name !== name));
+
+/** Does this transaction still exist anywhere — a block or the mempool? Deliberately uncached: the
+ *  question is about NOW, and the answer flips when a competing spend wins. */
+export const txAlive = async txid => { try { await api('rawFrcTx', { txid }); return true; } catch { return false; } };
+
 export async function myNames() {
   const out = [];
   for (const rec of load()) {

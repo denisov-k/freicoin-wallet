@@ -1645,7 +1645,21 @@ async function paintPlotBoard() {
   // A takeover is only true once it is in a block, and the registry answers about blocks. Until
   // then the plot is neither theirs nor visibly yours — say «taking it over…» instead of offering
   // to buy again what you have already paid for.
-  const pending = new Set((L.localHoldings?.() || []).map(x => x.name));
+  // …but only while it can still be true. A takeover that lost the race to another buyer was
+  // accepted by the mempool and then evicted, so waiting for it forever would leave a plot marked
+  // «taking it over…» that nobody is taking. Past the window, drop the local record and let the
+  // row offer itself again at whatever it costs now.
+  const pending = new Set();
+  for (const rec of L.localHoldings?.() || []) {
+    const pl = rows.find(x => x.id === rec.name);
+    if (!pl || pl.mine) continue;
+    // Fresh enough that the relay may not have indexed it yet — believe it. Older: ask whether the
+    // transaction still exists at all. A takeover that lost the race was accepted by the mempool
+    // and then evicted, and waiting on it forever leaves a plot nobody is taking marked as taken.
+    if (Date.now() - (rec.at || 0) < 60e3) { pending.add(rec.name); continue; }
+    if (rec.claimTxid && await L.txAlive?.(rec.claimTxid)) pending.add(rec.name);
+    else L.forgetHolding?.(rec.name);
+  }
   const waiting = rows.filter(pl => !pl.mine && pending.has(pl.id)).length;
   const body = rows.length
     ? rows.map((pl, i) => `<tr><td style="font-family:system-ui,sans-serif">${pl.label || tr('Plot')}${pl.mine ? ' · ' + tr('yours') : ''}<div class="sub" style="font-size:12px;white-space:nowrap">${
@@ -2038,22 +2052,28 @@ async function buyName(name, price) {
 // Биржа делится на три класса актива, как форма «Выпуск»: Валюта (FRC/валюты + BTC-свопы),
 // Токены (пользовательские токены/тикеты), Владения (Freiland-имена — доска + выкуп). Имена-NFT
 // исключены из книги (у них есть tokenHash — иначе попали бы в «Токены») и живут только в «Владениях».
-let mktClass = 'cur';   // 'cur' | 'tok' | 'hold'
+// …and where you left them: a reload should not throw you back to «Currency» when you were
+// watching the plot board. Stored per wallet, alongside the rest of the UI state.
+const SEG_KEY = 'fw_mkt_seg';
+const segLoad = () => { try { return JSON.parse(localStorage.getItem(SEG_KEY) || '{}'); } catch { return {}; } };
+const segSave = () => { try { localStorage.setItem(SEG_KEY, JSON.stringify({ mktClass, covKind })); } catch {} };
+let mktClass = segLoad().mktClass || 'cur';   // 'cur' | 'tok' | 'hold'
 // Which holding namespace the Exchange looks in — mirrors the sub-switch in «Issue» so the two
 // forms read the same. The registry is keyed by hash, so a lookup has to know WHICH id to hash.
-let covKind = 'name';   // 'name' | 'ticker' — a plot is not searched by id, it is found on the map
+let covKind = segLoad().covKind || 'name';   // 'name' | 'ticker' | 'plot' — a plot is not searched by id, it is found on the map
 export function renderExchange(el) {
   const fopt = cachedFilterOpts();
   const nv3 = currentNet() === 'nv3';
   const cov = isCovenantNet();   // covenant «Holding» is search-and-buy (registry is by name-hash, no public browse)
-  mktClass = 'cur';
+  if (!nv3) mktClass = 'cur';   // the three classes only exist on the covenant chain
+  const segOn = (v, cur) => v === cur ? ' class="on"' : '';
   el.innerHTML = `
     ${nv3 ? `<div class="seg" id="mktClass">
-      <button data-c="cur" class="on">${tr('Currency')}</button>
-      <button data-c="tok">${tr('Token')}</button>
-      <button data-c="hold">${tr('Holding')}</button>
+      <button data-c="cur"${segOn('cur', mktClass)}>${tr('Currency')}</button>
+      <button data-c="tok"${segOn('tok', mktClass)}>${tr('Token')}</button>
+      <button data-c="hold"${segOn('hold', mktClass)}>${tr('Holding')}</button>
     </div>` : ''}
-    <div id="mktTrade">
+    <div id="mktTrade"${nv3 && mktClass === 'hold' ? ' hidden' : ''}>
       <div class="row">
         <label>${tr('Selling')}<select id="fGive">${fopt}</select></label>
         <label>${tr('Wants')}<select id="fWant">${fopt}</select></label>
@@ -2062,11 +2082,11 @@ export function renderExchange(el) {
       <table class="mkt"><thead><tr><th>#</th><th>${tr('Give')}</th><th>${tr('Want')}</th><th></th></tr></thead><tbody id="bookBody"><tr><td colspan="4" style="padding:14px 2px 4px;border-bottom:none">${skel(3)}</td></tr></tbody></table>
       <div class="row"><button id="openOffer">${tr('Post an offer')}</button></div>
     </div>
-    ${nv3 ? `<div id="mktHold" hidden>
+    ${nv3 ? `<div id="mktHold"${mktClass === 'hold' ? '' : ' hidden'}>
       ${cov ? `<div class="seg" id="covKind">
-        <button data-k="name" class="on">${tr('name (human-readable)')}</button>
-        <button data-k="ticker">${tr('ticker')}</button>
-        <button data-k="plot">${tr('plot')}</button>
+        <button data-k="name"${segOn('name', covKind)}>${tr('name (human-readable)')}</button>
+        <button data-k="ticker"${segOn('ticker', covKind)}>${tr('ticker')}</button>
+        <button data-k="plot"${segOn('plot', covKind)}>${tr('plot')}</button>
       </div>
       <div class="sub" id="covKindHint" style="font-size:12px;margin:2px 0">🗺️ ${tr('Find a name to buy — the covenant registry is keyed by name, there is no public browse.')}</div>
       <div class="row" id="covFindRow"><input id="covNameQ" type="text" autocomplete="off" spellcheck="false" placeholder="${tr('name')}"><button id="covNameFind">${tr('Find')}</button></div>
@@ -2080,7 +2100,7 @@ export function renderExchange(el) {
   ['#fGive', '#fWant'].forEach(s => { const e = $(s); if (e) e.onchange = paint; });
   if (nv3) {
     el.querySelectorAll('#mktClass button').forEach((/** @type {HTMLButtonElement} */ b) => b.onclick = () => {
-      mktClass = b.dataset.c;
+      mktClass = b.dataset.c; segSave();
       el.querySelectorAll('#mktClass button').forEach(x => x.classList.toggle('on', x === b));
       $('#mktTrade').hidden = mktClass === 'hold';
       $('#mktHold').hidden = mktClass !== 'hold';
@@ -2123,11 +2143,13 @@ export function renderExchange(el) {
       el.querySelectorAll('#covKind button').forEach((/** @type {HTMLButtonElement} */ b) => {
         if (b.disabled) return;
         b.onclick = () => {
-          covKind = b.dataset.k;
+          covKind = b.dataset.k; segSave();
           el.querySelectorAll('#covKind button').forEach(x => x.classList.toggle('on', x === b));
           paintCovKind();
         };
       });
+      el.classList.toggle('fill-tab', mktClass === 'hold' && covKind === 'plot');
+      if (mktClass === 'hold') paintCovKind();   // restored state: paint what we came back to
     } else {
       paintNameMarket();   // relay only: populate the name-tag set (book exclusion) + the board
     }
