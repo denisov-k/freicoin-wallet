@@ -1658,7 +1658,21 @@ async function paintPlotBoard() {
  *  takeover — you just point at the ground instead of reading a row. */
 function wirePlotMapButton() {
   const b = $('#plotOnMap'); if (b) b.onclick = openPlotMapModal;
+  fitPlotBoard();
 }
+
+/** Give the board every pixel the tab is not using. A fixed fraction of the screen either wasted
+ *  half of a tall one or squeezed a short one, and the registry only grows — so measure: whatever
+ *  is left under the board's own top edge, minus the map button below it. */
+function fitPlotBoard() {
+  const box = /** @type {HTMLElement} */ (document.querySelector('#covNameRes .tbl-scroll'));
+  const btn = $('#plotOnMap'), main = document.querySelector('main');
+  if (!box || !btn || !main) return;
+  const avail = main.getBoundingClientRect().bottom - box.getBoundingClientRect().top
+    - btn.getBoundingClientRect().height - 32;   // the button and the gaps around it
+  box.style.maxHeight = Math.max(160, Math.round(avail)) + 'px';
+}
+addEventListener('resize', () => { if (covKind === 'plot') fitPlotBoard(); });
 
 async function openPlotMapModal() {
   if ($('#modal')) return;

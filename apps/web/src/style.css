@@ -237,5 +237,5 @@ table.mkt .act-cell .p2pstatus { border-color:var(--accent); color:var(--accent)
 body.map-full { overflow: hidden; }
 
 /* a long board scrolls inside itself, header staying put, so what follows it stays reachable */
-.tbl-scroll { max-height: 38vh; overflow-y: auto; overscroll-behavior: contain; }
+.tbl-scroll { max-height: 38vh; overflow-y: auto; overscroll-behavior: contain; }   /* a starting point; the plot board measures the real room it has (fitPlotBoard) */
 .tbl-scroll table.mkt thead th { position: sticky; top: 0; z-index: 1; background: var(--bg); }
