@@ -2093,7 +2093,7 @@ export function renderExchange(el) {
         <button data-k="ticker"${segOn('ticker', covKind)}>${tr('ticker')}</button>
         <button data-k="plot"${segOn('plot', covKind)}>${tr('plot')}</button>
       </div>
-      <div class="sub" id="covKindHint" style="font-size:12px;margin:2px 0">🗺️ ${tr('Find a name to buy — the covenant registry is keyed by name, there is no public browse.')}</div>
+      <div class="sub" id="covKindHint" style="font-size:12px;margin:2px 0">🗺️ ${tr('Type a name to find it: the registry stores only hashes, so there is nothing to browse. A name found is a name you can buy at the price its holder set.')}</div>
       <div class="row" id="covFindRow"><input id="covNameQ" type="text" autocomplete="off" spellcheck="false" placeholder="${tr('name')}"><button id="covNameFind">${tr('Find')}</button></div>
       <div id="covNameRes"></div>
       <div id="nameMktLog" class="sub" style="font-size:12px;white-space:pre-line"></div>`
@@ -2140,10 +2140,10 @@ export function renderExchange(el) {
         if (plot) paintPlotBoard();
         const hint = $('#covKindHint');
         if (hint) hint.textContent = (tick ? '🏷 ' : '🗺️ ') + tr(plot
-          ? 'Every plot on the chain, and every one of them is for sale: a plot is held from the community at the price its holder declared, so anyone may take it over for exactly that.'
+          ? 'Every plot is for sale at the price its holder named. Pay it and the plot is yours — and from then on your price is the one anyone can take it from you at.'
           : tick
-          ? 'Find a symbol to buy. A ticker is held from the community too, so one can be taken over at the price its holder set.'
-          : 'Find a name to buy — the covenant registry is keyed by name, there is no public browse.');
+          ? 'Type a symbol to find it. A ticker belongs to whoever keeps paying for it, so «USD» ends up with the holder who values it most.'
+          : 'Type a name to find it: the registry stores only hashes, so there is nothing to browse. A name found is a name you can buy at the price its holder set.');
       };
       el.querySelectorAll('#covKind button').forEach((/** @type {HTMLButtonElement} */ b) => {
         if (b.disabled) return;
