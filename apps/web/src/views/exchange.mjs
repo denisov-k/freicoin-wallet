@@ -1632,20 +1632,67 @@ const nameLabel = id => {
  *  Harberger market has to answer. */
 async function paintPlotBoard() {
   const res = $('#covNameRes'); if (!res) return;
-  res.innerHTML = `<div class="sub">${tr('looking up…')}</div>`;
+  const table = body => `<table class="mkt"><thead><tr><th>${tr('Plot')}</th><th class="r">${tr('Price')}</th><th></th></tr></thead><tbody>${body}</tbody></table>`;
+  res.innerHTML = table(skelRows(3)) + `<div class="row" style="margin-top:8px"><button id="plotOnMap" class="ghost">${tr('Choose on the map')}</button></div>`;
+  wirePlotMapButton();
   const L = await covMod();
   let plots = [];
   try { plots = await L.livePlots(); } catch {}
   for (const pl of plots) plotInfo.set(pl.id, pl);
-  if (!plots.length) { res.innerHTML = `<div class="sub">${tr('no plots yet — claim one in Issue → Holdings')}</div>`; return; }
   const rows = [...plots].sort((a, b) => (a.price < b.price ? -1 : a.price > b.price ? 1 : 0));
-  res.innerHTML = `<table class="mkt"><thead><tr><th>${tr('Plot')}</th><th class="r">${tr('Price')}</th><th></th></tr></thead><tbody>${
-    rows.map((pl, i) => `<tr><td style="font-family:system-ui,sans-serif">${pl.label || tr('Plot')}${pl.mine ? ' · ' + tr('yours') : ''}<div class="sub" style="font-size:12px;white-space:nowrap">${
-      latlon(pl.centre)} · ≈ ${Math.round(pl.area).toLocaleString(getLang())} ${tr('m²')}</div></td>
-      <td class="r" style="white-space:nowrap">${fmtFrc8(String(pl.price))} FRC</td>
-      <td class="act-cell">${pl.mine ? '' : `<button class="rbtn plotBuy" data-i="${i}">${tr('Take it over')}</button>`}</td></tr>`).join('')}</tbody></table>`;
+  const body = rows.length
+    ? rows.map((pl, i) => `<tr><td style="font-family:system-ui,sans-serif">${pl.label || tr('Plot')}${pl.mine ? ' · ' + tr('yours') : ''}<div class="sub" style="font-size:12px;white-space:nowrap">${
+        latlon(pl.centre)} · ≈ ${Math.round(pl.area).toLocaleString(getLang())} ${tr('m²')}</div></td>
+        <td class="r" style="white-space:nowrap">${fmtFrc8(String(pl.price))} FRC</td>
+        <td class="act-cell">${pl.mine ? '' : `<button class="plotBuy rbtn" data-i="${i}" title="${tr('Take it over')}" aria-label="${tr('Take it over')}">${SVG.buy}</button>`}</td></tr>`).join('')
+    : `<tr><td colspan="3" class="sub">${tr('no plots yet — claim one in Issue → Holdings')}</td></tr>`;
+  res.innerHTML = table(body) + `<div class="row" style="margin-top:8px"><button id="plotOnMap" class="ghost">${tr('Choose on the map')}</button></div>`;
+  wirePlotMapButton();
   res.querySelectorAll('.plotBuy').forEach((/** @type {HTMLButtonElement} */ b) =>
     b.onclick = () => openPlotBuyModal(rows[+b.dataset.i]));
+}
+
+/** The board answers «what is for sale and how much»; the map answers «where». Same plots, same
+ *  takeover — you just point at the ground instead of reading a row. */
+function wirePlotMapButton() {
+  const b = $('#plotOnMap'); if (b) b.onclick = openPlotMapModal;
+}
+
+async function openPlotMapModal() {
+  if ($('#modal')) return;
+  const { mountPlotMap } = await import('@/components/plotmap.mjs');
+  const m = document.createElement('div'); m.id = 'modal';
+  m.innerHTML = `<div class="review">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b id="pmTitle">${tr('Choose on the map')}</b><button id="pmX" class="icon">✕</button></div>
+    <div class="mapwrap"><div class="mapbox">
+      <div id="pmMap"></div>
+      <div class="map-ctl map-ctl-z"><button id="pmIn" title="+">+</button><button id="pmOut" title="−">−</button></div>
+    </div></div>
+    <div class="map-sheet" id="pmCard" hidden></div>
+    <div class="sub" style="font-size:12px">${tr('Tap a plot to see what it is and take it over.')}</div></div>`;
+  document.body.appendChild(m);
+  armOverlay(m);
+  q(m, '#pmX').onclick = () => closeOverlay(m);
+  const L = await covMod();
+  let plots = [];
+  try { plots = await L.livePlots(); } catch {}
+  for (const pl of plots) plotInfo.set(pl.id, pl);
+  const centre = plots[0]?.centre || { lat: 55.7558, lon: 37.6173 };
+  const map = mountPlotMap({ el: q(m, '#pmMap'), lat: centre.lat, lon: centre.lon, zoom: 17, height: 260,
+    readonly: true, taken: () => plots, onChange: () => {},
+    onInspect: pl => {
+      const card = q(m, '#pmCard'); if (!card) return;
+      card.hidden = false;
+      card.innerHTML = `<div class="rrow"><b>${pl.label || tr('Plot')}</b><button id="pmCardX" class="icon">✕</button></div>
+        <div class="rrow"><span>${tr('Area')}</span><b>≈ ${Math.round(pl.area).toLocaleString(getLang())} ${tr('m²')}</b></div>
+        <div class="rrow"><span>${tr('Forced-buy price')}</span><b>${fmtFrc8(String(pl.price))} FRC</b></div>
+        ${pl.mine ? `<div class="sub">${tr('yours')}</div>` : `<button id="pmBuy">${tr('Take it over')}</button>`}`;
+      const x = q(m, '#pmCardX'); if (x) x.onclick = () => { card.hidden = true; card.innerHTML = ''; map.deselect(); };
+      const buy = q(m, '#pmBuy');
+      if (buy) buy.onclick = () => { closeOverlay(m); openPlotBuyModal(pl); };
+    } });
+  q(m, '#pmIn').onclick = () => map.zoom(1);
+  q(m, '#pmOut').onclick = () => map.zoom(-1);
 }
 
 /** Taking a plot over from the board — the same screen the map picker shows, in its own modal. */
