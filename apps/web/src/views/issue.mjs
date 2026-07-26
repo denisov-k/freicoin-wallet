@@ -86,7 +86,7 @@ async function issue() {
     }
     $('#modal')?.remove();
     toast(`«${name}» ${tr('issued to your address')}`, 'ok'); mvRefresh();
-  } catch (e) { toast(e.message, 'err'); }
+  } catch (e) { toast(tr(e.message), 'err'); }
 }
 
 export function openIssueModal() {

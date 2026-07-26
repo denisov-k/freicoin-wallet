@@ -32,11 +32,33 @@ export const signInput = (tx, i, spk, value, refheight, hashtype, secKey = null)
   tx.vin[i].witness = [signEcdsa(sec, sh) + hashtype.toString(16).padStart(2, '0'), '00' + code, ''];
 };
 
+// Coins already spent by a transaction THIS session broadcast. The wallet's utxo snapshot refreshes
+// on a timer, so two actions in a row (two plot takeovers, a claim then a revalue) would pick the
+// same coin twice and the relay would answer «вход не найден в цепи (spent/unknown)» — which reads
+// as a broken holding rather than a stale wallet. Entries expire: if the spend never confirms, the
+// coin must come back into play.
+const _spent = new Map();   // outpoint → when we spent it
+const SPENT_TTL = 20 * 60e3;
+export const markSpent = outpoints => { const now = Date.now(); for (const o of outpoints) _spent.set(o, now); };
+/** Is money of ours sitting in a spend the chain has not confirmed yet? The relay validates inputs
+ *  against CONFIRMED outputs, so change cannot be chained — «not enough» right after an action is
+ *  usually «not free yet», and saying so is the difference between a bug report and a minute's wait. */
+export const hasPendingSpend = () => stillSpent().length > 0;
+const stillSpent = () => {
+  const cut = Date.now() - SPENT_TTL;
+  for (const [o, t] of _spent) if (t < cut) _spent.delete(o);
+  return [..._spent.keys()];
+};
+
 // outpoints that back my own OPEN ranged offers — reserved, so coin selection (new offers, fills,
-// fees, cancels) never spends a coin out from under a live offer and orphans it.
-export const committedOutpoints = () => new Set((ctx.state?.info?.book || [])
-  .filter(o => o.ranged && o.status === 'open' && ctx.spks.includes(o.makerSpk) && o.giveOutpoint)
-  .map(o => o.giveOutpoint));
+// fees, cancels) never spends a coin out from under a live offer and orphans it. Plus the ones we
+// have just spent and the chain has not told us about yet.
+export const committedOutpoints = () => new Set([
+  ...(ctx.state?.info?.book || [])
+    .filter(o => o.ranged && o.status === 'open' && ctx.spks.includes(o.makerSpk) && o.giveOutpoint)
+    .map(o => o.giveOutpoint),
+  ...stillSpent(),
+]);
 
 // spendable FRC (kria), present-valued, EXCLUDING coins that back my open ranged offers — this is
 // exactly what sendFrcToSpk can gather to fund a swap HTLC. The offer modal shows it so a maker
@@ -79,6 +101,7 @@ export async function sendFrcToSpk(spk, amount, extraOuts = []) {
   const tx = { version: nv3 ? NV3_TX_VERSION : 2, hasWitness: true, flags: 1, nLockTime: 0, lockHeight: L, ...(nv3 ? { nExpireTime: 0 } : {}), vin: picked.map(c => opIn(c.outpoint)), vout };
   picked.forEach((c, i) => signInput(tx, i, c.spk, c.value, c.refheight, SIGHASH_ALL));
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+  markSpent(picked.map(c => c.outpoint));
   return { txid, vout: 0 };
 }
 

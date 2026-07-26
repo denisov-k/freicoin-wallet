@@ -17,7 +17,7 @@ import { sha256 } from '@core/crypto.mjs';
 import { pubkeyCompressed, signEcdsa } from '@core/ecdsa.mjs';
 import { annualRent, validLandName, validHoldingId, tickerId, isTickerId, isPlotId, plotId, plotShapeOf, holdingLabel, validTicker, validPlot, frcWpkSpk } from '@core/freiland.mjs';
 import { covenantSpk, ownerHashOf, covenantPrice, readCovenant, nameHashOf } from '@core/covenant.mjs';
-import { sendFrcToSpk, signInput, myCoinsOf, opIn } from '@/services/market/swap-lib.mjs';
+import { sendFrcToSpk, signInput, myCoinsOf, opIn, markSpent, hasPendingSpend } from '@/services/market/swap-lib.mjs';
 import { serializeTx, parseTx, NV3_TX_VERSION } from '@core/tx.mjs';
 import { SIGHASH_ALL, segwitV0Sighash } from '@core/sighash.mjs';
 import { assetPresentValue } from '@core/assets.mjs';
@@ -153,7 +153,9 @@ const pickFrc = (need, L) => {
   const coins = myCoinsOf(null, L).sort((a, b) => (b.pv > a.pv ? 1 : b.pv < a.pv ? -1 : 0));
   const picked = []; let S = 0n;
   for (const c of coins) { picked.push(c); S += c.pv; if (S >= need) break; }
-  if (S < need) throw new Error('not enough FRC');
+  if (S < need) throw new Error(hasPendingSpend()
+    ? 'coins are tied up in a transaction still waiting for a block — try again in a minute'
+    : 'not enough FRC');
   return { picked, total: S };
 };
 
@@ -482,6 +484,7 @@ async function ownerPathSpend({ name, successor, progress }) {
   picked.forEach((p, i) => signInput(fund, i, p.spk, p.value, p.refheight, SIGHASH_ALL));
   progress('fund');
   const { txid: fundTxid } = await api('tx', { rawtx: serializeTx(fund), kind: 'send' });
+  markSpent(picked.map(p => p.outpoint));
   // 2) release: HRBG (anyone-can-spend) + the owner coin (signed with the covenant key), NO successor.
   //    Present value V of the melting deposit is what the HRBG input is worth at L; reclaim V + FUND − fee.
   const V = covenantPrice(c.value, c.refheight, L);
@@ -498,6 +501,7 @@ async function ownerPathSpend({ name, successor, progress }) {
   rel.vin[1].witness = [signEcdsa(ownerKey, sh) + '01', '00' + ownerLeaf, ''];
   progress(successor === null ? 'release' : 'lower');
   const { txid } = await api('tx', { rawtx: serializeTx(rel), kind: 'send' });
+  markSpent([`${c.txid}:${c.vout}`, `${fundTxid}:0`]);
   return { txid, reclaimed: back };
 }
 
@@ -534,6 +538,7 @@ export async function revalueName({ name, valueFrc, bind = undefined, label = un
   picked.forEach((p, i) => signInput(tx, i + 1, p.spk, p.value, p.refheight, SIGHASH_ALL));
   progress('confirm');
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+  markSpent([`${c.txid}:${c.vout}`, ...picked.map(p => p.outpoint)]);
   // Consensus makes the raise pay V to 0014{owner} — the per-name covenant key's address, which the
   // wallet does NOT scan. Left there, raising looks like it costs the WHOLE new value instead of the
   // difference (the money is recoverable from the seed, just invisible). Sweep it straight back.
@@ -591,6 +596,7 @@ export async function buyName({ name, label = null, progress = () => {} }) {
   picked.forEach((p, i) => signInput(tx, i + 1, p.spk, p.value, p.refheight, SIGHASH_ALL));
   progress('confirm');
   const { txid } = await api('tx', { rawtx: serializeTx(tx), kind: 'send' });
+  markSpent([info.outpoint, ...picked.map(p => p.outpoint)]);
   save(load().filter(x => x.name !== name).concat({ name, value: Number(V) / 1e8, label, claimTxid: txid, at: Date.now() }));
   invalidateChainCaches();
   progress('done');

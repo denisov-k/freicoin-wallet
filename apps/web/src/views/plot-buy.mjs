@@ -34,6 +34,6 @@ export function renderPlotBuy({ host, plot, onCancel, onDone }) {
       if (label && L.plotLabelBytes(label) > L.MAX_PLOT_LABEL) throw new Error(tr('the name is too long'));
       await L.buyName({ name: plot.id, label, progress: p => log(p === 'done' ? tr('the plot is yours ✅') : tr('taking it over…')) });
       onDone({ ...plot, label });
-    } catch (e) { log(e.message); yes.disabled = false; }
+    } catch (e) { log(tr(e.message)); yes.disabled = false; }
   };
 }
