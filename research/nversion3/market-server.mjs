@@ -1802,7 +1802,11 @@ const api = {
 // The relay is a public endpoint whose handlers hit two full nodes. Two budgets: a generous one for
 // the polling reads every open tab does, and a tight one for WRITES (posting/taking offers), which
 // is where a spammer could flood the board or burn node RPC. Behind nginx the real IP is in XFF.
-const RL_READ = Number(process.env.RL_READ ?? 240);    // requests/min/IP
+// One wallet legitimately bursts: opening the holdings view reads the registry and then one
+// transaction per record. The client now shares a tx cache, but a first paint on a fresh device
+// still costs a few dozen calls, and a throttled read shows up as «no holdings» rather than an
+// error — so the ceiling is a wallet's worth of work, not a page's.
+const RL_READ = Number(process.env.RL_READ ?? 600);    // requests/min/IP
 const RL_WRITE = Number(process.env.RL_WRITE ?? 20);   // mutating calls/min/IP
 const MAX_BODY = Number(process.env.MAX_BODY ?? (4 << 20));   // 4 MiB request-body cap
 // Safety net: a stray rejection is logged and ignored (it can't corrupt in-memory state); a truly

@@ -197,7 +197,7 @@ async function carryMemos(name, { keepLabel = true, label = undefined } = {}) {
   const c = await nameCoin(name);
   if (!c) return [];
   let tx = null;
-  try { tx = parseTx((await api('rawFrcTx', { txid: c.txid })).rawtx); } catch {}
+  try { tx = await rawTx(c.txid); } catch {}
   if (!tx) return [];
   const hex = readPlotShape(tx);
   if (!hex || plotId(sha256(Buffer.from(hex, 'hex')).toString('hex')) !== name) return [];
@@ -273,7 +273,7 @@ export async function recoverFromChain() {
     const txid = (e.outpoint || '').split(':')[0];
     if (!txid || _seenTx.has(txid)) continue;
     _seenTx.add(txid);
-    let tx; try { tx = parseTx((await api('rawFrcTx', { txid })).rawtx); } catch { continue; }
+    let tx; try { tx = await rawTx(txid); } catch { continue; }
     // A PLOT carries no name book — its id is a 76-character commitment that would overflow the
     // memo — but it does not need one: the boundary is published in clear, the id is the hash of
     // exactly those bytes, and whether it is mine follows from the seed. So plots recover from the
@@ -316,7 +316,7 @@ export async function livePlots() {
     for (const e of (await idx()) || []) {
       const txid = (e.outpoint || '').split(':')[0]; if (!txid) continue;
       let tx, hex;
-      try { tx = parseTx((await api('rawFrcTx', { txid })).rawtx); hex = readPlotShape(tx); } catch { continue; }
+      try { tx = await rawTx(txid); hex = readPlotShape(tx); } catch { continue; }
       if (!hex) continue;
       let points; try { points = decodePolygon(hex); } catch { continue; }
       // the boundary self-certifies: hash it and it must reproduce the registry key it was found under
@@ -356,7 +356,7 @@ export async function verifiedSymbols() {
   try {
     for (const e of (await idx()) || []) {
       const txid = (e.outpoint || '').split(':')[0]; if (!txid) continue;
-      let b; try { b = readBind(parseTx((await api('rawFrcTx', { txid })).rawtx)); } catch { continue; }
+      let b; try { b = readBind(await rawTx(txid)); } catch { continue; }
       if (!b || !validTicker(b.symbol.toUpperCase())) continue;
       if (nameHashOf(tickerId(b.symbol)) !== e.namehash) continue;   // the symbol must hash to THIS entry
       map.set(b.tag, b.symbol.toUpperCase());
@@ -387,6 +387,20 @@ export async function myNames() {
 // (dump of the consensus name registry). Returns entries {namehash, outpoint, owner, floorV, deposit,
 // refheight, price}. Discovery is by name HASH (the human name is not recoverable from the chain).
 const idx = params => api('harbergernames', params || {});
+
+// A confirmed transaction never changes, and four readers here want the same ones: the map (a plot's
+// boundary), the verified symbols (a ticker's binding), recovery (the name book) and every successor
+// that carries a memo forward. Fetching each of them separately per repaint is what put the wallet
+// over the relay's read limit — the same txids, over and over, several times a minute.
+const _txCache = new Map();
+async function rawTx(txid) {
+  let tx = _txCache.get(txid);
+  if (tx) return tx;
+  tx = parseTx((await api('rawFrcTx', { txid })).rawtx);
+  if (_txCache.size > 400) _txCache.delete(_txCache.keys().next().value);
+  _txCache.set(txid, tx);
+  return tx;
+}
 const mapEntry = e => ({ nameHash: e.namehash, outpoint: e.outpoint, owner: e.owner,
   reserved: e.reserved ?? e.floorV, deposit: BigInt(e.deposit), refheight: e.refheight, price: BigInt(e.price) });
 

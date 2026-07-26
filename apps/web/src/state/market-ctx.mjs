@@ -20,8 +20,15 @@ export const defaultApiBase = (net = currentNet()) => {
 };
 const apiBase = () => relayOverride(currentNet()).replace(/\/+$/, '') || defaultApiBase();
 export const API = apiBase; // legacy alias (call it)
-export async function api(path, body) {
+export async function api(path, body, { retry = 1 } = {}) {
   const r = await fetch(`${apiBase()}/${path}`, body ? { method: 'POST', body: JSON.stringify(body, (k, v) => typeof v === 'bigint' ? String(v) : v) } : undefined);
+  // A throttled read is not an answer — and a caller that treats «no answer» as «nothing there»
+  // (holdings, plots, verified symbols all do) would quietly show an empty wallet. Wait out the
+  // relay's window once instead of reporting emptiness.
+  if (r.status === 429 && retry > 0) {
+    await new Promise(ok => setTimeout(ok, 2000));
+    return api(path, body, { retry: retry - 1 });
+  }
   const j = await r.json();
   if (j.error) throw new Error(j.error);
   return j;
