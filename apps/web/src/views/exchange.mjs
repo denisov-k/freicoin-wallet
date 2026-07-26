@@ -1664,6 +1664,7 @@ async function openNameModal(name, resolve, price, deposit) {
         ${cov && deposit ? kv(tr('deposit'), fmtFrc8(deposit) + ' FRC') : ''}
         ${showRent ? kv(tr('rent burned'), rentStr + ' FRC') : ''}
       </div>
+      ${isPlotId(name) && plotInfo.get(name) ? '<div class="mapwrap"><div class="mapbox"><div id="nmMap"></div></div></div>' : ''}
       <button id="nmMEdit" class="ghost">${tr('Change price')}</button>
       ${isTickerId(name) ? `<button id="nmMBind" class="ghost">${tr('Link an asset')}</button>` : ''}
       ${isPlotId(name) && cov ? `<button id="nmMName" class="ghost">${tr('Change the name')}</button>` : ''}
@@ -1743,6 +1744,21 @@ async function openNameModal(name, resolve, price, deposit) {
       toast(`${nameLabel(name)}: ${tr('revalued ✅')}`, 'ok'); $('#modal')?.remove(); paintMyNames();
     } catch (e) { toast(e.message, 'err'); logE(e.message); btn.disabled = false; }
   };
+  // a plot is a place, so the panel shows the place — the same drawing as the picker, without the
+  // drawing: pan and pinch to look around, nothing to edit here
+  if (isPlotId(name) && plotInfo.get(name)) {
+    const pl = plotInfo.get(name);
+    const span = Math.max(1e-5, ...pl.points.map(a => Math.max(Math.abs(a.lat - pl.centre.lat) * 111320,
+      Math.abs(a.lon - pl.centre.lon) * 111320 * Math.cos(pl.centre.lat * Math.PI / 180)))) * 2;
+    // fit the boundary into about half the canvas: metres per pixel = 156543·cos(lat) / 2^z
+    const z = Math.max(3, Math.min(19, Math.log2(156543.03392 * Math.cos(pl.centre.lat * Math.PI / 180) * 100 / span)));
+    import('@/components/plotmap.mjs').then(({ mountPlotMap }) => {
+      const host = $('#nmMap'); if (!host) return;
+      mountPlotMap({ el: host, lat: pl.centre.lat, lon: pl.centre.lon, zoom: Math.round(z), height: 200,
+        readonly: true, taken: () => [...plotInfo.values()], onChange: () => {} });
+    }).catch(() => {});
+  }
+
   const nameBtn = q(m, '#nmMName');
   if (nameBtn) nameBtn.onclick = () => { showScreen(5); $('#nmPName')?.focus(); };
   const back5 = q(m, '#nmBack5'); if (back5) back5.onclick = () => showScreen(1);

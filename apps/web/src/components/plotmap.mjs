@@ -22,12 +22,13 @@ const y2lat = (y, z) => { const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z); 
  *  @param {{el:HTMLElement, lat:number, lon:number, zoom?:number,
  *           taken:()=>{points:{lat:number,lon:number}[], mine:boolean, area?:number}[],
  *           onChange:(pts:{lat:number,lon:number}[])=>void,
- *           onInspect?:(plot:any)=>void}} o */
-export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspect = null }) {
+ *           onInspect?:(plot:any)=>void, readonly?:boolean, height?:number}} o */
+export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspect = null, readonly = false, height = 300 }) {
   const cv = document.createElement('canvas');
   // no text selection: a press held over the canvas would otherwise raise the selection UI
-  cv.style.cssText = 'width:100%;height:300px;border:1px solid var(--line);border-radius:10px;touch-action:none;'
-    + 'user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;display:block;cursor:crosshair';
+  cv.style.cssText = `width:100%;height:${height}px;border:1px solid var(--line);border-radius:10px;touch-action:none;`
+    + 'user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;display:block;'
+    + (readonly ? 'cursor:grab' : 'cursor:crosshair');
   el.innerHTML = ''; el.appendChild(cv);
   const st = { lat, lon, z: zoom, pts: [], sel: null, badges: [] };   // z is fractional — a pinch zooms between tile levels
   const tiles = new Map();                                   // cached tile images, keyed z/x/y
@@ -122,7 +123,7 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
       // a corner in the wrong place should be movable, not only removable: grab the one under the
       // finger and the drag edits the boundary instead of panning the map
       vdrag = null;
-      for (let i = 0; i < st.pts.length; i++) { const sc = toScreen(st.pts[i]);
+      if (!readonly) for (let i = 0; i < st.pts.length; i++) { const sc = toScreen(st.pts[i]);
         if (Math.hypot(sc.x - lx, sc.y - ly) < 16) { vdrag = { i }; break; } }
     }
     else if (ptrs.size === 2) {
@@ -171,6 +172,7 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
     const wasDrag = moved || !!pinch; const onVertex = !!vdrag;
     pan = null; pinch = null; vdrag = null;
     if (wasDrag) return;
+    if (readonly) return;                                       // a preview: look and pan, nothing else
     const b = cv.getBoundingClientRect();
     const p = toWorld(e.clientX - b.left, e.clientY - b.top);
     if (st.pts.length >= 3) {                                   // near the first corner ⇒ close
