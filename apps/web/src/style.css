@@ -159,8 +159,8 @@ table.mkt .act-cell .p2pstatus { border-color:var(--accent); color:var(--accent)
 /* the map given the whole screen: the wrapper leaves the modal's flow and covers the viewport,
    controls keep clear of the notch and the home indicator */
 .mapwrap.full { position: fixed; inset: 0; z-index: 120; background: var(--bg); }
-.mapwrap.full #iMap { height: 100%; }
-.mapwrap.full #iMap canvas { height: 100% !important; border-radius: 0; border: 0; }
+.mapwrap.full .plotmap { height: 100%; }
+.mapwrap.full .plotmap canvas { height: 100% !important; border-radius: 0; border: 0; }
 .mapwrap.full .map-ctl-z, .mapwrap.full .map-ctl-edit { top: calc(10px + env(safe-area-inset-top)); }
 .mapwrap.full .map-ctl-here, .mapwrap.full .map-ctl-full { bottom: calc(30px + env(safe-area-inset-bottom)); }
 /* what a taken plot is, asked for by holding still over it */

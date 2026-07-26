@@ -13,6 +13,7 @@ import { mvRefresh, paintMyNames } from '@/views/exchange.mjs';
 import { tickerId } from '@core/freiland.mjs';
 import { mountPlotMap } from '@/components/plotmap.mjs';
 import { renderPlotBuy } from '@/views/plot-buy.mjs';
+import { mountMapSearch } from '@/components/mapsearch.mjs';
 import { encodePolygon } from '@core/geopoly.mjs';
 import { plotId } from '@core/freiland.mjs';
 import { sha256 } from '@core/crypto.mjs';
@@ -112,10 +113,7 @@ export function openIssueModal() {
     </div>
     <div id="iMapScreen" class="stack" hidden>
       <div class="mapwrap">
-        <div class="map-search">
-          <input id="iSearch" type="search" enterkeyhint="search" autocomplete="off" spellcheck="false" placeholder="${tr('Find a place')}">
-          <div class="map-search-res" id="iSearchRes" hidden></div>
-        </div>
+        <div id="iSearch"></div>
         <div class="mapbox">
           <div id="iMap"></div>
           <div class="map-ctl map-ctl-z"><button id="iZoomIn" title="+">+</button><button id="iZoomOut" title="−">−</button></div>
@@ -344,37 +342,8 @@ export function openIssueModal() {
     requestAnimationFrame(() => map?.draw());   // the canvas sizes itself from the new layout
   };
 
-  // Finding the ground you mean by typing its name. The lookup goes to OpenStreetMap's geocoder —
-  // the same trade the basemap already makes: it learns what you searched for, and nothing else
-  // about the wallet goes near it. Only on Enter or after a pause, never per keystroke (their usage
-  // policy asks for at most one request a second).
-  let searchT = null;
-  const searchRes = q(m, '#iSearchRes');
-  const showRes = html => { if (!searchRes) return; searchRes.innerHTML = html; searchRes.hidden = !html; };
-  async function findPlace() {
-    const inp = /** @type {HTMLInputElement} */ ($('#iSearch'));
-    const term = (inp?.value || '').trim();
-    if (term.length < 3) return showRes('');
-    showRes(`<div class="sub" style="padding:8px 10px">${tr('searching…')}</div>`);
-    try {
-      const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5'
-        + `&accept-language=${encodeURIComponent(getLang())}&q=${encodeURIComponent(term)}`;
-      const found = await (await fetch(url)).json();
-      if ((inp?.value || '').trim() !== term) return;                 // a newer search won
-      if (!found.length) return showRes(`<div class="sub" style="padding:8px 10px">${tr('nothing found')}</div>`);
-      showRes(found.map((f, i) => `<button class="mapfind" data-i="${i}">${f.display_name}</button>`).join(''));
-      searchRes?.querySelectorAll('.mapfind').forEach((/** @type {HTMLButtonElement} */ b) => b.onclick = () => {
-        const f = found[+b.dataset.i];
-        map?.centre(+f.lat, +f.lon, 18);
-        showRes(''); inp.blur();
-      });
-    } catch { showRes(`<div class="sub" style="padding:8px 10px">${tr('search is unavailable')}</div>`); }
-  }
-  const searchInp = q(m, '#iSearch');
-  if (searchInp) {
-    searchInp.oninput = () => { clearTimeout(searchT); searchT = setTimeout(findPlace, 800); };
-    searchInp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(searchT); findPlace(); } };
-  }
+  const searchHost = q(m, '#iSearch');
+  if (searchHost) mountMapSearch({ el: searchHost, onPick: p => map?.centre(p.lat, p.lon, 18) });
 
   const hereBtn = q(m, '#iHere');
   if (hereBtn) hereBtn.onclick = () => {

@@ -29,6 +29,7 @@ export function mountPlotMap({ el, lat, lon, zoom = 18, taken, onChange, onInspe
   cv.style.cssText = `width:100%;height:${height}px;border:1px solid var(--line);border-radius:10px;touch-action:none;`
     + 'user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;display:block;'
     + (readonly ? 'cursor:grab' : 'cursor:crosshair');
+  el.classList.add('plotmap');   // lets the full-screen rules find any map, not just the picker's
   el.innerHTML = ''; el.appendChild(cv);
   const st = { lat, lon, z: zoom, pts: [], sel: null, badges: [] };   // z is fractional — a pinch zooms between tile levels
   const tiles = new Map();                                   // cached tile images, keyed z/x/y

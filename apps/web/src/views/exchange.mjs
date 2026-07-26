@@ -1679,14 +1679,19 @@ function wirePlotMapButton() {
 async function openPlotMapModal() {
   if ($('#modal')) return;
   const { mountPlotMap } = await import('@/components/plotmap.mjs');
+  const { mountMapSearch } = await import('@/components/mapsearch.mjs');
   const m = document.createElement('div'); m.id = 'modal';
   m.innerHTML = `<div class="review">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b id="pmTitle">${tr('Choose on the map')}</b><button id="pmX" class="icon">✕</button></div>
-    <div class="mapwrap"><div class="mapbox">
-      <div id="pmMap"></div>
-      <div class="map-ctl map-ctl-z"><button id="pmIn" title="+">+</button><button id="pmOut" title="−">−</button></div>
-    </div></div>
-    <div class="map-sheet" id="pmCard" hidden></div>
+    <div class="mapwrap">
+      <div id="pmSearch"></div>
+      <div class="mapbox">
+        <div id="pmMap"></div>
+        <div class="map-ctl map-ctl-z"><button id="pmIn" title="+">+</button><button id="pmOut" title="−">−</button></div>
+        <div class="map-ctl map-ctl-full"><button id="pmFull" title="${tr('Full screen')}">⤢</button></div>
+      </div>
+      <div class="map-sheet" id="pmCard" hidden></div>
+    </div>
     <div class="sub" style="font-size:12px">${tr('Tap a plot to see what it is and take it over.')}</div></div>`;
   document.body.appendChild(m);
   armOverlay(m);
@@ -1701,16 +1706,31 @@ async function openPlotMapModal() {
     onInspect: pl => {
       const card = q(m, '#pmCard'); if (!card) return;
       card.hidden = false;
+      m.querySelector('.mapwrap')?.classList.add('carded');
       card.innerHTML = `<div class="rrow"><b>${pl.label || tr('Plot')}</b><button id="pmCardX" class="icon">✕</button></div>
         <div class="rrow"><span>${tr('Area')}</span><b>≈ ${Math.round(pl.area).toLocaleString(getLang())} ${tr('m²')}</b></div>
         <div class="rrow"><span>${tr('Forced-buy price')}</span><b>${fmtFrc8(String(pl.price))} FRC</b></div>
         ${pl.mine ? `<div class="sub">${tr('yours')}</div>` : `<button id="pmBuy">${tr('Take it over')}</button>`}`;
-      const x = q(m, '#pmCardX'); if (x) x.onclick = () => { card.hidden = true; card.innerHTML = ''; map.deselect(); };
+      const x = q(m, '#pmCardX'); if (x) x.onclick = () => { card.hidden = true; card.innerHTML = '';
+        m.querySelector('.mapwrap')?.classList.remove('carded'); map.deselect(); };
       const buy = q(m, '#pmBuy');
-      if (buy) buy.onclick = () => { closeOverlay(m); openPlotBuyModal(pl); };
+      if (buy) buy.onclick = () => { document.body.classList.remove('map-full'); closeOverlay(m); openPlotBuyModal(pl); };
     } });
   q(m, '#pmIn').onclick = () => map.zoom(1);
   q(m, '#pmOut').onclick = () => map.zoom(-1);
+  mountMapSearch({ el: q(m, '#pmSearch'), onPick: p => map.centre(p.lat, p.lon, 18) });
+  // full screen: iOS has no Fullscreen API for anything but video, so the wrapper covers the
+  // viewport from inside the page — same element, same drawing, given the whole screen
+  const full = q(m, '#pmFull');
+  full.onclick = () => {
+    const wrap = m.querySelector('.mapwrap');
+    const on = wrap.classList.toggle('full');
+    document.body.classList.toggle('map-full', on);
+    full.textContent = on ? '⤡' : '⤢';
+    full.title = tr(on ? 'Leave full screen' : 'Full screen');
+    requestAnimationFrame(() => map.draw());
+  };
+  q(m, '#pmX').onclick = () => { document.body.classList.remove('map-full'); closeOverlay(m); };
 }
 
 /** Taking a plot over from the board — the same screen the map picker shows, in its own modal. */
