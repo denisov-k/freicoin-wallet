@@ -1642,17 +1642,28 @@ async function paintPlotBoard() {
   try { plots = await L.livePlots(); } catch {}
   for (const pl of plots) plotInfo.set(pl.id, pl);
   const rows = [...plots].sort((a, b) => (a.price < b.price ? -1 : a.price > b.price ? 1 : 0));
+  // A takeover is only true once it is in a block, and the registry answers about blocks. Until
+  // then the plot is neither theirs nor visibly yours — say «taking it over…» instead of offering
+  // to buy again what you have already paid for.
+  const pending = new Set((L.localHoldings?.() || []).map(x => x.name));
+  const waiting = rows.filter(pl => !pl.mine && pending.has(pl.id)).length;
   const body = rows.length
     ? rows.map((pl, i) => `<tr><td style="font-family:system-ui,sans-serif">${pl.label || tr('Plot')}${pl.mine ? ' · ' + tr('yours') : ''}<div class="sub" style="font-size:12px;white-space:nowrap">${
         latlon(pl.centre)} · ≈ ${Math.round(pl.area).toLocaleString(getLang())} ${tr('m²')}</div></td>
         <td class="r" style="white-space:nowrap">${fmtFrc8(String(pl.price))} FRC</td>
-        <td class="act-cell">${pl.mine ? '' : `<button class="plotBuy rbtn" data-i="${i}" title="${tr('Take it over')}" aria-label="${tr('Take it over')}">${SVG.buy}</button>`}</td></tr>`).join('')
+        <td class="act-cell">${pl.mine ? '' : pending.has(pl.id)
+          ? `<span class="sub">${tr('taking it over…')}</span>`
+          : `<button class="plotBuy rbtn" data-i="${i}" title="${tr('Take it over')}" aria-label="${tr('Take it over')}">${SVG.buy}</button>`}</td></tr>`).join('')
     : `<tr><td colspan="3" class="sub">${tr('no plots yet — claim one in Issue → Holdings')}</td></tr>`;
   res.innerHTML = table(body) + `<div class="row" style="margin-top:8px"><button id="plotOnMap" class="ghost">${tr('Choose on the map')}</button></div>`;
   wirePlotMapButton();
   res.querySelectorAll('.plotBuy').forEach((/** @type {HTMLButtonElement} */ b) =>
     b.onclick = () => openPlotBuyModal(rows[+b.dataset.i]));
+  // and keep looking until the block lands, so the row turns into «yours» on its own
+  clearTimeout(_boardT);
+  if (waiting) _boardT = setTimeout(() => { if (covKind === 'plot') { L.invalidateChainCaches?.(); paintPlotBoard(); } }, 15000);
 }
+let _boardT = null;
 
 /** The board answers «what is for sale and how much»; the map answers «where». Same plots, same
  *  takeover — you just point at the ground instead of reading a row. */

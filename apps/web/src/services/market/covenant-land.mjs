@@ -367,6 +367,11 @@ export async function verifiedSymbols() {
 }
 
 /** My names + their live price (= present value of the melting deposit, what a forced buy pays). */
+/** What THIS device recorded as its own — including a holding whose transaction is still waiting
+ *  for a block. The registry only knows confirmed ownership, so this is the difference between
+ *  «not yours» and «not yours yet». */
+export const localHoldings = () => load();
+
 export async function myNames() {
   const out = [];
   for (const rec of load()) {
