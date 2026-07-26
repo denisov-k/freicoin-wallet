@@ -105,7 +105,7 @@ export function openIssueModal() {
       <button data-k="ticker">${tr('ticker')}</button>
       <button data-k="plot">${tr('plot')}</button>
     </div>
-    <p class="sub" id="iModeHint" style="font-size:12px">${tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.')}</p>
+    <p class="sub" id="iModeHint" style="font-size:12px">${tr('Divisible units of your own — a local currency, points, hours of work. You choose whether they stay constant, melt or grow, and how fast.')}</p>
     <div id="iPlotBox" class="stack" hidden>
       <button id="iPickPlot" class="ghost">${tr('Choose the plot')}</button>
       <div class="sub" id="iCellInfo" style="font-size:12px"></div>
@@ -195,14 +195,14 @@ export function openIssueModal() {
     inp.setAttribute('spellcheck', 'false');
     $('#issueBtn').textContent = mode === 'n' ? tr(tick ? 'Claim the ticker' : plot ? 'Claim the plot' : 'Claim the name') : tr('Issue asset');
     $('#iModeHint').textContent = mode === 't'
-      ? tr('Unique named items — tickets, memberships, keys. They do not melt, travel whole on one coin, and names must not repeat.')
+      ? tr('Unique named items — tickets, passes, keys. They do not divide and do not melt, and each name may appear only once.')
       : mode === 'n'
         ? (plot
-          ? tr('🗺 A plot is a boundary you draw on the map, held from the community: the id IS the shape, so a plot names the exact ground. Your deposit melts as rent and anyone can take the plot at the price you set.')
+          ? tr('Draw a boundary and the ground inside it is what you hold — the id IS the shape. Your deposit melts as rent, and anyone may take the plot at the price you declare.')
           : tick
-          ? tr('🏷 A ticker is the short symbol an asset trades under. Held from the community like a name: nothing stops two issuers picking «USD», so the symbol goes to whoever values it enough to pay the rent.')
-          : tr('🗺️ Freiland — a name held from the community: your deposit melts as rent, and anyone can buy it at your self-assessed price.'))
-        : tr('Fungible units — a local currency, points, labor hours. They divide, add up, and can stay constant, melt or grow at your rate.');
+          ? tr('A ticker is the short symbol an asset trades under. Nothing stops two issuers wanting «USD», so it stays with whoever declares the higher price and keeps paying it.')
+          : tr('A name is held by paying for it: your deposit melts, and that melting IS the rent. Anyone may buy the name from you at the price you declare.'))
+        : tr('Divisible units of your own — a local currency, points, hours of work. You choose whether they stay constant, melt or grow, and how fast.');
     if (mode === 'n') $('#iName').dispatchEvent(new Event('input'));   // сразу проверить занятость
   }
   // what the drawn boundary is, in the form: size and whether it clashes with someone
