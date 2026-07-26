@@ -107,7 +107,7 @@ export function openIssueModal() {
     <div id="iPlotBox" class="stack" hidden>
       <button id="iPickPlot" class="ghost">${tr('Choose the plot')}</button>
       <div class="sub" id="iCellInfo" style="font-size:12px"></div>
-      <label>${tr('Name')} <span class="sub">(${tr('optional')})</span><input id="iPlotName" type="text" maxlength="24" autocomplete="off" spellcheck="false" placeholder="${tr('e.g. the field by the river')}"></label>
+      <label><span>${tr('Name')} <span class="sub">(${tr('optional')})</span></span><input id="iPlotName" type="text" maxlength="24" autocomplete="off" spellcheck="false" placeholder="${tr('e.g. the field by the river')}"></label>
     </div>
     <div id="iMapScreen" class="stack" hidden>
       <div class="mapwrap">
@@ -296,7 +296,7 @@ export function openIssueModal() {
       ${row(tr('Area'), `≈ ${Math.round(plot.area).toLocaleString(getLang())} ${tr('m²')}`)}
       ${row(tr('Forced-buy price'), `${price} FRC`)}
       <p class="sub" style="font-size:13px">${tr('Pay')} ${price} FRC ${tr('to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.')}</p>
-      <label>${tr('Name')} <span class="sub">(${tr('optional')})</span><input id="ipbName" type="text" maxlength="24" autocomplete="off" spellcheck="false" placeholder="${tr('e.g. the field by the river')}"></label>
+      <label><span>${tr('Name')} <span class="sub">(${tr('optional')})</span></span><input id="ipbName" type="text" maxlength="24" autocomplete="off" spellcheck="false" placeholder="${tr('e.g. the field by the river')}"></label>
       <p class="sub" style="font-size:12px">${tr('The name is written by whoever holds the plot, so the previous one does not come with it — publish your own now or later.')}</p>
       <div class="sub" id="ipbLog" style="font-size:12px;white-space:pre-line"></div>
       <button id="ipbYes">${tr('Confirm')}</button>
