@@ -17,12 +17,26 @@ export function renderPlotBuy({ host, plot, onCancel, onDone }) {
     ${row(tr('Where'), `${plot.centre.lat.toFixed(4)}, ${plot.centre.lon.toFixed(4)}`)}
     ${row(tr('Area'), `≈ ${Math.round(plot.area).toLocaleString(getLang())} ${tr('m²')}`)}
     ${row(tr('Forced-buy price'), `${price} FRC`)}
-    <p class="sub" style="font-size:13px">${tr('Pay')} ${price} FRC ${tr('to the current holder and take the plot over? Its declared value — and the price anyone can take it from you at — becomes yours to set.')}</p>
+    <div class="mapwrap"><div class="mapbox"><div id="ipbMap"></div></div></div>
     <label><span>${tr('Name')} <span class="sub">(${tr('optional')})</span></span><input id="ipbName" type="text" maxlength="24" autocomplete="off" spellcheck="false" placeholder="${tr('e.g. the field by the river')}"></label>
     <p class="sub" style="font-size:12px">${tr('The name is written by whoever holds the plot, so the previous one does not come with it — publish your own now or later.')}</p>
     <div class="sub" id="ipbLog" style="font-size:12px;white-space:pre-line"></div>
     <button id="ipbYes">${tr('Confirm')}</button>
     <button id="ipbNo" class="ghost">${tr('Cancel')}</button>`;
+  // the ground itself, rather than a paragraph about it: same drawing as the picker, read-only,
+  // fitted to the boundary with its neighbours in view
+  (async () => {
+    const [{ mountPlotMap }, L] = await Promise.all([
+      import('@/components/plotmap.mjs'), import('@/services/market/covenant-land.mjs')]);
+    const host = $('#ipbMap'); if (!host) return;
+    const plots = await L.livePlots().catch(() => []);
+    const span = Math.max(1e-5, ...plot.points.map(a => Math.max(Math.abs(a.lat - plot.centre.lat) * 111320,
+      Math.abs(a.lon - plot.centre.lon) * 111320 * Math.cos(plot.centre.lat * Math.PI / 180)))) * 2;
+    const z = Math.max(3, Math.min(19, Math.log2(156543.03392 * Math.cos(plot.centre.lat * Math.PI / 180) * 100 / span)));
+    mountPlotMap({ el: host, lat: plot.centre.lat, lon: plot.centre.lon, zoom: Math.round(z), height: 180,
+      readonly: true, taken: () => (plots.length ? plots : [plot]), onChange: () => {} });
+  })();
+
   const log = t => { const el = $('#ipbLog'); if (el) el.textContent = t; };
   const no = $('#ipbNo'); if (no) no.onclick = onCancel;
   const yes = /** @type {HTMLButtonElement} */ ($('#ipbYes'));
