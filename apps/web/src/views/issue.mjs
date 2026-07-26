@@ -315,6 +315,9 @@ export function openIssueModal() {
       m.querySelector('.mapwrap')?.classList.remove('full'); document.body.classList.remove('map-full');
       const fb = $('#imFull'); if (fb) { fb.textContent = '⤢'; fb.title = tr('Full screen'); } }
     mainEls().forEach(x => { if (x) x.hidden = on; });
+    // coming back restores the form as it was, and a plot's form has no name field — its id IS its
+    // boundary. Without this the «alice» input reappears the moment you leave the map.
+    const nl = $('#iNameLbl'); if (nl && !on) nl.hidden = mode === 'n' && kind === 'plot';
     const ttl = $('#issTitle'); if (ttl) ttl.textContent = on ? tr('Choose a plot') : tr('Issue asset');
     const scr = $('#iMapScreen'); if (scr) scr.hidden = !on;
     if (on) { if (!map) mountMap(); else { map.draw(); loadPlots(); } }
