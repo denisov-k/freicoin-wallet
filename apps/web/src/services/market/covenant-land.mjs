@@ -329,7 +329,7 @@ export async function livePlots() {
       let mine = false;
       try { mine = e.owner === ownerHashOf(covOwnerPub(id)); } catch {}
       list.push({ id, points, label: readPlotLabel(tx), area: polygonArea(points), centre: polygonCentre(points),
-        price: BigInt(e.price), outpoint: e.outpoint, owner: e.owner, mine });
+        price: BigInt(e.price), deposit: BigInt(e.deposit), outpoint: e.outpoint, owner: e.owner, mine });
     }
     // never cache «no plots»: an empty answer is what a hiccuped registry read looks like, and
     // caching it would keep the map blank for the next half minute of taps

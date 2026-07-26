@@ -1662,10 +1662,13 @@ async function paintPlotBoard() {
   }
   const waiting = rows.filter(pl => !pl.mine && pending.has(pl.id)).length;
   const body = rows.length
-    ? rows.map((pl, i) => `<tr><td style="font-family:system-ui,sans-serif">${pl.label || tr('Plot')}${pl.mine ? ' · ' + tr('yours') : ''}<div class="sub" style="font-size:12px;white-space:nowrap">${
+    ? rows.map((pl, i) => `<tr><td style="font-family:system-ui,sans-serif">${pl.label || tr('Plot')}<div class="sub" style="font-size:12px;white-space:nowrap">${
         latlon(pl.centre)} · ≈ ${Math.round(pl.area).toLocaleString(getLang())} ${tr('m²')}</div></td>
         <td class="r" style="white-space:nowrap">${fmtFrc8(String(pl.price))} FRC</td>
-        <td class="act-cell">${pl.mine ? '' : pending.has(pl.id)
+        <td class="act-cell">${pl.mine
+          // yours: the same «⋯» the balance offers — a plot you hold is managed, not bought
+          ? `<button class="icon plotMng" data-n="${pl.id}" data-p="${pl.price}" data-d="${pl.deposit ?? ''}" title="${tr('Manage')}">⋯</button>`
+          : pending.has(pl.id)
           ? `<span class="sub">${tr('taking it over…')}</span>`
           : `<button class="plotBuy rbtn" data-i="${i}" title="${tr('Take it over')}" aria-label="${tr('Take it over')}">${SVG.buy}</button>`}</td></tr>`).join('')
     : `<tr><td colspan="3" class="sub">${tr('no plots yet — claim one in Issue → Holdings')}</td></tr>`;
@@ -1673,6 +1676,8 @@ async function paintPlotBoard() {
   wirePlotMapButton();
   res.querySelectorAll('.plotBuy').forEach((/** @type {HTMLButtonElement} */ b) =>
     b.onclick = () => openPlotBuyModal(rows[+b.dataset.i]));
+  res.querySelectorAll('.plotMng').forEach((/** @type {HTMLButtonElement} */ b) =>
+    b.onclick = () => openNameModal(b.dataset.n, '', b.dataset.p, b.dataset.d));
   // and keep looking until the block lands, so the row turns into «yours» on its own
   clearTimeout(_boardT);
   if (waiting) _boardT = setTimeout(() => { if (covKind === 'plot') { L.invalidateChainCaches?.(); paintPlotBoard(); } }, 15000);
