@@ -1658,21 +1658,12 @@ async function paintPlotBoard() {
  *  takeover — you just point at the ground instead of reading a row. */
 function wirePlotMapButton() {
   const b = $('#plotOnMap'); if (b) b.onclick = openPlotMapModal;
-  fitPlotBoard();
 }
 
 /** Give the board every pixel the tab is not using. A fixed fraction of the screen either wasted
  *  half of a tall one or squeezed a short one, and the registry only grows — so measure: whatever
  *  is left under the board's own top edge, minus the map button below it. */
-function fitPlotBoard() {
-  const box = /** @type {HTMLElement} */ (document.querySelector('#covNameRes .tbl-scroll'));
-  const btn = $('#plotOnMap'), main = document.querySelector('main');
-  if (!box || !btn || !main) return;
-  const avail = main.getBoundingClientRect().bottom - box.getBoundingClientRect().top
-    - btn.getBoundingClientRect().height - 32;   // the button and the gaps around it
-  box.style.maxHeight = Math.max(160, Math.round(avail)) + 'px';
-}
-addEventListener('resize', () => { if (covKind === 'plot') fitPlotBoard(); });
+
 
 async function openPlotMapModal() {
   if ($('#modal')) return;
@@ -2062,6 +2053,7 @@ export function renderExchange(el) {
       el.querySelectorAll('#mktClass button').forEach(x => x.classList.toggle('on', x === b));
       $('#mktTrade').hidden = mktClass === 'hold';
       $('#mktHold').hidden = mktClass !== 'hold';
+      el.classList.toggle('fill-tab', mktClass === 'hold' && covKind === 'plot');
       if (mktClass === 'hold') { if (!cov) paintNameMarket(); } else paint();
     });
     if (cov) {
@@ -2079,6 +2071,9 @@ export function renderExchange(el) {
         // browse). A plot announces its own boundary in clear, so plots can simply be LISTED, and
         // every one of them is for sale at the price its holder set. Hence a board, not a search.
         const findRow = $('#covFindRow'); if (findRow) findRow.hidden = plot;
+        // the board is the only view here that wants ALL the room: let the tab become a flex column
+        // and the table take what is left of it, instead of guessing a height in pixels
+        el.classList.toggle('fill-tab', plot);
         if (qin && !plot) {
           qin.placeholder = tick ? 'USD' : tr('name');
           qin.maxLength = tick ? 10 : 32;

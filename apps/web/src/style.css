@@ -237,5 +237,13 @@ table.mkt .act-cell .p2pstatus { border-color:var(--accent); color:var(--accent)
 body.map-full { overflow: hidden; }
 
 /* a long board scrolls inside itself, header staying put, so what follows it stays reachable */
-.tbl-scroll { max-height: 38vh; overflow-y: auto; overscroll-behavior: contain; }   /* a starting point; the plot board measures the real room it has (fitPlotBoard) */
+.tbl-scroll { max-height: 38vh; overflow-y: auto; overscroll-behavior: contain; }
 .tbl-scroll table.mkt thead th { position: sticky; top: 0; z-index: 1; background: var(--bg); }
+
+/* A tab whose main content is one long list: the section fills the scrolling area, the list takes
+   what is left of it, and whatever follows the list (the map button) stays put at the bottom. */
+section.fill-tab { height: 100%; }   /* a floor alone lets a long list push past the screen — this is a cap too */
+section.fill-tab #mktHold, section.fill-tab #covNameRes { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 8px; }
+/* shrink-to-fit, never stretch: a short list keeps the button right under it, a long one
+   caps at the room available and scrolls */
+section.fill-tab .tbl-scroll { flex: 0 1 auto; min-height: 0; max-height: none; }
