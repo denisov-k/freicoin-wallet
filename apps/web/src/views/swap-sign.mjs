@@ -86,7 +86,8 @@ export async function swapSignLock(id, reply) {
     yes.disabled = true;
     try {
       log(tr('подписываем…'));
-      const st = await d.getState(true);
+      const st = await d.getState();          // the cached state — a forced rescan can hang here
+      if (!st?.utxos?.length) throw new Error(tr('баланс ещё не загрузился — открой Баланс и вернись'));
       const { rawtx } = buildSignedTx({
         seed, utxos: st.utxos, toAddress: addr,
         amountFrc: Number(amount) / 1e8, tipHeight: st.tipHeight,
