@@ -73,9 +73,7 @@ export async function swapSignLock(id, reply) {
     <div class="rrow"><span>${tr('Отдаёшь')}</span><b>${frc(amount)} FRC</b></div>
     <div class="rrow"><span>${tr('Получаешь')}</span><b>${jettons} ${t.symbol || ''}</b></div>
     <div class="rrow"><span>${tr('На кошелёк')}</span><b>${short(t.tonRecipient)}</b></div>
-    <div class="rrow"><span>${tr('Замок до блока')}</span><b>${t.frcCltv} · ~${blocks} ${tr('бл.')}</b></div>
-    <p class="sub" style="font-size:12px">${tr('Монеты запираются: их заберёт вторая сторона, только предъявив секрет. Если обмен не состоится, они вернутся на этот кошелёк после указанного блока.')}</p>
-    ${d.cacheReady() ? '' : `<p class="sub" style="font-size:12px;opacity:.8">${tr('Цепь ещё синхронизируется — подтверждённые монеты берём у сети обмена. Подпись всё равно ваша.')}</p>`}
+    <p class="sub" style="font-size:12px">${tr('Если обмен не состоится, монеты вернутся на этот кошелёк примерно через')} ${Math.round(blocks * 25 / 60) || 3} ${tr('ч.')}</p>
     <div class="sub" id="ssLog" style="font-size:12px;white-space:pre-line"></div>
     <button id="ssYes" class="primary">${tr('Запереть и обменять')}</button>
     <button id="ssNo" class="ghost">${tr('Отмена')}</button>`);
