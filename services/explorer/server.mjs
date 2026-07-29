@@ -32,7 +32,7 @@ const page = (title, body) => `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)} · Freicoin Explorer</title><style>
 :root{--bg:#0f1115;--card:#181b22;--fg:#e8eaed;--sub:#9aa0aa;--acc:#3ea6ff;--line:#262a33}
-body{margin:0;font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--bg);color:var(--fg)}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}body{margin:0;font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--bg);color:var(--fg)}
 .wrap{max-width:960px;margin:0 auto;padding:16px}
 a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
 h1{font-size:18px}h1 a{color:var(--fg)}h2{font-size:15px;color:var(--sub)}
