@@ -47,7 +47,7 @@ input{flex:1;background:var(--card);border:1px solid var(--line);border-radius:8
 button{background:var(--acc);color:#04121f;border:0;border-radius:8px;padding:9px 16px;font:inherit;cursor:pointer}
 .sub{color:var(--sub)}.r{text-align:right}.mono{font-family:inherit}
 </style></head><body><div class="wrap">
-<h1>${L('/', '⛓ Freicoin Explorer')} <span class="sub" style="font-size:12px">mainnet · powered by <a href="https://freicoin.ru">freicoin.ru</a></span></h1>
+<h1>${L('/', '⛓ Freicoin Explorer')} <span class="sub" style="font-size:12px">mainnet</span></h1>
 <form action="${PREFIX}/search"><input name="q" placeholder="height / block hash / txid / address"><button>Search</button></form>
 ${body}</div></body></html>`;
 
