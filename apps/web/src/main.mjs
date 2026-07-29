@@ -2,7 +2,7 @@ import { Buffer } from 'buffer';
 globalThis.Buffer = Buffer;
 
 import QRCode from 'qrcode';
-import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress, walletScripts, configureNetwork, addrToSpk } from '@/services/wallet.mjs';
+import { deriveAddress, buildSignedTx, resolveSecret, generateMnemonic, isValidAddress, walletScripts, configureNetwork, addrToSpk, accountPath } from '@/services/wallet.mjs';
 import { encryptSecret, decryptSecret } from '@/services/vault.mjs';
 import { NETWORKS, DEFAULT_NET, DEFAULT_BRIDGE, DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT_FILTERS, CHECKPOINT, CHECKPOINT_DEEP } from '@/state/network-params.mjs';
 import { tr, getLang, setLang, LANGS } from '@/services/i18n.mjs';
@@ -11,6 +11,7 @@ import { initMarketView, mvSetSeed, mvRefresh, mvResetNet, renderExchange, rende
 import { loadFeeTxids, lsKey } from '@/services/storage.mjs';
 import { enablePush, disablePush, pushSupported, pushEnabled } from '@/services/push.mjs';
 import { btcExportKeys, btcToStr } from '@/services/market/btc-account.mjs';
+import { initSwapSign, swapConnect, swapSignLock } from '@/views/swap-sign.mjs';
 import { $, store, short, fmt, fmtBal, copy, skel } from '@/components/dom.mjs';
 import { toast } from '@/components/toast.mjs';
 import { openModal, closeOverlay } from '@/components/modal.mjs';
@@ -277,8 +278,29 @@ function renderApp() {
   const saved = store.get('fw_tab');
   const tabs = visibleTabs();
   const initial = tabs.includes(fromHash) ? fromHash : (tabs.includes(saved) ? saved : 'balance');
-  history.replaceState(null, '', '#' + initial);   // normalize the URL without a spurious history entry
-  show(initial);
+  history.replaceState(null, '', '#' + (swapReq ? 'balance' : initial));   // normalize the URL without a spurious history entry
+  show(swapReq ? 'balance' : initial);
+  if (swapReq) serveSwapRequest().catch(e => swapReply({ error: String(e?.message || e) }));
+}
+
+// A swap desk elsewhere on this origin can ask the wallet to sign, by opening #swapsign?…
+// in a popup. The request is parsed once here; it is acted on only after the wallet is unlocked,
+// and the answer goes back to the opener on THIS origin only.
+const swapReq = (() => {
+  const h = location.hash.slice(1);
+  if (!h.startsWith('swapsign')) return null;
+  const q = new URLSearchParams(h.slice(h.indexOf('?') + 1));
+  return { req: q.get('req') || 'lock', id: q.get('id') || '' };
+})();
+const swapReply = payload => {
+  try { window.opener?.postMessage({ fwSwap: payload }, location.origin); } catch {}
+  if (payload && !payload.error) setTimeout(() => window.close(), 800);
+};
+async function serveSwapRequest() {
+  if (!swapReq) return false;
+  if (swapReq.req === 'connect') { swapReply(swapConnect()); return true; }
+  await swapSignLock(swapReq.id, swapReply);
+  return true;
 }
 
 const TABS = ['balance', 'activity', 'settings'];   // Receive/Send/Issue are modals now, not tabs
@@ -430,6 +452,7 @@ initSettings({ getVault, secret, themeMode, applyTheme, curNet, curBridge, SWAP,
 initSend({ hexSeed, recvIndex: () => recvIndex, bumpRecv: () => { recvIndex++; store.set('fw_recv', recvIndex); }, growWatchAfterNewAddr,
   getPending: () => pending, setPending: v => { pending = v; }, resetCache: () => { cache = null; }, cacheReady: () => !!cache,
   seedState: () => cache || liveState, renderGen: () => renderGen, getState, ds, paintBalance, SWAP, MKT, curNet });
+initSwapSign({ hexSeed, account: accountPath, getState, broadcast: rawtx => ds().broadcast(rawtx) });
 configureNetwork(curNet());   // set NET/ACCOUNT before any address derivation
 if (getVault()) renderLock();
 else if (store.get('fw_seed')) { unlockedSecret = store.get('fw_seed'); renderApp(); }

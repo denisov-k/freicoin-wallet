@@ -18,6 +18,8 @@ export function configureNetwork(net) {
   NET = net; ACCOUNT = `m/84'/${NETWORKS[net].coinType}'/0'`;
 }
 export const currentNet = () => NET;
+/** The BIP84 account path in force (m/84'/coinType'/0'), for callers deriving off-path keys. */
+export const accountPath = () => ACCOUNT;
 const toKria = frc => BigInt(Math.round(frc * 1e8));
 
 /** A fresh 12-word BIP39 mnemonic. */
