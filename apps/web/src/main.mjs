@@ -455,7 +455,7 @@ initSettings({ getVault, secret, themeMode, applyTheme, curNet, curBridge, SWAP,
 initSend({ hexSeed, recvIndex: () => recvIndex, bumpRecv: () => { recvIndex++; store.set('fw_recv', recvIndex); }, growWatchAfterNewAddr,
   getPending: () => pending, setPending: v => { pending = v; }, resetCache: () => { cache = null; }, cacheReady: () => !!cache,
   seedState: () => cache || liveState, renderGen: () => renderGen, getState, ds, paintBalance, SWAP, MKT, curNet });
-initSwapSign({ hexSeed, account: accountPath, getState, broadcast: rawtx => ds().broadcast(rawtx) });
+initSwapSign({ hexSeed, account: accountPath, getState, cacheReady: () => !!cache, broadcast: rawtx => ds().broadcast(rawtx) });
 configureNetwork(curNet());   // set NET/ACCOUNT before any address derivation
 if (getVault()) renderLock();
 else if (store.get('fw_seed')) { unlockedSecret = store.get('fw_seed'); renderApp(); }

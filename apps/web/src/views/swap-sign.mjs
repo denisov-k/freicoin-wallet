@@ -83,11 +83,15 @@ export async function swapSignLock(id, reply) {
   $('#ssNo').onclick = () => { closeOverlay(m); reply({ error: 'отменено пользователем' }); };
   const yes = /** @type {HTMLButtonElement} */ ($('#ssYes'));
   yes.onclick = async () => {
+    if (!d.cacheReady()) {                    // chain not verified yet — Send gates on this too
+      log(tr('Цепь ещё синхронизируется — дождись «synced ✓» вверху и нажми снова.'));
+      return;
+    }
     yes.disabled = true;
     try {
       log(tr('подписываем…'));
-      const st = await d.getState();          // the cached state — a forced rescan can hang here
-      if (!st?.utxos?.length) throw new Error(tr('баланс ещё не загрузился — открой Баланс и вернись'));
+      const st = await d.getState();          // cached; ready() above guarantees it exists
+      if (!st?.utxos?.length) throw new Error(tr('нет монет на этом кошельке для оплаты'));
       const { rawtx } = buildSignedTx({
         seed, utxos: st.utxos, toAddress: addr,
         amountFrc: Number(amount) / 1e8, tipHeight: st.tipHeight,
