@@ -18,7 +18,7 @@ import { tr } from '@/services/i18n.mjs';
 import { htlcLeaf, htlcAddress } from '@core/htlc.mjs';
 import { pubkeyCompressed } from '@core/ecdsa.mjs';
 import { derivePath } from '@core/hd.mjs';
-import { buildSignedTx, deriveAddress } from '@/services/wallet.mjs';
+import { buildSignedTx, deriveAddress, walletScripts } from '@/services/wallet.mjs';
 
 /** deps injected by the app shell (see main.mjs initSwapSign) */
 let d;
@@ -75,6 +75,7 @@ export async function swapSignLock(id, reply) {
     <div class="rrow"><span>${tr('На кошелёк')}</span><b>${short(t.tonRecipient)}</b></div>
     <div class="rrow"><span>${tr('Замок до блока')}</span><b>${t.frcCltv} · ~${blocks} ${tr('бл.')}</b></div>
     <p class="sub" style="font-size:12px">${tr('Монеты запираются: их заберёт вторая сторона, только предъявив секрет. Если обмен не состоится, они вернутся на этот кошелёк после указанного блока.')}</p>
+    ${d.cacheReady() ? '' : `<p class="sub" style="font-size:12px;opacity:.8">${tr('Цепь ещё синхронизируется — подтверждённые монеты берём у сети обмена. Подпись всё равно ваша.')}</p>`}
     <div class="sub" id="ssLog" style="font-size:12px;white-space:pre-line"></div>
     <button id="ssYes" class="primary">${tr('Запереть и обменять')}</button>
     <button id="ssNo" class="ghost">${tr('Отмена')}</button>`);
@@ -83,18 +84,24 @@ export async function swapSignLock(id, reply) {
   $('#ssNo').onclick = () => { closeOverlay(m); reply({ error: 'отменено пользователем' }); };
   const yes = /** @type {HTMLButtonElement} */ ($('#ssYes'));
   yes.onclick = async () => {
-    if (!d.cacheReady()) {                    // chain not verified yet — Send gates on this too
-      log(tr('Цепь ещё синхронизируется — дождись «synced ✓» вверху и нажми снова.'));
-      return;
-    }
     yes.disabled = true;
     try {
       log(tr('подписываем…'));
-      const st = await d.getState();          // cached; ready() above guarantees it exists
-      if (!st?.utxos?.length) throw new Error(tr('нет монет на этом кошельке для оплаты'));
+      // Prefer the wallet's own verified state. If the chain is still syncing, fund from confirmed
+      // UTXOs the swap node reports for OUR OWN scripts — the wallet still signs every input, so
+      // this only borrows "which of my coins are confirmed", never a key.
+      let utxos, tipHeight;
+      if (d.cacheReady()) {
+        const st = await d.getState();
+        utxos = st.utxos; tipHeight = st.tipHeight;
+      } else {
+        log(tr('цепь ещё синхронизируется — берём подтверждённые монеты у сети обмена…'));
+        const r = await call('walletUtxos', { spks: walletScripts(seed, 40) });
+        utxos = r.utxos; tipHeight = r.tip;
+      }
+      if (!utxos?.length) throw new Error(tr('нет подтверждённых монет для оплаты'));
       const { rawtx } = buildSignedTx({
-        seed, utxos: st.utxos, toAddress: addr,
-        amountFrc: Number(amount) / 1e8, tipHeight: st.tipHeight,
+        seed, utxos, toAddress: addr, amountFrc: Number(amount) / 1e8, tipHeight,
       });
       log(tr('отправляем в сеть…'));
       const { txid } = await d.broadcast(rawtx);
