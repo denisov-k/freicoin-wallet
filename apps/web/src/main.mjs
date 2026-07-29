@@ -290,11 +290,14 @@ const swapReq = (() => {
   const h = location.hash.slice(1);
   if (!h.startsWith('swapsign')) return null;
   const q = new URLSearchParams(h.slice(h.indexOf('?') + 1));
-  return { req: q.get('req') || 'lock', id: q.get('id') || '' };
+  return { req: q.get('req') || 'lock', id: q.get('id') || '', ret: q.get('ret') || '/swap/' };
 })();
+// The swap desk navigated here in the same tab; navigate back to it with the result in the URL.
 const swapReply = payload => {
-  try { window.opener?.postMessage({ fwSwap: payload }, location.origin); } catch {}
-  if (payload && !payload.error) setTimeout(() => window.close(), 800);
+  const base = swapReq?.ret || '/swap/';
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(payload || {})) if (v != null) q.set(k, String(v));
+  location.href = `${base}#swapdone?${q}`;
 };
 async function serveSwapRequest() {
   if (!swapReq) return false;
