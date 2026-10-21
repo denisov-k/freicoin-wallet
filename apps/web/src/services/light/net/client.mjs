@@ -17,6 +17,9 @@ import { sha256d } from '@core/crypto.mjs';
 
 const HOST20 = '0'.repeat(40);
 const isHostCoin = u => !u.assetTag || u.assetTag === HOST20;
+// A tx WE broadcast that no node has listed in its mempool after this long is treated as rejected
+// (fee below min relay, missing inputs...): P2P gives no reject reason, so absence is the signal.
+const REJECT_AFTER_S = 600;
 const PROTO = 70016;
 const CFILTERS_BATCH = 1000;    // node's MAX_GETCFILTERS_SIZE — larger requests are ignored
 const CFHEADERS_BATCH = 2000;   // node's MAX_GETCFHEADERS_SIZE
@@ -40,6 +43,9 @@ export class Neutrino {
     this._mempoolRaw = new Map();        // txid -> parsed tx, kept for reconsiderMempool()
     this._seenAt = new Map();            // txid -> first-seen unix time — survives mempool.clear() so a pending row's time doesn't jump to "now" on every reconsiderMempool()
     this._selfTxids = new Set();         // txids WE broadcast — their outputs to us are trusted (creditable while
+    this._selfSentAt = new Map();        // txid -> unix time of OUR first broadcast (persisted) - drives the reject timeout
+    this._nodeHas = new Set();           // our txids a node has reported in an inv (BIP35 mempool reply / relay) = accepted somewhere
+    this.rejected = [];                  // {txid, time} of own txs dropped because no node accepted them within REJECT_AFTER_S
                                          //   unconfirmed) even when the tx spends coins we don't own (a swap CLAIM)
     this.peerHeight = 0;                 // peer's chain height from the version handshake (progress target)
     this.onProgress = null;              // optional ({phase, ...}) callback for sync progress
@@ -206,6 +212,7 @@ export class Neutrino {
   _onInv(m) {
     if (!this._watch) return;
     const txs = parseInv(m.payload).filter(i => i.type === MSG_TX || i.type === MSG_WITNESS_TX);
+    for (const i of txs) if (this._selfTxids.has(i.hashHex)) this._nodeHas.add(i.hashHex);   // a node holds our tx -> not rejected
     if (txs.length) this._send('getdata', buildGetData(txs.map(t => ({ type: MSG_WITNESS_TX, hashHex: t.hashHex }))));
   }
   _onTx(m) {
@@ -724,10 +731,21 @@ export class Neutrino {
     // backgrounded mid-write (mobile!) can lose the bytes while the UI already shows the tx as
     // pending — a phantom in no mempool anywhere. Re-sending is idempotent (nodes ignore known
     // txs), so every completed sync pushes whatever we still believe is pending.
-    for (const id of this._selfTxids) {
+    // ...unless NO node has ever listed the tx in an inv (the BIP35 reply above is asked every sync) for
+    // REJECT_AFTER_S: then it was rejected (fee, inputs) and re-sending forever only keeps a phantom
+    // 'confirming 0/1' row and a wrong balance. Drop it, release its inputs, record it in `rejected`.
+    const nowS = Math.floor(Date.now() / 1000); let dropped = false;
+    for (const id of [...this._selfTxids]) {
       const tx = this._mempoolRaw.get(id);
-      if (tx && !this.history.some(e => e.txid === id)) { try { this._send('tx', Buffer.from(serializeTx(tx), 'hex')); } catch {} }
+      if (!tx || this.history.some(e => e.txid === id)) continue;
+      let first = this._selfSentAt.get(id); if (first === undefined) { first = nowS; this._selfSentAt.set(id, nowS); }
+      if (!this._nodeHas.has(id) && nowS - first > REJECT_AFTER_S) {
+        this.mempool.delete(id); this._mempoolRaw.delete(id); this._selfTxids.delete(id); this._seenAt.delete(id); this._selfSentAt.delete(id);
+        this.rejected.push({ txid: id, time: first }); dropped = true; continue;
+      }
+      try { this._send('tx', Buffer.from(serializeTx(tx), 'hex')); } catch {}
     }
+    if (dropped) try { this.onMempool?.(); } catch {}   // pending rows changed -> repaint
     this.reconsiderMempool();   // classify pending txs against the now-complete utxo set
     return this._result();
   }
@@ -763,6 +781,7 @@ export class Neutrino {
       mempoolRaw: [...this._mempoolRaw.values()].slice(0, 50).map(tx => { try { return serializeTx(tx); } catch { return null; } }).filter(Boolean),
       mempoolSeen: [...this._seenAt].filter(([id]) => this._mempoolRaw.has(id)).slice(0, 50),   // first-seen times so a reload keeps a pending row's real time, not the reload clock
       selfTxids: this.serializeSelf(),   // which restored mempool txs are OUR broadcasts (credit their outputs)
+      selfSentAt: [...this._selfSentAt].filter(([id]) => this._mempoolRaw.has(id)),   // first-broadcast times so the reject timeout survives a reload
     };
   }
 
@@ -783,6 +802,7 @@ export class Neutrino {
     // them against the restored utxo set (a spend reads correctly since its inputs are present).
     this._mempoolRaw = new Map(); this.mempool = new Map();
     this._selfTxids = new Set(s.selfTxids || []);   // restore which pending txs are our own broadcasts
+    this._selfSentAt = new Map(s.selfSentAt || []);
     this._seenAt = new Map(s.mempoolSeen || []);    // restore first-seen times BEFORE _considerTx so pending rows keep their real time
     for (const hex of (s.mempoolRaw || [])) { try { const tx = parseTx(hex); this._mempoolRaw.set(txidOf(tx), tx); } catch {} }
     this._bulkMempool = true; try { for (const tx of this._mempoolRaw.values()) this._considerTx(tx); } catch {} this._bulkMempool = false;
@@ -812,7 +832,7 @@ export class Neutrino {
   /** Broadcast a signed raw tx over P2P (send `tx`). Records it as pending immediately. */
   broadcast(rawHex) {
     this._send('tx', Buffer.from(rawHex, 'hex'));
-    if (this._watch) try { const tx = parseTx(rawHex); this._selfTxids.add(txidOf(tx)); this._considerTx(tx); } catch {}
+    if (this._watch) try { const tx = parseTx(rawHex), id = txidOf(tx); this._selfTxids.add(id); if (!this._selfSentAt.has(id)) this._selfSentAt.set(id, Math.floor(Date.now() / 1000)); this._considerTx(tx); } catch {}
     return null;
   }
   /** Feed a tx WE built into the mempool view WITHOUT re-broadcasting (already on the wire via the

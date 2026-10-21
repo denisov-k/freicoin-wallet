@@ -32,12 +32,16 @@ export function minLockHeight(utxos) {
 // Weights in weight units; vsize = ceil(weight/4). Non-witness bytes cost 4 WU,
 // witness bytes 1 WU. Freicoin appends a trailing uint32 lock_height to every tx
 // => +4 non-witness bytes = +16 WU vs the bitcoin equivalent.
-// NOTE: these are the standard P2WPKH figures + Freicoin's lock_height delta;
-// they should be re-calibrated byte-exactly against a node before shipping.
+// Non-witness figures match freicoind 28.1 exactly (117 B for 1-in/2-out, 158 B for 2-in/2-out).
 const NONWIT_OVERHEAD_B = 4 /*version*/ + 1 /*vin count*/ + 1 /*vout count*/ + 4 /*nLockTime*/ + 4 /*lock_height*/;
 const WITNESS_HEADER_WU = 2;                 // segwit marker+flag, 1 WU each (Freicoin marker is 0xff)
 const IN_NONWIT_B = 32 + 4 + 1 + 4;          // prevout(36) + empty scriptSig len(1) + nSequence(4)
-const IN_WIT_WU = 1 + 1 + 72 + 1 + 33;       // stack items(1) + sig len(1)+sig(72) + pk len(1)+pk(33)
+// Witness of a wpk (MAST) spend has THREE stack items: [DER sig || hashtype], [0x00 || 33-byte p2pk
+// script], [empty proof]. Calibrated byte-exactly against freicoind 28.1 decoderawtransaction:
+// 1-in/2-out = 581/582 WU (71/72-byte item 0), 2-in/2-out = 858 WU (mainnet txids c17af862..., 660da61d...).
+// The node weighs each such witness 2 WU above the plain item sum; the old 108 under-estimated by
+// 4-5 WU, so a 1 kria/vB fee came out 1-2 kria under the node's min relay fee and was rejected.
+const IN_WIT_WU = 1 /*n items*/ + (1 + 73) /*sig <=72 + hashtype, worst case*/ + (1 + 34) /*0x00||p2pk*/ + (1 + 0) /*proof*/ + 2 /*calibration*/;
 const OUT_B = 8 + 1 + 22;                     // value(8) + spk len(1) + P2WPK spk(22)
 
 /** Estimate vsize (vbytes) of a P2WPK tx with nIn inputs and nOut outputs. */
