@@ -19,6 +19,8 @@ import { initAuth, renderWelcome, renderLock } from '@/views/auth.mjs';
 import { initSettings, renderSettings } from '@/views/settings.mjs';
 import { initSend, renderReceive, renderSend, paintSendAvail } from '@/views/send.mjs';
 import { initDashboard, renderBalance, renderActivity, paintBalance, paintActivity, resetActivityCache, setBtcLegs } from '@/views/dashboard.mjs';
+// Share chain mining: credit on this wallet's addresses, sold to the market maker (mainnet only).
+import { initMining, renderMining } from '@/views/mining.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
@@ -222,6 +224,8 @@ const MKT = () => curNet() === 'nv3';
 // MAINNET (real BTC↔FRC swaps via /api-main). They get the Exchange tab, the BTC account and the
 // swap drive; only nv3 (MKT) additionally gets Issue + the asset machinery.
 const SWAP = () => MKT() || curNet() === 'test' || curNet() === 'main';
+// The Mining tab: the share chain and its market maker run on mainnet.
+const MINING = () => curNet() === 'main';
 function renderApp() {
   $('#app').innerHTML = `
     <header><h1 style="font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:600;font-size:26px;line-height:1;margin:0" title="Freicoin">ƒ</h1>
@@ -231,11 +235,13 @@ function renderApp() {
       <button data-tab="balance" class="active">${tr('Balance')}</button>
       <button data-tab="activity">${tr('Activity')}</button>
       ${SWAP() ? `<button data-tab="exchange">${tr('Exchange')}</button>` : ''}
+      ${MINING() ? `<button data-tab="mining">${tr('Mining')}</button>` : ''}
       <button data-tab="settings">⚙</button>
     </nav>
     <main>
       <section id="balance"></section><section id="activity" hidden></section>
       ${SWAP() ? `<section id="exchange" hidden></section>` : ''}
+      ${MINING() ? `<section id="mining" hidden></section>` : ''}
       <section id="settings" hidden></section>
     </main>
     <div id="toast"></div>`;
@@ -308,7 +314,7 @@ async function serveSwapRequest() {
 
 const TABS = ['balance', 'activity', 'settings'];   // Receive/Send/Issue are modals now, not tabs
 // the Exchange tab exists only on nv3; membership + which sections to hide are network-aware
-const visibleTabs = () => SWAP() ? ['balance', 'activity', 'exchange', 'settings'] : TABS;
+const visibleTabs = () => [...(SWAP() ? ['balance', 'activity', 'exchange'] : ['balance', 'activity']), ...(MINING() ? ['mining'] : []), 'settings'];
 const show = tab => {
   // @ts-ignore  — false positive (DOM/Promise<void> under checkJs)
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -371,6 +377,7 @@ let renderGen = 0;
 const render = {
   balance: renderBalance,
   exchange() { renderExchange($('#exchange')); }, // Freimarkets: the ranged-offer order book
+  mining: renderMining,
   receive: renderReceive,
   send: renderSend,
   activity: renderActivity,
@@ -456,6 +463,7 @@ initSend({ hexSeed, recvIndex: () => recvIndex, bumpRecv: () => { recvIndex++; s
   getPending: () => pending, setPending: v => { pending = v; }, resetCache: () => { cache = null; }, cacheReady: () => !!cache,
   seedState: () => cache || liveState, renderGen: () => renderGen, getState, ds, paintBalance, SWAP, MKT, curNet });
 initSwapSign({ hexSeed, account: accountPath, getState, cacheReady: () => !!cache, broadcast: rawtx => ds().broadcast(rawtx) });
+initMining({ hexSeed, addressCount: () => watchGap() });
 configureNetwork(curNet());   // set NET/ACCOUNT before any address derivation
 if (getVault()) renderLock();
 else if (store.get('fw_seed')) { unlockedSecret = store.get('fw_seed'); renderApp(); }
