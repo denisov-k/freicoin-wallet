@@ -13,8 +13,10 @@ export const short = a => a && a.length > 20 ? a.slice(0, 12) + '…' + a.slice(
 export const fmt = n => (+n).toLocaleString(getLang(), { maximumFractionDigits: 8 });
 // Display balance: 2 decimals, rounded DOWN (never show more than is spendable) — the demurrage
 // churns the low digits every block, so full precision is visual noise here. Full 8-digit precision
-// stays where it matters: amounts, fees, activity records.
-export const fmtBal = n => (Math.floor((+n) * 100) / 100).toLocaleString(getLang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// stays where it matters: amounts, fees, activity records. A non-zero amount under 0.01 would read
+// as an empty wallet ("0.00"), so it is shown in full instead.
+export const fmtBal = n => (+n !== 0 && Math.abs(+n) < 0.01) ? fmt(n)
+  : (Math.floor((+n) * 100) / 100).toLocaleString(getLang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const frc = v => (Number(BigInt(v)) / 1e8).toLocaleString(getLang(), { maximumFractionDigits: 8 });
 export const num = v => parseFloat(String(v ?? '').replace(',', '.'));   // locale-tolerant: accepts a comma decimal
 export const rev = h => h.match(/../g).reverse().join('');
