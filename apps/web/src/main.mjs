@@ -18,7 +18,7 @@ import { openModal, closeOverlay } from '@/components/modal.mjs';
 import { initAuth, renderWelcome, renderLock } from '@/views/auth.mjs';
 import { initSettings, renderSettings } from '@/views/settings.mjs';
 import { initSend, renderReceive, renderSend, paintSendAvail } from '@/views/send.mjs';
-import { initDashboard, renderBalance, renderActivity, paintBalance, paintActivity, resetActivityCache, setBtcLegs } from '@/views/dashboard.mjs';
+import { initDashboard, renderBalance, renderActivity, paintBalance, paintActivity, resetActivityCache, setBtcLegs, refreshRecent } from '@/views/dashboard.mjs';
 
 // Data source: the variant-B neutrino light client (no trusted backend).
 const curNet = () => (NETWORKS[localStorage.getItem('fw_net')] ? localStorage.getItem('fw_net') : DEFAULT_NET);
@@ -56,11 +56,20 @@ function renderStatusPop() {
   let phases = PHASE_ORDER.filter(k => status.progress[k]).map(k => { const p = status.progress[k];
     return `<div class="rrow"><span>${tr(PHASE_LABEL[k])}</span><b>${(p.done ?? p.height).toLocaleString()} / ${(p.want ?? p.target).toLocaleString()}</b></div>`; }).join('');
 
+  // one row per bridge: host/path and its own connection state
+  const PEER_ST = { ok: ['st-ok', 'connected'], connecting: ['st-retry', 'connecting…'], off: ['st-off', 'offline'] };
+  const peers = (status.peers || []).map(p => {
+    const [cls, txt] = PEER_ST[p.state] || PEER_ST.connecting;
+    const name = String(p.url).replace(/^wss?:\/\//, '');
+    return `<div class="rrow peer"><span title="${p.url}">${name}</span><b><i class="${cls}">●</i> ${tr(txt)}</b></div>`;
+  }).join('');
+
   pop.innerHTML =
     `<div class="rrow"><span>${tr('Network')}</span><b>${NETWORKS[curNet()].label}</b></div>
      <div class="rrow"><span>${tr('Status')}</span><b>${label}</b></div>
+     ${peers ? `<div class="peers"><div class="sub">${tr('Bridges')}</div>${peers}</div>` : ''}
 
-     ${status.state !== 'ok' ? phases || (status.detail ? `<div class="sub">${tr(status.detail)}</div>` : '') : ''}`;
+     ${status.state !== 'ok' ? phases || (status.detail && !(peers && status.detail === 'connecting…') ? `<div class="sub">${tr(status.detail)}</div>` : '') : ''}`;   // the bridge rows already say "connecting…"
 }
 
 // The light client runs in a Web Worker: header verification (~20s of CPU on mainnet)
@@ -108,6 +117,11 @@ function ds() {
     worker = new Worker(new URL('./services/light/worker.mjs', import.meta.url), { type: 'module' });
     worker.onmessage = e => {
       const m = e.data;
+      if (m.type === 'progress' && m.p.phase === 'peers') {   // bridge connection states: shown, never flips the sync status
+        status.peers = m.p.peers;
+        const pop = $('#statusPop'); if (pop && !pop.hidden) renderStatusPop();
+        return;
+      }
       if (m.type === 'progress') {
         status.progress[m.p.phase] = m.p;
         if (m.p.rx) { const now = Date.now();
@@ -233,7 +247,7 @@ function renderApp() {
       <button data-tab="balance" class="active">${tr('Balance')}</button>
       <button data-tab="activity">${tr('Activity')}</button>
       ${SWAP() ? `<button data-tab="exchange">${tr('Exchange')}</button>` : ''}
-      <button data-tab="settings">⚙</button>
+      <button data-tab="settings" class="navset" title="${tr('Settings')}" aria-label="${tr('Settings')}">⚙</button>
     </nav>
     <main>
       <section id="balance"></section><section id="activity" hidden></section>
@@ -244,7 +258,7 @@ function renderApp() {
   if (SWAP() && unlockedSecret) mvSetSeed(hexSeed());   // hand the Freimarkets tabs the unlocked seed
   applyTheme(themeMode());
   // @ts-ignore  — false positive (DOM/Promise<void> under checkJs)
-  document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.tab));
+  document.querySelectorAll('button[data-tab]').forEach(b => b.onclick = () => show(b.dataset.tab));
   $('#statusBtn').onclick = () => { const pop = $('#statusPop'); pop.hidden = !pop.hidden; if (!pop.hidden) renderStatusPop(); };
   // @ts-ignore  — false positive (DOM/Promise<void> under checkJs)
   document.addEventListener('click', e => { const pop = $('#statusPop'); if (pop && !pop.hidden && !pop.contains(e.target) && e.target.id !== 'statusBtn') pop.hidden = true; });
@@ -257,6 +271,7 @@ function renderApp() {
     try {
       const st = await getState(true);
       paintBalance(st);                                   // sets status ok; skips DOM when hidden
+      if (!SWAP() && !$('#balance').hidden) refreshRecent();   // the Balance screen's last few transactions
       if (!$('#activity').hidden) {
         const [h, btc] = await Promise.all([ds().history(), SWAP() ? mvBtcHistory() : Promise.resolve(null)]);
         if (SWAP() && btc) setBtcLegs(btc);
@@ -313,7 +328,7 @@ const TABS = ['balance', 'activity', 'settings'];   // Receive/Send/Issue are mo
 const visibleTabs = () => SWAP() ? ['balance', 'activity', 'exchange', 'settings'] : TABS;
 const show = tab => {
   // @ts-ignore  — false positive (DOM/Promise<void> under checkJs)
-  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('button[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   visibleTabs().forEach(s => { const el = $('#' + s); if (el) el.hidden = s !== tab; });
   toast(''); render[tab]?.();
   store.set('fw_tab', tab);                                        // fallback when the URL has no tab
@@ -420,7 +435,7 @@ function applyNetSettings() {
   if (br && br !== DEFAULT_BRIDGE[net]) store.set('fw_bridge', br); else store.del('fw_bridge');   // keep the net default unless overridden
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
   cache = null; liveState = null; resetActivityCache();   // same wallet — keep the receive index
-  status.progress = {}; status.rx = 0; status.rxAt = 0; status.mbps = 0; status.utxos = null; status.tip = null;
+  status.progress = {}; status.peers = null; status.rx = 0; status.rxAt = 0; status.mbps = 0; status.utxos = null; status.tip = null;
   mvResetNet();   // the exchange/BTC snapshot too — else the OLD net's balance table paints until fresh data lands
   // Full rebuild: the old network's numbers must not linger, and the Freimarkets (Issue/Exchange)
   // tabs must appear or disappear as the network gains/loses nv3.
@@ -435,7 +450,7 @@ function switchToFreimarkets() {
   if (lightSrc) { lightSrc.close?.(); lightSrc = null; }
   mvResetNet();
   cache = null; liveState = null; resetActivityCache();
-  status.progress = {}; status.rx = 0; status.rxAt = 0; status.mbps = 0; status.utxos = null; status.tip = null;
+  status.progress = {}; status.peers = null; status.rx = 0; status.rxAt = 0; status.mbps = 0; status.utxos = null; status.tip = null;
   renderApp(); toast(tr('welcome to Freimarkets 🧪'));
 }
 

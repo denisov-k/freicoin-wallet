@@ -165,14 +165,16 @@ export class Neutrino {
   /** Open the WS, do the version/verack handshake. Resolves when connected. */
   connect() {
     if (this._conn) return this._conn;   // re-entrant: share the in-flight attempt
+    this.onConn?.('connecting');   // per-bridge state for the status popover: connecting | ok | off
     this._conn = new Promise((resolve, reject) => {
       const ws = this.ws = new WebSocket(this.url);
       ws.binaryType = 'arraybuffer';
       const decode = createDecoder(this.net);
       ws.onopen = () => this._send('version', buildVersion({ height: 0 }));
-      ws.onerror = () => { this._conn = null; reject(new Error('bridge/ws error')); };
+      ws.onerror = () => { this._conn = null; this.onConn?.('off'); reject(new Error('bridge/ws error')); };
       ws.onclose = () => {
         this._conn = null;
+        this.onConn?.('off');
         if (!this._ready) reject(new Error('connection closed'));
         this._ready = false;
         // Fail any sync stuck mid-flight so the caller can retry (which reconnects lazily).
@@ -184,7 +186,7 @@ export class Neutrino {
         for (const m of decode(Buffer.from(ev.data))) {
           if (m.command === 'version') { try { this.peerHeight = parseVersion(m.payload).startHeight; } catch {} this._send('verack'); }
           // @ts-ignore  — false positive (DOM/Promise<void> under checkJs)
-          else if (m.command === 'verack') { this._ready = true; resolve(); }
+          else if (m.command === 'verack') { this._ready = true; this.onConn?.('ok'); resolve(); }
           else if (m.command === 'ping') this._send('pong', m.payload);
           else if (m.command === 'inv') this._onInv(m);
           else if (m.command === 'tx') this._onTx(m);
@@ -870,24 +872,50 @@ export class NeutrinoPool {
   }
   get stateClient() { return this.primary; }   // the primary owns the persistable chain/UTXO state
 
+  // Start with the bridge that answers first. The others keep connecting in the background and
+  // join the sync round after they answer (see ready()). Waiting for every bridge used to hold
+  // the whole wallet at "connecting…" until the slowest one answered, or forever if one hung.
   async connect() {
-    const rs = await Promise.allSettled(this.peers.map(p => p.connect()));
-    // Keep only peers that connected; the primary must be among them.
-    this.peers = this.peers.filter((_, i) => rs[i].status === 'fulfilled');
-    if (!this.peers.length) throw new Error('no peer connected');
-    if (!this.peers.includes(this.primary)) this.primary = this.peers[0];
+    const tries = this.peers.map(p => p.connect().then(() => p));
+    tries.forEach(t => t.catch(() => {}));   // a bridge that fails later is simply not used
+    let first;
+    try { first = await Promise.any(tries); } catch { throw new Error('no peer connected'); }
+    this._promote(first);
+  }
+
+  /** The peers that have finished the handshake; the primary is always one of them. */
+  ready() {
+    const live = this.peers.filter(p => p._ready);
+    if (live.length && !live.includes(this.primary)) this._promote(live[0]);
+    for (const p of this.peers) if (!p._ready) p.connect().catch(() => {});   // keep trying in the background
+    return live;
+  }
+
+  // Make `p` the primary. The primary holds the state restored from IndexedDB; hand it over so a
+  // slow first bridge doesn't cost the wallet its persisted chain and history (a full resync).
+  _promote(p) {
+    const old = this.primary;
+    if (p === old) return;
+    this.primary = p;
+    try { p.importState(old.exportState()); } catch {}
+    p.assetDefs = old.assetDefs;
+    if (old._watch) p._watch = old._watch;
+    p.onProgress = old.onProgress; p.onMempool = old.onMempool;
   }
 
   async syncWallet(scripts) {
+    // This round uses the peers that are connected now; a bridge still connecting (or dropped and
+    // reconnecting) joins a later round instead of holding this one up.
+    let peers = this.ready();
+    if (!peers.length) { await Promise.any(this.peers.map(p => p.ensureConnected())); peers = this.ready(); }
     const primary = this.primary;
-    await Promise.allSettled(this.peers.map(p => p.ensureConnected()));   // reconnect dropped peers
     if (this._vpool === undefined) this._vpool = await makePool();        // one shared verify pool
-    this.peers.forEach(p => { p._watch = new Set(scripts); if (p._pool === undefined) p._pool = this._vpool; });
+    peers.forEach(p => { p._watch = new Set(scripts); if (p._pool === undefined) p._pool = this._vpool; });
     // 1. Sync headers on every peer independently (each verifies linkage + PoW; aux proofs
     //    verify via the shared pool and are drained before any filter agreement).
-    const hs = await Promise.allSettled(this.peers.map(p => p.syncHeaders()));
-    await Promise.allSettled(this.peers.map(p => p.drainVerify()));
-    const alive = this.peers.filter((_, i) => hs[i].status === 'fulfilled');
+    const hs = await Promise.allSettled(peers.map(p => p.syncHeaders()));
+    await Promise.allSettled(peers.map(p => p.drainVerify()));
+    const alive = peers.filter((_, i) => hs[i].status === 'fulfilled');
     const tip = primary.chain.length - 1;
 
     if (tip > primary.scannedHeight) {
@@ -919,10 +947,14 @@ export class NeutrinoPool {
       // 5. Download + scan exactly those blocks (authoritative), advance scannedHeight.
       const hashes = [...fetch].sort((a, b) => a - b).map(h => primary.chain.hashAt(h));
       await primary._applyBlocks(scripts, hashes);
-      this.lastAgreement = { peers: this.peers.length, agreeing: agreeing.length, disputed: disputed.size, forced: fetch.size };
+      this.lastAgreement = { peers: peers.length, agreeing: agreeing.length, disputed: disputed.size, forced: fetch.size };
     } else {
-      this.lastAgreement = { peers: this.peers.length, agreeing: alive.length, disputed: 0, forced: 0 };
+      this.lastAgreement = { peers: peers.length, agreeing: alive.length, disputed: 0, forced: 0 };
     }
+    // The scan reached the verified tip (headers drained above). Mark it as the single-peer
+    // syncWallet does: without this the persisted state never counted as a completed scan, so
+    // every reload hid the last-known balance ("first sync…") until a whole new sync finished.
+    primary.scannedOnce = true;
 
     // Pending: merge every peer's mempool sightings (an inv may reach only one connection),
     // dropping anything that has confirmed into the primary's history.
@@ -936,7 +968,7 @@ export class NeutrinoPool {
     return { tipHeight: tip, balance, utxos: [...primary.utxos.values()], history: [...primary.history].reverse(), pending: [...pending.values()].flat(), agreement: this.lastAgreement, assetDefs: Object.fromEntries(primary.assetDefs) };
   }
 
-  broadcast(rawHex) { for (const p of this.peers) p.broadcast(rawHex); return null; }
+  broadcast(rawHex) { for (const p of this.peers) if (p._ready || p === this.primary) p.broadcast(rawHex); return null; }
   observe(rawHex) { this.primary.observe(rawHex); }
   snapshot() { return this.primary.snapshot(); }
   exportState() { return this.primary.exportState(); }

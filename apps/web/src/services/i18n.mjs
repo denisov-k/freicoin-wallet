@@ -266,11 +266,12 @@ const RU = {
   'recovering\u2026': 'восстановление…',
   'this asset has more token coins — send the next one the same way': 'у этого актива есть ещё токен-монеты — отправьте следующую так же',
   'Balance': 'Баланс', 'Receive': 'Получить', 'Send': 'Отправить', 'Activity': 'Активность',
+  'Settings': 'Настройки', 'Recent': 'Последние', 'All activity': 'Вся история',
   'Network': 'Сеть', 'Status': 'Статус', 'Downloaded': 'Загружено',
   'synced ✓ (verified)': 'синхронизирован ✓', 'syncing…': 'синхронизация…', 'offline': 'нет связи',
-  'connecting…': 'подключение…', 'bridge unreachable — retrying': 'мост недоступен — повторяем…', 'reconnecting…': 'переподключение…',
+  'connecting…': 'подключение…', 'connected': 'подключён', 'Bridges': 'Мосты', 'bridge unreachable — retrying': 'мост недоступен — повторяем…', 'reconnecting…': 'переподключение…',
   'headers': 'заголовки', 'scan': 'скан', 'blocks': 'блоки', 'PoW': 'PoW',
-  'first sync…': 'первая синхронизация…', 'pending': 'ожидает', 'conf': 'подтв.', 'confirming': 'подтверждение', 'spendable in': 'можно тратить через',
+  'first sync…': 'первая синхронизация…', 'loading…': 'загрузка…', 'pending': 'ожидает', 'conf': 'подтв.', 'confirming': 'подтверждение', 'spendable in': 'можно тратить через',
   'no transactions yet': 'пока нет транзакций', 'just now': 'только что', 'm ago': ' мин назад', 'h ago': ' ч назад',
   'sync failed — ': 'сбой синхронизации — ', '↻ Retry': '↻ Повторить',
   'Receive address': 'Адрес получения', 'Copy': 'Копировать', '→ Next': '→ Следующий', 'copied ✓': 'скопировано ✓',
@@ -1045,9 +1046,9 @@ const ES = {
   'Balance': 'Saldo', 'Receive': 'Recibir', 'Send': 'Enviar', 'Activity': 'Actividad',
   'Network': 'Red', 'Status': 'Estado', 'Downloaded': 'Descargado',
   'synced ✓ (verified)': 'sincronizado ✓', 'syncing…': 'sincronizando…', 'offline': 'sin conexión',
-  'connecting…': 'conectando…', 'bridge unreachable — retrying': 'puente inaccesible — reintentando…',
+  'connecting…': 'conectando…', 'connected': 'conectado', 'Bridges': 'Puentes', 'bridge unreachable — retrying': 'puente inaccesible — reintentando…',
   'headers': 'cabeceras', 'scan': 'escaneo', 'blocks': 'bloques', 'PoW': 'PoW',
-  'first sync…': 'primera sincronización…', 'pending': 'pendiente', 'conf': 'conf.', 'confirming': 'confirmando',
+  'first sync…': 'primera sincronización…', 'loading…': 'cargando…', 'pending': 'pendiente', 'conf': 'conf.', 'confirming': 'confirmando',
   'no transactions yet': 'aún no hay transacciones', 'just now': 'ahora mismo', 'm ago': ' min atrás', 'h ago': ' h atrás',
   'sync failed — ': 'fallo de sincronización — ', '↻ Retry': '↻ Reintentar',
   'Receive address': 'Dirección de recepción', 'Copy': 'Copiar', '→ Next': '→ Siguiente', 'copied ✓': 'copiado ✓',
@@ -1097,6 +1098,8 @@ const ES = {
     'Esto elimina el monedero de este dispositivo. Sin la frase de recuperación los fondos son IRRECUPERABLES.',
   'Log out & wipe': 'Salir y borrar',
   'Settings': 'Ajustes',
+  'Recent': 'Recientes',
+  'All activity': 'Toda la actividad',
 };
 
 const DE = {
@@ -1657,9 +1660,9 @@ const DE = {
   'Balance': 'Guthaben', 'Receive': 'Empfangen', 'Send': 'Senden', 'Activity': 'Aktivität',
   'Network': 'Netzwerk', 'Status': 'Status', 'Downloaded': 'Heruntergeladen',
   'synced ✓ (verified)': 'synchronisiert ✓', 'syncing…': 'synchronisiere…', 'offline': 'offline',
-  'connecting…': 'verbinde…', 'bridge unreachable — retrying': 'Bridge nicht erreichbar — neuer Versuch…',
+  'connecting…': 'verbinde…', 'connected': 'verbunden', 'Bridges': 'Bridges', 'bridge unreachable — retrying': 'Bridge nicht erreichbar — neuer Versuch…',
   'headers': 'Header', 'scan': 'Scan', 'blocks': 'Blöcke', 'PoW': 'PoW',
-  'first sync…': 'erste Synchronisierung…', 'pending': 'ausstehend', 'conf': 'Best.', 'confirming': 'Bestätigung',
+  'first sync…': 'erste Synchronisierung…', 'loading…': 'lädt…', 'pending': 'ausstehend', 'conf': 'Best.', 'confirming': 'Bestätigung',
   'no transactions yet': 'noch keine Transaktionen', 'just now': 'gerade eben', 'm ago': ' Min. her', 'h ago': ' Std. her',
   'sync failed — ': 'Synchronisierung fehlgeschlagen — ', '↻ Retry': '↻ Erneut versuchen',
   'Receive address': 'Empfangsadresse', 'Copy': 'Kopieren', '→ Next': '→ Nächste', 'copied ✓': 'kopiert ✓',
@@ -1709,6 +1712,8 @@ const DE = {
     'Dies entfernt das Wallet von diesem Gerät. Ohne die Wiederherstellungsphrase sind die Gelder UNWIEDERBRINGLICH verloren.',
   'Log out & wipe': 'Abmelden & löschen',
   'Settings': 'Einstellungen',
+  'Recent': 'Zuletzt',
+  'All activity': 'Alle Aktivitäten',
 };
 
 const FR = {
@@ -2269,9 +2274,9 @@ const FR = {
   'Balance': 'Solde', 'Receive': 'Recevoir', 'Send': 'Envoyer', 'Activity': 'Activité',
   'Network': 'Réseau', 'Status': 'État', 'Downloaded': 'Téléchargé',
   'synced ✓ (verified)': 'synchronisé ✓', 'syncing…': 'synchronisation…', 'offline': 'hors ligne',
-  'connecting…': 'connexion…', 'bridge unreachable — retrying': 'pont inaccessible — nouvel essai…',
+  'connecting…': 'connexion…', 'connected': 'connecté', 'Bridges': 'Ponts', 'bridge unreachable — retrying': 'pont inaccessible — nouvel essai…',
   'headers': 'en-têtes', 'scan': 'analyse', 'blocks': 'blocs', 'PoW': 'PoW',
-  'first sync…': 'première synchronisation…', 'pending': 'en attente', 'conf': 'conf.', 'confirming': 'confirmation',
+  'first sync…': 'première synchronisation…', 'loading…': 'chargement…', 'pending': 'en attente', 'conf': 'conf.', 'confirming': 'confirmation',
   'no transactions yet': 'aucune transaction pour l’instant', 'just now': 'à l’instant', 'm ago': ' min', 'h ago': ' h',
   'sync failed — ': 'échec de synchronisation — ', '↻ Retry': '↻ Réessayer',
   'Receive address': 'Adresse de réception', 'Copy': 'Copier', '→ Next': '→ Suivante', 'copied ✓': 'copié ✓',
@@ -2321,6 +2326,8 @@ const FR = {
     'Cela supprime le portefeuille de cet appareil. Sans la phrase de récupération, les fonds sont IRRÉCUPÉRABLES.',
   'Log out & wipe': 'Quitter et effacer',
   'Settings': 'Réglages',
+  'Recent': 'Récent',
+  'All activity': 'Toute l’activité',
 };
 
 const PT = {
@@ -2881,9 +2888,9 @@ const PT = {
   'Balance': 'Saldo', 'Receive': 'Receber', 'Send': 'Enviar', 'Activity': 'Atividade',
   'Network': 'Rede', 'Status': 'Estado', 'Downloaded': 'Baixado',
   'synced ✓ (verified)': 'sincronizado ✓', 'syncing…': 'sincronizando…', 'offline': 'sem conexão',
-  'connecting…': 'conectando…', 'bridge unreachable — retrying': 'ponte inacessível — tentando de novo…',
+  'connecting…': 'conectando…', 'connected': 'conectado', 'Bridges': 'Pontes', 'bridge unreachable — retrying': 'ponte inacessível — tentando de novo…',
   'headers': 'cabeçalhos', 'scan': 'varredura', 'blocks': 'blocos', 'PoW': 'PoW',
-  'first sync…': 'primeira sincronização…', 'pending': 'pendente', 'conf': 'conf.', 'confirming': 'confirmando',
+  'first sync…': 'primeira sincronização…', 'loading…': 'carregando…', 'pending': 'pendente', 'conf': 'conf.', 'confirming': 'confirmando',
   'no transactions yet': 'ainda não há transações', 'just now': 'agora mesmo', 'm ago': ' min atrás', 'h ago': ' h atrás',
   'sync failed — ': 'falha na sincronização — ', '↻ Retry': '↻ Tentar de novo',
   'Receive address': 'Endereço de recebimento', 'Copy': 'Copiar', '→ Next': '→ Próximo', 'copied ✓': 'copiado ✓',
@@ -2933,6 +2940,8 @@ const PT = {
     'Isto remove a carteira deste dispositivo. Sem a frase de recuperação os fundos são IRRECUPERÁVEIS.',
   'Log out & wipe': 'Sair e apagar',
   'Settings': 'Configurações',
+  'Recent': 'Recentes',
+  'All activity': 'Toda a atividade',
 };
 
 const ZH = {
@@ -3492,9 +3501,9 @@ const ZH = {
   'Balance': '余额', 'Receive': '收款', 'Send': '发送', 'Activity': '记录',
   'Network': '网络', 'Status': '状态', 'Downloaded': '已下载',
   'synced ✓ (verified)': '已同步 ✓', 'syncing…': '同步中…', 'offline': '离线',
-  'connecting…': '连接中…', 'bridge unreachable — retrying': '网桥不可达 — 正在重试…',
+  'connecting…': '连接中…', 'connected': '已连接', 'Bridges': '桥接', 'bridge unreachable — retrying': '网桥不可达 — 正在重试…',
   'headers': '区块头', 'scan': '扫描', 'blocks': '区块', 'PoW': 'PoW',
-  'first sync…': '首次同步…', 'pending': '待确认', 'conf': '确认', 'confirming': '确认中',
+  'first sync…': '首次同步…', 'loading…': '加载中…', 'pending': '待确认', 'conf': '确认', 'confirming': '确认中',
   'no transactions yet': '暂无交易', 'just now': '刚刚', 'm ago': ' 分钟前', 'h ago': ' 小时前',
   'sync failed — ': '同步失败 — ', '↻ Retry': '↻ 重试',
   'Receive address': '收款地址', 'Copy': '复制', '→ Next': '→ 下一个', 'copied ✓': '已复制 ✓',
@@ -3544,6 +3553,8 @@ const ZH = {
     '这将从本设备删除钱包。没有助记词，资金将无法找回。',
   'Log out & wipe': '退出并清除',
   'Settings': '设置',
+  'Recent': '最近',
+  'All activity': '全部记录',
 };
 
 const TABLES = { ru: RU, es: ES, de: DE, fr: FR, pt: PT, zh: ZH };

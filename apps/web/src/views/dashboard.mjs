@@ -41,7 +41,8 @@ export const resetActivityCache = () => { actLastHtml = ''; btcActLegs = []; btc
 export const setBtcLegs = btc => { btcActLegs = btc.legs; btcActHide = new Set(btc.hideFrc); btcActReady = true; };
 
 // ---- balance card ----
-const balActions = () => `<div class="row" style="margin-top:12px"><button id="rcvBtn">${tr('Receive')}</button><button id="sndBtn">${tr('Send')}</button></div>`
+// Send is the primary action; Receive is outlined so the pair doesn't read as two equal slabs.
+const balActions = () => `<div class="row" style="margin-top:12px"><button id="rcvBtn" class="outline">${tr('Receive')}</button><button id="sndBtn">${tr('Send')}</button></div>`
   + (d.MKT() ? `<div class="row"><button id="issBtn" class="ghost">${tr('Issue asset')}</button></div>
               <div class="row"><button id="faucetBtn" class="ghost">${tr('Faucet (+1 FRC)')}</button></div>` : '');
 function wireBalActions() {
@@ -95,16 +96,44 @@ export function paintBalance(s) {
     const promo = '';
     $('#balance').innerHTML =
       `<div class="big" id="balBig"></div>
-       <div class="sub" id="balPend"></div>` + balActions() + promo;
+       <div class="sub" id="balPend"></div>` + balActions() + promo
+      + `<div id="balRecent" hidden><div class="recent-h"><span>${tr('Recent')}</span><a href="#activity" class="sub">${tr('All activity')} →</a></div><div id="recentList"></div></div>`;
     wireBalActions();
     const t = $('#tryFm');
     if (t) t.onclick = () => d.switchToFreimarkets();
+    refreshRecent();
   }
   // no qualifier line: the header dot carries the state and the popover the details
   const pend = s.pending?.length ? s.pending.reduce((a, p) => a + p.amount, 0) : 0;
   d.setStatusUtxos(s.utxos.length);           // detail lives in the status popover
   $('#balBig').innerHTML = `${fmtBal(s.balance)} <small>FRC</small>`;
   $('#balPend').textContent = pend ? `⏳ ${pend > 0 ? '+' : ''}${fmtBal(pend)} FRC ${tr('pending')} (${s.pending.length} tx)` : '';
+}
+
+// The plain wallet's Balance screen lists the last few FRC transactions under the actions; a tap
+// (or "All activity") opens the Activity tab, which owns filters and per-tx details.
+const RECENT_N = 5;
+let recentBusy = false;
+export async function refreshRecent() {
+  if (d.SWAP() || recentBusy || !$('#balRecent') || $('#balance').hidden) return;
+  recentBusy = true;
+  try {
+    const { txs } = await d.ds().history();
+    const box = $('#balRecent'), list = $('#recentList');
+    if (!box || !list) return;
+    const items = txs.filter(t => !t.btc && !t.trade && !t.assetTag)
+      .sort((a, b) => (b.time || 0) - (a.time || 0)).slice(0, RECENT_N);
+    box.hidden = !items.length;
+    const html = items.map(i => {
+      const imm = isImmatureGen(i);
+      const note = imm ? `<span class="sub immature">${tr('immature')} ${i.confirmations}/${COINBASE_MATURITY}</span>`
+        : i.confirmations === 0 ? `<span class="sub immature">${tr('confirming')} 0/1</span>` : '';
+      return `<a class="act" href="#activity"><div class="act-i ${i.category}${imm ? ' immature' : ''}">${CAT[i.category] || '•'}</div>
+        <div class="act-m"><b>${tr(i.category)}</b><span class="sub">${timeAgo(i.time)}</span></div>
+        <div class="act-a ${(+i.amount) < 0 ? 'neg' : 'pos'}"><span>${(+i.amount) > 0 ? '+' : ''}${fmt(i.amount)} <small>FRC</small></span>${note}</div></a>`;
+    }).join('');
+    if (list._src !== html) { list.innerHTML = html; list._src = html; }
+  } catch {} finally { recentBusy = false; }
 }
 
 export async function renderBalance() {
@@ -124,13 +153,22 @@ export async function renderBalance() {
   }
   const gen = d.bumpGen();
   // First sync (nothing persisted yet): an honest placeholder.
+  // Placeholder until we know whether a persisted state exists: "loading…" first (reading the saved
+  // chain from IndexedDB takes a few seconds), "first sync…" only when there is nothing saved —
+  // it used to say "first sync…" on every reload, even for a wallet synced many times.
   if (!$('#balance').innerHTML) $('#balance').innerHTML =
     `<div class="big">— <small>FRC</small></div>
-     <div class="sub">${tr('first sync…')}</div>`;
+     <div class="sub" id="balWait">${tr('loading…')}</div>`;
   balPainted = false;
   // Instant: last persisted state (no network) while the real sync runs.
-  if (!d.cacheReady()) { try { const pv = await d.ds().preview(); if (gen === d.renderGen() && pv) paintBalance(pv); } catch {} }
-  try { const st = await d.getState(true); if (gen !== d.renderGen()) return; paintBalance(st); }
+  if (!d.cacheReady()) {
+    try {
+      const pv = await d.ds().preview();
+      if (gen === d.renderGen() && pv) paintBalance(pv);
+      else if (gen === d.renderGen() && !balPainted && $('#balWait')) $('#balWait').textContent = tr('first sync…');
+    } catch {}
+  }
+  try { const st = await d.getState(true); if (gen !== d.renderGen()) return; paintBalance(st); refreshRecent(); }
   catch (e) {
     if (gen !== d.renderGen()) return;   // stale render (source was replaced) — ignore
     if (await d.chainRecovery(e)) { renderBalance(); return; }

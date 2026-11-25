@@ -44,6 +44,12 @@ export function createLightSource({ url, net, genesis, scripts, birthHeight = 0,
   async function initClient() {
     if (n) return;
     n = urls.length > 1 ? new NeutrinoPool({ urls, net, genesis }) : new Neutrino({ url: urls[0], net, genesis, snapshotUrl, filterSnapshotUrl });
+    // Per-bridge connection state for the status popover ({phase:'peers'} — not sync progress).
+    const peerList = n.peers ? [...n.peers] : [n];
+    const peerState = peerList.map(() => 'connecting');
+    const emitPeers = () => onProgress?.({ phase: 'peers', peers: peerList.map((q, j) => ({ url: q.url, state: peerState[j] })) });
+    peerList.forEach((p, i) => { p.onConn = st => { if (peerState[i] !== st) { peerState[i] = st; emitPeers(); } }; });
+    emitPeers();
     let resumed = false;
     try { if (await store.open()) resumed = await store.loadInto(n, skey); } catch {}   // resume persisted chain if same wallet
     // Seed asset defs the wallet can never scan itself (an issuance block matches only the
