@@ -22,7 +22,7 @@ export function renderSettings() {
      <label>${tr('Theme')}<select id="themeSel">${['system', 'dark', 'light'].map(m => `<option value="${m}"${d.themeMode() === m ? ' selected' : ''}>${m === 'system' ? tr('System') : m === 'dark' ? tr('Dark') : tr('Light')}</option>`).join('')}</select></label>
      <label>${tr('Network')}<select id="netSel">${Object.entries(NETWORKS).filter(([k, v]) => !v.hidden || k === d.curNet()).map(([k, v]) => `<option value="${k}"${k === d.curNet() ? ' selected' : ''}>${v.label}</option>`).join('')}</select></label>
      <label>${tr('Bridge URL (neutrino P2P relay)')}<input id="br" value="${d.curBridge()}"></label>
-     <label>${tr('Market relay URL (order book & swaps)')}<input id="rl" value="${relayOverride(d.curNet())}" placeholder="${defaultApiBase(d.curNet())}"></label>
+     ${d.SWAP() ? `<label>${tr('Market relay URL (order book & swaps)')}<input id="rl" value="${relayOverride(d.curNet())}" placeholder="${defaultApiBase(d.curNet())}"></label>` : ''}
      ${d.SWAP() && pushSupported() ? `<label class="chk"><input type="checkbox" id="pushChk"${pushEnabled() ? ' checked' : ''}>${tr('Swap notifications (your turn)')}</label>` : ''}
      <label>${tr('Wallet secret')} (${kind})<textarea id="sd" rows="2" readonly>${'•'.repeat(24)}</textarea></label>
      <div class="row"><button id="revealSeed" class="ghost">${tr('Show')}</button><button id="copySeed" class="ghost">⧉ ${tr('Copy')}</button>${d.SWAP() ? `<button id="wifBtn" class="ghost">${tr('Export key (WIF)')}</button>` : ''}</div>
@@ -72,7 +72,7 @@ export function renderSettings() {
   $('#br').onchange = d.applyNetSettings;
   // Market-relay override: health-check the URL (its /p2pList must answer) BEFORE saving, so a
   // typo can't silently kill the exchange; empty = back to this site's default relay.
-  $('#rl').onchange = async () => {
+  if ($('#rl')) $('#rl').onchange = async () => {   // the field exists only on swap networks
     const raw = $('#rl').value.trim().replace(/\/+$/, ''), net = d.curNet();
     if (!raw) { setRelayOverride(net, ''); toast(tr('saved'), 'ok'); return; }
     try {
