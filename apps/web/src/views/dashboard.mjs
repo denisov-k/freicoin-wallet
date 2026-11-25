@@ -89,11 +89,10 @@ export function paintBalance(s) {
   // build the card once; update fields in place afterwards (a full innerHTML rewrite per streamed
   // partial made the screen flicker)
   if (!$('#balBig')) {
-    // Mainnet gets a gentle pointer at the experimental chain — one tap switches (Settings back).
-    const promo = d.curNet() === 'main'
-      ? `<div class="promo"><span class="sub">${tr('Assets and the exchange live on the experimental Freimarkets chain — try them with free test coins.')}</span>
-         <button id="tryFm" class="ghost">${tr('Try Freimarkets')}</button></div>`
-      : '';
+    // The mainnet pointer at the experimental Freimarkets chain ("Try Freimarkets") is switched off:
+    // the plain wallet's Balance screen shows only the balance and the actions. The #tryFm wiring
+    // below stays a no-op until a promo is rendered again.
+    const promo = '';
     $('#balance').innerHTML =
       `<div class="big" id="balBig"></div>
        <div class="sub" id="balPend"></div>` + balActions() + promo;
